@@ -1,0 +1,90 @@
+name: Frontend Blue-Green Deploy
+
+on:
+  push:
+    branches:
+      - test
+      - staging
+      - master
+  workflow_dispatch:
+    inputs:
+      rollback:
+        description: "Rollback to previous version"
+        required: false
+        default: "false"
+
+env:
+  DIST_DIR: dist
+  BASE_DIR: /var/www/viteapp
+  RELEASES_DIR: /var/www/viteapp/releases
+
+# ================= BUILD =================
+jobs:
+  build:
+    runs-on: self-hosted
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm install
+
+      - name: Build App
+        run: |
+          if [[ "${GITHUB_REF##*/}" == "master" ]]; then
+            npm run build:prod
+          elif [[ "${GITHUB_REF##*/}" == "staging" ]]; then
+            npm run build:staging
+          else
+            npm run build
+          fi
+
+      # - uses: actions/upload-artifact@v4
+      #   with:
+      #     name: dist
+      #     path: dist
+
+# ================= DEPLOY =================
+  deploy:
+    needs: build
+    runs-on: self-hosted
+    environment:
+      name: ${{ github.ref_name }}
+
+    steps:
+      # - uses: actions/download-artifact@v4
+      #   with:
+      #     name: dist
+      #     path: dist
+
+      - name: Blue-Green Deploy
+        if: github.event.inputs.rollback != 'true'
+        run: |
+          TIMESTAMP=$(date +%Y%m%d%H%M%S)
+
+          mkdir -p $RELEASES_DIR/$TIMESTAMP
+          rsync -av --delete dist/ $RELEASES_DIR/$TIMESTAMP/
+
+          # Update symlinks
+          if [ -L "$BASE_DIR/current" ]; then
+            ln -sfn $(readlink $BASE_DIR/current) $BASE_DIR/previous
+          fi
+
+          ln -sfn $RELEASES_DIR/$TIMESTAMP $BASE_DIR/current
+
+          echo "✅ Deployed release $TIMESTAMP"
+
+      - name: Rollback to Previous Version
+        if: github.event.inputs.rollback == 'true'
+        run: |
+          if [ -L "$BASE_DIR/previous" ]; then
+            ln -sfn $(readlink $BASE_DIR/previous) $BASE_DIR/current
+            echo "🔁 Rollback successful"
+          else
+            echo "❌ No previous release found"
+            exit 1
+          fi
