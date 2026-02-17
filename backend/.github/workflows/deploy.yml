@@ -1,0 +1,59 @@
+name: Python Backend CI/CD
+
+on:
+  push:
+    branches:
+      - test-environment
+  workflow_dispatch:
+
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: [self-hosted]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+
+      - name: Install deps (test)
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install -r requirements.txt
+
+      - name: Run tests (if exists)
+        run: |
+          source .venv/bin/activate
+          if [ -d tests ]; then pytest -q; else echo "No tests"; fi
+
+  deploy:
+    needs: test
+    runs-on: [self-hosted]
+    environment: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sync code to server directory
+        run: |
+          rsync -av --delete \
+            --exclude venv \
+            --exclude .env \
+            ./ /var/www/synthetic_people_backend/
+
+      - name: Install / Update dependencies
+        run: |
+          cd /var/www/synthetic_people_backend
+          source venv/bin/activate
+          pip install -r requirements.txt
+
+      - name: Restart backend service
+        run: |
+          sudo systemctl restart synthetic-backend
+          sudo systemctl status synthetic-backend --no-pager

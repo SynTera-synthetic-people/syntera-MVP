@@ -1,0 +1,246 @@
+/* ============================
+   GLOBAL RESET & PAGE SETUP
+   ============================ */
+
+@page {
+    size: A4;
+    margin: 40mm 30mm 35mm 30mm;
+}
+
+html, body {
+    font-family: Calibri, Arial, sans-serif;
+    font-size: 22px;
+    color: #000000;
+    line-height: 1.55;
+    background: #FFFFFF;
+}
+
+/* Prevent awkward breaks */
+h1, h2, h3, h4 {
+    page-break-after: avoid;
+    page-break-inside: avoid;
+}
+
+p {
+    page-break-inside: avoid;
+    margin: 0 0 18px 0;
+}
+
+/* ============================
+   COVER PAGE
+   ============================ */
+
+.cover-page {
+    page-break-after: always;
+    text-align: center;
+    padding-top: 180px;
+}
+
+.cover-title {
+    font-size: 60px;
+    font-weight: 700;
+    margin-bottom: 40px;
+}
+
+.cover-meta {
+    font-size: 20px;
+    color: #666666;
+    margin-bottom: 120px;
+}
+
+.cover-tagline {
+    font-size: 22px;
+    font-style: italic;
+    color: #1F4788;
+}
+
+/* ============================
+   HEADINGS
+   ============================ */
+
+h1 {
+    font-size: 60px;
+    font-weight: 700;
+    margin: 0 0 30px 0;
+}
+
+h2 {
+    font-size: 28px;
+    font-weight: 700;
+    color: #1F4788;
+    margin: 60px 0 18px 0;
+}
+
+h3 {
+    font-size: 24px;
+    font-weight: 700;
+    color: #1F4788;
+    margin: 40px 0 14px 0;
+}
+
+h4 {
+    font-size: 22px;
+    font-weight: 700;
+    margin: 30px 0 10px 0;
+}
+
+/* ============================
+   BODY TEXT
+   ============================ */
+
+.body-text {
+    font-size: 22px;
+    color: #000000;
+}
+
+strong {
+    font-weight: 700;
+}
+
+em {
+    font-style: italic;
+}
+
+/* ============================
+   QUOTES
+   ============================ */
+
+blockquote {
+    font-style: italic;
+    color: #4A4A4A;
+    font-size: 22px;
+    border-left: 5px solid #40B5AD;
+    padding: 18px 24px;
+    margin: 30px 0;
+    background: #F5F5F5;
+}
+
+.quote-attribution {
+    font-size: 20px;
+    color: #666666;
+    margin-top: 10px;
+}
+
+/* ============================
+   TABLES
+   ============================ */
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 30px 0;
+    page-break-inside: avoid;
+}
+
+th {
+    background-color: #1F4788;
+    color: #FFFFFF;
+    font-size: 20px;
+    font-weight: 700;
+    padding: 12px;
+    text-align: left;
+}
+
+td {
+    font-size: 20px;
+    padding: 12px;
+    border: 1px solid #DDDDDD;
+    vertical-align: top;
+}
+
+tr:nth-child(even) td {
+    background-color: #F5F5F5;
+}
+
+/* ============================
+   EXECUTIVE SUMMARY CALLOUTS
+   ============================ */
+
+.exec-summary {
+    page-break-after: always;
+}
+
+.challenge-box {
+    background: #1F4788;
+    color: #FFFFFF;
+    padding: 24px;
+    margin-bottom: 24px;
+}
+
+.learning-box {
+    background: #40B5AD;
+    color: #FFFFFF;
+    padding: 24px;
+    margin-bottom: 24px;
+}
+
+.behavioral-box {
+    background: #FF6B6B;
+    color: #FFFFFF;
+    padding: 24px;
+    margin-bottom: 24px;
+}
+
+.implication-box {
+    background: linear-gradient(135deg, #1F4788, #40B5AD);
+    color: #FFFFFF;
+    padding: 24px;
+}
+
+/* ============================
+   BEHAVIORAL DEPTH SECTIONS
+   ============================ */
+
+.behavioral-section {
+    page-break-before: always;
+}
+
+.pattern-callout {
+    background: #F5F5F5;
+    border-left: 6px solid #FF6B6B;
+    padding: 20px 24px;
+    margin: 30px 0;
+}
+
+.insight-label {
+    font-weight: 700;
+    color: #1F4788;
+}
+
+/* ============================
+   CODE / DATA REFERENCES
+   ============================ */
+
+code, pre {
+    font-family: Consolas, monospace;
+    background: #F5F5F5;
+    padding: 4px 6px;
+    font-size: 18px;
+}
+
+/* ============================
+   FOOTER
+   ============================ */
+
+.footer {
+    position: running(footer);
+    font-size: 20px;
+    color: #666666;
+    text-align: center;
+}
+
+@page {
+    @bottom-center {
+        content: "Synthetic People AI – Human Insights at Digital Speed";
+    }
+}
+
+/* ============================
+   APPENDIX
+   ============================ */
+
+.appendix {
+    page-break-before: always;
+    font-size: 20px;
+    color: #4A4A4A;
+}
