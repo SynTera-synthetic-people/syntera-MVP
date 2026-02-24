@@ -74,5 +74,3 @@ The application will be available at `http://localhost:5173`.
 
 - `npm run dev`: Starts the development server.
 - `npm run build`: Builds the application for production.
-- `npm run lint`: Runs ESLint for code quality checks.
-- `npm run preview`: Previews the production build locally
