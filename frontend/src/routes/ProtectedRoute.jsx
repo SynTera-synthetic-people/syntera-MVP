@@ -1,9 +1,10 @@
 // routes/ProtectedRoute.js
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { useSelector } from "react-redux";
 
 const ProtectedRoute = ({ children, allowedRoles }) => {
   const { isAuthenticated, user, loading } = useSelector((state) => state.auth);
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -33,12 +34,16 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
     );
   }
 
+  // Force password change before accessing any other protected page
+  if (user?.must_change_password && location.pathname !== '/change-password') {
+    return <Navigate to="/change-password" replace />;
+  }
+
   // Role-based protection
   const userType = user?.user_type;
   const userRole = user?.role;
 
   if (allowedRoles && !allowedRoles.includes(userType) && !allowedRoles.includes(userRole)) {
-    console.warn(`User type ${userType} and role ${userRole} are not authorized for this route.`);
     return <Navigate to="/landing" replace />;
   }
 

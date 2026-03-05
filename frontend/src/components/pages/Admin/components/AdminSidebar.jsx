@@ -9,7 +9,8 @@ import {
   TbLogout,
   TbChevronRight,
   TbChevronLeft,
-  TbShieldCheck
+  TbShieldCheck,
+  TbUserPlus
 } from "react-icons/tb";
 import { useTheme } from "../../../../context/ThemeContext";
 import logoForDark from "../../../../assets/Logo_Dark_bg.png";
@@ -41,6 +42,12 @@ const AdminSidebar = ({ isCollapsed, setIsCollapsed }) => {
       label: "User Management",
       icon: TbUsers,
       path: "/admin/users"
+    },
+    {
+      id: "provision",
+      label: "Provision User",
+      icon: TbUserPlus,
+      path: "/admin/users/provision"
     }
   ];
 

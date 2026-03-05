@@ -121,11 +121,11 @@ async def create_workspace_invite(
         await session.commit()
         await session.refresh(invite)
 
-    # # 🟢 Try sending email, don't break app if email fails
-    # try:
-    #     await send_invite_email(email, token)
-    # except Exception as e:
-    #     print(f"[EMAIL WARNING] Failed to send invite email to {email}: {e}")
+    # 🟢 Try sending email, don't break app if email fails
+    try:
+        await send_invite_email(email, token)
+    except Exception as e:
+        print(f"[EMAIL WARNING] Failed to send invite email to {email}: {e}")
 
     return invite
 

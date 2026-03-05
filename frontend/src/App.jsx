@@ -44,6 +44,10 @@ import LandingPage from "./components/pages/LandingPage/LandingPage";
 import AdminLayout from "./components/pages/Admin/AdminLayout";
 import AdminDashboard from "./components/pages/Admin/AdminDashboard";
 import AdminUserList from "./components/pages/Admin/AdminUserList";
+import AdminUserProvision from "./components/pages/Admin/AdminUserProvision";
+import AdminUserDetail from "./components/pages/Admin/AdminUserDetail";
+import ChangePassword from "./components/pages/ChangePassword/ChangePassword";
+import Upgrade from "./components/pages/Upgrade/Upgrade";
 
 const queryClient = new QueryClient();
 function App() {
@@ -117,9 +121,27 @@ function App() {
               <Route index element={<AdminDashboard />} />
               <Route path="dashboard" element={<AdminDashboard />} />
               <Route path="users" element={<AdminUserList />} />
+              <Route path="users/provision" element={<AdminUserProvision />} />
+              <Route path="users/:userId/detail" element={<AdminUserDetail />} />
             </Route>
 
             {/* PROTECTED ROUTES */}
+            <Route
+              path="/change-password"
+              element={
+                <ProtectedRoute>
+                  <ChangePassword />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/upgrade"
+              element={
+                <ProtectedRoute>
+                  <Upgrade />
+                </ProtectedRoute>
+              }
+            />
             <Route
               path="/landing"
               element={

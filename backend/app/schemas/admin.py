@@ -1,5 +1,6 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from datetime import datetime
+from typing import Optional, Literal
 
 
 class UserListOut(BaseModel):
@@ -15,3 +16,44 @@ class UserStatsOut(BaseModel):
     user_id: str
     total_workspaces: int
     total_explorations: int
+
+
+# ---------------------------------------------------------------------------
+# User Management DTOs (admin provisioning)
+# ---------------------------------------------------------------------------
+
+class AdminCreateUserIn(BaseModel):
+    """DTO for admin-provisioned user creation."""
+    full_name: str
+    email: EmailStr
+    role: Literal["user", "admin"] = "user"
+    user_type: Literal["Student", "Startup", "Researcher"] = "Student"
+    is_trial: bool = True
+
+
+class AdminUpdateUserIn(BaseModel):
+    """DTO for admin updating a user. All fields are optional (partial update)."""
+    full_name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    role: Optional[Literal["user", "admin"]] = None
+    user_type: Optional[str] = None
+    is_trial: Optional[bool] = None
+    trial_exploration_limit: Optional[int] = None
+
+
+class AdminUserDetailOut(BaseModel):
+    """Full user detail for admin views including trial state."""
+    id: str
+    full_name: str
+    email: str
+    role: str
+    user_type: str
+    is_active: bool
+    is_trial: bool
+    exploration_count: int
+    trial_exploration_limit: int
+    must_change_password: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

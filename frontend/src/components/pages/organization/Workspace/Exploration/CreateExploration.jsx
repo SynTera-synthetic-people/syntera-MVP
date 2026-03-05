@@ -32,7 +32,9 @@ const CreateExploration = () => {
   const { data: exploration, isLoading: isLoadingExploration, error: fetchError } =
     useExploration(explorationId, { enabled: isEditMode });
 
-  const createExplorationMutation = useCreateExploration();
+  const createExplorationMutation = useCreateExploration({
+    onTrialLimitReached: () => navigate('/upgrade'),
+  });
   const updateExplorationMutation = useUpdateExploration();
 
   // Populate form when in edit mode and data is loaded

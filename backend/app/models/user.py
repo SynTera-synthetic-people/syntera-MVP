@@ -18,6 +18,10 @@ class User(SQLModel, table=True):
     reset_token_expiry: Optional[datetime] = None
 
     is_active: bool = Field(default=True)
+    is_trial: bool = Field(default=True)
+    exploration_count: int = Field(default=0)
+    trial_exploration_limit: int = Field(default=1)
+    must_change_password: bool = Field(default=False)
 
     created_at: datetime = Field(default_factory=datetime.utcnow)
     last_activity_at: Optional[datetime] = None

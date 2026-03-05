@@ -1,25 +1,20 @@
 from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
-from typing import List
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
+from typing import List, Optional
+from app.config import settings
 
 conf = ConnectionConfig(
-    MAIL_USERNAME=os.getenv("MAIL_USERNAME"),
-    MAIL_PASSWORD=os.getenv("MAIL_PASSWORD"),
-    MAIL_FROM=os.getenv("MAIL_FROM"),
-    MAIL_PORT=int(os.getenv("MAIL_PORT", 587)),
-    MAIL_SERVER=os.getenv("MAIL_SERVER"),
-    MAIL_STARTTLS=os.getenv("MAIL_STARTTLS", "True") == "True",
-    MAIL_SSL_TLS=os.getenv("MAIL_SSL_TLS", "False") == "True",
+    MAIL_USERNAME=settings.MAIL_USERNAME,
+    MAIL_PASSWORD=settings.MAIL_PASSWORD,
+    MAIL_FROM=settings.MAIL_FROM,
+    MAIL_PORT=settings.MAIL_PORT,
+    MAIL_SERVER=settings.MAIL_SERVER,
+    MAIL_STARTTLS=settings.MAIL_STARTTLS,
+    MAIL_SSL_TLS=settings.MAIL_SSL_TLS,
     USE_CREDENTIALS=True,
     VALIDATE_CERTS=True,
 )
 
 fm = FastMail(conf)
-
-FRONTEND_URL = os.getenv("FRONTEND_URL", "https://dev-ui.synthetic-people.ai")
 
 def build_html_email(title: str, message: str, action_text: str, action_link: str, footer_note: str):
     """
@@ -73,7 +68,7 @@ async def send_email(subject: str, recipients: List[str], body: str):
 
 
 async def send_verification_email(email: str, token: str):
-    verify_link = f"{FRONTEND_URL}/verify-email?token={token}"
+    verify_link = f"{settings.FRONTEND_URL}/verify-email?token={token}"
 
     body = build_html_email(
         title="Verify Your Email Address",
@@ -89,7 +84,7 @@ async def send_verification_email(email: str, token: str):
     await send_email("Verify your Synthetic People account", [email], body)
 
 async def send_reset_password_email(email: str, token: str):
-    reset_link = f"{FRONTEND_URL}/reset-password?token={token}"
+    reset_link = f"{settings.FRONTEND_URL}/reset-password?token={token}"
 
     body = build_html_email(
         title="Reset Your Password",
@@ -105,7 +100,7 @@ async def send_reset_password_email(email: str, token: str):
     await send_email("Reset your Synthetic People password", [email], body)
 
 async def send_invite_email(email: str, token: str):
-    invite_link = f"{FRONTEND_URL}/accept-invitation?token={token}"
+    invite_link = f"{settings.FRONTEND_URL}/accept-invitation?token={token}"
 
     body = build_html_email(
         title="You've Been Invited to Join a Workspace",
@@ -119,3 +114,49 @@ async def send_invite_email(email: str, token: str):
     )
 
     await send_email("You're invited to join Synthetic People", [email], body)
+
+
+async def send_welcome_email(email: str, temp_password: Optional[str] = None) -> None:
+    """
+    Send the Synthetic People trial welcome email.
+
+    If temp_password is provided (admin-provisioned user), credentials are included.
+    Otherwise (self-signup), only the login URL is shown.
+    """
+    login_url = settings.FRONTEND_URL
+
+    if temp_password:
+        credentials_block = (
+            f"Login URL: <a href='{login_url}'>{login_url}</a><br>"
+            f"Email: {email}<br>"
+            f"Temporary Password: {temp_password}<br><br>"
+            "<em>Please change your password after your first login.</em><br><br>"
+        )
+    else:
+        credentials_block = (
+            f"Login URL: <a href='{login_url}'>{login_url}</a><br>"
+            f"Email: {email}<br><br>"
+        )
+
+    body = build_html_email(
+        title="Your Synthetic People Trial Access",
+        message=(
+            "Welcome to Synthetic People.<br>"
+            "Your trial access has been activated. Below are your credentials to get started:<br><br>"
+            + credentials_block
+            + "During your trial, you'll be able to:<br>"
+            "&#x2022; Create one research exploration<br>"
+            "&#x2022; Two behaviourally grounded personas<br>"
+            "&#x2022; Run qual and quant techniques<br>"
+            "&#x2022; Ask unlimited follow-up questions<br>"
+            "&#x2022; Download one in-depth insights report with decision intelligence<br><br>"
+            "A small suggestion: start with a real decision you're currently evaluating. "
+            "The sharper the context, the more meaningful the output.<br><br>"
+            "If you have any questions, just reply to this email. Our team reads every message."
+        ),
+        action_text="Login Now",
+        action_link=login_url,
+        footer_note="&#x2014; Team Synthetic People | The Behavioural Lab for Customer-Obsessed Teams",
+    )
+
+    await send_email("Your Synthetic People Trial Access", [email], body)

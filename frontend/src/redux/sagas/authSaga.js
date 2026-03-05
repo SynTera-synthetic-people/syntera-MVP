@@ -18,6 +18,10 @@ function* loginSaga(action) {
       user_type: data.user_type,
       organization_id: data.organization_id,
       org_id: data.org_id,
+      must_change_password: data.must_change_password ?? false,
+      is_trial: data.is_trial ?? false,
+      exploration_count: data.exploration_count ?? 0,
+      trial_exploration_limit: data.trial_exploration_limit ?? 1,
     };
     const token = data.access_token;
 

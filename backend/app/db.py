@@ -6,19 +6,18 @@ from sqlalchemy import text
 from app.models import user, organization, workspace, exploration, persona, interview, population
 
 async_engine = create_async_engine(settings.DATABASE_URL, echo=True)
+
 async_session = sessionmaker(
     async_engine, class_=AsyncSession, expire_on_commit=False
 )
 
 AsyncSessionLocal = sessionmaker(
-    bind=async_engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
+    bind=async_engine, class_=AsyncSession, expire_on_commit=False
 )
 
 
 async def get_session() -> AsyncSession:
-    async with AsyncSessionLocal() as session:
+    async with async_session() as session:
         yield session
 
 async def init_db():
@@ -82,13 +81,33 @@ async def add_is_active_column():
         await conn.execute(text("""
         CREATE TABLE IF NOT EXISTS traceability_report
         (
-            id VARCHAR PRIMARY KEY, 
+            id VARCHAR PRIMARY KEY,
             exploration_id VARCHAR NOT NULL UNIQUE,
             ro_traceability JSONB NOT NULL DEFAULT '{}':: jsonb,
-            persona_traceability JSONB NOT NULL DEFAULT '{}':: jsonb, 
+            persona_traceability JSONB NOT NULL DEFAULT '{}':: jsonb,
             quant_traceability JSONB NOT NULL DEFAULT '{}' ::jsonb,
             qual_traceability JSONB NOT NULL DEFAULT '{}':: jsonb,
             updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW());
         """)
         )
 
+
+async def add_trial_columns():
+    """Safe migration: add free trial management columns to the user table."""
+    async with async_engine.begin() as conn:
+        await conn.execute(text("""
+            ALTER TABLE "user"
+            ADD COLUMN IF NOT EXISTS is_trial BOOLEAN NOT NULL DEFAULT TRUE;
+        """))
+        await conn.execute(text("""
+            ALTER TABLE "user"
+            ADD COLUMN IF NOT EXISTS exploration_count INTEGER NOT NULL DEFAULT 0;
+        """))
+        await conn.execute(text("""
+            ALTER TABLE "user"
+            ADD COLUMN IF NOT EXISTS trial_exploration_limit INTEGER NOT NULL DEFAULT 1;
+        """))
+        await conn.execute(text("""
+            ALTER TABLE "user"
+            ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
+        """))

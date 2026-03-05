@@ -1,3 +1,7 @@
+import logging
+import secrets
+from typing import Optional
+
 from sqlalchemy import select, func
 from sqlalchemy import case, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +30,10 @@ from dateutil.relativedelta import relativedelta
 from sqlalchemy import func, select, cast, Float, literal_column
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql import lateral
+from app.utils.security import hash_password
+from app.schemas.admin import AdminCreateUserIn, AdminUpdateUserIn
+
+logger = logging.getLogger(__name__)
 
 
 from sqlalchemy import extract
@@ -665,3 +673,133 @@ async def get_user_dashboard(
         }
     }
 
+
+# ---------------------------------------------------------------------------
+# User Management (admin provisioning)
+# ---------------------------------------------------------------------------
+
+async def create_user_by_admin(
+    session: AsyncSession,
+    data: AdminCreateUserIn,
+) -> tuple[User, str]:
+    """
+    Provision a new user as an admin.
+
+    Generates a secure temporary password, creates the user with
+    must_change_password=True, and provisions their default organization.
+
+    Returns:
+        (user, temp_password) — temp_password must be sent via email.
+    """
+    existing = await session.execute(select(User).where(User.email == data.email))
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Email already registered")
+
+    temp_password = secrets.token_urlsafe(12)
+    is_trial = data.is_trial
+    if data.role in ("admin", "super_admin"):
+        is_trial = False
+
+    user = User(
+        full_name=data.full_name,
+        email=data.email,
+        hashed_password=hash_password(temp_password),
+        role=data.role,
+        user_type=data.user_type,
+        is_verified=True,
+        is_active=True,
+        is_trial=is_trial,
+        must_change_password=True,
+    )
+    session.add(user)
+    await session.commit()
+    await session.refresh(user)
+
+    from app.services.organization import create_organization_for_user
+    await create_organization_for_user(user)
+
+    logger.info(
+        "Admin provisioned user",
+        extra={"user_id": user.id, "email": user.email, "role": user.role, "is_trial": is_trial},
+    )
+    return user, temp_password
+
+
+async def update_user_by_admin(
+    session: AsyncSession,
+    user_id: str,
+    data: AdminUpdateUserIn,
+) -> User:
+    """
+    Partial update of a user's profile and trial configuration.
+
+    Only fields that are explicitly set in the payload are updated.
+    """
+    result = await session.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if data.full_name is not None:
+        user.full_name = data.full_name
+    if data.email is not None:
+        dupe = await session.execute(
+            select(User).where(User.email == data.email, User.id != user_id)
+        )
+        if dupe.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="Email already in use")
+        user.email = data.email
+    if data.role is not None:
+        user.role = data.role
+        if data.role in ("admin", "super_admin"):
+            user.is_trial = False
+    if data.user_type is not None:
+        user.user_type = data.user_type
+    if data.is_trial is not None:
+        user.is_trial = data.is_trial
+    if data.trial_exploration_limit is not None:
+        user.trial_exploration_limit = data.trial_exploration_limit
+
+    session.add(user)
+    await session.commit()
+    await session.refresh(user)
+    logger.info("Admin updated user", extra={"user_id": user_id})
+    return user
+
+
+async def delete_user_by_admin(
+    session: AsyncSession,
+    user_id: str,
+) -> None:
+    """Hard-delete a user by ID."""
+    result = await session.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    await session.delete(user)
+    await session.commit()
+    logger.info("Admin deleted user", extra={"user_id": user_id})
+
+
+async def reset_user_password_by_admin(
+    session: AsyncSession,
+    user_id: str,
+) -> str:
+    """
+    Generate a new temporary password for a user and set must_change_password=True.
+
+    Returns the plaintext temp password so it can be emailed.
+    """
+    result = await session.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    temp_password = secrets.token_urlsafe(12)
+    user.hashed_password = hash_password(temp_password)
+    user.must_change_password = True
+    session.add(user)
+    await session.commit()
+    logger.info("Admin reset user password", extra={"user_id": user_id})
+    return temp_password

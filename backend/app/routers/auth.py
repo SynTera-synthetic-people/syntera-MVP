@@ -1,21 +1,26 @@
+import logging
+
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.schemas.auth import (
     SignupIn,
     LoginIn,
     Token,
     ForgotPasswordIn,
     ResetPasswordIn,
+    ChangePasswordIn,
 )
 from app.utils.security import create_access_token, verify_password
-from app.utils.email_utils import send_verification_email, send_reset_password_email
+from app.utils.email_utils import send_verification_email, send_reset_password_email, send_welcome_email
 from app.services import auth as auth_service
 from app.routers.auth_dependencies import get_current_active_user
 from app.models.user import User
 from app.schemas.response import SuccessResponse, ErrorResponse
 from datetime import datetime
 from app.db import get_session
-from sqlalchemy.ext.asyncio import AsyncSession
 
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -38,23 +43,21 @@ async def signup(payload: SignupIn, background_tasks: BackgroundTasks, session: 
         payload.password,
         payload.full_name,
         payload.user_type,
-        role="user"
+        role="user",
+        is_trial=True,
     )
 
-    # background_tasks.add_task(
-    #     send_verification_email,
-    #     user.email,
-    #     user.verification_token
-    # )
+    # Send welcome email in the background (non-blocking)
+    background_tasks.add_task(send_welcome_email, user.email)
 
     return SuccessResponse(
-        message="Signup successful. Verification email sent to your inbox.",
+        message="Signup successful. Welcome email sent to your inbox.",
         data={
             "email": user.email,
             "full_name": user.full_name,
             "role": user.role,
-            "user_type": user.user_type
-         }
+            "user_type": user.user_type,
+        }
     )
 
 
@@ -78,7 +81,6 @@ async def verify_email(token: str):
 
 @router.post("/login", response_model=SuccessResponse)
 async def login(payload: LoginIn,  session: AsyncSession = Depends(get_session),):
-    # user = await auth_service.get_user_by_email(payload.email)
     user = await auth_service.get_user_by_email(session, payload.email)
 
     if not user or not verify_password(payload.password, user.hashed_password):
@@ -123,6 +125,7 @@ async def login(payload: LoginIn,  session: AsyncSession = Depends(get_session),
             "email": user.email,
             "role": user.role,
             "user_type": user.user_type,
+            "must_change_password": user.must_change_password,
             "access_token": token,
             "token_type": "bearer"
         }
@@ -141,6 +144,10 @@ async def get_current_user(current_user: User = Depends(get_current_active_user)
             "role": current_user.role,
             "user_type": current_user.user_type,
             "is_verified": current_user.is_verified,
+            "is_trial": current_user.is_trial,
+            "exploration_count": current_user.exploration_count,
+            "trial_exploration_limit": current_user.trial_exploration_limit,
+            "must_change_password": current_user.must_change_password,
             "created_at": current_user.created_at,
         }
     )
@@ -188,3 +195,32 @@ async def reset_password(token: str, payload: ResetPasswordIn):
         )
 
     return SuccessResponse(message="Password reset successful.")
+
+
+@router.patch("/change-password", response_model=SuccessResponse)
+async def change_password(
+    payload: ChangePasswordIn,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Allow an authenticated user to change their own password.
+
+    Verifies the current password before applying the new one.
+    Clears the must_change_password flag on success.
+    """
+    success = await auth_service.change_password(
+        session=session,
+        user=current_user,
+        current_password=payload.current_password,
+        new_password=payload.new_password,
+    )
+    if not success:
+        raise HTTPException(
+            status_code=400,
+            detail=ErrorResponse(
+                status="error",
+                message="Current password is incorrect."
+            ).dict()
+        )
+    return SuccessResponse(message="Password changed successfully.")

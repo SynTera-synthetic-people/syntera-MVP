@@ -11,7 +11,6 @@ class Settings(BaseSettings):
     JWT_SECRET: str
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 120
-    BCRYPT_ROUNDS: int = 12
     IDLE_TIMEOUT: int = 15
     MAIL_USERNAME: str
     MAIL_PASSWORD: str
@@ -22,7 +21,8 @@ class Settings(BaseSettings):
     MAIL_PORT: int = 587
     MAIL_SERVER: str
     MAIL_STARTTLS: bool = True
-    MAIL_SSL_TLS: bool = False 
+    MAIL_SSL_TLS: bool = False
+    FRONTEND_URL: str = "https://dev-ui.synthetic-people.ai"
 
     class Config:
         env_file = ".env"
