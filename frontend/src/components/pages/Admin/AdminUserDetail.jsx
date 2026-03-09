@@ -149,6 +149,7 @@ const AdminUserDetail = () => {
       user_type: user.user_type,
       is_trial: user.is_trial,
       trial_exploration_limit: user.trial_exploration_limit,
+      account_tier: user.account_tier ?? 'free',
     });
     setEditError('');
     setIsEditing(true);
@@ -340,6 +341,11 @@ const AdminUserDetail = () => {
           <Badge color={user.is_trial ? 'amber' : 'blue'}>
             {user.is_trial ? 'Trial' : 'Full Access'}
           </Badge>
+          {user.account_tier && (
+            <Badge color={user.account_tier === 'enterprise' ? 'blue' : user.account_tier === 'tier1' ? 'green' : 'gray'}>
+              {user.account_tier === 'enterprise' ? 'Enterprise' : user.account_tier === 'tier1' ? 'Tier 1' : 'Free'}
+            </Badge>
+          )}
           {user.must_change_password && (
             <Badge color="amber">Password Change Required</Badge>
           )}
@@ -419,12 +425,31 @@ const AdminUserDetail = () => {
           </h3>
           {!isEditing ? (
             <div>
+              <InfoRow label="Account Tier" value={
+                user.account_tier === 'enterprise' ? 'Enterprise' :
+                user.account_tier === 'tier1' ? 'Tier 1' : 'Free Trial'
+              } />
               <InfoRow label="Is Trial" value={user.is_trial ? 'Yes' : 'No'} />
               <InfoRow label="Explorations Used" value={`${user.exploration_count} / ${user.trial_exploration_limit}`} />
               <InfoRow label="Must Change Password" value={user.must_change_password ? 'Yes' : 'No'} />
             </div>
           ) : (
             <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                  Account Tier
+                </label>
+                <select
+                  value={editForm.account_tier ?? 'free'}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, account_tier: e.target.value }))}
+                  disabled={isSaving}
+                  className="w-full px-4 py-3 rounded-xl border-2 border-gray-300 dark:border-white/10 bg-white dark:bg-[#1a1f2e] text-gray-900 dark:text-white focus:border-blue-500 outline-none disabled:opacity-50"
+                >
+                  <option value="free">Free Trial (1 exploration)</option>
+                  <option value="tier1">Tier 1 (3 explorations)</option>
+                  <option value="enterprise">Enterprise (org-level quota)</option>
+                </select>
+              </div>
               <div className="flex items-center justify-between p-4 rounded-xl bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10">
                 <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Free Trial</p>
                 <label className="relative inline-flex items-center cursor-pointer">

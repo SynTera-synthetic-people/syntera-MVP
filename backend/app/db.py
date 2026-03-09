@@ -111,3 +111,38 @@ async def add_trial_columns():
             ALTER TABLE "user"
             ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
         """))
+
+
+async def add_enterprise_columns():
+    """Safe migration: add enterprise pricing tier columns to user and organization."""
+    async with async_engine.begin() as conn:
+        # User: pricing tier label
+        await conn.execute(text("""
+            ALTER TABLE "user"
+            ADD COLUMN IF NOT EXISTS account_tier VARCHAR NOT NULL DEFAULT 'free';
+        """))
+        # User: nullable FK to the enterprise org this user belongs to
+        await conn.execute(text("""
+            ALTER TABLE "user"
+            ADD COLUMN IF NOT EXISTS organization_id VARCHAR
+            REFERENCES organization(id) ON DELETE SET NULL;
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS ix_user_organization_id
+            ON "user" (organization_id);
+        """))
+        # Organization: tier label ("standard" | "enterprise")
+        await conn.execute(text("""
+            ALTER TABLE organization
+            ADD COLUMN IF NOT EXISTS account_tier VARCHAR NOT NULL DEFAULT 'standard';
+        """))
+        # Organization: max explorations (0 = no cap, used for personal orgs)
+        await conn.execute(text("""
+            ALTER TABLE organization
+            ADD COLUMN IF NOT EXISTS exploration_limit INTEGER NOT NULL DEFAULT 0;
+        """))
+        # Organization: running exploration count (incremented atomically for enterprise)
+        await conn.execute(text("""
+            ALTER TABLE organization
+            ADD COLUMN IF NOT EXISTS exploration_count INTEGER NOT NULL DEFAULT 0;
+        """))

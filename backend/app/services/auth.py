@@ -30,6 +30,7 @@ async def create_user(
     role: str = "user",
     is_trial: bool = True,
     must_change_password: bool = False,
+    account_tier: str = "free",
 ):
     hashed = hash_password(password)
 
@@ -44,6 +45,7 @@ async def create_user(
         verification_expiry=None,
         is_trial=is_trial,
         must_change_password=must_change_password,
+        account_tier=account_tier,
     )
 
     async with AsyncSession(async_engine) as session:
@@ -131,6 +133,22 @@ async def reset_password(token: str, new_password: str) -> bool:
         session.add(user)
         await session.commit()
         return True
+
+
+async def upgrade_to_tier1(session: AsyncSession, user: User) -> User:
+    """
+    Upgrade a free/trial user to Explorer Pack (tier1).
+    Resets exploration_count to 0 and sets the tier1 limit.
+    """
+    user.account_tier = "tier1"
+    user.is_trial = False
+    user.trial_exploration_limit = 3
+    user.exploration_count = 0
+    session.add(user)
+    await session.commit()
+    await session.refresh(user)
+    logger.info("User upgraded to tier1", extra={"user_id": user.id})
+    return user
 
 
 async def change_password(

@@ -116,6 +116,95 @@ async def send_invite_email(email: str, token: str):
     await send_email("You're invited to join Synthetic People", [email], body)
 
 
+async def send_tier1_welcome_email(email: str, temp_password: Optional[str] = None) -> None:
+    """
+    Welcome email for Tier-1 (paid) users.
+
+    Highlights the 3-exploration plan and full feature set.
+    If temp_password is provided (admin-provisioned), credentials are included.
+    """
+    login_url = settings.FRONTEND_URL
+
+    credentials_block = (
+        f"Login URL: <a href='{login_url}'>{login_url}</a><br>"
+        f"Email: {email}<br>"
+    )
+    if temp_password:
+        credentials_block += (
+            f"Temporary Password: <b>{temp_password}</b><br><br>"
+            "<em>Please change your password after your first login.</em><br><br>"
+        )
+
+    body = build_html_email(
+        title="Welcome to Synthetic People — Tier 1",
+        message=(
+            "Your Tier-1 account is now active. Here's what you have access to:<br><br>"
+            + credentials_block
+            + "&#x2022; 3 research explorations<br>"
+            "&#x2022; Manual persona creation<br>"
+            "&#x2022; Qual and quant research techniques<br>"
+            "&#x2022; Unlimited follow-up conversations<br>"
+            "&#x2022; Unlimited quantitative sample size<br>"
+            "&#x2022; Downloadable in-depth reports<br>"
+            "&#x2022; Full traceability and audit log<br><br>"
+            "Start your first exploration and let the insights begin."
+        ),
+        action_text="Login Now",
+        action_link=login_url,
+        footer_note="&#x2014; Team Synthetic People | The Behavioural Lab for Customer-Obsessed Teams",
+    )
+
+    await send_email("Welcome to Synthetic People — Tier 1", [email], body)
+
+
+async def send_enterprise_welcome_email(
+    email: str,
+    full_name: str,
+    temp_password: Optional[str] = None,
+) -> None:
+    """
+    Welcome email for enterprise users (enterprise_admin and standard members).
+
+    Always includes login credentials since enterprise accounts are always provisioned
+    by an admin — they are never self-signed up.
+    """
+    login_url = settings.FRONTEND_URL
+
+    credentials_block = (
+        f"Login URL: <a href='{login_url}'>{login_url}</a><br>"
+        f"Email: {email}<br>"
+    )
+    if temp_password:
+        credentials_block += (
+            f"Temporary Password: <b>{temp_password}</b><br><br>"
+            "<em>Please change your password after your first login.</em><br><br>"
+        )
+
+    body = build_html_email(
+        title=f"Welcome to Synthetic People Enterprise, {full_name}",
+        message=(
+            "Your enterprise account is ready. Here's what's available to your organisation:<br><br>"
+            + credentials_block
+            + "&#x2022; Up to 10 research explorations (expandable)<br>"
+            "&#x2022; Four AI-recommended personas per exploration<br>"
+            "&#x2022; Manual persona creation<br>"
+            "&#x2022; Qual and quant research techniques<br>"
+            "&#x2022; Unlimited follow-up conversations<br>"
+            "&#x2022; Unlimited quantitative sample size<br>"
+            "&#x2022; Customisable downloadable reports<br>"
+            "&#x2022; Full audit log and traceability<br>"
+            "&#x2022; First-party data ingestion and integration support<br><br>"
+            "Your dedicated account manager will be in touch shortly. "
+            "In the meantime, log in and start exploring."
+        ),
+        action_text="Login Now",
+        action_link=login_url,
+        footer_note="&#x2014; Team Synthetic People | Enterprise Support",
+    )
+
+    await send_email("Welcome to Synthetic People Enterprise", [email], body)
+
+
 async def send_welcome_email(email: str, temp_password: Optional[str] = None) -> None:
     """
     Send the Synthetic People trial welcome email.
@@ -160,3 +249,23 @@ async def send_welcome_email(email: str, temp_password: Optional[str] = None) ->
     )
 
     await send_email("Your Synthetic People Trial Access", [email], body)
+
+
+async def send_enterprise_inquiry_email(user_email: str, user_name: str) -> None:
+    """
+    Notify the internal team when a user clicks 'Enterprise Pack'.
+    Sent to humans@synthetic-people.ai for manual follow-up.
+    """
+    body = build_html_email(
+        title="New Enterprise Plan Inquiry",
+        message=(
+            f"A user has expressed interest in the Enterprise Pack.<br><br>"
+            f"<strong>Name:</strong> {user_name}<br>"
+            f"<strong>Email:</strong> {user_email}<br><br>"
+            "Please follow up with them at your earliest convenience."
+        ),
+        action_text="Reply to User",
+        action_link=f"mailto:{user_email}",
+        footer_note="&#x2014; Synthetic People Internal Notification",
+    )
+    await send_email("Enterprise Plan Inquiry", ["humans@synthetic-people.ai"], body)

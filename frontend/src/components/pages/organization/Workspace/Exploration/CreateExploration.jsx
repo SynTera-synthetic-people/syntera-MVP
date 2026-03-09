@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import UpgradeModal from "../../../Upgrade/UpgradeModal";
 import PremiumInput from "../../../../common/PremiumInput";
 import PremiumButton from "../../../../common/PremiumButton";
 import { motion } from "framer-motion";
@@ -27,13 +28,14 @@ const CreateExploration = () => {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [errors, setErrors] = useState({});
+  const [showUpgrade, setShowUpgrade] = useState(false);
 
   // Fetch exploration data if in edit mode
   const { data: exploration, isLoading: isLoadingExploration, error: fetchError } =
     useExploration(explorationId, { enabled: isEditMode });
 
   const createExplorationMutation = useCreateExploration({
-    onTrialLimitReached: () => navigate('/upgrade'),
+    onTrialLimitReached: () => setShowUpgrade(true),
   });
   const updateExplorationMutation = useUpdateExploration();
 
@@ -246,6 +248,11 @@ const CreateExploration = () => {
       </div>
 
 
+      <UpgradeModal
+        isOpen={showUpgrade}
+        onClose={() => setShowUpgrade(false)}
+        onUpgradeSuccess={() => setShowUpgrade(false)}
+      />
     </div>
   );
 };

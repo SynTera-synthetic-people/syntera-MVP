@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     MAIL_SSL_TLS: bool = False
     FRONTEND_URL: str = "https://dev-ui.synthetic-people.ai"
 
+    # Exploration limits per pricing tier (overridable via environment)
+    TIER1_EXPLORATION_LIMIT: int = 3
+    ENTERPRISE_EXPLORATION_LIMIT: int = 10
+
     class Config:
         env_file = ".env"
         case_sensitive = True

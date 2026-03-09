@@ -7,10 +7,10 @@ from fastapi.requests import Request
 from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.db import init_db, add_is_active_column, add_trial_columns
+from app.db import init_db, add_is_active_column, add_trial_columns, add_enterprise_columns
 from app.routers import (auth, orgs, workspace, research_objectives, personas, interview,
                          population, questionnaire, rebuttal, traceability, omi, exploration,
-                         omi_workflow, admin)
+                         omi_workflow, admin, enterprise)
 from app.schemas.response import ErrorResponse
 from app.utils.create_superadmin import ensure_superadmin_exists
 
@@ -59,6 +59,7 @@ async def startup():
     await init_db()
     await add_is_active_column()
     await add_trial_columns()
+    await add_enterprise_columns()
     await ensure_superadmin_exists()
 
 
@@ -76,10 +77,11 @@ app.include_router(traceability.router)
 app.include_router(exploration.router)
 app.include_router(omi_workflow.router)
 app.include_router(admin.router)
+app.include_router(enterprise.router)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["http://localhost:5173","https://dev-ui.synthetic-people.ai"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

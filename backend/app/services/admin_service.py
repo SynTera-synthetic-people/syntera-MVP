@@ -688,17 +688,40 @@ async def create_user_by_admin(
     Generates a secure temporary password, creates the user with
     must_change_password=True, and provisions their default organization.
 
+    account_tier rules applied automatically:
+      - "free"       → is_trial=True,  trial_exploration_limit = 1
+      - "tier1"      → is_trial=False, trial_exploration_limit = settings.TIER1_EXPLORATION_LIMIT
+      - "enterprise" → is_trial=False, trial_exploration_limit = 0 (org-level limit applies)
+      - admin roles  → is_trial=False regardless of requested tier
+
     Returns:
-        (user, temp_password) — temp_password must be sent via email.
+        (user, temp_password) — temp_password must be sent via email only.
     """
+    from app.config import settings as _settings
+
     existing = await session.execute(select(User).where(User.email == data.email))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email already registered")
 
     temp_password = secrets.token_urlsafe(12)
-    is_trial = data.is_trial
+
+    # Resolve tier → trial flag + exploration limit
+    account_tier = data.account_tier
     if data.role in ("admin", "super_admin"):
+        # Internal staff are never trial users
         is_trial = False
+        account_tier = "free"
+        exploration_limit = 0
+    elif account_tier == "tier1":
+        is_trial = False
+        exploration_limit = _settings.TIER1_EXPLORATION_LIMIT
+    elif account_tier == "enterprise":
+        is_trial = False
+        exploration_limit = 0  # org-level limit enforced separately
+    else:
+        # "free" default
+        is_trial = data.is_trial
+        exploration_limit = 1
 
     user = User(
         full_name=data.full_name,
@@ -709,6 +732,8 @@ async def create_user_by_admin(
         is_verified=True,
         is_active=True,
         is_trial=is_trial,
+        account_tier=account_tier,
+        trial_exploration_limit=exploration_limit,
         must_change_password=True,
     )
     session.add(user)
@@ -720,7 +745,13 @@ async def create_user_by_admin(
 
     logger.info(
         "Admin provisioned user",
-        extra={"user_id": user.id, "email": user.email, "role": user.role, "is_trial": is_trial},
+        extra={
+            "user_id": user.id,
+            "email": user.email,
+            "role": user.role,
+            "account_tier": account_tier,
+            "is_trial": is_trial,
+        },
     )
     return user, temp_password
 
@@ -753,17 +784,37 @@ async def update_user_by_admin(
         user.role = data.role
         if data.role in ("admin", "super_admin"):
             user.is_trial = False
+            user.account_tier = "free"
     if data.user_type is not None:
         user.user_type = data.user_type
     if data.is_trial is not None:
         user.is_trial = data.is_trial
     if data.trial_exploration_limit is not None:
         user.trial_exploration_limit = data.trial_exploration_limit
+    # Changing account_tier auto-adjusts is_trial and exploration limit
+    if data.account_tier is not None:
+        from app.config import settings as _settings
+        user.account_tier = data.account_tier
+        if data.account_tier == "free":
+            user.is_trial = True
+            if data.trial_exploration_limit is None:
+                user.trial_exploration_limit = 1
+        elif data.account_tier == "tier1":
+            user.is_trial = False
+            if data.trial_exploration_limit is None:
+                user.trial_exploration_limit = _settings.TIER1_EXPLORATION_LIMIT
+        elif data.account_tier == "enterprise":
+            user.is_trial = False
+            if data.trial_exploration_limit is None:
+                user.trial_exploration_limit = 0
 
     session.add(user)
     await session.commit()
     await session.refresh(user)
-    logger.info("Admin updated user", extra={"user_id": user_id})
+    logger.info(
+        "Admin updated user",
+        extra={"user_id": user_id, "account_tier": user.account_tier},
+    )
     return user
 
 

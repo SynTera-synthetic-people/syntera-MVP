@@ -22,6 +22,7 @@ function* loginSaga(action) {
       is_trial: data.is_trial ?? false,
       exploration_count: data.exploration_count ?? 0,
       trial_exploration_limit: data.trial_exploration_limit ?? 1,
+      account_tier: data.account_tier ?? 'free',
     };
     const token = data.access_token;
 

@@ -15,6 +15,7 @@ from app.services.exploration import (
     delete_exploration,
     select_exploration_method,
     TrialLimitReachedException,
+    PlanLimitReachedException,
 )
 from sqlmodel import select
 from app.models.user import User
@@ -48,7 +49,16 @@ async def create(
             status_code=403,
             content={
                 "status": "error",
-                "message": "Trial limit reached",
+                "message": "Trial limit reached. Upgrade your plan to continue.",
+                "upgrade_required": True,
+            },
+        )
+    except PlanLimitReachedException:
+        return JSONResponse(
+            status_code=403,
+            content={
+                "status": "error",
+                "message": "Exploration limit reached for your current plan. Please contact support to purchase additional explorations.",
                 "upgrade_required": True,
             },
         )

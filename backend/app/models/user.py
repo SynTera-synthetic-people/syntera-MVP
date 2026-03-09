@@ -23,7 +23,14 @@ class User(SQLModel, table=True):
     trial_exploration_limit: int = Field(default=1)
     must_change_password: bool = Field(default=False)
 
+    # Pricing tier: "free" | "tier1" | "enterprise"
+    account_tier: str = Field(default="free")
+    # For enterprise users: FK to their shared enterprise Organization
+    organization_id: Optional[str] = Field(default=None, foreign_key="organization.id", index=True)
+
     created_at: datetime = Field(default_factory=datetime.utcnow)
     last_activity_at: Optional[datetime] = None
 
-    organization: Optional["Organization"] = Relationship(back_populates="owner")
+    organization: Optional["Organization"] = Relationship(
+        sa_relationship_kwargs={"foreign_keys": "[User.organization_id]"}
+    )

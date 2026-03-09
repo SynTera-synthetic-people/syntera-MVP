@@ -82,6 +82,8 @@ export const useCreateExploration = (options = {}) => {
             exploration_count: meResponse.data.exploration_count,
             is_trial: meResponse.data.is_trial,
             trial_exploration_limit: meResponse.data.trial_exploration_limit,
+            account_tier: meResponse.data.account_tier,
+            organization_id: meResponse.data.organization_id,
           }));
         }
       } catch (_) { /* non-critical — stale count is acceptable */ }

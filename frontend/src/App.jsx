@@ -48,6 +48,8 @@ import AdminUserProvision from "./components/pages/Admin/AdminUserProvision";
 import AdminUserDetail from "./components/pages/Admin/AdminUserDetail";
 import ChangePassword from "./components/pages/ChangePassword/ChangePassword";
 import Upgrade from "./components/pages/Upgrade/Upgrade";
+import EnterpriseOrgsPage from "./components/pages/Admin/EnterpriseOrgsPage";
+import EnterpriseOrgDetail from "./components/pages/Admin/EnterpriseOrgDetail";
 
 const queryClient = new QueryClient();
 function App() {
@@ -123,6 +125,8 @@ function App() {
               <Route path="users" element={<AdminUserList />} />
               <Route path="users/provision" element={<AdminUserProvision />} />
               <Route path="users/:userId/detail" element={<AdminUserDetail />} />
+              <Route path="enterprise" element={<EnterpriseOrgsPage />} />
+              <Route path="enterprise/:orgId" element={<EnterpriseOrgDetail />} />
             </Route>
 
             {/* PROTECTED ROUTES */}

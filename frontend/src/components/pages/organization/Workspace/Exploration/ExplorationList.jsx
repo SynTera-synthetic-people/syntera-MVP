@@ -1,4 +1,5 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
+import UpgradeModal from "../../../Upgrade/UpgradeModal";
 import { useNavigate, useParams } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { motion, useMotionValue, useSpring, useTransform } from "framer-motion";
@@ -71,6 +72,7 @@ const ExplorationList = () => {
   // Trial state from Redux
   const { user } = useSelector((state) => state.auth);
   const isTrialMaxed = user?.is_trial && user?.exploration_count >= user?.trial_exploration_limit;
+  const [showUpgrade, setShowUpgrade] = useState(false);
 
   // Use React Query hook to fetch explorations
   const { data: explorations, isLoading, error, refetch } = useExplorations(workspaceId);
@@ -242,7 +244,7 @@ const ExplorationList = () => {
             <motion.button
               whileHover={{ scale: 1.03 }}
               whileTap={{ scale: 0.97 }}
-              onClick={() => navigate('/upgrade')}
+              onClick={() => setShowUpgrade(true)}
               className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-amber-500 hover:bg-amber-600 rounded-lg shadow-sm transition-colors flex-shrink-0"
             >
               <TbArrowUpRight size={14} />
@@ -375,6 +377,11 @@ const ExplorationList = () => {
           )}
         </motion.div>
       </div>
+      <UpgradeModal
+        isOpen={showUpgrade}
+        onClose={() => setShowUpgrade(false)}
+        onUpgradeSuccess={() => setShowUpgrade(false)}
+      />
     </div>
   );
 };

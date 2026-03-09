@@ -100,6 +100,7 @@ const AdminUserProvision = () => {
     role: 'user',
     user_type: 'Student',
     is_trial: true,
+    account_tier: 'free',
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -242,6 +243,24 @@ const AdminUserProvision = () => {
                 <option value="Researcher">Researcher</option>
               </select>
             </div>
+          </div>
+
+          {/* Account Tier */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+              Account Tier
+            </label>
+            <select
+              name="account_tier"
+              value={form.account_tier}
+              onChange={handleChange}
+              disabled={isSubmitting}
+              className="w-full px-4 py-3 rounded-xl border-2 border-gray-300 dark:border-white/10 bg-white dark:bg-[#1a1f2e] text-gray-900 dark:text-white focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20 transition-all outline-none disabled:opacity-50"
+            >
+              <option value="free">Free Trial (1 exploration)</option>
+              <option value="tier1">Tier 1 (3 explorations)</option>
+              <option value="enterprise">Enterprise (org-level quota)</option>
+            </select>
           </div>
 
           {/* Trial toggle */}

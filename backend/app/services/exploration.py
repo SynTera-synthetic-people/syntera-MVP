@@ -7,6 +7,7 @@ from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.exploration import Exploration
+from app.models.organization import Organization
 from app.models.user import User
 from app.schemas.exploration import ExplorationCreate, ExplorationUpdate, ExplorationMethodSelect
 
@@ -14,7 +15,12 @@ logger = logging.getLogger(__name__)
 
 
 class TrialLimitReachedException(Exception):
-    """Raised when a trial user has exhausted their exploration quota."""
+    """Raised when a free-trial user has exhausted their single exploration quota."""
+    pass
+
+
+class PlanLimitReachedException(Exception):
+    """Raised when a tier1 or enterprise user has exhausted their plan exploration quota."""
     pass
 
 
@@ -26,13 +32,19 @@ async def create_exploration(
     current_user: Optional[User] = None,
 ) -> Exploration:
     """
-    Create a new exploration.
+    Create a new exploration, enforcing tier-based limits.
 
-    If current_user is a trial user, enforces the exploration limit using
-    a SELECT FOR UPDATE lock to prevent race conditions, then atomically
-    increments exploration_count within the same transaction.
+    Free trial  → enforces user.trial_exploration_limit (default 1) via TrialLimitReachedException.
+    Tier 1      → enforces user.trial_exploration_limit (set to 3 on upgrade) via PlanLimitReachedException.
+    Enterprise  → enforces org.exploration_limit (default 10) via PlanLimitReachedException.
+    sp_admin / admin (no tier enforcement) → no limit.
+
+    All limit checks use SELECT FOR UPDATE row-level locking to prevent race conditions.
+    Counts are incremented atomically within the same transaction.
     """
-    # --- Trial enforcement (concurrency-safe via row-level lock) ---
+    tier = getattr(current_user, "account_tier", "free") if current_user else None
+
+    # --- Free trial: existing concurrency-safe check (unchanged) ---
     if current_user is not None and current_user.is_trial:
         locked_result = await session.execute(
             select(User).where(User.id == user_id).with_for_update()
@@ -49,6 +61,47 @@ async def create_exploration(
             )
             raise TrialLimitReachedException()
 
+    # --- Tier 1: paid plan with fixed user-level limit ---
+    elif current_user is not None and tier == "tier1":
+        locked_result = await session.execute(
+            select(User).where(User.id == user_id).with_for_update()
+        )
+        locked_user = locked_result.scalar_one_or_none()
+        if locked_user and locked_user.exploration_count >= locked_user.trial_exploration_limit:
+            logger.warning(
+                "Tier-1 plan limit reached — exploration creation blocked",
+                extra={
+                    "user_id": user_id,
+                    "exploration_count": locked_user.exploration_count,
+                    "tier1_limit": locked_user.trial_exploration_limit,
+                }
+            )
+            raise PlanLimitReachedException()
+
+    # --- Enterprise: org-level limit check ---
+    elif current_user is not None and tier == "enterprise" and current_user.organization_id:
+        locked_result = await session.execute(
+            select(Organization)
+            .where(Organization.id == current_user.organization_id)
+            .with_for_update()
+        )
+        locked_org = locked_result.scalar_one_or_none()
+        if (
+            locked_org
+            and locked_org.exploration_limit > 0
+            and locked_org.exploration_count >= locked_org.exploration_limit
+        ):
+            logger.warning(
+                "Enterprise org exploration limit reached — creation blocked",
+                extra={
+                    "user_id": user_id,
+                    "org_id": current_user.organization_id,
+                    "org_exploration_count": locked_org.exploration_count,
+                    "org_exploration_limit": locked_org.exploration_limit,
+                }
+            )
+            raise PlanLimitReachedException()
+
     exploration = Exploration(
         workspace_id=workspace_id,
         title=data.title,
@@ -57,12 +110,20 @@ async def create_exploration(
     )
     session.add(exploration)
 
-    # Atomically increment exploration_count for trial users (same transaction)
-    if current_user is not None and current_user.is_trial:
+    # --- Atomically increment the appropriate counter ---
+    if current_user is not None and (current_user.is_trial or tier == "tier1"):
+        # User-level counter for free trial and tier1
         await session.execute(
             update(User)
             .where(User.id == user_id)
             .values(exploration_count=User.exploration_count + 1)
+        )
+    elif current_user is not None and tier == "enterprise" and current_user.organization_id:
+        # Org-level counter for enterprise
+        await session.execute(
+            update(Organization)
+            .where(Organization.id == current_user.organization_id)
+            .values(exploration_count=Organization.exploration_count + 1)
         )
 
     await session.commit()
@@ -73,6 +134,7 @@ async def create_exploration(
         extra={
             "user_id": user_id,
             "exploration_id": exploration.id,
+            "account_tier": tier,
             "is_trial": bool(current_user and current_user.is_trial),
         }
     )
