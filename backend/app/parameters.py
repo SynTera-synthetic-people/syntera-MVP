@@ -1,3 +1,4 @@
+ubuntu@ip-10-10-18-131:~/mvp1/app/app$ cat parameters.py
 import boto3
 import os
 
@@ -15,7 +16,7 @@ def load_ssm_parameters(path="/app/staging/"):
         env_key = key.split("/")[-1]
         os.environ[env_key] = value
 
-    # ✅ SAFE DEBUG: do NOT print secrets
+    
     db = os.environ.get("DATABASE_URL", "")
     if db:
         hostpart = db.split("@")[-1].split("/")[0] if "@" in db else "unknown"
