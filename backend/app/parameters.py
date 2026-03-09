@@ -1,4 +1,3 @@
-ubuntu@ip-10-10-18-131:~/mvp1/app/app$ cat parameters.py
 import boto3
 import os
 
