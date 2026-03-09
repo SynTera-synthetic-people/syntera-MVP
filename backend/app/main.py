@@ -19,10 +19,15 @@ from fastapi.requests import Request
 from fastapi import HTTPException
 from app.schemas.response import ErrorResponse
 import json
+import os
 from app.utils.create_superadmin import ensure_superadmin_exists
 
 
 app = FastAPI(title="Synthetic People")
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
 
 
 def normalize_detail(detail):
@@ -83,9 +88,12 @@ app.include_router(exploration.router)
 app.include_router(omi_workflow.router)
 app.include_router(admin.router)
 
+cors = os.getenv("CORS_ORIGINS", "https://staging-ui.synthetic-people.ai")
+allow_origins = [x.strip() for x in cors.split(",") if x.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://dev-ui.synthetic-people.ai"],
+    allow_origins=allow_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
