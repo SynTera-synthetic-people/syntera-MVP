@@ -1,7 +1,9 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
+import UpgradeModal from "../../../Upgrade/UpgradeModal";
 import { useNavigate, useParams } from "react-router-dom";
+import { useSelector } from "react-redux";
 import { motion, useMotionValue, useSpring, useTransform } from "framer-motion";
-import { TbPlus, TbEdit, TbTrash, TbArrowLeft, TbTelescope, TbSearch, TbChartDots } from "react-icons/tb";
+import { TbPlus, TbEdit, TbTrash, TbArrowLeft, TbTelescope, TbSearch, TbChartDots, TbAlertTriangle, TbArrowUpRight } from "react-icons/tb";
 import { useTheme } from "../../../../../context/ThemeContext";
 import logoForDark from "../../../../../assets/Logo_Dark_bg.png";
 import logoForLight from "../../../../../assets/Logo_Light_bg.png";
@@ -66,6 +68,11 @@ const ExplorationList = () => {
   const navigate = useNavigate();
   const { workspaceId } = useParams();
   const { theme } = useTheme();
+
+  // Trial state from Redux
+  const { user } = useSelector((state) => state.auth);
+  const isTrialMaxed = user?.is_trial && user?.exploration_count >= user?.trial_exploration_limit;
+  const [showUpgrade, setShowUpgrade] = useState(false);
 
   // Use React Query hook to fetch explorations
   const { data: explorations, isLoading, error, refetch } = useExplorations(workspaceId);
@@ -191,31 +198,60 @@ const ExplorationList = () => {
 
           <div className="relative">
             <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              onMouseEnter={() => setIsTooltipHovered(true)}
+              whileHover={isTrialMaxed ? {} : { scale: 1.02 }}
+              whileTap={isTrialMaxed ? {} : { scale: 0.98 }}
+              onMouseEnter={() => !isTrialMaxed && setIsTooltipHovered(true)}
               onMouseLeave={() => setIsTooltipHovered(false)}
-              onClick={() => navigate(`/main/organization/workspace/explorations/${workspaceId}/create`)}
-              className="flex items-center gap-2 bg-gradient-to-r from-blue-600 via-blue-700 to-blue-600 bg-[length:200%_auto] hover:bg-right text-white px-6 py-3 rounded-xl shadow-lg shadow-blue-500/30 transition-all font-medium"
+              onClick={() => !isTrialMaxed && navigate(`/main/organization/workspace/explorations/${workspaceId}/create`)}
+              disabled={isTrialMaxed}
+              className={`flex items-center gap-2 px-6 py-3 rounded-xl shadow-lg transition-all font-medium ${
+                isTrialMaxed
+                  ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed shadow-none'
+                  : 'bg-gradient-to-r from-blue-600 via-blue-700 to-blue-600 bg-[length:200%_auto] hover:bg-right text-white shadow-blue-500/30'
+              }`}
             >
               <TbPlus size={20} />
               <span>Research Exploration</span>
             </motion.button>
 
-            {/* Tooltip */}
-            {isTooltipHovered && (
+            {/* Tooltip — normal state */}
+            {isTooltipHovered && !isTrialMaxed && (
               <motion.div
                 initial={{ opacity: 0, y: 10, scale: 0.95 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 className="absolute right-0 top-full mt-2 z-50 w-64 p-3 text-xs font-medium text-white bg-gray-900 dark:bg-gray-800 rounded-xl shadow-2xl pointer-events-none"
               >
                 Create a dedicated exploration for each research question or study.
-                {/* Arrow */}
                 <div className="absolute right-6 -top-1 border-4 border-transparent border-b-gray-900 dark:border-b-gray-800" />
               </motion.div>
             )}
           </div>
         </motion.div>
+
+        {/* Trial Limit Banner */}
+        {isTrialMaxed && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6 flex items-center justify-between gap-4 p-4 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30"
+          >
+            <div className="flex items-center gap-3">
+              <TbAlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+              <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+                Your free trial exploration has been completed. Upgrade to continue.
+              </p>
+            </div>
+            <motion.button
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+              onClick={() => setShowUpgrade(true)}
+              className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-amber-500 hover:bg-amber-600 rounded-lg shadow-sm transition-colors flex-shrink-0"
+            >
+              <TbArrowUpRight size={14} />
+              Upgrade Now
+            </motion.button>
+          </motion.div>
+        )}
 
         {/* Main Card Container */}
         <motion.div
@@ -341,6 +377,11 @@ const ExplorationList = () => {
           )}
         </motion.div>
       </div>
+      <UpgradeModal
+        isOpen={showUpgrade}
+        onClose={() => setShowUpgrade(false)}
+        onUpgradeSuccess={() => setShowUpgrade(false)}
+      />
     </div>
   );
 };

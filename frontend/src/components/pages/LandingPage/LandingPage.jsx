@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { TbArrowRight, TbPlus, TbLayoutDashboard, TbSun, TbMoon } from 'react-icons/tb';
+import { TbArrowRight, TbPlus, TbLayoutDashboard, TbSun, TbMoon, TbFlask, TbStar, TbBuilding } from 'react-icons/tb';
 import { useSelector } from 'react-redux';
 import { useTheme } from "../../../context/ThemeContext";
 import logoForDark from "../../../assets/Logo_Dark_bg.png";
@@ -125,6 +125,34 @@ const LandingPage = () => {
             Synthetic-People bring digital twins of your users to life. With real emotions, biases, and behavioural quirks.
           </p>
         </div>
+
+        {/* Plan Badge */}
+        {user && (() => {
+          const tier = user.account_tier ?? 'free';
+          const isTrialFree = tier === 'free';
+          const isTier1 = tier === 'tier1';
+          const isEnterprise = tier === 'enterprise';
+          const used = user.exploration_count ?? 0;
+          const limit = isEnterprise ? null : (user.trial_exploration_limit ?? 1);
+          const Icon = isEnterprise ? TbBuilding : isTier1 ? TbStar : TbFlask;
+          const label = isEnterprise ? 'Enterprise' : isTier1 ? 'Tier 1' : 'Free Trial';
+          const colorClass = isEnterprise
+            ? 'bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-500/30'
+            : isTier1
+            ? 'bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-500/30'
+            : 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-500/30';
+          return (
+            <div className="flex justify-center">
+              <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full border text-sm font-medium ${colorClass}`}>
+                <Icon size={16} />
+                <span>{label}</span>
+                {!isEnterprise && (
+                  <span className="opacity-70">· {used}/{limit} exploration{limit !== 1 ? 's' : ''} used</span>
+                )}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Call to Action Section */}
         <div className="space-y-4">

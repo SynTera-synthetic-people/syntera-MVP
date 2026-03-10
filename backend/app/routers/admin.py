@@ -1,19 +1,46 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+import logging
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import select
 
 from app.db import get_session
-from app.schemas.response import SuccessResponse
-from app.services.admin_service import list_users, get_user_stats, update_user_active_status, get_date_range, \
-    users_monthly_count, workspaces_monthly_count, explorations_monthly_count, persona_distribution, new_users_monthly, \
-    get_user_dashboard
-from app.routers.auth_dependencies import get_current_active_user
 from app.models.user import User
-from app.services import workspace as ws_service
+from app.routers.auth_dependencies import get_current_active_user
+from app.schemas.admin import AdminCreateUserIn, AdminUpdateUserIn, AdminUserDetailOut
+from app.schemas.response import SuccessResponse
 from app.services import admin_service
+from app.services.admin_service import (
+    list_users,
+    get_user_stats,
+    update_user_active_status,
+    get_date_range,
+    users_monthly_count,
+    workspaces_monthly_count,
+    explorations_monthly_count,
+    persona_distribution,
+    new_users_monthly,
+    get_user_dashboard,
+    create_user_by_admin,
+    update_user_by_admin,
+    delete_user_by_admin,
+    reset_user_password_by_admin,
+)
+from app.services import workspace as ws_service
+from app.utils.email_utils import send_welcome_email
 from datetime import date
 
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
+
+
+def _require_admin(current_user: User) -> None:
+    """Guard: only admin or super_admin roles are permitted."""
+    if current_user.role not in ("admin", "super_admin"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+
 
 
 @router.get("", response_model=SuccessResponse)
@@ -48,7 +75,6 @@ async def super_admin_dashboard(
             "persona_distribution": personas,
         }
     )
-
 
 
 @router.patch("/{user_id}/active", response_model=SuccessResponse)
@@ -95,7 +121,6 @@ async def get_users(
     )
 
 
-
 @router.get("/users/{user_id}/stats", response_model=SuccessResponse)
 async def get_user_stats(
     user_id: str,
@@ -132,3 +157,128 @@ async def user_dashboard(
     )
 
 
+# New user management routes (admin + super_admin)
+
+@router.post("/users/provision", response_model=SuccessResponse, status_code=201)
+async def admin_create_user(
+    payload: AdminCreateUserIn,
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Admin provisions a new user with a generated temporary password.
+
+    Sends a welcome email with credentials in the background.
+    The temporary password is also returned in the response as a backup
+    in case the email is not delivered.
+    """
+    _require_admin(current_user)
+    user, temp_password = await create_user_by_admin(session, payload)
+    background_tasks.add_task(send_welcome_email, user.email, temp_password)
+    logger.info(
+        "User provisioned by admin",
+        extra={"created_by": current_user.id, "new_user_id": user.id},
+    )
+    return SuccessResponse(
+        message="User created successfully. Welcome email sent.",
+        data={
+            "user_id": user.id,
+            "email": user.email,
+            "role": user.role,
+            "is_trial": user.is_trial,
+            "temporary_password": temp_password,
+        }
+    )
+
+
+@router.get("/users/{user_id}/detail", response_model=SuccessResponse)
+async def admin_get_user_detail(
+    user_id: str,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Fetch a single user's full profile including trial state."""
+    _require_admin(current_user)
+    result = await session.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return SuccessResponse(
+        message="User fetched successfully.",
+        data=AdminUserDetailOut.model_validate(user).model_dump(),
+    )
+
+
+@router.put("/users/{user_id}", response_model=SuccessResponse)
+async def admin_update_user(
+    user_id: str,
+    payload: AdminUpdateUserIn,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Update a user's profile or trial settings (partial update)."""
+    _require_admin(current_user)
+    user = await update_user_by_admin(session, user_id, payload)
+    return SuccessResponse(
+        message="User updated successfully.",
+        data=AdminUserDetailOut.model_validate(user).model_dump(),
+    )
+
+
+@router.patch("/users/{user_id}/deactivate", response_model=SuccessResponse)
+async def admin_deactivate_user(
+    user_id: str,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Deactivate a user account (sets is_active=False)."""
+    _require_admin(current_user)
+    user = await update_user_active_status(session=session, user_id=user_id, is_active=False)
+    logger.info("Admin deactivated user", extra={"admin_id": current_user.id, "user_id": user_id})
+    return SuccessResponse(
+        message="User deactivated successfully.",
+        data={"user_id": user.id, "is_active": user.is_active},
+    )
+
+
+@router.delete("/users/{user_id}", status_code=204)
+async def admin_delete_user(
+    user_id: str,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Hard-delete a user. This action is irreversible."""
+    _require_admin(current_user)
+    await delete_user_by_admin(session, user_id)
+
+
+@router.post("/users/{user_id}/reset-password", response_model=SuccessResponse)
+async def admin_reset_password(
+    user_id: str,
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Reset a user's password to a new temporary password.
+
+    Sends new credentials via email. The temporary password is also
+    returned in the response as a backup.
+    """
+    _require_admin(current_user)
+    result = await session.execute(select(User).where(User.id == user_id))
+    target_user = result.scalar_one_or_none()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    temp_password = await reset_user_password_by_admin(session, user_id)
+    background_tasks.add_task(send_welcome_email, target_user.email, temp_password)
+    logger.info(
+        "Admin reset user password",
+        extra={"admin_id": current_user.id, "user_id": user_id},
+    )
+    return SuccessResponse(
+        message="Password reset successfully. New credentials sent via email.",
+        data={"user_id": user_id, "temporary_password": temp_password},
+    )

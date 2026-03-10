@@ -1,7 +1,4 @@
 import json
-import platform
-import subprocess
-import sys
 
 from fastapi import FastAPI
 from fastapi import HTTPException
@@ -9,14 +6,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.requests import Request
 from fastapi.responses import JSONResponse
 
-from app.db import init_db, add_is_active_column
+from app.config import settings
+from app.db import init_db, add_is_active_column, add_trial_columns, add_enterprise_columns
 from app.routers import (auth, orgs, workspace, research_objectives, personas, interview,
                          population, questionnaire, rebuttal, traceability, omi, exploration,
-                         omi_workflow, admin)
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from fastapi.requests import Request
-from fastapi import HTTPException
+                         omi_workflow, admin, enterprise)
 from app.schemas.response import ErrorResponse
 import json
 import os
@@ -70,6 +64,8 @@ async def custom_http_exception_handler(request: Request, exc: HTTPException):
 async def startup():
     await init_db()
     await add_is_active_column()
+    await add_trial_columns()
+    await add_enterprise_columns()
     await ensure_superadmin_exists()
 
 
@@ -87,6 +83,7 @@ app.include_router(traceability.router)
 app.include_router(exploration.router)
 app.include_router(omi_workflow.router)
 app.include_router(admin.router)
+app.include_router(enterprise.router)
 
 cors = os.getenv("CORS_ORIGINS", "https://staging-ui.synthetic-people.ai")
 allow_origins = [x.strip() for x in cors.split(",") if x.strip()]

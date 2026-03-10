@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { motion, useMotionValue, useSpring, useTransform, AnimatePresence } from "framer-motion";
+import { useNavigate } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   TbUsers,
   TbSearch,
@@ -12,7 +13,9 @@ import {
   TbX,
   TbBriefcase,
   TbTelescope,
-  TbReload
+  TbReload,
+  TbUserPlus,
+  TbExternalLink
 } from "react-icons/tb";
 import { useTheme } from "../../../context/ThemeContext";
 import { adminService } from "../../../services/adminService";
@@ -52,7 +55,7 @@ const TooltipButton = ({ onClick, icon, label, colorClass, className }) => {
   );
 };
 
-const UserDetailsModal = ({ user, onClose, onToggleStatus }) => {
+const UserDetailsModal = ({ user, onClose, onToggleStatus, onViewDetail }) => {
   const [stats, setStats] = useState({ workspaces: 0, explorations: 0 });
   const [statsLoading, setStatsLoading] = useState(true);
   const [statsError, setStatsError] = useState(null);
@@ -183,29 +186,38 @@ const UserDetailsModal = ({ user, onClose, onToggleStatus }) => {
             </div>
           </div>
 
-          <div className="mt-8 pt-6 border-t border-gray-200 dark:border-white/10 flex justify-end gap-3">
+          <div className="mt-8 pt-6 border-t border-gray-200 dark:border-white/10 flex justify-between items-center gap-3 flex-wrap">
             <button
-              onClick={onClose}
-              disabled={isToggling}
-              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-transparent border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+              onClick={() => onViewDetail(userId)}
+              className="flex items-center gap-1.5 text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline"
             >
-              Close
+              <TbExternalLink size={15} />
+              View Full Profile
             </button>
-            <button
-              onClick={handleToggle}
-              disabled={isToggling}
-              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium text-white rounded-lg shadow-sm transition-colors ${status === 'Suspended' || status === 'suspended'
-                ? 'bg-green-600 hover:bg-green-700'
-                : 'bg-red-600 hover:bg-red-700'
-                }`}
-            >
-              {isToggling ? (
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              ) : (
-                <TbUserOff size={16} />
-              )}
-              {status === 'Suspended' || status === 'suspended' ? 'Activate User' : 'Suspend User'}
-            </button>
+            <div className="flex gap-3">
+              <button
+                onClick={onClose}
+                disabled={isToggling}
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-transparent border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+              >
+                Close
+              </button>
+              <button
+                onClick={handleToggle}
+                disabled={isToggling}
+                className={`flex items-center gap-2 px-4 py-2 text-sm font-medium text-white rounded-lg shadow-sm transition-colors ${status === 'Suspended' || status === 'suspended'
+                  ? 'bg-green-600 hover:bg-green-700'
+                  : 'bg-red-600 hover:bg-red-700'
+                  }`}
+              >
+                {isToggling ? (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <TbUserOff size={16} />
+                )}
+                {status === 'Suspended' || status === 'suspended' ? 'Activate User' : 'Suspend User'}
+              </button>
+            </div>
           </div>
         </div>
       </motion.div>
@@ -215,6 +227,7 @@ const UserDetailsModal = ({ user, onClose, onToggleStatus }) => {
 
 const AdminUserList = () => {
   const { theme } = useTheme();
+  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedUser, setSelectedUser] = useState(null);
   const [users, setUsers] = useState([]);
@@ -342,6 +355,15 @@ const AdminUserList = () => {
               className="block w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-white/10 rounded-xl leading-5 bg-white/50 dark:bg-white/5 backdrop-blur-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm transition-all"
             />
           </div>
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => navigate('/admin/users/provision')}
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white text-sm font-semibold rounded-xl shadow-lg shadow-blue-500/30 transition-all whitespace-nowrap"
+          >
+            <TbUserPlus size={18} />
+            Provision User
+          </motion.button>
         </div>
       </motion.div>
 
@@ -470,6 +492,10 @@ const AdminUserList = () => {
             user={selectedUser}
             onClose={() => setSelectedUser(null)}
             onToggleStatus={handleToggleStatus}
+            onViewDetail={(userId) => {
+              setSelectedUser(null);
+              navigate(`/admin/users/${userId}/detail`);
+            }}
           />
         )}
       </AnimatePresence>
