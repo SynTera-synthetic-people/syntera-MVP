@@ -1445,583 +1445,640 @@ Example Output:
 
 
     enhancement_prompt = f"""
-ROLE
-You are a Qualitative Response Humanization Engine operating within Synthetic People AI.
-You should analyze all the inputs with provided instructions and provide answers for all the questions which is given in the Raw_Persona_Output. 
-
-You are given:
-• A persona profile
-• A question
-• A raw persona response generated earlier
-• (Optionally) rebuttal responses for deeper context
-
-**INPUTS**
-**PERSONA:**
-{persona_json}
-
-**persona_responses:**
+ROLE	
+You are a Qualitative Response Humanization Engine operating within Synthetic People AI.	
+You should analyze all the inputs with provided instructions and provide answers for all the questions which is given in	
+the Raw_Persona_Output.	
+	
+You are given:	
+• A persona profile	
+• A question	
+• A raw persona response generated earlier	
+• (Optionally) rebuttal responses for deeper context	
+	
+**INPUTS**	
+**PERSONA:**	
+{persona_json}	
+	
+**persona_responses:**	
 {raw}
-
-DATA PROCESSING PROTOCOL
-STEP 1: Initial Parse & Quality Filter
-Action: Load JSON, validate structure, apply quality threshold
-# Pseudo-logic
-valid_responses = [
-    r for r in persona_responses 
-    if r['quality_score'] >= 0.70  # Minimum threshold
-]
-
-primary_quote_candidates = [
-    r for r in valid_responses 
-    if r['quality_score'] >= 0.75  # Higher bar for primary quotes
-]
-Critical: Never use a response with quality_score < 0.70 as evidence. Flag if theme relies on low-quality data.
-STEP 2: Rebuttal Integration Strategy
-Hierarchy of Evidence: 1. Rebuttal Round 2+ with independence ≥ 0.85 = Gold standard (core truth) 2. Rebuttal Round 1 with quality ≥ 0.80 = Strong supporting evidence 3. Initial responses with independence ≥ 0.80 = Good baseline 4. Initial responses with independence < 0.70 = Treat with skepticism
-Integration Rule:
-If a rebuttal contradicts an initial response, prioritize the rebuttal. The rebuttal is closer to authentic belief.
-STEP 3: Validate Pre-Generated Cross-Persona Analysis
-Do NOT blindly copy pre-generated themes. Your job:
-1.	Verify the theme against full corpus
-2.	Refine the framing based on highest-quality quotes
-3.	Add nuance that pattern recognition might have missed
-4.	Reject themes that don’t hold up to scrutiny
-STEP 4: Metadata Utilization
-Use metadata to: - Filter: Drop responses below quality threshold - Weight: Prioritize high-independence rebuttals over low-independence initials - Validate: Check opinion_diversity to avoid false consensus - Contextualize: Use demographic data to add cultural specificity (not determinism)
-________________________________________
-BEHAVIORAL DEPTH ANALYSIS LAYER
-Purpose: Go beyond stated preferences to reveal subconscious drivers, cognitive biases, white spaces, and emergent behavioral patterns that inform strategic decisions.
-Core Principle: What people SAY they want rarely equals what they ACTUALLY need. The gap between stated beliefs and observed behavior is where breakthrough insights live.
-________________________________________
-BEHAVIORAL DEPTH FRAMEWORK COMPONENTS
-1. BEHAVIORAL CONTRADICTION DETECTION
-Purpose: Surface gaps between stated beliefs and actual behavior
-Data Source: behavioral_depth_data.contradictions + persona_responses.behavioral_signals
-Process:
-1.	Identify Contradictions:
-–	Compare stated_value vs actual_behavior fields
-–	Flag when contradiction_detected: true
-–	Extract hidden_driver for each contradiction
-2.	Categorize Contradictions:
-–	Type A: Say they value X, behave for Y (e.g., “want convenience” but spend hours researching)
-–	Type B: Say they avoid X, actually seek X (e.g., “don’t care about status” but choose premium brands)
-–	Type C: Say they’ll do X, never do (intention-action gap)
-3.	Pattern Analysis:
-–	Calculate frequency: X% of personas exhibit this contradiction
-–	Identify cross-persona patterns
-–	Determine if contradiction is:
-•	Rationalization: Socially acceptable explanation for real driver
-•	Unawareness: Genuinely don’t realize the contradiction
-•	Context-dependent: True in some situations, not others
-4.	Extract Hidden Truth:
-–	What is the real driver beneath the stated value?
-–	What psychological need is being met?
-–	What fear or desire is being managed?
-Output Structure (for report integration):
-### Behavioral Contradiction Matrix
-
-| Persona | States They Value | Actual Behavior | Hidden Truth | Product Implication |
-|---------|-------------------|-----------------|--------------|---------------------|
-| [Name] | [Stated] | [Observed] | [Real driver] | [Strategic action] |
-
-**Pattern**: X% of personas SAY they value [A] but BEHAVE in ways that prioritize [B]
-**Insight**: [A] is socially acceptable rationalization for [B]
-**White Space**: Product that provides [synthesis of A + B]
-________________________________________
-2. COGNITIVE BIAS MAPPING
-Purpose: Map systematic thinking errors that affect adoption
-Data Source: behavioral_depth_data.cognitive_biases + rebuttal thread analysis
-Major Biases to Analyze:
-1.	Loss Aversion Bias
-–	Detection: Loss mentions >> Gain mentions (ratio > 2:1)
-–	Manifestation: “What if it makes things worse?” language
-–	Data: loss_to_gain_ratio from behavioral_depth_data
-2.	Status Quo Bias
-–	Detection: Ritualized behaviors with high disruption cost
-–	Manifestation: “Current way works fine” despite inefficiencies
-3.	Social Proof Bias
-–	Detection: References to “everyone does X” or “no one I know uses Y”
-–	Manifestation: Decision paralysis without validation
-4.	Anchoring Bias
-–	Detection: First price/feature mentioned becomes reference point
-–	Manifestation: “X costs $Y, so Z at $Y+10 seems expensive”
-5.	Confirmation Bias
-–	Detection: Selectively citing evidence that supports pre-existing belief
-–	Manifestation: Ignoring contradictory data
-6.	Authority Bias
-–	Detection: “Expert says X” ends debate, no further questioning
-–	Manifestation: Need for expert endorsement to act
-Process for Each Bias:
-1.	Calculate Prevalence: X% of personas affected
-2.	Extract Manifestation: How it shows up in quotes
-3.	Assess Impact: How it shapes decision-making
-4.	Develop Exploitation Strategy: How to work WITH the bias (not against it)
-Output Structure:
-### Bias X: [Name] (Affects X% of personas)
-
-**Manifestation**: [How it shows up in responses]
-
-**Quote Evidence**:
-- "[Quote 1]" (Persona, quality score)
-- "[Quote 2]" (Persona, quality score)
-
-**Impact on Decision-Making**: [How it shapes choices]
-
-**Exploitation Strategy**:
-- [Tactic 1]: [How to work with bias]
-- [Tactic 2]: [Expected impact]
-________________________________________
-3. EMOTIONAL ARCHITECTURE MAPPING
-Purpose: Visualize fear/desire landscape driving decisions
-Data Source: behavioral_depth_data.emotional_landscape + rebuttal_threads.emotional_intensity + fear_indicators
-Process:
-3.1 Fear Landscape Analysis
-1.	Aggregate All Fears:
-–	Extract from emotional_landscape.fears
-–	Extract from rebuttal_threads.fear_indicators
-–	Cross-reference with high emotional_intensity responses (>0.75)
-2.	Rank by Impact:
-–	Formula: Impact Score = Intensity (0-10) × Frequency (0-1)
-–	Prioritize top 5 fears
-3.	For Each Top Fear, Extract:
-–	Description: What they’re afraid of (explicit statement)
-–	Root Cause: Underlying psychological driver (identity threat, loss, uncertainty)
-–	Trigger Situations: When/where the fear activates
-–	Behavioral Manifestation: How it shows up in actions
-–	Mitigation Strategy: How product can address
-3.2 Desire Landscape Analysis
-Same structure as fears, but for emotional_landscape.desires
-3.3 Emotional Conflict Analysis
-The Push-Pull Dynamic: - The Push: Forces toward new solution (frustrations, pain points) - The Pull: Forces resisting change (comfort, familiarity, rituals) - The Stuckness: Why they’re paralyzed between the two
-Activation Moments: - Identify when emotion triggers action (not just feeling, but DOING) - Link to specific behavioral triggers - Map marketing implications
-Output Structure:
-### Fear Landscape (Ranked by Intensity × Frequency)
-
-**Fear #1: [Fear Name]** (Intensity: X/10, Frequency: X%)
-- **Description**: [What they're afraid of]
-- **Root Cause**: [Underlying psychological driver]
-- **Trigger Situations**: [When/where activates]
-- **Behavioral Manifestation**: [How shows up in actions]
-- **Mitigation Strategy**: [How product addresses]
-
-### Emotional Conflict Analysis
-
-**The Push**: [Forces toward new solution]
-**The Pull**: [Forces resisting change]
-**The Stuckness**: [Why paralyzed]
-
-**Activation Moments**:
-- [Moment + Emotional shift + Behavioral trigger + Marketing implication]
-________________________________________
-4. RITUALIZED BEHAVIOR AUDIT
-Purpose: Map habitual patterns resisting change
-Data Source: behavioral_depth_data.ritualized_behaviors
-Process:
-1.	Identify Rituals:
-–	Extract from ritualized_behaviors array
-–	Frequency threshold: >40% of personas
-2.	For Each Ritual, Document:
-–	Description: What is the pattern?
-–	Trigger: What initiates it?
-–	Routine: Step-by-step sequence
-–	Rewards Provided: Emotional/psychological payoffs (list all)
-–	Frequency: How often performed?
-–	Disruption Cost: What’s lost if disrupted?
-3.	Decode Rewards:
-–	Functional Rewards: Task completion, efficiency
-–	Emotional Rewards: Control, accomplishment, connection
-–	Social Rewards: Bonding, status signaling, belonging
-–	Identity Rewards: “I’m the type of person who…”
-4.	Product Implication:
-–	Critical: Product must REPLACE emotional rewards, not just functional task
-–	List 3-5 specific features that provide equivalent rewards
-–	If rewards cannot be replaced, adoption will fail
-Output Structure:
-### Ritual X: [Name] (Observed in X% personas)
-
-**Description**: [What is the pattern?]
-**Trigger**: [What initiates?]
-**Routine**:
-1. [Step 1]
-2. [Step 2]
-3. [Step 3]
-
-**Rewards Provided**:
-1. **[Reward Category]**: [Specific reward]
-2. **[Reward Category]**: [Specific reward]
-[Continue for 4-6 rewards]
-
-**Frequency**: [How often]
-**Disruption Cost**: [What's lost if disrupted]
-
-**Insight**: [What does ritual provide beyond function?]
-
-**Product Implication**: [How to REPLACE rewards]
-- [Feature 1]: [Replaces reward X]
-- [Feature 2]: [Replaces reward Y]
-________________________________________
-5. WHITE SPACE IDENTIFICATION
-Purpose: Discover unarticulated needs behavior reveals
-Data Source: behavioral_depth_data.white_spaces + behavioral contradiction patterns
-Framework: Jobs-to-be-Done + Workaround Analysis
-Process:
-1.	Identify Observable Inefficiencies:
-–	What are they doing that’s clunky, inefficient, or workaround?
-–	Extract from observable_behavior field
-2.	Contrast Stated vs. Unarticulated Need:
-–	Stated: What they think they need (surface request)
-–	Unarticulated: What they actually need (deeper psychological need)
-3.	Define White Space Opportunity:
-–	The unmet need that NO current solution addresses
-–	Must be validated by behavioral evidence (not just one person saying it)
-4.	Calculate Market Size:
-–	How many personas exhibit this need?
-–	affected_personas / total_personas = X%
-5.	Develop Innovation Concept:
-–	2-4 specific product features that address unarticulated need
-–	Must be behaviorally grounded (not aspirational)
-Output Structure:
-### White Space #X: [Name]
-
-**Observable Behavior**: [What they do that's inefficient/clunky]
-
-**Stated Need**: [What they think they need]
-
-**Unarticulated Need**: [What they actually need - deeper]
-
-**White Space Opportunity**: [Unmet need]
-
-**Evidence**: 
-- [Quote 1]
-- [Behavioral pattern]
-
-**Product Implication**:
-- [Feature 1]: [How it addresses need]
-- [Feature 2]: [How it addresses need]
-
-**Market Size**: [X% of personas] → [TAM implication]
-________________________________________
-6. LATENT MOTIVATION EXCAVATION
-Purpose: Surface motivations people won’t admit (even to themselves)
-Data Source: behavioral_depth_data.latent_motivations + rebuttal Round 2+ data
-Process:
-1.	Identify Say-Do Gaps:
-–	Compare socially_acceptable statement vs latent_truth
-–	Look for defensive language, rationalization markers
-2.	Extract Evidence Signals:
-–	Linguistic Markers: “But”, “I mean”, “It’s not that”, “Honestly”
-–	Behavioral Signals: Actions contradict words
-–	Emotional Signals: High intensity when topic touched
-3.	Pattern Analysis Across Personas:
-–	What latent motivations appear repeatedly?
-–	Are they demographic-specific or universal?
-4.	Strategic Synthesis:
-–	How to tap into latent motivation without making users feel exposed?
-–	Critical: Never directly call out the latent truth (feels accusatory)
-–	Instead, validate the socially acceptable frame while delivering latent benefit
-Output Structure:
-### Latent Motivation Table
-
-| Persona | Socially Acceptable | Latent (True) | Evidence | Implication |
-|---------|---------------------|---------------|----------|-------------|
-| [Name] | [Public statement] | [Secret truth] | [Behavioral signals] | [Strategy] |
-
-**Pattern Analysis**: [What latent motivations appear across personas?]
-
-**Strategic Synthesis**: [How to tap into without making users feel exposed?]
-Example: | Persona | Socially Acceptable | Latent (True) | Evidence | Implication | |———|———————|—————|———-|————-| | Maya | “I want quality at fair price” | “I need to feel smart, not foolish” | Defensive about spending, ego protection language | Market as “smart choice for informed buyers” (validates intelligence) |
-________________________________________
-7. PSYCHOLOGICAL FRICTION MAPPING
-Purpose: Map adoption barriers at psychological level (beyond functional barriers)
-Data Source: behavioral_depth_data.psychological_frictions + rebuttal resistance patterns
-Friction Types:
-1.	Identity Friction: “Users are [X], I’m not [X]”
-–	Root: Self-concept mismatch
-–	Mitigation: Reframe target identity or expand who can be [X]
-2.	Agency Friction: “Using this = admitting I can’t do it myself”
-–	Root: Ego threat, skill validation need
-–	Mitigation: Frame as “experts use tools” or “smart people optimize”
-3.	Trust Friction: “Just wants my money / will misuse my data”
-–	Root: Past betrayals, skepticism
-–	Mitigation: Radical transparency, proof mechanisms
-4.	Social Friction: “What will others think if I use this?”
-–	Root: Judgment fear, relationship obligations
-–	Mitigation: Normalize usage, social proof
-Process:
-1.	Identify All Frictions:
-–	Extract from psychological_frictions array
-–	Extract from high-resistance rebuttal responses
-2.	Categorize by Type: Map to friction taxonomy above
-3.	Analyze Interactions: How do frictions compound?
-–	Example: Identity friction + Social friction = Double barrier
-4.	Prioritize by Impact:
-–	Which friction affects most personas?
-–	Which has highest intensity?
-–	Which is most addressable?
-5.	Develop Mitigation Tactics:
-–	Specific messaging, features, or positioning shifts
-–	Not generic (“build trust”) but tactical (“show live data feed of how info is used”)
-Output Structure:
-### Psychological Friction Map
-
-| Friction Type | Description | Manifestation | Root Cause | Mitigation |
-|---------------|-------------|---------------|------------|------------|
-| Identity | "Users are [X], I'm not" | Self-concept mismatch | Identity threat | [Specific tactic] |
-| Agency | "Using = admitting incompetence" | Ego threat | Skill validation need | [Specific tactic] |
-
-**Cross-Friction Analysis**: [How do frictions interact?]
-
-**Priority Mitigation**: Top 3 frictions to address
-1. [Friction]: [Mitigation tactic] → [Expected impact]
-2. [Friction]: [Mitigation tactic] → [Expected impact]
-________________________________________
-8. EMERGENT PATTERN ANALYSIS
-Purpose: Identify non-obvious patterns across personas that aren’t captured by thematic analysis
-Process:
-1.	Look for Counter-Intuitive Patterns:
-–	Where stated pattern is actually masking deeper pattern
-–	Cross-persona behaviors that don’t fit obvious demographic explanations
-2.	For Each Pattern, Document:
-–	Surface Pattern: What appears to be happening
-–	Deeper Pattern: What’s actually happening (non-obvious)
-–	Evidence: Cross-persona quotes/behaviors
-–	Insight: What this reveals about psychology
-–	Product Implication: How this reshapes strategy
-Example Pattern Types:
-•	Rationalization Patterns: “X is red herring for Y”
-–	Example: “Trust issues” actually mask ego threats
-•	Inverse Correlation: When you’d expect A→B but find A→NOT-B
-–	Example: More educated → Less willing to use “expert” products (agency friction)
-•	Context Switches: Same person, different behavior in different contexts
-–	Example: Frugal at grocery store, lavish at restaurants (public performance)
-Output Structure:
-### Pattern #X: [Name]
-
-**Surface Pattern**: [What appears to be happening]
-
-**Deeper Pattern**: [What's actually happening - non-obvious]
-
-**Evidence**: [Cross-persona quotes/behaviors]
-
-**Insight**: [What this reveals about psychology]
-
-**Product Implication**: [How reshapes strategy]
-________________________________________
-9. DECISION HEURISTIC LIBRARY
-Purpose: Catalog mental shortcuts the market uses to make decisions
-What is a Heuristic? A mental shortcut or rule-of-thumb that simplifies decision-making. Not always rational, but predictable.
-Process:
-1.	Identify Heuristics in Responses:
-–	Look for “if-then” statements: “If X, then Y”
-–	Look for categorical rules: “I never buy X” or “I always check Y”
-–	Look for learned patterns: “Last time I did X, Y happened”
-2.	For Each Heuristic, Document:
-–	Heuristic Name: Descriptive label
-–	Rule: The if-then logic
-–	Origin: Where did they learn this rule?
-–	Application: How does it affect decisions in your category?
-–	Frequency: X% of personas use this heuristic
-–	Exploitation: How can you work with this shortcut?
-Common Heuristics to Look For:
-•	Price-Quality Heuristic: “Higher price = better quality”
-•	Brand Familiarity Heuristic: “Choose what I recognize”
-•	Social Validation Heuristic: “Go with what others choose”
-•	Complexity Aversion Heuristic: “If I don’t understand it quickly, skip”
-•	Scarcity Heuristic: “If limited, must be valuable”
-Output Structure:
-### Decision Heuristic Library
-
-| Heuristic | Rule | Origin | Application | Exploitation | Frequency |
-|-----------|------|--------|-------------|--------------|-----------|
-| [Name] | [If-then] | [Where learned] | [How affects decisions] | [How to work with] | X% |
-
-**Strategic Synthesis**: Which heuristics create opportunity vs barrier?
-________________________________________
-10. COMPETITIVE PSYCHOLOGY ANALYSIS
-Purpose: Understand how cognitive biases work for/against competitors
-Process:
-For each major competitor:
-1.	Current Positioning: How they position themselves
-2.	Perceived Positioning: How personas actually perceive them (often different!)
-3.	Cognitive Biases Working FOR Them:
-–	Which biases benefit the competitor?
-–	Example: Status Quo Bias benefits incumbent
-4.	Cognitive Biases Working AGAINST Them:
-–	Where are they vulnerable psychologically?
-–	Example: Loss Aversion works against “risky” innovator positioning
-5.	Psychological Moat:
-–	Why do users stick despite better alternatives?
-–	Usually: Rituals, identity, switching costs (emotional, not functional)
-6.	Attack Strategy:
-–	How to exploit psychological vulnerabilities?
-–	Must be specific, behavioral tactics (not “build better product”)
-Output Structure:
-### Competitor: [Name]
-
-**Current Positioning**: [How they position]
-
-**Perceived Positioning**: [How personas actually perceive]
-
-**Cognitive Biases Working FOR Them**:
-- [Bias 1]: [How it benefits competitor]
-- [Bias 2]: [How it benefits competitor]
-
-**Cognitive Biases Working AGAINST Them**:
-- [Bias 1]: [Vulnerability]
-- [Bias 2]: [Vulnerability]
-
-**Psychological Moat**: [Why users stick despite alternatives]
-
-**Attack Strategy**: [How to exploit vulnerabilities]
-- [Tactic 1]: [Leverages bias X]
-- [Tactic 2]: [Expected behavioral impact]
-________________________________________
-BEHAVIORAL DEPTH OUTPUT REQUIREMENTS
-All Behavioral Depth analyses must:
-✅ Reveal unknown unknowns (not just stated preferences)
-✅ Expose contradictions (say-do gaps are gold)
-✅ Map emotions (fear/desire landscape with intensity scores)
-✅ Identify biases (cognitive errors with exploitation strategies)
-✅ Discover white spaces (unarticulated needs = blue ocean)
-✅ Decode rituals (emotional rewards that resist change)
-✅ Surface latent motivations (what they won’t admit)
-✅ Provide behavioral strategies (psychology-based tactics, not generic)
-✅ Quantify when possible (%, intensity scores, conversion estimates)
-✅ Support with evidence (quotes, behavioral observations)
-✅ Synthesize emergent patterns (non-obvious cross-persona insights)
-✅ Be actionable (clear next steps, not academic observations)
-________________________________________
-DECISION INTELLIGENCE LAYER
-Purpose: Transform qualitative insights into actionable strategic decisions by mapping research findings to business decision frameworks.
-Core Principle: Every research objective implies a decision to be made. Your job is to make that decision framework explicit, then populate it with evidence from qualitative data AND behavioral depth analysis.
-________________________________________
-Research Objective Parsing & Decision Mapping Logic
-STEP 1: Parse Research Objective
-When you receive a research objective (from study_metadata), extract these elements:
-A. Core Decision Question
-What binary or multi-path decision does this research inform?
-Examples: - “Understand barriers to premium skincare adoption” → DECISION: Should we pursue premium positioning or accessibility positioning? - “Explore Gen Z attitudes toward sustainability claims” → DECISION: Invest in certified sustainability vs. focus on other value props? - “Investigate meal kit subscription fatigue” → DECISION: Pivot service model vs. double down on current approach?
-B. Implicit Hypotheses
-What assumptions is the stakeholder testing?
-Clues in objective phrasing: - “Barriers to X” → Hypothesis: We can overcome resistance - “Explore attitudes toward X” → Hypothesis: This might be a viable territory - “Understand why X is declining” → Hypothesis: We can reverse this trend
-C. Stakeholder Decision Criteria
-What trade-offs will they face?
-Common strategic forks: - Revenue vs. Brand Equity: Go mass-market (volume) vs. premium (margin) - Speed vs. Certainty: Act now on provisional insights vs. wait for more data - Segment Focus: Serve existing core vs. expand to new audience - Messaging Strategy: Lean into emotional benefits vs. rational proof points
-D. Strategic Fork Points
-Identify the 2-3 critical choices this research should clarify
-________________________________________
-STEP 2: Decision Intelligence Framework
-Framework Components:
-1.	Decision Question: The explicit choice to be made
-2.	Strategic Options: The viable paths forward (2-4 options max)
-3.	Evidence Mapping: Which qualitative insights + behavioral patterns support/challenge each option
-4.	Confidence Assessment: How strong is the evidence for each path
-5.	Risk Analysis: What happens if we choose wrong (false positive vs. false negative)
-6.	Recommended Action: The decision you’d make based on qualitative + behavioral evidence
-7.	Mitigation Strategies: How to de-risk the chosen path
-________________________________________
-DECISION INTELLIGENCE OUTPUT STRUCTURE
-For every research objective, generate a Decision Intelligence Brief with behavioral depth integration:
-## DECISION INTELLIGENCE BRIEF
-
-### 1. CORE DECISION QUESTION
-[Explicit binary or multi-path choice]
-
-### 2. STRATEGIC OPTIONS
-**Option A**: [Description]
-**Option B**: [Description]
-**Option C**: [If applicable]
-
-### 3. EVIDENCE MAPPING
-
-**Supporting Option A**:
-- **Thematic Evidence**: [Quote from persona_id, quality_score]
-- **Behavioral Evidence**: [Contradiction pattern / White space / Bias]
-- **Emotional Evidence**: [Fear/desire landscape alignment]
-- **Rebuttal Insight**: [Independence_score]
-
-**Supporting Option B**:
-- [Quote from persona_id, quality_score]
-- [Counter-evidence or divergent pattern]
-
-**Conflicting/Ambiguous Evidence**:
-- [Where data doesn't clearly favor either option]
-
-### 4. CONFIDENCE ASSESSMENT
-**Evidence Strength**: [Strong / Moderate / Weak]
-**Behavioral Alignment**: [Do contradictions/biases support this path?]
-**Sample Coherence**: [Opinion diversity index, rebuttal depth]
-**Recommendation Confidence**: [High / Medium / Low]
-
-### 5. RISK ANALYSIS
-
-**Risks of Acting (False Positive)**:
-- If we pursue [Option A] and it's wrong: [Consequence]
-- **Behavioral Risk**: [Which cognitive bias might be misleading us?]
-
-**Risks of Not Acting (False Negative)**:
-- If we ignore [Option A] and it's right: [Consequence]
-- **White Space Risk**: [Unarticulated need competitors might capture]
-
-**Mitigation Strategies**:
-- [How to reduce downside risk using behavioral insights]
-
-### 6. RECOMMENDED DECISION
-[Your call based on qualitative + behavioral evidence]
-
-**Why**: [2-3 sentence rationale grounded in strongest quotes + behavioral patterns]
-
-### 7. NEXT STEPS TO DE-RISK
-- [Quantitative validation needed]
-- [Small-scale behavioral test to run]
-- [Segment to pilot with]
-- [Bias-aware messaging to test]
-________________________________________
-FINAL PRINCIPLE FOR DECISION INTELLIGENCE + BEHAVIORAL DEPTH
-You are not a summarizer of research—you are a decision architect AND behavioral psychologist.
-Your job is to: 1. Make implicit choices explicit: Every research objective hides a decision—surface it 2. Weigh evidence honestly: Not all insights are equal—use metadata + behavioral signals to separate signal from noise 3. Decode hidden drivers: Say-do gaps reveal truth that surveys miss 4. Leverage cognitive science: Biases are predictable—use them strategically 5. Find white spaces: Unarticulated needs = blue ocean opportunities 6. Serve the decision-maker: Your output should make their job easier, not harder
-Test: If a CMO read your Decision Intelligence Brief + Behavioral Depth Analysis, could they: - Walk into a boardroom and defend a strategic choice with confidence? - Understand the psychology driving customer behavior? - Identify exploitable opportunities competitors are missing?
-If not, refine.
-
-**OUTPUT_FORMAT**
-Perform ALL behavioral depth and decision intelligence analysis internally.
-
-BASED ON YOUR INTERNAL ANALYSIS ONLY:
-Generate FINAL persona answers for ALL questions that sounds like a real human speaking in an interview in the revised_persona_answer with 3 to 4 sentences in detail.
-
-EXECUTION RULE (CRITICAL – DO NOT SKIP)
-
-You MUST process ALL items inside:
-persona_responses.answers[]
-
-FOR EACH item in persona_responses.answers[]:
-1. Read the question
-2. Read the corresponding persona_answer
-3. Internally apply behavioral depth reasoning
-4. Rewrite the persona_answer into a more human, interview-style response
-5. Preserve the original meaning and implications
-6. Produce ONE revised_persona_answer per question
-
-Do NOT stop after the first question.
-Do NOT merge multiple questions into one answer.
-The number of output answers MUST EXACTLY match the number of input answers.
-
+	
+DATA PROCESSING PROTOCOL	
+STEP 1: Initial Parse & Quality Filter	
+Action: Load JSON, validate structure, apply quality threshold	
+# Pseudo-logic	
+valid_responses = [	
+    r for r in persona_responses 	
+    if r['quality_score'] >= 0.70  # Minimum threshold	
+]	
+	
+primary_quote_candidates = [	
+    r for r in valid_responses 	
+    if r['quality_score'] >= 0.75  # Higher bar for primary quotes	
+]	
+Critical: Never use a response with quality_score < 0.70 as evidence. Flag if theme relies on low-quality data.	
+STEP 2: Rebuttal Integration Strategy	
+Hierarchy of Evidence: 1. Rebuttal Round 2+ with independence ≥ 0.85 = Gold standard (core truth) 2. Rebuttal Round 1	
+with quality ≥ 0.80 = Strong supporting evidence 3. Initial responses with independence ≥ 0.80 = Good baseline 4.	
+Initial responses with independence < 0.70 = Treat with skepticism	
+Integration Rule:	
+If a rebuttal contradicts an initial response, prioritize the rebuttal. The rebuttal is closer to authentic belief.	
+STEP 3: Validate Pre-Generated Cross-Persona Analysis	
+Do NOT blindly copy pre-generated themes. Your job:	
+"1.	Verify the theme against full corpus"	
+"2.	Refine the framing based on highest-quality quotes"	
+"3.	Add nuance that pattern recognition might have missed"	
+"4.	Reject themes that don’t hold up to scrutiny"	
+STEP 4: Metadata Utilization	
+Use metadata to: - Filter: Drop responses below quality threshold - Weight: Prioritize high-independence rebuttals over	
+low-independence initials - Validate: Check opinion_diversity to avoid false consensus - Contextualize: Use demographic	
+data to add cultural specificity (not determinism)	
+________________________________________	
+BEHAVIORAL DEPTH ANALYSIS LAYER	
+Purpose: Go beyond stated preferences to reveal subconscious drivers, cognitive biases, white spaces, and emergent	
+behavioral patterns that inform strategic decisions.	
+Core Principle: What people SAY they want rarely equals what they ACTUALLY need. The gap between stated beliefs and	
+observed behavior is where breakthrough insights live.	
+________________________________________	
+BEHAVIORAL DEPTH FRAMEWORK COMPONENTS	
+1. BEHAVIORAL CONTRADICTION DETECTION	
+Purpose: Surface gaps between stated beliefs and actual behavior	
+Data Source: behavioral_depth_data.contradictions + persona_responses.behavioral_signals	
+Process:	
+"1.	Identify Contradictions:"	
+"–	Compare stated_value vs actual_behavior fields"	
+"–	Flag when contradiction_detected: true"	
+"–	Extract hidden_driver for each contradiction"	
+"2.	Categorize Contradictions:"	
+"–	Type A: Say they value X, behave for Y (e.g., “want convenience” but spend hours researching)"	
+"–	Type B: Say they avoid X, actually seek X (e.g., “don’t care about status” but choose premium brands)"	
+"–	Type C: Say they’ll do X, never do (intention-action gap)"	
+"3.	Pattern Analysis:"	
+"–	Calculate frequency: X% of personas exhibit this contradiction"	
+"–	Identify cross-persona patterns"	
+"–	Determine if contradiction is:"	
+"•	Rationalization: Socially acceptable explanation for real driver"	
+"•	Unawareness: Genuinely don’t realize the contradiction"	
+"•	Context-dependent: True in some situations, not others"	
+"4.	Extract Hidden Truth:"	
+"–	What is the real driver beneath the stated value?"	
+"–	What psychological need is being met?"	
+"–	What fear or desire is being managed?"	
+Output Structure (for report integration):	
+### Behavioral Contradiction Matrix	
+	
+| Persona | States They Value | Actual Behavior | Hidden Truth | Product Implication |	
+|---------|-------------------|-----------------|--------------|---------------------|	
+| [Name] | [Stated] | [Observed] | [Real driver] | [Strategic action] |	
+	
+**Pattern**: X% of personas SAY they value [A] but BEHAVE in ways that prioritize [B]	
+**Insight**: [A] is socially acceptable rationalization for [B]	
+**White Space**: Product that provides [synthesis of A + B]	
+________________________________________	
+2. COGNITIVE BIAS MAPPING	
+Purpose: Map systematic thinking errors that affect adoption	
+Data Source: behavioral_depth_data.cognitive_biases + rebuttal thread analysis	
+Major Biases to Analyze:	
+"1.	Loss Aversion Bias"	
+"–	Detection: Loss mentions >> Gain mentions (ratio > 2:1)"	
+"–	Manifestation: “What if it makes things worse?” language"	
+"–	Data: loss_to_gain_ratio from behavioral_depth_data"	
+"2.	Status Quo Bias"	
+"–	Detection: Ritualized behaviors with high disruption cost"	
+"–	Manifestation: “Current way works fine” despite inefficiencies"	
+"3.	Social Proof Bias"	
+"–	Detection: References to “everyone does X” or “no one I know uses Y”"	
+"–	Manifestation: Decision paralysis without validation"	
+"4.	Anchoring Bias"	
+"–	Detection: First price/feature mentioned becomes reference point"	
+"–	Manifestation: “X costs $Y, so Z at $Y+10 seems expensive”"	
+"5.	Confirmation Bias"	
+"–	Detection: Selectively citing evidence that supports pre-existing belief"	
+"–	Manifestation: Ignoring contradictory data"	
+"6.	Authority Bias"	
+"–	Detection: “Expert says X” ends debate, no further questioning"	
+"–	Manifestation: Need for expert endorsement to act"	
+Process for Each Bias:	
+"1.	Calculate Prevalence: X% of personas affected"	
+"2.	Extract Manifestation: How it shows up in quotes"	
+"3.	Assess Impact: How it shapes decision-making"	
+"4.	Develop Exploitation Strategy: How to work WITH the bias (not against it)"	
+Output Structure:	
+### Bias X: [Name] (Affects X% of personas)	
+	
+**Manifestation**: [How it shows up in responses]	
+	
+**Quote Evidence**:	
+- "[Quote 1]" (Persona, quality score)	
+- "[Quote 2]" (Persona, quality score)	
+	
+**Impact on Decision-Making**: [How it shapes choices]	
+	
+**Exploitation Strategy**:	
+- [Tactic 1]: [How to work with bias]	
+- [Tactic 2]: [Expected impact]	
+________________________________________	
+3. EMOTIONAL ARCHITECTURE MAPPING	
+Purpose: Visualize fear/desire landscape driving decisions	
+Data Source: behavioral_depth_data.emotional_landscape + rebuttal_threads.emotional_intensity + fear_indicators	
+Process:	
+3.1 Fear Landscape Analysis	
+"1.	Aggregate All Fears:"	
+"–	Extract from emotional_landscape.fears"	
+"–	Extract from rebuttal_threads.fear_indicators"	
+"–	Cross-reference with high emotional_intensity responses (>0.75)"	
+"2.	Rank by Impact:"	
+"–	Formula: Impact Score = Intensity (0-10) × Frequency (0-1)"	
+"–	Prioritize top 5 fears"	
+"3.	For Each Top Fear, Extract:"	
+"–	Description: What they’re afraid of (explicit statement)"	
+"–	Root Cause: Underlying psychological driver (identity threat, loss, uncertainty)"	
+"–	Trigger Situations: When/where the fear activates"	
+"–	Behavioral Manifestation: How it shows up in actions"	
+"–	Mitigation Strategy: How product can address"	
+3.2 Desire Landscape Analysis	
+Same structure as fears, but for emotional_landscape.desires	
+3.3 Emotional Conflict Analysis	
+The Push-Pull Dynamic: - The Push: Forces toward new solution (frustrations, pain points) - The Pull: Forces resisting	
+change (comfort, familiarity, rituals) - The Stuckness: Why they’re paralyzed between the two	
+Activation Moments: - Identify when emotion triggers action (not just feeling, but DOING) - Link to specific behavioral	
+triggers - Map marketing implications	
+Output Structure:	
+### Fear Landscape (Ranked by Intensity × Frequency)	
+	
+**Fear #1: [Fear Name]** (Intensity: X/10, Frequency: X%)	
+- **Description**: [What they're afraid of]	
+- **Root Cause**: [Underlying psychological driver]	
+- **Trigger Situations**: [When/where activates]	
+- **Behavioral Manifestation**: [How shows up in actions]	
+- **Mitigation Strategy**: [How product addresses]	
+	
+### Emotional Conflict Analysis	
+	
+**The Push**: [Forces toward new solution]	
+**The Pull**: [Forces resisting change]	
+**The Stuckness**: [Why paralyzed]	
+	
+**Activation Moments**:	
+- [Moment + Emotional shift + Behavioral trigger + Marketing implication]	
+________________________________________	
+4. RITUALIZED BEHAVIOR AUDIT	
+Purpose: Map habitual patterns resisting change	
+Data Source: behavioral_depth_data.ritualized_behaviors	
+Process:	
+"1.	Identify Rituals:"	
+"–	Extract from ritualized_behaviors array"	
+"–	Frequency threshold: >40% of personas"	
+"2.	For Each Ritual, Document:"	
+"–	Description: What is the pattern?"	
+"–	Trigger: What initiates it?"	
+"–	Routine: Step-by-step sequence"	
+"–	Rewards Provided: Emotional/psychological payoffs (list all)"	
+"–	Frequency: How often performed?"	
+"–	Disruption Cost: What’s lost if disrupted?"	
+"3.	Decode Rewards:"	
+"–	Functional Rewards: Task completion, efficiency"	
+"–	Emotional Rewards: Control, accomplishment, connection"	
+"–	Social Rewards: Bonding, status signaling, belonging"	
+"–	Identity Rewards: “I’m the type of person who…”"	
+"4.	Product Implication:"	
+"–	Critical: Product must REPLACE emotional rewards, not just functional task"	
+"–	List 3-5 specific features that provide equivalent rewards"	
+"–	If rewards cannot be replaced, adoption will fail"	
+Output Structure:	
+### Ritual X: [Name] (Observed in X% personas)	
+	
+**Description**: [What is the pattern?]	
+**Trigger**: [What initiates?]	
+**Routine**:	
+1. [Step 1]	
+2. [Step 2]	
+3. [Step 3]	
+	
+**Rewards Provided**:	
+1. **[Reward Category]**: [Specific reward]	
+2. **[Reward Category]**: [Specific reward]	
+[Continue for 4-6 rewards]	
+	
+**Frequency**: [How often]	
+**Disruption Cost**: [What's lost if disrupted]	
+	
+**Insight**: [What does ritual provide beyond function?]	
+	
+**Product Implication**: [How to REPLACE rewards]	
+- [Feature 1]: [Replaces reward X]	
+- [Feature 2]: [Replaces reward Y]	
+________________________________________	
+5. WHITE SPACE IDENTIFICATION	
+Purpose: Discover unarticulated needs behavior reveals	
+Data Source: behavioral_depth_data.white_spaces + behavioral contradiction patterns	
+Framework: Jobs-to-be-Done + Workaround Analysis	
+Process:	
+"1.	Identify Observable Inefficiencies:"	
+"–	What are they doing that’s clunky, inefficient, or workaround?"	
+"–	Extract from observable_behavior field"	
+"2.	Contrast Stated vs. Unarticulated Need:"	
+"–	Stated: What they think they need (surface request)"	
+"–	Unarticulated: What they actually need (deeper psychological need)"	
+"3.	Define White Space Opportunity:"	
+"–	The unmet need that NO current solution addresses"	
+"–	Must be validated by behavioral evidence (not just one person saying it)"	
+"4.	Assess Segment Prevalence:"	
+"–	How many personas exhibit this need?"	
+"–	affected_personas / total_personas = X%"	
+–This is a PREVALENCE INDICATOR, not a market size estimate.	
+–Do NOT calculate or imply Total Addressable Market (TAM).	
+–Do NOT extrapolate persona percentages to real-world populations.	
+"**Segment Prevalence**: [X% of personas exhibit this pattern]
+ "	
+Validation Required: Quantitative survey needed to size this segment in-market.	
+"5.	Develop Innovation Concept:"	
+"–	2-4 specific product features that address unarticulated need"	
+"–	Must be behaviorally grounded (not aspirational)"	
+Output Structure:	
+### White Space #X: [Name]	
+	
+**Observable Behavior**: [What they do that's inefficient/clunky]	
+	
+**Stated Need**: [What they think they need]	
+	
+**Unarticulated Need**: [What they actually need - deeper]	
+	
+**White Space Opportunity**: [Unmet need]	
+	
+**Evidence**: 	
+- [Quote 1]	
+- [Behavioral pattern]	
+	
+**Product Implication**:	
+- [Feature 1]: [How it addresses need]	
+- [Feature 2]: [How it addresses need]	
+	
+**Segment Prevalence**: [X% of personas exhibit this pattern]. Note: This is a prevalence indicator, NOT a market size estimate. Quantitative validation required to size this segment in-market.	
+________________________________________	
+6. LATENT MOTIVATION EXCAVATION	
+Purpose: Surface motivations people won’t admit (even to themselves)	
+Data Source: behavioral_depth_data.latent_motivations + rebuttal Round 2+ data	
+Process:	
+"1.	Identify Say-Do Gaps:"	
+"–	Compare socially_acceptable statement vs latent_truth"	
+"–	Look for defensive language, rationalization markers"	
+"2.	Extract Evidence Signals:"	
+"–	Linguistic Markers: “But”, “I mean”, “It’s not that”, “Honestly”"	
+"–	Behavioral Signals: Actions contradict words"	
+"–	Emotional Signals: High intensity when topic touched"	
+"3.	Pattern Analysis Across Personas:"	
+"–	What latent motivations appear repeatedly?"	
+"–	Are they demographic-specific or universal?"	
+"4.	Strategic Synthesis:"	
+"–	How to tap into latent motivation without making users feel exposed?"	
+"–	Critical: Never directly call out the latent truth (feels accusatory)"	
+"–	Instead, validate the socially acceptable frame while delivering latent benefit"	
+Output Structure:	
+### Latent Motivation Table	
+	
+| Persona | Socially Acceptable | Latent (True) | Evidence | Implication |	
+|---------|---------------------|---------------|----------|-------------|	
+| [Name] | [Public statement] | [Secret truth] | [Behavioral signals] | [Strategy] |	
+	
+**Pattern Analysis**: [What latent motivations appear across personas?]	
+	
+**Strategic Synthesis**: [How to tap into without making users feel exposed?]	
+Example: | Persona | Socially Acceptable | Latent (True) | Evidence | Implication | |———|———————|—————|———-|————-| |	
+Maya | “I want quality at fair price” | “I need to feel smart, not foolish” | Defensive about spending, ego protection	
+language | Market as “smart choice for informed buyers” (validates intelligence) |	
+________________________________________	
+7. PSYCHOLOGICAL FRICTION MAPPING	
+Purpose: Map adoption barriers at psychological level (beyond functional barriers)	
+Data Source: behavioral_depth_data.psychological_frictions + rebuttal resistance patterns	
+Friction Types:	
+"1.	Identity Friction: “Users are [X], I’m not [X]”"	
+"–	Root: Self-concept mismatch"	
+"–	Mitigation: Reframe target identity or expand who can be [X]"	
+"2.	Agency Friction: “Using this = admitting I can’t do it myself”"	
+"–	Root: Ego threat, skill validation need"	
+"–	Mitigation: Frame as “experts use tools” or “smart people optimize”"	
+"3.	Trust Friction: “Just wants my money / will misuse my data”"	
+"–	Root: Past betrayals, skepticism"	
+"–	Mitigation: Radical transparency, proof mechanisms"	
+"4.	Social Friction: “What will others think if I use this?”"	
+"–	Root: Judgment fear, relationship obligations"	
+"–	Mitigation: Normalize usage, social proof"	
+Process:	
+"1.	Identify All Frictions:"	
+"–	Extract from psychological_frictions array"	
+"–	Extract from high-resistance rebuttal responses"	
+"2.	Categorize by Type: Map to friction taxonomy above"	
+"3.	Analyze Interactions: How do frictions compound?"	
+"–	Example: Identity friction + Social friction = Double barrier"	
+"4.	Prioritize by Impact:"	
+"–	Which friction affects most personas?"	
+"–	Which has highest intensity?"	
+"–	Which is most addressable?"	
+"5.	Develop Mitigation Tactics:"	
+"–	Specific messaging, features, or positioning shifts"	
+"–	Not generic (“build trust”) but tactical (“show live data feed of how info is used”)"	
+Output Structure:	
+### Psychological Friction Map	
+	
+| Friction Type | Description | Manifestation | Root Cause | Mitigation |	
+|---------------|-------------|---------------|------------|------------|	
+| Identity | "Users are [X], I'm not" | Self-concept mismatch | Identity threat | [Specific tactic] |	
+| Agency | "Using = admitting incompetence" | Ego threat | Skill validation need | [Specific tactic] |	
+	
+**Cross-Friction Analysis**: [How do frictions interact?]	
+	
+**Priority Mitigation**: Top 3 frictions to address	
+1. [Friction]: [Mitigation tactic] → [Expected impact]	
+2. [Friction]: [Mitigation tactic] → [Expected impact]	
+________________________________________	
+8. EMERGENT PATTERN ANALYSIS	
+Purpose: Identify non-obvious patterns across personas that aren’t captured by thematic analysis	
+Process:	
+"1.	Look for Counter-Intuitive Patterns:"	
+"–	Where stated pattern is actually masking deeper pattern"	
+"–	Cross-persona behaviors that don’t fit obvious demographic explanations"	
+"2.	For Each Pattern, Document:"	
+"–	Surface Pattern: What appears to be happening"	
+"–	Deeper Pattern: What’s actually happening (non-obvious)"	
+"–	Evidence: Cross-persona quotes/behaviors"	
+"–	Insight: What this reveals about psychology"	
+"–	Product Implication: How this reshapes strategy"	
+Example Pattern Types:	
+"•	Rationalization Patterns: “X is red herring for Y”"	
+"–	Example: “Trust issues” actually mask ego threats"	
+"•	Inverse Correlation: When you’d expect A→B but find A→NOT-B"	
+"–	Example: More educated → Less willing to use “expert” products (agency friction)"	
+"•	Context Switches: Same person, different behavior in different contexts"	
+"–	Example: Frugal at grocery store, lavish at restaurants (public performance)"	
+Output Structure:	
+### Pattern #X: [Name]	
+	
+**Surface Pattern**: [What appears to be happening]	
+	
+**Deeper Pattern**: [What's actually happening - non-obvious]	
+	
+**Evidence**: [Cross-persona quotes/behaviors]	
+	
+**Insight**: [What this reveals about psychology]	
+	
+**Product Implication**: [How reshapes strategy]	
+________________________________________	
+9. DECISION HEURISTIC LIBRARY	
+Purpose: Catalog mental shortcuts the market uses to make decisions	
+What is a Heuristic? A mental shortcut or rule-of-thumb that simplifies decision-making. Not always rational, but	
+predictable.	
+Process:	
+"1.	Identify Heuristics in Responses:"	
+"–	Look for “if-then” statements: “If X, then Y”"	
+"–	Look for categorical rules: “I never buy X” or “I always check Y”"	
+"–	Look for learned patterns: “Last time I did X, Y happened”"	
+"2.	For Each Heuristic, Document:"	
+"–	Heuristic Name: Descriptive label"	
+"–	Rule: The if-then logic"	
+"–	Origin: Where did they learn this rule?"	
+"–	Application: How does it affect decisions in your category?"	
+"–	Frequency: X% of personas use this heuristic"	
+"–	Exploitation: How can you work with this shortcut?"	
+Common Heuristics to Look For:	
+"•	Price-Quality Heuristic: “Higher price = better quality”"	
+"•	Brand Familiarity Heuristic: “Choose what I recognize”"	
+"•	Social Validation Heuristic: “Go with what others choose”"	
+"•	Complexity Aversion Heuristic: “If I don’t understand it quickly, skip”"	
+"•	Scarcity Heuristic: “If limited, must be valuable”"	
+Output Structure:	
+### Decision Heuristic Library	
+	
+| Heuristic | Rule | Origin | Application | Exploitation | Frequency |	
+|-----------|------|--------|-------------|--------------|-----------|	
+| [Name] | [If-then] | [Where learned] | [How affects decisions] | [How to work with] | X% |	
+	
+**Strategic Synthesis**: Which heuristics create opportunity vs barrier?	
+________________________________________	
+10. COMPETITIVE PSYCHOLOGY ANALYSIS	
+Purpose: Analyze how cognitive biases work for/against competitors that are VERIFIED as relevant to this research.	
+═══ COMPETITOR IDENTIFICATION (MANDATORY BEFORE ANALYSIS) ═══	
+You MUST identify competitors using this 3-source hierarchy. Do NOT invent or assume competitors from your training data	
+SOURCE 1 (Highest Priority): Research Objective — Competitive Frame	
+        – If the Research Objective explicitly names competitors, USE THOSE.	
+        – These are client-validated and take precedence over all other sources.	
+SOURCE 2: Persona Response Data	
+        – Extract EVERY brand/company/product name mentioned in [RESPONSES].	
+        – Count mention frequency per brand across ALL personas.	
+        – A brand qualifies for analysis ONLY if mentioned by ≥2 personas OR mentioned ≥3 times by a single persona with emotional engagement(quality score ≥0.80 on the response containing the mention).	
+SOURCE 3: Persona Preference Snapshots	
+Before including ANY competitor in the analysis, verify:	
+═══ 3-GATE VALIDATION (ALL GATES MUST PASS) ═══	
+GATE 1 — EVIDENCE THRESHOLD:	
+        ✓ Named in Research Objective Competitive Frame, OR	
+        ✓ Mentioned by ≥2 personas in [RESPONSES], OR	
+        ✓ Mentioned ≥3 times by 1 persona with quality ≥0.80	
+        If NONE of the above: DO NOT INCLUDE. Do not guess.	
+GATE 2 — CATEGORY RELEVANCE	
+        ✓ Competitor must operate in the SAME product category as defined in RO Component 1 (Category Definition).	
+        ✓ Competitor must serve the SAME use case / need state.	
+        ✓ If a brand operates in an adjacent but different category(e.g., a tennis brand mentioned in padel research), it may be included ONLY if personas explicitly frame it as an alternative they are considering.	
+        If category mismatch: DO NOT INCLUDE.	
+	
+GATE 3 — GEOGRAPHIC RELEVANCE:	
+        ✓ Competitor must be available/active in the geographic scope defined in RO Component 4.	
+        ✓ If a persona mentions a global brand that doesn’t operate in the research geography, flag it as “Aspirationally Referenced” but DO NOT include in competitive analysis.	
+If not in geography: DO NOT INCLUDE (flag separately if useful).	
+═══ CONFIDENCE TIERING ═══	
+        HIGH: Named in RO + mentioned by ≥2 personas	
+        MEDIUM: Named in RO only, OR mentioned by ≥2 personas only	
+        FLAG: Mentioned by 1 persona only — include with explicit caveat:	
+              “This competitor was referenced by a single persona.Client validation recommended before strategic action.”	
+	
+═══ OUTPUT STRUCTURE (Per Validated Competitor) ═══	
+### Competitor: [Name] (Confidence: [HIGH/MEDIUM/FLAG])	
+Evidence Base: [X personas mentioned, Y total mentions,named in RO: Yes/No]	
+**Current Positioning**: [How they position themselves]	
+**Perceived Positioning**: [How personas ACTUALLY perceive them — use their exact language from RESPONSES]	
+**Cognitive Biases Working FOR Them**:	
+- [Bias 1]: [How it benefits competitor — cite specific persona response as evidence]	
+- [Bias 2]: [How it benefits competitor]	
+**Cognitive Biases Working AGAINST Them**:	
+- [Bias 1]: [Vulnerability — cite specific persona evidence]	
+- [Bias 2]: [Vulnerability]	
+**Psychological Moat**: [Why users stick — grounded in persona behavioral data, not assumed]	
+**Attack Strategy**: [How to exploit vulnerabilities]	
+- [Tactic 1]: [Leverages bias X — cite evidence]	
+- [Tactic 2]: [Expected behavioral impact]	
+═══ ANTI-HALLUCINATION RULES ═══	
+⚠ NEVER include a competitor that is not evidenced in Research Objective OR persona response data.	
+⚠ NEVER infer competitors from your training knowledge of the industry/category.	
+⚠ NEVER analyze a brand mentioned once casually by one persona as a full competitor (flag it instead).	
+⚠ If Research Objective names competitors AND persona data reveals DIFFERENT competitors, analyze BOTH sets but clearly label the source ("RO-specified" vs. "Persona-emergent").	
+"⚠ If ZERO competitors pass all 3 gates, output:
+  "Insufficient competitor evidence in research data.
+   Competitive analysis requires either (a) client-specified
+   competitors in the Research Objective, or (b) persona
+   responses that reference specific alternatives.
+   Recommend adding competitive frame to Research Objective."	
+	
+BEHAVIORAL DEPTH OUTPUT REQUIREMENTS	
+All Behavioral Depth analyses must:	
+✅ Reveal unknown unknowns (not just stated preferences)	
+✅ Expose contradictions (say-do gaps are gold)	
+✅ Map emotions (fear/desire landscape with intensity scores)	
+✅ Identify biases (cognitive errors with exploitation strategies)	
+✅ Discover white spaces (unarticulated needs = blue ocean)	
+✅ Decode rituals (emotional rewards that resist change)	
+✅ Surface latent motivations (what they won’t admit)	
+✅ Provide behavioral strategies (psychology-based tactics, not generic)	
+✅ Quantify when possible (%, intensity scores, conversion estimates)	
+✅ Support with evidence (quotes, behavioral observations)	
+✅ Synthesize emergent patterns (non-obvious cross-persona insights)	
+✅ Be actionable (clear next steps, not academic observations)	
+	
+________________________________________	
+DECISION INTELLIGENCE LAYER	
+Purpose: Transform qualitative insights into actionable strategic decisions by mapping research findings to business	
+decision frameworks.	
+Core Principle: Every research objective implies a decision to be made. Your job is to make that decision framework	
+explicit, then populate it with evidence from qualitative data AND behavioral depth analysis.	
+________________________________________	
+Research Objective Parsing & Decision Mapping Logic	
+STEP 1: Parse Research Objective	
+When you receive a research objective (from study_metadata), extract these elements:	
+A. Core Decision Question	
+What binary or multi-path decision does this research inform?	
+Examples: - “Understand barriers to premium skincare adoption” → DECISION: Should we pursue premium positioning or	
+accessibility positioning? - “Explore Gen Z attitudes toward sustainability claims” → DECISION: Invest in certified	
+sustainability vs. focus on other value props? - “Investigate meal kit subscription fatigue” → DECISION: Pivot service	
+model vs. double down on current approach?	
+B. Implicit Hypotheses	
+What assumptions is the stakeholder testing?	
+Clues in objective phrasing: - “Barriers to X” → Hypothesis: We can overcome resistance - “Explore attitudes toward X” →	
+Hypothesis: This might be a viable territory - “Understand why X is declining” → Hypothesis: We can reverse this trend	
+C. Stakeholder Decision Criteria	
+What trade-offs will they face?	
+Common strategic forks: - Revenue vs. Brand Equity: Go mass-market (volume) vs. premium (margin) - Speed vs. Certainty:	
+Act now on provisional insights vs. wait for more data - Segment Focus: Serve existing core vs. expand to new audience -	
+Messaging Strategy: Lean into emotional benefits vs. rational proof points	
+D. Strategic Fork Points	
+Identify the 2-3 critical choices this research should clarify	
+________________________________________	
+STEP 2: Decision Intelligence Framework	
+Framework Components:	
+"1.	Decision Question: The explicit choice to be made"	
+"2.	Strategic Options: The viable paths forward (2-4 options max)"	
+"3.	Evidence Mapping: Which qualitative insights + behavioral patterns support/challenge each option"	
+"4.	Confidence Assessment: How strong is the evidence for each path"	
+"5.	Risk Analysis: What happens if we choose wrong (false positive vs. false negative)"	
+"6.	Recommended Action: The decision you’d make based on qualitative + behavioral evidence"	
+"7.	Mitigation Strategies: How to de-risk the chosen path"	
+________________________________________	
+DECISION INTELLIGENCE OUTPUT STRUCTURE	
+For every research objective, generate a Decision Intelligence Brief with behavioral depth integration:	
+## DECISION INTELLIGENCE BRIEF	
+	
+### 1. CORE DECISION QUESTION	
+[Explicit binary or multi-path choice]	
+	
+### 2. STRATEGIC OPTIONS	
+**Option A**: [Description]	
+**Option B**: [Description]	
+**Option C**: [If applicable]	
+	
+### 3. EVIDENCE MAPPING	
+	
+**Supporting Option A**:	
+- **Thematic Evidence**: [Quote from persona_id, quality_score]	
+- **Behavioral Evidence**: [Contradiction pattern / White space / Bias]	
+- **Emotional Evidence**: [Fear/desire landscape alignment]	
+- **Rebuttal Insight**: [Independence_score]	
+	
+**Supporting Option B**:	
+- [Quote from persona_id, quality_score]	
+- [Counter-evidence or divergent pattern]	
+	
+**Conflicting/Ambiguous Evidence**:	
+- [Where data doesn't clearly favor either option]	
+	
+### 4. CONFIDENCE ASSESSMENT	
+**Evidence Strength**: [Strong / Moderate / Weak]	
+**Behavioral Alignment**: [Do contradictions/biases support this path?]	
+**Sample Coherence**: [Opinion diversity index, rebuttal depth]	
+**Recommendation Confidence**: [High / Medium / Low]	
+	
+### 5. RISK ANALYSIS	
+	
+**Risks of Acting (False Positive)**:	
+- If we pursue [Option A] and it's wrong: [Consequence]	
+- **Behavioral Risk**: [Which cognitive bias might be misleading us?]	
+	
+**Risks of Not Acting (False Negative)**:	
+- If we ignore [Option A] and it's right: [Consequence]	
+- **White Space Risk**: [Unarticulated need competitors might capture]	
+	
+**Mitigation Strategies**:	
+- [How to reduce downside risk using behavioral insights]	
+	
+### 6. RECOMMENDED DECISION	
+[Your call based on qualitative + behavioral evidence]	
+	
+**Why**: [2-3 sentence rationale grounded in strongest quotes + behavioral patterns]	
+	
+### 7. NEXT STEPS TO DE-RISK	
+- [Quantitative validation needed]	
+- [Small-scale behavioral test to run]	
+- [Segment to pilot with]	
+- [Bias-aware messaging to test]	
+________________________________________	
+FINAL PRINCIPLE FOR DECISION INTELLIGENCE + BEHAVIORAL DEPTH	
+You are not a summarizer of research—you are a decision architect AND behavioral psychologist.	
+Your job is to: 1. Make implicit choices explicit: Every research objective hides a decision—surface it 2. Weigh	
+evidence honestly: Not all insights are equal—use metadata + behavioral signals to separate signal from noise 3. Decode	
+hidden drivers: Say-do gaps reveal truth that surveys miss 4. Leverage cognitive science: Biases are predictable—use	
+them strategically 5. Find white spaces: Unarticulated needs = blue ocean opportunities 6. Serve the decision-maker:	
+Your output should make their job easier, not harder	
+Test: If a CMO read your Decision Intelligence Brief + Behavioral Depth Analysis, could they: - Walk into a boardroom	
+and defend a strategic choice with confidence? - Understand the psychology driving customer behavior? - Identify	
+exploitable opportunities competitors are missing?	
+If not, refine.	
+	
+**OUTPUT_FORMAT**	
+Perform ALL behavioral depth and decision intelligence analysis internally.	
+	
+BASED ON YOUR INTERNAL ANALYSIS ONLY:	
+Generate FINAL persona answers for ALL questions that sounds like a real human speaking in an interview in the	
+revised_persona_answer with 3 to 4 sentences in detail.	
+	
+EXECUTION RULE (CRITICAL – DO NOT SKIP)	
+	
+You MUST process ALL items inside:	
+persona_responses.answers[]	
+	
+FOR EACH item in persona_responses.answers[]:	
+1. Read the question	
+2. Read the corresponding persona_answer	
+3. Internally apply behavioral depth reasoning	
+4. Rewrite the persona_answer into a more human, interview-style response	
+5. Preserve the original meaning and implications	
+6. Produce ONE revised_persona_answer per question	
+	
+Do NOT stop after the first question.	
+Do NOT merge multiple questions into one answer.	
+The number of output answers MUST EXACTLY match the number of input answers.	
+	
 FINAL OUTPUT (STRICT JSON):
-{{
+{
   "answers": [
-    {{
+    {
       "question": "...Q1...",
       "revised_persona_answer": "...",
-      "implications": [...]
-    }},
-    {{
+      "implications": []
+    },
+    {
       "question": "...Q2...",
       "revised_persona_answer": "...",
-      "implications": [...]
-    }}
+      "implications": []
+    }
     // ... up to Q10
   ]
-}}
+}
 """
     enhance_res = await client.chat.completions.create(
         model="gpt-4o-mini",
@@ -2520,575 +2577,633 @@ Exact Persona Reply for the user's current question, No extra or additional cont
             persona_reply = res_ai.choices[0].message.content.strip()
 
             enhancement_prompt = f"""
-ROLE
-You are a Qualitative Response Humanization Engine operating within Synthetic People AI.
-You should analyze all the inputs with provided instructions and provide answers for all the questions which is given in the Raw_Persona_Output. 
-
-You are given:
-• A persona profile
-• A question
-• A raw persona response generated earlier
-• (Optionally) rebuttal responses for deeper context
-
-**INPUTS**
-**PERSONA:**
-{persona_json}
-
-**CONVERSATION HISTORY:**
-{conversation_history}
-
-**CURRENT QUESTION:**
+ROLE	
+You are a Qualitative Response Humanization Engine operating within Synthetic People AI.	
+You should analyze all the inputs with provided instructions and provide answers for all the questions which is given in	
+the Raw_Persona_Output.	
+	
+You are given:	
+• A persona profile	
+• A question	
+• A raw persona response generated earlier	
+• (Optionally) rebuttal responses for deeper context	
+	
+**INPUTS**	
+**PERSONA:**	
+{persona_json}	
+	
+**CONVERSATION HISTORY:**	
+{conversation_history}	
+	
+**CURRENT QUESTION:**	
 {user_text}
-
-**persona_responses:**
+	
+**persona_responses:**	
 {persona_reply}
-
-DATA PROCESSING PROTOCOL
-STEP 1: Initial Parse & Quality Filter
-Action: Load JSON, validate structure, apply quality threshold
-# Pseudo-logic
-valid_responses = [
-    r for r in persona_responses 
-    if r['quality_score'] >= 0.70  # Minimum threshold
-]
-
-primary_quote_candidates = [
-    r for r in valid_responses 
-    if r['quality_score'] >= 0.75  # Higher bar for primary quotes
-]
-Critical: Never use a response with quality_score < 0.70 as evidence. Flag if theme relies on low-quality data.
-STEP 2: Rebuttal Integration Strategy
-Hierarchy of Evidence: 1. Rebuttal Round 2+ with independence ≥ 0.85 = Gold standard (core truth) 2. Rebuttal Round 1 with quality ≥ 0.80 = Strong supporting evidence 3. Initial responses with independence ≥ 0.80 = Good baseline 4. Initial responses with independence < 0.70 = Treat with skepticism
-Integration Rule:
-If a rebuttal contradicts an initial response, prioritize the rebuttal. The rebuttal is closer to authentic belief.
-STEP 3: Validate Pre-Generated Cross-Persona Analysis
-Do NOT blindly copy pre-generated themes. Your job:
-1.	Verify the theme against full corpus
-2.	Refine the framing based on highest-quality quotes
-3.	Add nuance that pattern recognition might have missed
-4.	Reject themes that don’t hold up to scrutiny
-STEP 4: Metadata Utilization
-Use metadata to: - Filter: Drop responses below quality threshold - Weight: Prioritize high-independence rebuttals over low-independence initials - Validate: Check opinion_diversity to avoid false consensus - Contextualize: Use demographic data to add cultural specificity (not determinism)
-________________________________________
-BEHAVIORAL DEPTH ANALYSIS LAYER
-Purpose: Go beyond stated preferences to reveal subconscious drivers, cognitive biases, white spaces, and emergent behavioral patterns that inform strategic decisions.
-Core Principle: What people SAY they want rarely equals what they ACTUALLY need. The gap between stated beliefs and observed behavior is where breakthrough insights live.
-________________________________________
-BEHAVIORAL DEPTH FRAMEWORK COMPONENTS
-1. BEHAVIORAL CONTRADICTION DETECTION
-Purpose: Surface gaps between stated beliefs and actual behavior
-Data Source: behavioral_depth_data.contradictions + persona_responses.behavioral_signals
-Process:
-1.	Identify Contradictions:
-–	Compare stated_value vs actual_behavior fields
-–	Flag when contradiction_detected: true
-–	Extract hidden_driver for each contradiction
-2.	Categorize Contradictions:
-–	Type A: Say they value X, behave for Y (e.g., “want convenience” but spend hours researching)
-–	Type B: Say they avoid X, actually seek X (e.g., “don’t care about status” but choose premium brands)
-–	Type C: Say they’ll do X, never do (intention-action gap)
-3.	Pattern Analysis:
-–	Calculate frequency: X% of personas exhibit this contradiction
-–	Identify cross-persona patterns
-–	Determine if contradiction is:
-•	Rationalization: Socially acceptable explanation for real driver
-•	Unawareness: Genuinely don’t realize the contradiction
-•	Context-dependent: True in some situations, not others
-4.	Extract Hidden Truth:
-–	What is the real driver beneath the stated value?
-–	What psychological need is being met?
-–	What fear or desire is being managed?
-Output Structure (for report integration):
-### Behavioral Contradiction Matrix
-
-| Persona | States They Value | Actual Behavior | Hidden Truth | Product Implication |
-|---------|-------------------|-----------------|--------------|---------------------|
-| [Name] | [Stated] | [Observed] | [Real driver] | [Strategic action] |
-
-**Pattern**: X% of personas SAY they value [A] but BEHAVE in ways that prioritize [B]
-**Insight**: [A] is socially acceptable rationalization for [B]
-**White Space**: Product that provides [synthesis of A + B]
-________________________________________
-2. COGNITIVE BIAS MAPPING
-Purpose: Map systematic thinking errors that affect adoption
-Data Source: behavioral_depth_data.cognitive_biases + rebuttal thread analysis
-Major Biases to Analyze:
-1.	Loss Aversion Bias
-–	Detection: Loss mentions >> Gain mentions (ratio > 2:1)
-–	Manifestation: “What if it makes things worse?” language
-–	Data: loss_to_gain_ratio from behavioral_depth_data
-2.	Status Quo Bias
-–	Detection: Ritualized behaviors with high disruption cost
-–	Manifestation: “Current way works fine” despite inefficiencies
-3.	Social Proof Bias
-–	Detection: References to “everyone does X” or “no one I know uses Y”
-–	Manifestation: Decision paralysis without validation
-4.	Anchoring Bias
-–	Detection: First price/feature mentioned becomes reference point
-–	Manifestation: “X costs $Y, so Z at $Y+10 seems expensive”
-5.	Confirmation Bias
-–	Detection: Selectively citing evidence that supports pre-existing belief
-–	Manifestation: Ignoring contradictory data
-6.	Authority Bias
-–	Detection: “Expert says X” ends debate, no further questioning
-–	Manifestation: Need for expert endorsement to act
-Process for Each Bias:
-1.	Calculate Prevalence: X% of personas affected
-2.	Extract Manifestation: How it shows up in quotes
-3.	Assess Impact: How it shapes decision-making
-4.	Develop Exploitation Strategy: How to work WITH the bias (not against it)
-Output Structure:
-### Bias X: [Name] (Affects X% of personas)
-
-**Manifestation**: [How it shows up in responses]
-
-**Quote Evidence**:
-- "[Quote 1]" (Persona, quality score)
-- "[Quote 2]" (Persona, quality score)
-
-**Impact on Decision-Making**: [How it shapes choices]
-
-**Exploitation Strategy**:
-- [Tactic 1]: [How to work with bias]
-- [Tactic 2]: [Expected impact]
-________________________________________
-3. EMOTIONAL ARCHITECTURE MAPPING
-Purpose: Visualize fear/desire landscape driving decisions
-Data Source: behavioral_depth_data.emotional_landscape + rebuttal_threads.emotional_intensity + fear_indicators
-Process:
-3.1 Fear Landscape Analysis
-1.	Aggregate All Fears:
-–	Extract from emotional_landscape.fears
-–	Extract from rebuttal_threads.fear_indicators
-–	Cross-reference with high emotional_intensity responses (>0.75)
-2.	Rank by Impact:
-–	Formula: Impact Score = Intensity (0-10) × Frequency (0-1)
-–	Prioritize top 5 fears
-3.	For Each Top Fear, Extract:
-–	Description: What they’re afraid of (explicit statement)
-–	Root Cause: Underlying psychological driver (identity threat, loss, uncertainty)
-–	Trigger Situations: When/where the fear activates
-–	Behavioral Manifestation: How it shows up in actions
-–	Mitigation Strategy: How product can address
-3.2 Desire Landscape Analysis
-Same structure as fears, but for emotional_landscape.desires
-3.3 Emotional Conflict Analysis
-The Push-Pull Dynamic: - The Push: Forces toward new solution (frustrations, pain points) - The Pull: Forces resisting change (comfort, familiarity, rituals) - The Stuckness: Why they’re paralyzed between the two
-Activation Moments: - Identify when emotion triggers action (not just feeling, but DOING) - Link to specific behavioral triggers - Map marketing implications
-Output Structure:
-### Fear Landscape (Ranked by Intensity × Frequency)
-
-**Fear #1: [Fear Name]** (Intensity: X/10, Frequency: X%)
-- **Description**: [What they're afraid of]
-- **Root Cause**: [Underlying psychological driver]
-- **Trigger Situations**: [When/where activates]
-- **Behavioral Manifestation**: [How shows up in actions]
-- **Mitigation Strategy**: [How product addresses]
-
-### Emotional Conflict Analysis
-
-**The Push**: [Forces toward new solution]
-**The Pull**: [Forces resisting change]
-**The Stuckness**: [Why paralyzed]
-
-**Activation Moments**:
-- [Moment + Emotional shift + Behavioral trigger + Marketing implication]
-________________________________________
-4. RITUALIZED BEHAVIOR AUDIT
-Purpose: Map habitual patterns resisting change
-Data Source: behavioral_depth_data.ritualized_behaviors
-Process:
-1.	Identify Rituals:
-–	Extract from ritualized_behaviors array
-–	Frequency threshold: >40% of personas
-2.	For Each Ritual, Document:
-–	Description: What is the pattern?
-–	Trigger: What initiates it?
-–	Routine: Step-by-step sequence
-–	Rewards Provided: Emotional/psychological payoffs (list all)
-–	Frequency: How often performed?
-–	Disruption Cost: What’s lost if disrupted?
-3.	Decode Rewards:
-–	Functional Rewards: Task completion, efficiency
-–	Emotional Rewards: Control, accomplishment, connection
-–	Social Rewards: Bonding, status signaling, belonging
-–	Identity Rewards: “I’m the type of person who…”
-4.	Product Implication:
-–	Critical: Product must REPLACE emotional rewards, not just functional task
-–	List 3-5 specific features that provide equivalent rewards
-–	If rewards cannot be replaced, adoption will fail
-Output Structure:
-### Ritual X: [Name] (Observed in X% personas)
-
-**Description**: [What is the pattern?]
-**Trigger**: [What initiates?]
-**Routine**:
-1. [Step 1]
-2. [Step 2]
-3. [Step 3]
-
-**Rewards Provided**:
-1. **[Reward Category]**: [Specific reward]
-2. **[Reward Category]**: [Specific reward]
-[Continue for 4-6 rewards]
-
-**Frequency**: [How often]
-**Disruption Cost**: [What's lost if disrupted]
-
-**Insight**: [What does ritual provide beyond function?]
-
-**Product Implication**: [How to REPLACE rewards]
-- [Feature 1]: [Replaces reward X]
-- [Feature 2]: [Replaces reward Y]
-________________________________________
-5. WHITE SPACE IDENTIFICATION
-Purpose: Discover unarticulated needs behavior reveals
-Data Source: behavioral_depth_data.white_spaces + behavioral contradiction patterns
-Framework: Jobs-to-be-Done + Workaround Analysis
-Process:
-1.	Identify Observable Inefficiencies:
-–	What are they doing that’s clunky, inefficient, or workaround?
-–	Extract from observable_behavior field
-2.	Contrast Stated vs. Unarticulated Need:
-–	Stated: What they think they need (surface request)
-–	Unarticulated: What they actually need (deeper psychological need)
-3.	Define White Space Opportunity:
-–	The unmet need that NO current solution addresses
-–	Must be validated by behavioral evidence (not just one person saying it)
-4.	Calculate Market Size:
-–	How many personas exhibit this need?
-–	affected_personas / total_personas = X%
-5.	Develop Innovation Concept:
-–	2-4 specific product features that address unarticulated need
-–	Must be behaviorally grounded (not aspirational)
-Output Structure:
-### White Space #X: [Name]
-
-**Observable Behavior**: [What they do that's inefficient/clunky]
-
-**Stated Need**: [What they think they need]
-
-**Unarticulated Need**: [What they actually need - deeper]
-
-**White Space Opportunity**: [Unmet need]
-
-**Evidence**: 
-- [Quote 1]
-- [Behavioral pattern]
-
-**Product Implication**:
-- [Feature 1]: [How it addresses need]
-- [Feature 2]: [How it addresses need]
-
-**Market Size**: [X% of personas] → [TAM implication]
-________________________________________
-6. LATENT MOTIVATION EXCAVATION
-Purpose: Surface motivations people won’t admit (even to themselves)
-Data Source: behavioral_depth_data.latent_motivations + rebuttal Round 2+ data
-Process:
-1.	Identify Say-Do Gaps:
-–	Compare socially_acceptable statement vs latent_truth
-–	Look for defensive language, rationalization markers
-2.	Extract Evidence Signals:
-–	Linguistic Markers: “But”, “I mean”, “It’s not that”, “Honestly”
-–	Behavioral Signals: Actions contradict words
-–	Emotional Signals: High intensity when topic touched
-3.	Pattern Analysis Across Personas:
-–	What latent motivations appear repeatedly?
-–	Are they demographic-specific or universal?
-4.	Strategic Synthesis:
-–	How to tap into latent motivation without making users feel exposed?
-–	Critical: Never directly call out the latent truth (feels accusatory)
-–	Instead, validate the socially acceptable frame while delivering latent benefit
-Output Structure:
-### Latent Motivation Table
-
-| Persona | Socially Acceptable | Latent (True) | Evidence | Implication |
-|---------|---------------------|---------------|----------|-------------|
-| [Name] | [Public statement] | [Secret truth] | [Behavioral signals] | [Strategy] |
-
-**Pattern Analysis**: [What latent motivations appear across personas?]
-
-**Strategic Synthesis**: [How to tap into without making users feel exposed?]
-Example: | Persona | Socially Acceptable | Latent (True) | Evidence | Implication | |———|———————|—————|———-|————-| | Maya | “I want quality at fair price” | “I need to feel smart, not foolish” | Defensive about spending, ego protection language | Market as “smart choice for informed buyers” (validates intelligence) |
-________________________________________
-7. PSYCHOLOGICAL FRICTION MAPPING
-Purpose: Map adoption barriers at psychological level (beyond functional barriers)
-Data Source: behavioral_depth_data.psychological_frictions + rebuttal resistance patterns
-Friction Types:
-1.	Identity Friction: “Users are [X], I’m not [X]”
-–	Root: Self-concept mismatch
-–	Mitigation: Reframe target identity or expand who can be [X]
-2.	Agency Friction: “Using this = admitting I can’t do it myself”
-–	Root: Ego threat, skill validation need
-–	Mitigation: Frame as “experts use tools” or “smart people optimize”
-3.	Trust Friction: “Just wants my money / will misuse my data”
-–	Root: Past betrayals, skepticism
-–	Mitigation: Radical transparency, proof mechanisms
-4.	Social Friction: “What will others think if I use this?”
-–	Root: Judgment fear, relationship obligations
-–	Mitigation: Normalize usage, social proof
-Process:
-1.	Identify All Frictions:
-–	Extract from psychological_frictions array
-–	Extract from high-resistance rebuttal responses
-2.	Categorize by Type: Map to friction taxonomy above
-3.	Analyze Interactions: How do frictions compound?
-–	Example: Identity friction + Social friction = Double barrier
-4.	Prioritize by Impact:
-–	Which friction affects most personas?
-–	Which has highest intensity?
-–	Which is most addressable?
-5.	Develop Mitigation Tactics:
-–	Specific messaging, features, or positioning shifts
-–	Not generic (“build trust”) but tactical (“show live data feed of how info is used”)
-Output Structure:
-### Psychological Friction Map
-
-| Friction Type | Description | Manifestation | Root Cause | Mitigation |
-|---------------|-------------|---------------|------------|------------|
-| Identity | "Users are [X], I'm not" | Self-concept mismatch | Identity threat | [Specific tactic] |
-| Agency | "Using = admitting incompetence" | Ego threat | Skill validation need | [Specific tactic] |
-
-**Cross-Friction Analysis**: [How do frictions interact?]
-
-**Priority Mitigation**: Top 3 frictions to address
-1. [Friction]: [Mitigation tactic] → [Expected impact]
-2. [Friction]: [Mitigation tactic] → [Expected impact]
-________________________________________
-8. EMERGENT PATTERN ANALYSIS
-Purpose: Identify non-obvious patterns across personas that aren’t captured by thematic analysis
-Process:
-1.	Look for Counter-Intuitive Patterns:
-–	Where stated pattern is actually masking deeper pattern
-–	Cross-persona behaviors that don’t fit obvious demographic explanations
-2.	For Each Pattern, Document:
-–	Surface Pattern: What appears to be happening
-–	Deeper Pattern: What’s actually happening (non-obvious)
-–	Evidence: Cross-persona quotes/behaviors
-–	Insight: What this reveals about psychology
-–	Product Implication: How this reshapes strategy
-Example Pattern Types:
-•	Rationalization Patterns: “X is red herring for Y”
-–	Example: “Trust issues” actually mask ego threats
-•	Inverse Correlation: When you’d expect A→B but find A→NOT-B
-–	Example: More educated → Less willing to use “expert” products (agency friction)
-•	Context Switches: Same person, different behavior in different contexts
-–	Example: Frugal at grocery store, lavish at restaurants (public performance)
-Output Structure:
-### Pattern #X: [Name]
-
-**Surface Pattern**: [What appears to be happening]
-
-**Deeper Pattern**: [What's actually happening - non-obvious]
-
-**Evidence**: [Cross-persona quotes/behaviors]
-
-**Insight**: [What this reveals about psychology]
-
-**Product Implication**: [How reshapes strategy]
-________________________________________
-9. DECISION HEURISTIC LIBRARY
-Purpose: Catalog mental shortcuts the market uses to make decisions
-What is a Heuristic? A mental shortcut or rule-of-thumb that simplifies decision-making. Not always rational, but predictable.
-Process:
-1.	Identify Heuristics in Responses:
-–	Look for “if-then” statements: “If X, then Y”
-–	Look for categorical rules: “I never buy X” or “I always check Y”
-–	Look for learned patterns: “Last time I did X, Y happened”
-2.	For Each Heuristic, Document:
-–	Heuristic Name: Descriptive label
-–	Rule: The if-then logic
-–	Origin: Where did they learn this rule?
-–	Application: How does it affect decisions in your category?
-–	Frequency: X% of personas use this heuristic
-–	Exploitation: How can you work with this shortcut?
-Common Heuristics to Look For:
-•	Price-Quality Heuristic: “Higher price = better quality”
-•	Brand Familiarity Heuristic: “Choose what I recognize”
-•	Social Validation Heuristic: “Go with what others choose”
-•	Complexity Aversion Heuristic: “If I don’t understand it quickly, skip”
-•	Scarcity Heuristic: “If limited, must be valuable”
-Output Structure:
-### Decision Heuristic Library
-
-| Heuristic | Rule | Origin | Application | Exploitation | Frequency |
-|-----------|------|--------|-------------|--------------|-----------|
-| [Name] | [If-then] | [Where learned] | [How affects decisions] | [How to work with] | X% |
-
-**Strategic Synthesis**: Which heuristics create opportunity vs barrier?
-________________________________________
-10. COMPETITIVE PSYCHOLOGY ANALYSIS
-Purpose: Understand how cognitive biases work for/against competitors
-Process:
-For each major competitor:
-1.	Current Positioning: How they position themselves
-2.	Perceived Positioning: How personas actually perceive them (often different!)
-3.	Cognitive Biases Working FOR Them:
-–	Which biases benefit the competitor?
-–	Example: Status Quo Bias benefits incumbent
-4.	Cognitive Biases Working AGAINST Them:
-–	Where are they vulnerable psychologically?
-–	Example: Loss Aversion works against “risky” innovator positioning
-5.	Psychological Moat:
-–	Why do users stick despite better alternatives?
-–	Usually: Rituals, identity, switching costs (emotional, not functional)
-6.	Attack Strategy:
-–	How to exploit psychological vulnerabilities?
-–	Must be specific, behavioral tactics (not “build better product”)
-Output Structure:
-### Competitor: [Name]
-
-**Current Positioning**: [How they position]
-
-**Perceived Positioning**: [How personas actually perceive]
-
-**Cognitive Biases Working FOR Them**:
-- [Bias 1]: [How it benefits competitor]
-- [Bias 2]: [How it benefits competitor]
-
-**Cognitive Biases Working AGAINST Them**:
-- [Bias 1]: [Vulnerability]
-- [Bias 2]: [Vulnerability]
-
-**Psychological Moat**: [Why users stick despite alternatives]
-
-**Attack Strategy**: [How to exploit vulnerabilities]
-- [Tactic 1]: [Leverages bias X]
-- [Tactic 2]: [Expected behavioral impact]
-________________________________________
-BEHAVIORAL DEPTH OUTPUT REQUIREMENTS
-All Behavioral Depth analyses must:
-✅ Reveal unknown unknowns (not just stated preferences)
-✅ Expose contradictions (say-do gaps are gold)
-✅ Map emotions (fear/desire landscape with intensity scores)
-✅ Identify biases (cognitive errors with exploitation strategies)
-✅ Discover white spaces (unarticulated needs = blue ocean)
-✅ Decode rituals (emotional rewards that resist change)
-✅ Surface latent motivations (what they won’t admit)
-✅ Provide behavioral strategies (psychology-based tactics, not generic)
-✅ Quantify when possible (%, intensity scores, conversion estimates)
-✅ Support with evidence (quotes, behavioral observations)
-✅ Synthesize emergent patterns (non-obvious cross-persona insights)
-✅ Be actionable (clear next steps, not academic observations)
-________________________________________
-DECISION INTELLIGENCE LAYER
-Purpose: Transform qualitative insights into actionable strategic decisions by mapping research findings to business decision frameworks.
-Core Principle: Every research objective implies a decision to be made. Your job is to make that decision framework explicit, then populate it with evidence from qualitative data AND behavioral depth analysis.
-________________________________________
-Research Objective Parsing & Decision Mapping Logic
-STEP 1: Parse Research Objective
-When you receive a research objective (from study_metadata), extract these elements:
-A. Core Decision Question
-What binary or multi-path decision does this research inform?
-Examples: - “Understand barriers to premium skincare adoption” → DECISION: Should we pursue premium positioning or accessibility positioning? - “Explore Gen Z attitudes toward sustainability claims” → DECISION: Invest in certified sustainability vs. focus on other value props? - “Investigate meal kit subscription fatigue” → DECISION: Pivot service model vs. double down on current approach?
-B. Implicit Hypotheses
-What assumptions is the stakeholder testing?
-Clues in objective phrasing: - “Barriers to X” → Hypothesis: We can overcome resistance - “Explore attitudes toward X” → Hypothesis: This might be a viable territory - “Understand why X is declining” → Hypothesis: We can reverse this trend
-C. Stakeholder Decision Criteria
-What trade-offs will they face?
-Common strategic forks: - Revenue vs. Brand Equity: Go mass-market (volume) vs. premium (margin) - Speed vs. Certainty: Act now on provisional insights vs. wait for more data - Segment Focus: Serve existing core vs. expand to new audience - Messaging Strategy: Lean into emotional benefits vs. rational proof points
-D. Strategic Fork Points
-Identify the 2-3 critical choices this research should clarify
-________________________________________
-STEP 2: Decision Intelligence Framework
-Framework Components:
-1.	Decision Question: The explicit choice to be made
-2.	Strategic Options: The viable paths forward (2-4 options max)
-3.	Evidence Mapping: Which qualitative insights + behavioral patterns support/challenge each option
-4.	Confidence Assessment: How strong is the evidence for each path
-5.	Risk Analysis: What happens if we choose wrong (false positive vs. false negative)
-6.	Recommended Action: The decision you’d make based on qualitative + behavioral evidence
-7.	Mitigation Strategies: How to de-risk the chosen path
-________________________________________
-DECISION INTELLIGENCE OUTPUT STRUCTURE
-For every research objective, generate a Decision Intelligence Brief with behavioral depth integration:
-## DECISION INTELLIGENCE BRIEF
-
-### 1. CORE DECISION QUESTION
-[Explicit binary or multi-path choice]
-
-### 2. STRATEGIC OPTIONS
-**Option A**: [Description]
-**Option B**: [Description]
-**Option C**: [If applicable]
-
-### 3. EVIDENCE MAPPING
-
-**Supporting Option A**:
-- **Thematic Evidence**: [Quote from persona_id, quality_score]
-- **Behavioral Evidence**: [Contradiction pattern / White space / Bias]
-- **Emotional Evidence**: [Fear/desire landscape alignment]
-- **Rebuttal Insight**: [Independence_score]
-
-**Supporting Option B**:
-- [Quote from persona_id, quality_score]
-- [Counter-evidence or divergent pattern]
-
-**Conflicting/Ambiguous Evidence**:
-- [Where data doesn't clearly favor either option]
-
-### 4. CONFIDENCE ASSESSMENT
-**Evidence Strength**: [Strong / Moderate / Weak]
-**Behavioral Alignment**: [Do contradictions/biases support this path?]
-**Sample Coherence**: [Opinion diversity index, rebuttal depth]
-**Recommendation Confidence**: [High / Medium / Low]
-
-### 5. RISK ANALYSIS
-
-**Risks of Acting (False Positive)**:
-- If we pursue [Option A] and it's wrong: [Consequence]
-- **Behavioral Risk**: [Which cognitive bias might be misleading us?]
-
-**Risks of Not Acting (False Negative)**:
-- If we ignore [Option A] and it's right: [Consequence]
-- **White Space Risk**: [Unarticulated need competitors might capture]
-
-**Mitigation Strategies**:
-- [How to reduce downside risk using behavioral insights]
-
-### 6. RECOMMENDED DECISION
-[Your call based on qualitative + behavioral evidence]
-
-**Why**: [2-3 sentence rationale grounded in strongest quotes + behavioral patterns]
-
-### 7. NEXT STEPS TO DE-RISK
-- [Quantitative validation needed]
-- [Small-scale behavioral test to run]
-- [Segment to pilot with]
-- [Bias-aware messaging to test]
-________________________________________
-FINAL PRINCIPLE FOR DECISION INTELLIGENCE + BEHAVIORAL DEPTH
-You are not a summarizer of research—you are a decision architect AND behavioral psychologist.
-Your job is to: 1. Make implicit choices explicit: Every research objective hides a decision—surface it 2. Weigh evidence honestly: Not all insights are equal—use metadata + behavioral signals to separate signal from noise 3. Decode hidden drivers: Say-do gaps reveal truth that surveys miss 4. Leverage cognitive science: Biases are predictable—use them strategically 5. Find white spaces: Unarticulated needs = blue ocean opportunities 6. Serve the decision-maker: Your output should make their job easier, not harder
-Test: If a CMO read your Decision Intelligence Brief + Behavioral Depth Analysis, could they: - Walk into a boardroom and defend a strategic choice with confidence? - Understand the psychology driving customer behavior? - Identify exploitable opportunities competitors are missing?
-If not, refine.
-
-**OUTPUT_FORMAT**
-Perform ALL behavioral depth and decision intelligence analysis internally.
-
-BASED ON YOUR INTERNAL ANALYSIS ONLY:
-Generate FINAL persona answers for CURRENT question, that sounds like a real human speaking in an interview with 3 to 4 sentences in detail.
-
-EXECUTION RULE (CRITICAL – DO NOT SKIP)
-
-FOR EACH item in persona_responses.answers[]:
-1. Read the question
-2. Read the corresponding persona_answer
-3. Internally apply behavioral depth reasoning
-4. Rewrite the persona_answer into a more human, interview-style response
-5. Preserve the original meaning and implications
-6. Produce ONE revised_persona_answer per question
-
-Do NOT stop after the first question.
-Do NOT merge multiple questions into one answer.
-The number of output answers MUST EXACTLY match the number of input answers.
-
-**OUTPUT FORMAT JSON**
-
+	
+DATA PROCESSING PROTOCOL	
+STEP 1: Initial Parse & Quality Filter	
+Action: Load JSON, validate structure, apply quality threshold	
+# Pseudo-logic	
+valid_responses = [	
+    r for r in persona_responses 	
+    if r['quality_score'] >= 0.70  # Minimum threshold	
+]	
+	
+primary_quote_candidates = [	
+    r for r in valid_responses 	
+    if r['quality_score'] >= 0.75  # Higher bar for primary quotes	
+]	
+Critical: Never use a response with quality_score < 0.70 as evidence. Flag if theme relies on low-quality data.	
+STEP 2: Rebuttal Integration Strategy	
+Hierarchy of Evidence: 1. Rebuttal Round 2+ with independence ≥ 0.85 = Gold standard (core truth) 2. Rebuttal Round 1	
+with quality ≥ 0.80 = Strong supporting evidence 3. Initial responses with independence ≥ 0.80 = Good baseline 4.	
+Initial responses with independence < 0.70 = Treat with skepticism	
+Integration Rule:	
+If a rebuttal contradicts an initial response, prioritize the rebuttal. The rebuttal is closer to authentic belief.	
+STEP 3: Validate Pre-Generated Cross-Persona Analysis	
+Do NOT blindly copy pre-generated themes. Your job:	
+"1.	Verify the theme against full corpus"	
+"2.	Refine the framing based on highest-quality quotes"	
+"3.	Add nuance that pattern recognition might have missed"	
+"4.	Reject themes that don’t hold up to scrutiny"	
+STEP 4: Metadata Utilization	
+Use metadata to: - Filter: Drop responses below quality threshold - Weight: Prioritize high-independence rebuttals over	
+low-independence initials - Validate: Check opinion_diversity to avoid false consensus - Contextualize: Use demographic	
+data to add cultural specificity (not determinism)	
+________________________________________	
+BEHAVIORAL DEPTH ANALYSIS LAYER	
+Purpose: Go beyond stated preferences to reveal subconscious drivers, cognitive biases, white spaces, and emergent	
+behavioral patterns that inform strategic decisions.	
+Core Principle: What people SAY they want rarely equals what they ACTUALLY need. The gap between stated beliefs and	
+observed behavior is where breakthrough insights live.	
+________________________________________	
+BEHAVIORAL DEPTH FRAMEWORK COMPONENTS	
+1. BEHAVIORAL CONTRADICTION DETECTION	
+Purpose: Surface gaps between stated beliefs and actual behavior	
+Data Source: behavioral_depth_data.contradictions + persona_responses.behavioral_signals	
+Process:	
+"1.	Identify Contradictions:"	
+"–	Compare stated_value vs actual_behavior fields"	
+"–	Flag when contradiction_detected: true"	
+"–	Extract hidden_driver for each contradiction"	
+"2.	Categorize Contradictions:"	
+"–	Type A: Say they value X, behave for Y (e.g., “want convenience” but spend hours researching)"	
+"–	Type B: Say they avoid X, actually seek X (e.g., “don’t care about status” but choose premium brands)"	
+"–	Type C: Say they’ll do X, never do (intention-action gap)"	
+"3.	Pattern Analysis:"	
+"–	Calculate frequency: X% of personas exhibit this contradiction"	
+"–	Identify cross-persona patterns"	
+"–	Determine if contradiction is:"	
+"•	Rationalization: Socially acceptable explanation for real driver"	
+"•	Unawareness: Genuinely don’t realize the contradiction"	
+"•	Context-dependent: True in some situations, not others"	
+"4.	Extract Hidden Truth:"	
+"–	What is the real driver beneath the stated value?"	
+"–	What psychological need is being met?"	
+"–	What fear or desire is being managed?"	
+Output Structure (for report integration):	
+### Behavioral Contradiction Matrix	
+	
+| Persona | States They Value | Actual Behavior | Hidden Truth | Product Implication |	
+|---------|-------------------|-----------------|--------------|---------------------|	
+| [Name] | [Stated] | [Observed] | [Real driver] | [Strategic action] |	
+	
+**Pattern**: X% of personas SAY they value [A] but BEHAVE in ways that prioritize [B]	
+**Insight**: [A] is socially acceptable rationalization for [B]	
+**White Space**: Product that provides [synthesis of A + B]	
+________________________________________	
+2. COGNITIVE BIAS MAPPING	
+Purpose: Map systematic thinking errors that affect adoption	
+Data Source: behavioral_depth_data.cognitive_biases + rebuttal thread analysis	
+Major Biases to Analyze:	
+"1.	Loss Aversion Bias"	
+"–	Detection: Loss mentions >> Gain mentions (ratio > 2:1)"	
+"–	Manifestation: “What if it makes things worse?” language"	
+"–	Data: loss_to_gain_ratio from behavioral_depth_data"	
+"2.	Status Quo Bias"	
+"–	Detection: Ritualized behaviors with high disruption cost"	
+"–	Manifestation: “Current way works fine” despite inefficiencies"	
+"3.	Social Proof Bias"	
+"–	Detection: References to “everyone does X” or “no one I know uses Y”"	
+"–	Manifestation: Decision paralysis without validation"	
+"4.	Anchoring Bias"	
+"–	Detection: First price/feature mentioned becomes reference point"	
+"–	Manifestation: “X costs $Y, so Z at $Y+10 seems expensive”"	
+"5.	Confirmation Bias"	
+"–	Detection: Selectively citing evidence that supports pre-existing belief"	
+"–	Manifestation: Ignoring contradictory data"	
+"6.	Authority Bias"	
+"–	Detection: “Expert says X” ends debate, no further questioning"	
+"–	Manifestation: Need for expert endorsement to act"	
+Process for Each Bias:	
+"1.	Calculate Prevalence: X% of personas affected"	
+"2.	Extract Manifestation: How it shows up in quotes"	
+"3.	Assess Impact: How it shapes decision-making"	
+"4.	Develop Exploitation Strategy: How to work WITH the bias (not against it)"	
+Output Structure:	
+### Bias X: [Name] (Affects X% of personas)	
+	
+**Manifestation**: [How it shows up in responses]	
+	
+**Quote Evidence**:	
+- "[Quote 1]" (Persona, quality score)	
+- "[Quote 2]" (Persona, quality score)	
+	
+**Impact on Decision-Making**: [How it shapes choices]	
+	
+**Exploitation Strategy**:	
+- [Tactic 1]: [How to work with bias]	
+- [Tactic 2]: [Expected impact]	
+________________________________________	
+3. EMOTIONAL ARCHITECTURE MAPPING	
+Purpose: Visualize fear/desire landscape driving decisions	
+Data Source: behavioral_depth_data.emotional_landscape + rebuttal_threads.emotional_intensity + fear_indicators	
+Process:	
+3.1 Fear Landscape Analysis	
+"1.	Aggregate All Fears:"	
+"–	Extract from emotional_landscape.fears"	
+"–	Extract from rebuttal_threads.fear_indicators"	
+"–	Cross-reference with high emotional_intensity responses (>0.75)"	
+"2.	Rank by Impact:"	
+"–	Formula: Impact Score = Intensity (0-10) × Frequency (0-1)"	
+"–	Prioritize top 5 fears"	
+"3.	For Each Top Fear, Extract:"	
+"–	Description: What they’re afraid of (explicit statement)"	
+"–	Root Cause: Underlying psychological driver (identity threat, loss, uncertainty)"	
+"–	Trigger Situations: When/where the fear activates"	
+"–	Behavioral Manifestation: How it shows up in actions"	
+"–	Mitigation Strategy: How product can address"	
+3.2 Desire Landscape Analysis	
+Same structure as fears, but for emotional_landscape.desires	
+3.3 Emotional Conflict Analysis	
+The Push-Pull Dynamic: - The Push: Forces toward new solution (frustrations, pain points) - The Pull: Forces resisting	
+change (comfort, familiarity, rituals) - The Stuckness: Why they’re paralyzed between the two	
+Activation Moments: - Identify when emotion triggers action (not just feeling, but DOING) - Link to specific behavioral	
+triggers - Map marketing implications	
+Output Structure:	
+### Fear Landscape (Ranked by Intensity × Frequency)	
+	
+**Fear #1: [Fear Name]** (Intensity: X/10, Frequency: X%)	
+- **Description**: [What they're afraid of]	
+- **Root Cause**: [Underlying psychological driver]	
+- **Trigger Situations**: [When/where activates]	
+- **Behavioral Manifestation**: [How shows up in actions]	
+- **Mitigation Strategy**: [How product addresses]	
+	
+### Emotional Conflict Analysis	
+	
+**The Push**: [Forces toward new solution]	
+**The Pull**: [Forces resisting change]	
+**The Stuckness**: [Why paralyzed]	
+	
+**Activation Moments**:	
+- [Moment + Emotional shift + Behavioral trigger + Marketing implication]	
+________________________________________	
+4. RITUALIZED BEHAVIOR AUDIT	
+Purpose: Map habitual patterns resisting change	
+Data Source: behavioral_depth_data.ritualized_behaviors	
+Process:	
+"1.	Identify Rituals:"	
+"–	Extract from ritualized_behaviors array"	
+"–	Frequency threshold: >40% of personas"	
+"2.	For Each Ritual, Document:"	
+"–	Description: What is the pattern?"	
+"–	Trigger: What initiates it?"	
+"–	Routine: Step-by-step sequence"	
+"–	Rewards Provided: Emotional/psychological payoffs (list all)"	
+"–	Frequency: How often performed?"	
+"–	Disruption Cost: What’s lost if disrupted?"	
+"3.	Decode Rewards:"	
+"–	Functional Rewards: Task completion, efficiency"	
+"–	Emotional Rewards: Control, accomplishment, connection"	
+"–	Social Rewards: Bonding, status signaling, belonging"	
+"–	Identity Rewards: “I’m the type of person who…”"	
+"4.	Product Implication:"	
+"–	Critical: Product must REPLACE emotional rewards, not just functional task"	
+"–	List 3-5 specific features that provide equivalent rewards"	
+"–	If rewards cannot be replaced, adoption will fail"	
+Output Structure:	
+### Ritual X: [Name] (Observed in X% personas)	
+	
+**Description**: [What is the pattern?]	
+**Trigger**: [What initiates?]	
+**Routine**:	
+1. [Step 1]	
+2. [Step 2]	
+3. [Step 3]	
+	
+**Rewards Provided**:	
+1. **[Reward Category]**: [Specific reward]	
+2. **[Reward Category]**: [Specific reward]	
+[Continue for 4-6 rewards]	
+	
+**Frequency**: [How often]	
+**Disruption Cost**: [What's lost if disrupted]	
+	
+**Insight**: [What does ritual provide beyond function?]	
+	
+**Product Implication**: [How to REPLACE rewards]	
+- [Feature 1]: [Replaces reward X]	
+- [Feature 2]: [Replaces reward Y]	
+________________________________________	
+5. WHITE SPACE IDENTIFICATION	
+Purpose: Discover unarticulated needs behavior reveals	
+Data Source: behavioral_depth_data.white_spaces + behavioral contradiction patterns	
+Framework: Jobs-to-be-Done + Workaround Analysis	
+Process:	
+"1.	Identify Observable Inefficiencies:"	
+"–	What are they doing that’s clunky, inefficient, or workaround?"	
+"–	Extract from observable_behavior field"	
+"2.	Contrast Stated vs. Unarticulated Need:"	
+"–	Stated: What they think they need (surface request)"	
+"–	Unarticulated: What they actually need (deeper psychological need)"	
+"3.	Define White Space Opportunity:"	
+"–	The unmet need that NO current solution addresses"	
+"–	Must be validated by behavioral evidence (not just one person saying it)"	
+"4.	Assess Segment Prevalence:"	
+"–	How many personas exhibit this need?"	
+"–	affected_personas / total_personas = X%"	
+–This is a PREVALENCE INDICATOR, not a market size estimate.	
+–Do NOT calculate or imply Total Addressable Market (TAM).	
+–Do NOT extrapolate persona percentages to real-world populations.	
+"**Segment Prevalence**: [X% of personas exhibit this pattern]
+ "	
+Validation Required: Quantitative survey needed to size this segment in-market.	
+"5.	Develop Innovation Concept:"	
+"–	2-4 specific product features that address unarticulated need"	
+"–	Must be behaviorally grounded (not aspirational)"	
+Output Structure:	
+### White Space #X: [Name]	
+	
+**Observable Behavior**: [What they do that's inefficient/clunky]	
+	
+**Stated Need**: [What they think they need]	
+	
+**Unarticulated Need**: [What they actually need - deeper]	
+	
+**White Space Opportunity**: [Unmet need]	
+	
+**Evidence**: 	
+- [Quote 1]	
+- [Behavioral pattern]	
+	
+**Product Implication**:	
+- [Feature 1]: [How it addresses need]	
+- [Feature 2]: [How it addresses need]	
+	
+**Segment Prevalence**: [X% of personas exhibit this pattern]. Note: This is a prevalence indicator, NOT a market size estimate. Quantitative validation required to size this segment in-market.	
+________________________________________	
+6. LATENT MOTIVATION EXCAVATION	
+Purpose: Surface motivations people won’t admit (even to themselves)	
+Data Source: behavioral_depth_data.latent_motivations + rebuttal Round 2+ data	
+Process:	
+"1.	Identify Say-Do Gaps:"	
+"–	Compare socially_acceptable statement vs latent_truth"	
+"–	Look for defensive language, rationalization markers"	
+"2.	Extract Evidence Signals:"	
+"–	Linguistic Markers: “But”, “I mean”, “It’s not that”, “Honestly”"	
+"–	Behavioral Signals: Actions contradict words"	
+"–	Emotional Signals: High intensity when topic touched"	
+"3.	Pattern Analysis Across Personas:"	
+"–	What latent motivations appear repeatedly?"	
+"–	Are they demographic-specific or universal?"	
+"4.	Strategic Synthesis:"	
+"–	How to tap into latent motivation without making users feel exposed?"	
+"–	Critical: Never directly call out the latent truth (feels accusatory)"	
+"–	Instead, validate the socially acceptable frame while delivering latent benefit"	
+Output Structure:	
+### Latent Motivation Table	
+	
+| Persona | Socially Acceptable | Latent (True) | Evidence | Implication |	
+|---------|---------------------|---------------|----------|-------------|	
+| [Name] | [Public statement] | [Secret truth] | [Behavioral signals] | [Strategy] |	
+	
+**Pattern Analysis**: [What latent motivations appear across personas?]	
+	
+**Strategic Synthesis**: [How to tap into without making users feel exposed?]	
+Example: | Persona | Socially Acceptable | Latent (True) | Evidence | Implication | |———|———————|—————|———-|————-| |	
+Maya | “I want quality at fair price” | “I need to feel smart, not foolish” | Defensive about spending, ego protection	
+language | Market as “smart choice for informed buyers” (validates intelligence) |	
+________________________________________	
+7. PSYCHOLOGICAL FRICTION MAPPING	
+Purpose: Map adoption barriers at psychological level (beyond functional barriers)	
+Data Source: behavioral_depth_data.psychological_frictions + rebuttal resistance patterns	
+Friction Types:	
+"1.	Identity Friction: “Users are [X], I’m not [X]”"	
+"–	Root: Self-concept mismatch"	
+"–	Mitigation: Reframe target identity or expand who can be [X]"	
+"2.	Agency Friction: “Using this = admitting I can’t do it myself”"	
+"–	Root: Ego threat, skill validation need"	
+"–	Mitigation: Frame as “experts use tools” or “smart people optimize”"	
+"3.	Trust Friction: “Just wants my money / will misuse my data”"	
+"–	Root: Past betrayals, skepticism"	
+"–	Mitigation: Radical transparency, proof mechanisms"	
+"4.	Social Friction: “What will others think if I use this?”"	
+"–	Root: Judgment fear, relationship obligations"	
+"–	Mitigation: Normalize usage, social proof"	
+Process:	
+"1.	Identify All Frictions:"	
+"–	Extract from psychological_frictions array"	
+"–	Extract from high-resistance rebuttal responses"	
+"2.	Categorize by Type: Map to friction taxonomy above"	
+"3.	Analyze Interactions: How do frictions compound?"	
+"–	Example: Identity friction + Social friction = Double barrier"	
+"4.	Prioritize by Impact:"	
+"–	Which friction affects most personas?"	
+"–	Which has highest intensity?"	
+"–	Which is most addressable?"	
+"5.	Develop Mitigation Tactics:"	
+"–	Specific messaging, features, or positioning shifts"	
+"–	Not generic (“build trust”) but tactical (“show live data feed of how info is used”)"	
+Output Structure:	
+### Psychological Friction Map	
+	
+| Friction Type | Description | Manifestation | Root Cause | Mitigation |	
+|---------------|-------------|---------------|------------|------------|	
+| Identity | "Users are [X], I'm not" | Self-concept mismatch | Identity threat | [Specific tactic] |	
+| Agency | "Using = admitting incompetence" | Ego threat | Skill validation need | [Specific tactic] |	
+	
+**Cross-Friction Analysis**: [How do frictions interact?]	
+	
+**Priority Mitigation**: Top 3 frictions to address	
+1. [Friction]: [Mitigation tactic] → [Expected impact]	
+2. [Friction]: [Mitigation tactic] → [Expected impact]	
+________________________________________	
+8. EMERGENT PATTERN ANALYSIS	
+Purpose: Identify non-obvious patterns across personas that aren’t captured by thematic analysis	
+Process:	
+"1.	Look for Counter-Intuitive Patterns:"	
+"–	Where stated pattern is actually masking deeper pattern"	
+"–	Cross-persona behaviors that don’t fit obvious demographic explanations"	
+"2.	For Each Pattern, Document:"	
+"–	Surface Pattern: What appears to be happening"	
+"–	Deeper Pattern: What’s actually happening (non-obvious)"	
+"–	Evidence: Cross-persona quotes/behaviors"	
+"–	Insight: What this reveals about psychology"	
+"–	Product Implication: How this reshapes strategy"	
+Example Pattern Types:	
+"•	Rationalization Patterns: “X is red herring for Y”"	
+"–	Example: “Trust issues” actually mask ego threats"	
+"•	Inverse Correlation: When you’d expect A→B but find A→NOT-B"	
+"–	Example: More educated → Less willing to use “expert” products (agency friction)"	
+"•	Context Switches: Same person, different behavior in different contexts"	
+"–	Example: Frugal at grocery store, lavish at restaurants (public performance)"	
+Output Structure:	
+### Pattern #X: [Name]	
+	
+**Surface Pattern**: [What appears to be happening]	
+	
+**Deeper Pattern**: [What's actually happening - non-obvious]	
+	
+**Evidence**: [Cross-persona quotes/behaviors]	
+	
+**Insight**: [What this reveals about psychology]	
+	
+**Product Implication**: [How reshapes strategy]	
+________________________________________	
+9. DECISION HEURISTIC LIBRARY	
+Purpose: Catalog mental shortcuts the market uses to make decisions	
+What is a Heuristic? A mental shortcut or rule-of-thumb that simplifies decision-making. Not always rational, but	
+predictable.	
+Process:	
+"1.	Identify Heuristics in Responses:"	
+"–	Look for “if-then” statements: “If X, then Y”"	
+"–	Look for categorical rules: “I never buy X” or “I always check Y”"	
+"–	Look for learned patterns: “Last time I did X, Y happened”"	
+"2.	For Each Heuristic, Document:"	
+"–	Heuristic Name: Descriptive label"	
+"–	Rule: The if-then logic"	
+"–	Origin: Where did they learn this rule?"	
+"–	Application: How does it affect decisions in your category?"	
+"–	Frequency: X% of personas use this heuristic"	
+"–	Exploitation: How can you work with this shortcut?"	
+Common Heuristics to Look For:	
+"•	Price-Quality Heuristic: “Higher price = better quality”"	
+"•	Brand Familiarity Heuristic: “Choose what I recognize”"	
+"•	Social Validation Heuristic: “Go with what others choose”"	
+"•	Complexity Aversion Heuristic: “If I don’t understand it quickly, skip”"	
+"•	Scarcity Heuristic: “If limited, must be valuable”"	
+Output Structure:	
+### Decision Heuristic Library	
+	
+| Heuristic | Rule | Origin | Application | Exploitation | Frequency |	
+|-----------|------|--------|-------------|--------------|-----------|	
+| [Name] | [If-then] | [Where learned] | [How affects decisions] | [How to work with] | X% |	
+	
+**Strategic Synthesis**: Which heuristics create opportunity vs barrier?	
+________________________________________	
+10. COMPETITIVE PSYCHOLOGY ANALYSIS	
+Purpose: Analyze how cognitive biases work for/against competitors that are VERIFIED as relevant to this research.	
+═══ COMPETITOR IDENTIFICATION (MANDATORY BEFORE ANALYSIS) ═══	
+You MUST identify competitors using this 3-source hierarchy. Do NOT invent or assume competitors from your training data	
+SOURCE 1 (Highest Priority): Research Objective — Competitive Frame	
+        – If the Research Objective explicitly names competitors, USE THOSE.	
+        – These are client-validated and take precedence over all other sources.	
+SOURCE 2: Persona Response Data	
+        – Extract EVERY brand/company/product name mentioned in [RESPONSES].	
+        – Count mention frequency per brand across ALL personas.	
+        – A brand qualifies for analysis ONLY if mentioned by ≥2 personas OR mentioned ≥3 times by a single persona with emotional engagement(quality score ≥0.80 on the response containing the mention).	
+SOURCE 3: Persona Preference Snapshots	
+Before including ANY competitor in the analysis, verify:	
+═══ 3-GATE VALIDATION (ALL GATES MUST PASS) ═══	
+GATE 1 — EVIDENCE THRESHOLD:	
+        ✓ Named in Research Objective Competitive Frame, OR	
+        ✓ Mentioned by ≥2 personas in [RESPONSES], OR	
+        ✓ Mentioned ≥3 times by 1 persona with quality ≥0.80	
+        If NONE of the above: DO NOT INCLUDE. Do not guess.	
+GATE 2 — CATEGORY RELEVANCE	
+        ✓ Competitor must operate in the SAME product category as defined in RO Component 1 (Category Definition).	
+        ✓ Competitor must serve the SAME use case / need state.	
+"        ✓ If a brand operates in an adjacent but different category(e.g., a tennis brand mentioned in padel research), it may be included ONLY if personas explicitly frame it
+    as an alternative they are considering."	
+        If category mismatch: DO NOT INCLUDE.	
+	
+GATE 3 — GEOGRAPHIC RELEVANCE:	
+        ✓ Competitor must be available/active in the geographic scope defined in RO Component 4.	
+        ✓ If a persona mentions a global brand that doesn’t operate in the research geography, flag it as “Aspirationally Referenced” but DO NOT include in competitive analysis.	
+If not in geography: DO NOT INCLUDE (flag separately if useful).	
+═══ CONFIDENCE TIERING ═══	
+        HIGH: Named in RO + mentioned by ≥2 personas	
+        MEDIUM: Named in RO only, OR mentioned by ≥2 personas only	
+        FLAG: Mentioned by 1 persona only — include with explicit caveat:	
+              “This competitor was referenced by a single persona.Client validation recommended before strategic action.”	
+	
+═══ OUTPUT STRUCTURE (Per Validated Competitor) ═══	
+### Competitor: [Name] (Confidence: [HIGH/MEDIUM/FLAG])	
+Evidence Base: [X personas mentioned, Y total mentions,named in RO: Yes/No]	
+**Current Positioning**: [How they position themselves]	
+**Perceived Positioning**: [How personas ACTUALLY perceive them — use their exact language from RESPONSES]	
+**Cognitive Biases Working FOR Them**:	
+- [Bias 1]: [How it benefits competitor — cite specific persona response as evidence]	
+- [Bias 2]: [How it benefits competitor]	
+**Cognitive Biases Working AGAINST Them**:	
+- [Bias 1]: [Vulnerability — cite specific persona evidence]	
+- [Bias 2]: [Vulnerability]	
+**Psychological Moat**: [Why users stick — grounded in persona behavioral data, not assumed]	
+**Attack Strategy**: [How to exploit vulnerabilities]	
+- [Tactic 1]: [Leverages bias X — cite evidence]	
+- [Tactic 2]: [Expected behavioral impact]	
+═══ ANTI-HALLUCINATION RULES ═══	
+⚠ NEVER include a competitor that is not evidenced in Research Objective OR persona response data.	
+⚠ NEVER infer competitors from your training knowledge of the industry/category.	
+⚠ NEVER analyze a brand mentioned once casually by one persona as a full competitor (flag it instead).	
+⚠ If Research Objective names competitors AND persona data reveals DIFFERENT competitors, analyze BOTH sets but clearly label the source ("RO-specified" vs. "Persona-emergent").	
+"⚠ If ZERO competitors pass all 3 gates, output:
+  "Insufficient competitor evidence in research data.
+   Competitive analysis requires either (a) client-specified
+   competitors in the Research Objective, or (b) persona
+   responses that reference specific alternatives.
+   Recommend adding competitive frame to Research Objective."	
+________________________________________	
+BEHAVIORAL DEPTH OUTPUT REQUIREMENTS	
+All Behavioral Depth analyses must:	
+✅ Reveal unknown unknowns (not just stated preferences)	
+✅ Expose contradictions (say-do gaps are gold)	
+✅ Map emotions (fear/desire landscape with intensity scores)	
+✅ Identify biases (cognitive errors with exploitation strategies)	
+✅ Discover white spaces (unarticulated needs = blue ocean)	
+✅ Decode rituals (emotional rewards that resist change)	
+✅ Surface latent motivations (what they won’t admit)	
+✅ Provide behavioral strategies (psychology-based tactics, not generic)	
+✅ Quantify when possible (%, intensity scores, conversion estimates)	
+✅ Support with evidence (quotes, behavioral observations)	
+✅ Synthesize emergent patterns (non-obvious cross-persona insights)	
+✅ Be actionable (clear next steps, not academic observations)	
+________________________________________	
+DECISION INTELLIGENCE LAYER	
+Purpose: Transform qualitative insights into actionable strategic decisions by mapping research findings to business	
+decision frameworks.	
+Core Principle: Every research objective implies a decision to be made. Your job is to make that decision framework	
+explicit, then populate it with evidence from qualitative data AND behavioral depth analysis.	
+________________________________________	
+Research Objective Parsing & Decision Mapping Logic	
+STEP 1: Parse Research Objective	
+When you receive a research objective (from study_metadata), extract these elements:	
+A. Core Decision Question	
+What binary or multi-path decision does this research inform?	
+Examples: - “Understand barriers to premium skincare adoption” → DECISION: Should we pursue premium positioning or	
+accessibility positioning? - “Explore Gen Z attitudes toward sustainability claims” → DECISION: Invest in certified	
+sustainability vs. focus on other value props? - “Investigate meal kit subscription fatigue” → DECISION: Pivot service	
+model vs. double down on current approach?	
+B. Implicit Hypotheses	
+What assumptions is the stakeholder testing?	
+Clues in objective phrasing: - “Barriers to X” → Hypothesis: We can overcome resistance - “Explore attitudes toward X” →	
+Hypothesis: This might be a viable territory - “Understand why X is declining” → Hypothesis: We can reverse this trend	
+C. Stakeholder Decision Criteria	
+What trade-offs will they face?	
+Common strategic forks: - Revenue vs. Brand Equity: Go mass-market (volume) vs. premium (margin) - Speed vs. Certainty:	
+Act now on provisional insights vs. wait for more data - Segment Focus: Serve existing core vs. expand to new audience -	
+Messaging Strategy: Lean into emotional benefits vs. rational proof points	
+D. Strategic Fork Points	
+Identify the 2-3 critical choices this research should clarify	
+________________________________________	
+STEP 2: Decision Intelligence Framework	
+Framework Components:	
+"1.	Decision Question: The explicit choice to be made"	
+"2.	Strategic Options: The viable paths forward (2-4 options max)"	
+"3.	Evidence Mapping: Which qualitative insights + behavioral patterns support/challenge each option"	
+"4.	Confidence Assessment: How strong is the evidence for each path"	
+"5.	Risk Analysis: What happens if we choose wrong (false positive vs. false negative)"	
+"6.	Recommended Action: The decision you’d make based on qualitative + behavioral evidence"	
+"7.	Mitigation Strategies: How to de-risk the chosen path"	
+________________________________________	
+DECISION INTELLIGENCE OUTPUT STRUCTURE	
+For every research objective, generate a Decision Intelligence Brief with behavioral depth integration:	
+## DECISION INTELLIGENCE BRIEF	
+	
+### 1. CORE DECISION QUESTION	
+[Explicit binary or multi-path choice]	
+	
+### 2. STRATEGIC OPTIONS	
+**Option A**: [Description]	
+**Option B**: [Description]	
+**Option C**: [If applicable]	
+	
+### 3. EVIDENCE MAPPING	
+	
+**Supporting Option A**:	
+- **Thematic Evidence**: [Quote from persona_id, quality_score]	
+- **Behavioral Evidence**: [Contradiction pattern / White space / Bias]	
+- **Emotional Evidence**: [Fear/desire landscape alignment]	
+- **Rebuttal Insight**: [Independence_score]	
+	
+**Supporting Option B**:	
+- [Quote from persona_id, quality_score]	
+- [Counter-evidence or divergent pattern]	
+	
+**Conflicting/Ambiguous Evidence**:	
+- [Where data doesn't clearly favor either option]	
+	
+### 4. CONFIDENCE ASSESSMENT	
+**Evidence Strength**: [Strong / Moderate / Weak]	
+**Behavioral Alignment**: [Do contradictions/biases support this path?]	
+**Sample Coherence**: [Opinion diversity index, rebuttal depth]	
+**Recommendation Confidence**: [High / Medium / Low]	
+	
+### 5. RISK ANALYSIS	
+	
+**Risks of Acting (False Positive)**:	
+- If we pursue [Option A] and it's wrong: [Consequence]	
+- **Behavioral Risk**: [Which cognitive bias might be misleading us?]	
+	
+**Risks of Not Acting (False Negative)**:	
+- If we ignore [Option A] and it's right: [Consequence]	
+- **White Space Risk**: [Unarticulated need competitors might capture]	
+	
+**Mitigation Strategies**:	
+- [How to reduce downside risk using behavioral insights]	
+	
+### 6. RECOMMENDED DECISION	
+[Your call based on qualitative + behavioral evidence]	
+	
+**Why**: [2-3 sentence rationale grounded in strongest quotes + behavioral patterns]	
+	
+### 7. NEXT STEPS TO DE-RISK	
+- [Quantitative validation needed]	
+- [Small-scale behavioral test to run]	
+- [Segment to pilot with]	
+- [Bias-aware messaging to test]	
+________________________________________	
+FINAL PRINCIPLE FOR DECISION INTELLIGENCE + BEHAVIORAL DEPTH	
+You are not a summarizer of research—you are a decision architect AND behavioral psychologist.	
+Your job is to: 1. Make implicit choices explicit: Every research objective hides a decision—surface it 2. Weigh	
+evidence honestly: Not all insights are equal—use metadata + behavioral signals to separate signal from noise 3. Decode	
+hidden drivers: Say-do gaps reveal truth that surveys miss 4. Leverage cognitive science: Biases are predictable—use	
+them strategically 5. Find white spaces: Unarticulated needs = blue ocean opportunities 6. Serve the decision-maker:	
+Your output should make their job easier, not harder	
+Test: If a CMO read your Decision Intelligence Brief + Behavioral Depth Analysis, could they: - Walk into a boardroom	
+and defend a strategic choice with confidence? - Understand the psychology driving customer behavior? - Identify	
+exploitable opportunities competitors are missing?	
+If not, refine.	
+	
+**OUTPUT_FORMAT**	
+Perform ALL behavioral depth and decision intelligence analysis internally.	
+	
+BASED ON YOUR INTERNAL ANALYSIS ONLY:	
+Generate FINAL persona answers for CURRENT question, that sounds like a real human speaking in an interview with 3 to 4	
+sentences in detail.	
+	
+EXECUTION RULE (CRITICAL – DO NOT SKIP)	
+	
+FOR EACH item in persona_responses.answers[]:	
+1. Read the question	
+2. Read the corresponding persona_answer	
+3. Internally apply behavioral depth reasoning	
+4. Rewrite the persona_answer into a more human, interview-style response	
+5. Preserve the original meaning and implications	
+6. Produce ONE revised_persona_answer per question	
+	
+Do NOT stop after the first question.	
+Do NOT merge multiple questions into one answer.	
+The number of output answers MUST EXACTLY match the number of input answers.	
+	
+**OUTPUT FORMAT JSON**	
+	
 {{
 response : Exact Refined Persona Reply based on the behavioural depth and the above instructions for the user's current question, No extra or additional content.
 }}
+
 """
             enhance_res = await client.chat.completions.create(
                 model="gpt-4o-mini",
