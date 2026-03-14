@@ -94,16 +94,16 @@ app.include_router(omi_workflow.router)
 app.include_router(admin.router)
 app.include_router(enterprise.router)
 
-default_cors_origins = [
-    "http://localhost:5173",
-    "http://localhost:5174",
-    "https://dev-ui.synthetic-people.ai",
-    "https://synthetic-people.ai",
-    "https://www.synthetic-people.ai",
-]
+# default_cors_origins = [
+#     "http://localhost:5173",
+#     "http://localhost:5174",
+#     "https://dev-ui.synthetic-people.ai",
+#     "https://synthetic-people.ai",
+#     "https://www.synthetic-people.ai",
+# ]
 
-cors = os.getenv("CORS_ORIGINS", "")
-allow_origins = [x.strip() for x in cors.split(",") if x.strip()] or default_cors_origins
+cors = os.getenv("CORS_ORIGINS",  "https://staging-ui.synthetic-people.ai" )
+allow_origins = [x.strip() for x in cors.split(",") if x.strip()] 
 
 app.add_middleware(
     CORSMiddleware,
