@@ -1,17 +1,20 @@
-import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { TbArrowRight, TbPlus, TbLayoutDashboard, TbSun, TbMoon, TbFlask, TbStar, TbBuilding } from 'react-icons/tb';
+import { TbArrowRight, TbPlus, TbLayoutDashboard, TbSun, TbMoon, TbFlask, TbStar, TbBuilding, TbUsers } from 'react-icons/tb';
 import { useSelector } from 'react-redux';
 import { useTheme } from "../../../context/ThemeContext";
 import logoForDark from "../../../assets/Logo_Dark_bg.png";
 import logoForLight from "../../../assets/Logo_Light_bg.png";
 import { workspaceService } from "../../../services/workspaceService";
 import WorkspacePopup from "../organization/Workspace/WorkspacePopup";
+import InviteTeamModal from "../organization/Workspace/InviteTeamModal";
 import { useWorkspace as useWorkspaceContext } from "../../../context/WorkspaceContext";
+import { isPlatformAdmin } from "../../../utils/authRouting";
 
 const LandingPage = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { theme, toggleTheme } = useTheme();
   const { user } = useSelector((state) => state.auth);
   const [hasWorkspaces, setHasWorkspaces] = useState(false);
@@ -19,15 +22,28 @@ const LandingPage = () => {
   const { setSelectedWorkspace } = useWorkspaceContext();
   const [showWorkspaceModal, setShowWorkspaceModal] = useState(false);
   const [workspaces, setWorkspaces] = useState([]);
+  const [inviteWorkspace, setInviteWorkspace] = useState(null);
+
+  const highlightedWorkspaceId = location.state?.highlightWorkspaceId ?? null;
+  const primaryWorkspace = useMemo(() => {
+    if (workspaces.length === 0) {
+      return null;
+    }
+
+    if (highlightedWorkspaceId) {
+      return (
+        workspaces.find((workspace) => workspace.id === highlightedWorkspaceId) ||
+        workspaces[0]
+      );
+    }
+
+    return [...workspaces].sort((a, b) =>
+      new Date(b.created_at) - new Date(a.created_at)
+    )[0];
+  }, [highlightedWorkspaceId, workspaces]);
 
   useEffect(() => {
-    const isSuperAdmin =
-      user?.user_type === "Super Admin" ||
-      user?.user_type === "super_admin" ||
-      user?.role === "Super Admin" ||
-      user?.role === "super_admin";
-
-    if (isSuperAdmin) {
+    if (isPlatformAdmin(user)) {
       navigate("/admin/dashboard");
     }
   }, [user, navigate]);
@@ -51,17 +67,31 @@ const LandingPage = () => {
     fetchWorkspaces();
   }, []);
 
+  useEffect(() => {
+    if (
+      user?.landing_type === "enterprise_setup" &&
+      !loading &&
+      !showWorkspaceModal &&
+      !inviteWorkspace &&
+      workspaces.length === 0
+    ) {
+      setShowWorkspaceModal(true);
+    }
+  }, [inviteWorkspace, loading, showWorkspaceModal, user, workspaces.length]);
+
   const handleCreateWorkspace = () => {
+    if (!user?.can_create_workspace) {
+      return;
+    }
     setShowWorkspaceModal(true);
   };
 
   const handleViewWorkspace = () => {
-    if (workspaces.length > 0) {
-      const sortedWorkspaces = [...workspaces].sort((a, b) =>
-        new Date(b.created_at) - new Date(a.created_at)
-      );
-      setSelectedWorkspace(sortedWorkspaces[0]);
-      navigate(`/main/organization/workspace/explorations/${sortedWorkspaces[0].id}`);
+    if (primaryWorkspace) {
+      setSelectedWorkspace(primaryWorkspace);
+      navigate(`/main/organization/workspace/explorations/${primaryWorkspace.id}`);
+    } else if (user?.default_workspace_id) {
+      navigate(`/main/organization/workspace/explorations/${user.default_workspace_id}`);
     } else {
       navigate('/main/organization/workspace');
     }
@@ -71,10 +101,30 @@ const LandingPage = () => {
     setShowWorkspaceModal(false);
     if (newWorkspace?.id) {
       setSelectedWorkspace(newWorkspace);
-      navigate(`/main/organization/workspace/explorations/${newWorkspace.id}`);
+      if (user?.can_create_workspace) {
+        setInviteWorkspace(newWorkspace);
+      } else {
+        navigate(`/main/organization/workspace/explorations/${newWorkspace.id}`);
+      }
     } else {
       fetchWorkspaces();
     }
+  };
+
+  const finalizeWorkspaceSetup = (workspaceId) => {
+    const workspace = inviteWorkspace;
+    setInviteWorkspace(null);
+
+    if (!workspaceId) {
+      navigate('/landing', { replace: true });
+      return;
+    }
+
+    if (workspace) {
+      setSelectedWorkspace(workspace);
+    }
+
+    navigate(`/main/organization/workspace/explorations/${workspaceId}`, { replace: true });
   };
 
   return (
@@ -147,7 +197,7 @@ const LandingPage = () => {
                 <Icon size={16} />
                 <span>{label}</span>
                 {!isEnterprise && (
-                  <span className="opacity-70">· {used}/{limit} exploration{limit !== 1 ? 's' : ''} used</span>
+                  <span className="opacity-70">| {used}/{limit} exploration{limit !== 1 ? 's' : ''} used</span>
                 )}
               </div>
             </div>
@@ -164,6 +214,59 @@ const LandingPage = () => {
             Lets go!
           </div>
         </div>
+
+        {user?.account_tier === 'enterprise' && primaryWorkspace && (
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mx-auto max-w-2xl rounded-3xl border border-gray-200 dark:border-white/10 bg-white/90 dark:bg-white/5 backdrop-blur-xl p-6 text-left shadow-xl"
+          >
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-600 dark:text-blue-300">
+              Your Workspace
+            </p>
+            <h2 className="mt-3 text-2xl font-bold text-gray-900 dark:text-white">
+              {primaryWorkspace.name}
+            </h2>
+            <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+              {primaryWorkspace.department_name || 'Enterprise workspace'}
+            </p>
+            {primaryWorkspace.description && (
+              <p className="mt-4 text-sm leading-relaxed text-gray-600 dark:text-gray-300">
+                {primaryWorkspace.description}
+              </p>
+            )}
+            <div className="mt-6 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleViewWorkspace}
+                className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white transition-colors hover:bg-blue-700"
+              >
+                Open Workspace
+                <TbArrowRight className="w-4 h-4" />
+              </button>
+              {user?.can_create_workspace && (
+                <button
+                  type="button"
+                  onClick={() => navigate(`/main/organization/workspace/manage/${primaryWorkspace.id}`)}
+                  className="inline-flex items-center gap-2 rounded-xl border border-gray-300 dark:border-white/10 px-5 py-3 font-medium text-gray-700 dark:text-gray-200 transition-colors hover:bg-gray-50 dark:hover:bg-white/5"
+                >
+                  <TbUsers className="w-4 h-4" />
+                  Invite Team
+                </button>
+              )}
+              {user?.can_create_workspace && (
+                <button
+                  type="button"
+                  onClick={handleCreateWorkspace}
+                  className="inline-flex items-center gap-2 rounded-xl border border-gray-300 dark:border-white/10 px-5 py-3 font-medium text-gray-700 dark:text-gray-200 transition-colors hover:bg-gray-50 dark:hover:bg-white/5"
+                >
+                  <TbPlus className="w-4 h-4" />
+                  Add Another Workspace
+                </button>
+              )}
+            </div>
+          </motion.div>
+        )}
 
         {/* Commented Yellow Placeholder Box */}
         {/* <div className="grid md:grid-cols-2 gap-8 items-center mt-8 max-w-3xl mx-auto">
@@ -191,7 +294,7 @@ const LandingPage = () => {
               <span>View Workspace</span>
               <TbArrowRight className="w-5 h-5" />
             </button>
-          ) : (
+          ) : user?.can_create_workspace ? (
             <button
               onClick={handleCreateWorkspace}
               className="flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:from-blue-700 hover:to-blue-800 transition-all shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 hover:scale-105 font-semibold"
@@ -200,6 +303,18 @@ const LandingPage = () => {
               <span>Create Workspace</span>
               <TbArrowRight className="w-5 h-5" />
             </button>
+          ) : user?.default_workspace_id ? (
+            <button
+              onClick={handleViewWorkspace}
+              className="flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:from-blue-700 hover:to-blue-800 transition-all shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 hover:scale-105 font-semibold"
+            >
+              <TbArrowRight className="w-5 h-5" />
+              <span>Go to Exploration</span>
+            </button>
+          ) : (
+            <div className="px-6 py-3 rounded-xl border border-gray-200 dark:border-white/10 text-gray-500 dark:text-gray-400">
+              Waiting for workspace access
+            </div>
           )}
         </div>
       </motion.div>
@@ -209,6 +324,20 @@ const LandingPage = () => {
         isOpen={showWorkspaceModal}
         onClose={() => setShowWorkspaceModal(false)}
         onSuccess={handleWorkspaceCreated}
+      />
+
+      <InviteTeamModal
+        isOpen={Boolean(inviteWorkspace)}
+        workspaceId={inviteWorkspace?.id}
+        workspaceName={inviteWorkspace?.name}
+        onSkip={() => {
+          const workspaceId = inviteWorkspace?.id;
+          finalizeWorkspaceSetup(workspaceId);
+        }}
+        onLaunch={() => {
+          const workspaceId = inviteWorkspace?.id;
+          finalizeWorkspaceSetup(workspaceId);
+        }}
       />
     </div>
   );

@@ -16,7 +16,6 @@ const CreateOrgModal = ({ onClose, onCreated }) => {
     org_name: '',
     admin_full_name: '',
     admin_email: '',
-    admin_user_type: 'Researcher',
     exploration_limit: 10,
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -54,8 +53,6 @@ const CreateOrgModal = ({ onClose, onCreated }) => {
 
   const inputClass =
     'w-full px-4 py-3 rounded-xl border-2 border-gray-300 dark:border-white/10 bg-white dark:bg-white/5 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20 transition-all outline-none disabled:opacity-50';
-  const selectClass =
-    'w-full px-4 py-3 rounded-xl border-2 border-gray-300 dark:border-white/10 bg-white dark:bg-[#1a1f2e] text-gray-900 dark:text-white focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20 transition-all outline-none disabled:opacity-50';
   const labelClass = 'block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5';
 
   return (
@@ -95,19 +92,9 @@ const CreateOrgModal = ({ onClose, onCreated }) => {
             <label className={labelClass}>Admin Email <span className="text-red-500">*</span></label>
             <input type="email" name="admin_email" value={form.admin_email} onChange={handleChange} disabled={isSubmitting} placeholder="jane@acme.com" className={inputClass} />
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={labelClass}>Admin User Type</label>
-              <select name="admin_user_type" value={form.admin_user_type} onChange={handleChange} disabled={isSubmitting} className={selectClass}>
-                <option value="Student">Student</option>
-                <option value="Startup">Startup</option>
-                <option value="Researcher">Researcher</option>
-              </select>
-            </div>
-            <div>
-              <label className={labelClass}>Exploration Quota</label>
-              <input type="number" name="exploration_limit" min="1" value={form.exploration_limit} onChange={handleChange} disabled={isSubmitting} className={inputClass} />
-            </div>
+          <div>
+            <label className={labelClass}>Exploration Quota</label>
+            <input type="number" name="exploration_limit" min="1" value={form.exploration_limit} onChange={handleChange} disabled={isSubmitting} className={inputClass} />
           </div>
 
           {errorMsg && (

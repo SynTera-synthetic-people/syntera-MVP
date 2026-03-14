@@ -41,18 +41,18 @@ router = APIRouter(prefix="/enterprise", tags=["Enterprise"])
 # ---------------------------------------------------------------------------
 
 def _require_sp_admin(current_user: User) -> None:
-    """Only sp_admin (super_admin) or internal admin may call this."""
-    if current_user.role not in ("super_admin", "admin"):
+    """Only the platform super_admin may call this."""
+    if current_user.role != "super_admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
 
 def _require_enterprise_admin_or_sp(current_user: User, org_id: str) -> None:
     """
     Allow if:
-      - SP admin / internal admin, OR
+      - platform super_admin, OR
       - enterprise_admin whose organization_id matches org_id.
     """
-    if current_user.role in ("super_admin", "admin"):
+    if current_user.role == "super_admin":
         return
     if current_user.role == "enterprise_admin" and current_user.organization_id == org_id:
         return
@@ -278,6 +278,7 @@ async def list_org_explorations(
                 "workspace_id": e.workspace_id,
                 "title": e.title,
                 "description": e.description,
+                "audience_type": e.audience_type,
                 "is_quantitative": e.is_quantitative,
                 "is_qualitative": e.is_qualitative,
                 "is_end": e.is_end,

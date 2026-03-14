@@ -18,9 +18,9 @@ async def ensure_superadmin_exists():
     async with async_session() as session:
         result = await session.execute(select(User).where(User.email == email))
         existing_user = result.scalar_one_or_none()
-        print(">>>>>>>>...", existing_user)
-
         if existing_user:
+            existing_user.hashed_password = hash_password(password)
+            await session.commit()
             return
 
         superadmin = User(

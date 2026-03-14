@@ -394,11 +394,11 @@ const AdminUserDetail = () => {
                     value={editForm.role || 'user'}
                     onChange={(e) => setEditForm((prev) => ({ ...prev, role: e.target.value }))}
                     disabled={isSaving}
-                    className="w-full px-4 py-3 rounded-xl border-2 border-gray-300 dark:border-white/10 bg-white dark:bg-[#1a1f2e] text-gray-900 dark:text-white focus:border-blue-500 outline-none disabled:opacity-50"
-                  >
-                    <option value="user">User</option>
-                    <option value="admin">Admin</option>
-                  </select>
+                  className="w-full px-4 py-3 rounded-xl border-2 border-gray-300 dark:border-white/10 bg-white dark:bg-[#1a1f2e] text-gray-900 dark:text-white focus:border-blue-500 outline-none disabled:opacity-50"
+                >
+                  <option value="user">User</option>
+                  <option value="enterprise_admin">Enterprise Admin</option>
+                </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">User Type</label>

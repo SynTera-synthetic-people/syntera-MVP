@@ -99,16 +99,33 @@ async def send_reset_password_email(email: str, token: str):
 
     await send_email("Reset your Synthetic People password", [email], body)
 
-async def send_invite_email(email: str, token: str):
+async def send_invite_email(
+    email: str,
+    token: str,
+    workspace_name: str,
+    temp_password: Optional[str] = None,
+):
     invite_link = f"{settings.FRONTEND_URL}/accept-invitation?token={token}"
+    login_url = settings.FRONTEND_URL
+
+    credentials_block = (
+        f"Login URL: <a href='{login_url}'>{login_url}</a><br>"
+        f"Email: {email}<br>"
+    )
+    if temp_password:
+        credentials_block += (
+            f"Temporary Password: <b>{temp_password}</b><br><br>"
+            "<em>Please change your password after your first login.</em><br><br>"
+        )
 
     body = build_html_email(
         title="You've Been Invited to Join a Workspace",
         message=(
-            "You've been invited to join a workspace on <b>Synthetic People</b>.<br>"
-            "Click below to accept and start collaborating!"
+            f"You've been invited to join the workspace <b>{workspace_name}</b> on <b>Synthetic People</b>.<br><br>"
+            + credentials_block
+            + "Click below to accept the invitation and open the workspace."
         ),
-        action_text="Accept Invitation",
+        action_text="Open Workspace Invite",
         action_link=invite_link,
         footer_note="This invitation will expire in 7 days.",
     )

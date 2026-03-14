@@ -26,18 +26,18 @@ class AdminCreateUserIn(BaseModel):
     """DTO for admin-provisioned user creation."""
     full_name: str
     email: EmailStr
-    role: Literal["user", "admin", "enterprise_admin"] = "user"
+    role: Literal["user"] = "user"
     user_type: Literal["Student", "Startup", "Researcher"] = "Student"
     is_trial: bool = True
     # Pricing tier: "free" | "tier1" | "enterprise"
-    account_tier: Literal["free", "tier1", "enterprise"] = "free"
+    account_tier: Literal["free", "tier1"] = "free"
 
 
 class AdminUpdateUserIn(BaseModel):
     """DTO for admin updating a user. All fields are optional (partial update)."""
     full_name: Optional[str] = None
     email: Optional[EmailStr] = None
-    role: Optional[Literal["user", "admin", "enterprise_admin"]] = None
+    role: Optional[Literal["user", "enterprise_admin"]] = None
     user_type: Optional[str] = None
     is_trial: Optional[bool] = None
     trial_exploration_limit: Optional[int] = None

@@ -2,38 +2,33 @@ import { call, put, takeLatest } from 'redux-saga/effects';
 import { authService } from '../../services/authService';
 import { loginStart, loginSuccess, loginFailure } from '../slices/authSlice';
 import { setAuthToken } from '../../utils/axiosConfig';
+import { buildAuthUser } from '../../utils/authRouting';
 
 function* loginSaga(action) {
   try {
     const { email, password } = action.payload;
 
     const response = yield call(authService.login, { email, password });
+    const token = response?.data?.access_token;
 
-    const { data } = response;
-    const user = {
-      user_id: data.user_id,
-      full_name: data.full_name,
-      email: data.email,
-      role: data.role,
-      user_type: data.user_type,
-      organization_id: data.organization_id,
-      org_id: data.org_id,
-      must_change_password: data.must_change_password ?? false,
-      is_trial: data.is_trial ?? false,
-      exploration_count: data.exploration_count ?? 0,
-      trial_exploration_limit: data.trial_exploration_limit ?? 1,
-      account_tier: data.account_tier ?? 'free',
-    };
-    const token = data.access_token;
+    if (!token) {
+      throw new Error('Login token missing from response');
+    }
 
     localStorage.setItem('token', token);
-    localStorage.setItem('user', JSON.stringify(user));
-
     setAuthToken(token);
+
+    const meResponse = yield call(authService.fetchMe);
+    const user = buildAuthUser(meResponse?.data || {});
+
+    localStorage.setItem('user', JSON.stringify(user));
 
     yield put(loginSuccess({ user, token }));
 
   } catch (error) {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    setAuthToken(null);
     const errorMessage = error.message || 'Login failed';
     yield put(loginFailure(errorMessage));
   }

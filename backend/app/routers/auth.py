@@ -14,6 +14,7 @@ from app.schemas.auth import (
 from app.utils.security import create_access_token, verify_password
 from app.utils.email_utils import send_verification_email, send_reset_password_email, send_welcome_email, send_tier1_welcome_email, send_enterprise_inquiry_email
 from app.services import auth as auth_service
+from app.services import workspace as workspace_service
 from app.services.auth import upgrade_to_tier1
 from app.routers.auth_dependencies import get_current_active_user
 from app.models.user import User
@@ -24,6 +25,19 @@ from app.db import get_session
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+
+@router.get("/check-user", response_model=SuccessResponse)
+async def check_user(
+    email: str,
+    session: AsyncSession = Depends(get_session),
+):
+    existing = await auth_service.get_user_by_email(session, email)
+
+    return SuccessResponse(
+        message="User lookup completed successfully",
+        data={"exists": bool(existing)},
+    )
 
 
 @router.post("/signup", response_model=SuccessResponse, status_code=201)
@@ -43,7 +57,6 @@ async def signup(payload: SignupIn, background_tasks: BackgroundTasks, session: 
         payload.email,
         payload.password,
         payload.full_name,
-        payload.user_type,
         role="user",
         is_trial=True,
     )
@@ -57,7 +70,6 @@ async def signup(payload: SignupIn, background_tasks: BackgroundTasks, session: 
             "email": user.email,
             "full_name": user.full_name,
             "role": user.role,
-            "user_type": user.user_type,
         }
     )
 
@@ -106,7 +118,7 @@ async def login(payload: LoginIn,  session: AsyncSession = Depends(get_session),
             status_code=403,
             detail=ErrorResponse(
                 status="error",
-                message="contact super admin for active your account"
+                message="Contact your super admin to activate your account"
             ).dict()
         )
 
@@ -117,6 +129,7 @@ async def login(payload: LoginIn,  session: AsyncSession = Depends(get_session),
         subject=str(user.id),
         role=user.role
     )
+    bootstrap = await workspace_service.get_workspace_bootstrap(session, user)
 
     return SuccessResponse(
         message="Login successful",
@@ -125,17 +138,21 @@ async def login(payload: LoginIn,  session: AsyncSession = Depends(get_session),
             "full_name": user.full_name,
             "email": user.email,
             "role": user.role,
-            "user_type": user.user_type,
             "account_tier": user.account_tier,
             "must_change_password": user.must_change_password,
             "access_token": token,
-            "token_type": "bearer"
+            "token_type": "bearer",
+            **bootstrap,
         }
     )
 
 
 @router.get("/me", response_model=SuccessResponse)
-async def get_current_user(current_user: User = Depends(get_current_active_user)):
+async def get_current_user(
+    current_user: User = Depends(get_current_active_user),
+    session: AsyncSession = Depends(get_session),
+):
+    bootstrap = await workspace_service.get_workspace_bootstrap(session, current_user)
 
     return SuccessResponse(
         message="User profile fetched successfully",
@@ -144,7 +161,6 @@ async def get_current_user(current_user: User = Depends(get_current_active_user)
             "full_name": current_user.full_name,
             "email": current_user.email,
             "role": current_user.role,
-            "user_type": current_user.user_type,
             "is_verified": current_user.is_verified,
             "is_trial": current_user.is_trial,
             "account_tier": current_user.account_tier,
@@ -153,6 +169,7 @@ async def get_current_user(current_user: User = Depends(get_current_active_user)
             "trial_exploration_limit": current_user.trial_exploration_limit,
             "must_change_password": current_user.must_change_password,
             "created_at": current_user.created_at,
+            **bootstrap,
         }
     )
 

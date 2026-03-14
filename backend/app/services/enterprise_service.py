@@ -29,6 +29,51 @@ from app.utils.security import hash_password
 logger = logging.getLogger(__name__)
 
 
+async def _assign_missing_org_owner(session: AsyncSession, org: Organization) -> bool:
+    """
+    Repair legacy enterprise org rows that were created without an owner_id.
+
+    Preference order:
+      1. enterprise_admin of the org
+      2. any user linked to the org
+    """
+    if org.owner_id:
+        return False
+
+    owner_id = await session.scalar(
+        select(User.id)
+        .where(
+            User.organization_id == org.id,
+            User.role == "enterprise_admin",
+        )
+        .order_by(User.created_at.asc())
+        .limit(1)
+    )
+
+    if not owner_id:
+        owner_id = await session.scalar(
+            select(User.id)
+            .where(User.organization_id == org.id)
+            .order_by(User.created_at.asc())
+            .limit(1)
+        )
+
+    if not owner_id:
+        logger.warning(
+            "Enterprise org has no owner and no linked users",
+            extra={"org_id": org.id},
+        )
+        return False
+
+    org.owner_id = owner_id
+    session.add(org)
+    logger.info(
+        "Backfilled missing enterprise org owner",
+        extra={"org_id": org.id, "owner_id": owner_id},
+    )
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Organisation provisioning (SP admin)
 # ---------------------------------------------------------------------------
@@ -74,7 +119,6 @@ async def provision_enterprise_org(
         email=data.admin_email,
         hashed_password=hash_password(temp_password),
         role="enterprise_admin",
-        user_type=data.admin_user_type,
         is_verified=True,
         is_active=True,
         is_trial=False,
@@ -120,8 +164,6 @@ async def add_enterprise_member(
     Add a standard user to an enterprise org.
 
     Creates a new User with account_tier="enterprise" and organization_id=org_id.
-    A personal Organization is also provisioned so the user can create workspaces
-    independently if needed (backward-compatible with existing workspace router).
 
     Returns:
         (user, temp_password)
@@ -144,7 +186,6 @@ async def add_enterprise_member(
         email=data.email,
         hashed_password=hash_password(temp_password),
         role="user",
-        user_type=data.user_type,
         is_verified=True,
         is_active=True,
         is_trial=False,
@@ -156,10 +197,6 @@ async def add_enterprise_member(
     session.add(user)
     await session.commit()
     await session.refresh(user)
-
-    # Provision a personal org so existing workspace-creation routes still work
-    from app.services.organization import create_organization_for_user
-    await create_organization_for_user(user)
 
     logger.info(
         "Enterprise member added",
@@ -215,7 +252,16 @@ async def list_enterprise_orgs(session: AsyncSession) -> list[Organization]:
     result = await session.execute(
         select(Organization).where(Organization.account_tier == "enterprise")
     )
-    return result.scalars().all()
+    orgs = result.scalars().all()
+
+    repaired = False
+    for org in orgs:
+        repaired = await _assign_missing_org_owner(session, org) or repaired
+
+    if repaired:
+        await session.commit()
+
+    return orgs
 
 
 async def get_enterprise_org(session: AsyncSession, org_id: str) -> Organization:
@@ -223,6 +269,10 @@ async def get_enterprise_org(session: AsyncSession, org_id: str) -> Organization
     org = await session.get(Organization, org_id)
     if not org or org.account_tier != "enterprise":
         raise HTTPException(status_code=404, detail="Enterprise organisation not found")
+
+    if await _assign_missing_org_owner(session, org):
+        await session.commit()
+
     return org
 
 

@@ -6,7 +6,7 @@ They are separate from admin schemas to keep concerns isolated.
 """
 from pydantic import BaseModel, EmailStr
 from datetime import datetime
-from typing import Optional, Literal
+from typing import Optional
 
 
 class EnterpriseOrgCreate(BaseModel):
@@ -19,7 +19,6 @@ class EnterpriseOrgCreate(BaseModel):
     org_name: str
     admin_full_name: str
     admin_email: EmailStr
-    admin_user_type: Literal["Student", "Startup", "Researcher"] = "Researcher"
     # Default exploration quota — overridable per contract
     exploration_limit: int = 10
 
@@ -31,7 +30,8 @@ class EnterpriseOrgOut(BaseModel):
     account_tier: str
     exploration_limit: int
     exploration_count: int
-    owner_id: str
+    # Legacy org rows may not have an owner assigned yet.
+    owner_id: Optional[str] = None
     created_at: datetime
 
     class Config:
@@ -46,7 +46,6 @@ class EnterpriseAddMemberIn(BaseModel):
     """
     full_name: str
     email: EmailStr
-    user_type: Literal["Student", "Startup", "Researcher"] = "Researcher"
 
 
 class EnterpriseMemberOut(BaseModel):

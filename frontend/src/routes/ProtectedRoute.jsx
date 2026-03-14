@@ -40,10 +40,9 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
   }
 
   // Role-based protection
-  const userType = user?.user_type;
   const userRole = user?.role;
 
-  if (allowedRoles && !allowedRoles.includes(userType) && !allowedRoles.includes(userRole)) {
+  if (allowedRoles && !allowedRoles.includes(userRole)) {
     return <Navigate to="/landing" replace />;
   }
 
