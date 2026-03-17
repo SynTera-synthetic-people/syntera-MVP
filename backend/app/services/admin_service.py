@@ -6,6 +6,7 @@ from sqlalchemy import select, func
 from sqlalchemy import case, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import Float
+from sqlalchemy.dialects.postgresql import JSONB
 from app.models.population import PopulationSimulation
 from app.models.survey_simulation import SurveySimulation
 from app.models.user import User
@@ -25,7 +26,7 @@ from sqlalchemy import extract
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import date
-from datetime import date, datetime
+from datetime import date, datetime, time
 from dateutil.relativedelta import relativedelta
 from sqlalchemy import func, select, cast, Float, literal_column
 from sqlalchemy.orm import aliased
@@ -180,7 +181,6 @@ async def explorations_monthly_count(
         .group_by(year_expr, month_expr)
         .order_by(year_expr, month_expr)
     )
-    print(">>>>>", stmt)
     result = await session.execute(stmt)
 
     return [
@@ -703,21 +703,19 @@ async def create_user_by_admin(
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email already registered")
 
+    if data.role != "user":
+        raise HTTPException(
+            status_code=400,
+            detail="Generic user provisioning only supports the user role.",
+        )
+
     temp_password = secrets.token_urlsafe(12)
 
     # Resolve tier → trial flag + exploration limit
     account_tier = data.account_tier
-    if data.role in ("admin", "super_admin"):
-        # Internal staff are never trial users
-        is_trial = False
-        account_tier = "free"
-        exploration_limit = 0
-    elif account_tier == "tier1":
+    if account_tier == "tier1":
         is_trial = False
         exploration_limit = _settings.TIER1_EXPLORATION_LIMIT
-    elif account_tier == "enterprise":
-        is_trial = False
-        exploration_limit = 0  # org-level limit enforced separately
     else:
         # "free" default
         is_trial = data.is_trial
@@ -781,10 +779,17 @@ async def update_user_by_admin(
             raise HTTPException(status_code=400, detail="Email already in use")
         user.email = data.email
     if data.role is not None:
+        if user.organization_id and data.role != user.role:
+            raise HTTPException(
+                status_code=400,
+                detail="Use enterprise organisation flows to manage enterprise roles.",
+            )
+        if not user.organization_id and data.role == "enterprise_admin":
+            raise HTTPException(
+                status_code=400,
+                detail="Enterprise admins must be provisioned from the enterprise organisation flow.",
+            )
         user.role = data.role
-        if data.role in ("admin", "super_admin"):
-            user.is_trial = False
-            user.account_tier = "free"
     if data.user_type is not None:
         user.user_type = data.user_type
     if data.is_trial is not None:
@@ -794,6 +799,16 @@ async def update_user_by_admin(
     # Changing account_tier auto-adjusts is_trial and exploration limit
     if data.account_tier is not None:
         from app.config import settings as _settings
+        if user.organization_id and data.account_tier != "enterprise":
+            raise HTTPException(
+                status_code=400,
+                detail="Use enterprise organisation flows to move enterprise users out of enterprise access.",
+            )
+        if not user.organization_id and data.account_tier == "enterprise":
+            raise HTTPException(
+                status_code=400,
+                detail="Enterprise accounts must be created from the enterprise organisation flow.",
+            )
         user.account_tier = data.account_tier
         if data.account_tier == "free":
             user.is_trial = True

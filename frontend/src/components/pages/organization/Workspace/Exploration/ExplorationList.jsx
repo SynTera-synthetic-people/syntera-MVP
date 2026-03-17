@@ -3,7 +3,7 @@ import UpgradeModal from "../../../Upgrade/UpgradeModal";
 import { useNavigate, useParams } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { motion, useMotionValue, useSpring, useTransform } from "framer-motion";
-import { TbPlus, TbEdit, TbTrash, TbArrowLeft, TbTelescope, TbSearch, TbChartDots, TbAlertTriangle, TbArrowUpRight } from "react-icons/tb";
+import { TbPlus, TbEdit, TbTrash, TbArrowLeft, TbTelescope, TbSearch, TbChartDots, TbAlertTriangle, TbArrowUpRight, TbUsers } from "react-icons/tb";
 import { useTheme } from "../../../../../context/ThemeContext";
 import logoForDark from "../../../../../assets/Logo_Dark_bg.png";
 import logoForLight from "../../../../../assets/Logo_Light_bg.png";
@@ -13,6 +13,7 @@ import {
 } from "../../../../../hooks/useExplorations";
 import { useWorkspace } from "../../../../../hooks/useWorkspaces";
 import { formatDateToDDMMYYYY } from "../../../../../utils/formatDate";
+import InviteTeamModal from "../InviteTeamModal";
 
 const MouseParticle = ({ mouseX, mouseY, damping, stiffness, offsetX = 0, offsetY = 0, className }) => {
   const springX = useSpring(mouseX, { stiffness, damping });
@@ -72,7 +73,9 @@ const ExplorationList = () => {
   // Trial state from Redux
   const { user } = useSelector((state) => state.auth);
   const isTrialMaxed = user?.is_trial && user?.exploration_count >= user?.trial_exploration_limit;
+  const canInviteTeam = Boolean(user?.can_create_workspace);
   const [showUpgrade, setShowUpgrade] = useState(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
 
   // Use React Query hook to fetch explorations
   const { data: explorations, isLoading, error, refetch } = useExplorations(workspaceId);
@@ -196,7 +199,20 @@ const ExplorationList = () => {
             </div>
           </div>
 
-          <div className="relative">
+          <div className="flex flex-wrap items-center gap-3">
+            {canInviteTeam && (
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => setShowInviteModal(true)}
+                className="flex items-center gap-2 px-6 py-3 rounded-xl border border-gray-300 dark:border-white/10 bg-white/80 dark:bg-white/5 text-gray-800 dark:text-white shadow-lg transition-all font-medium hover:bg-gray-50 dark:hover:bg-white/10"
+              >
+                <TbUsers size={20} />
+                <span>Invite Team</span>
+              </motion.button>
+            )}
+
+            <div className="relative">
             <motion.button
               whileHover={isTrialMaxed ? {} : { scale: 1.02 }}
               whileTap={isTrialMaxed ? {} : { scale: 0.98 }}
@@ -225,6 +241,7 @@ const ExplorationList = () => {
                 <div className="absolute right-6 -top-1 border-4 border-transparent border-b-gray-900 dark:border-b-gray-800" />
               </motion.div>
             )}
+            </div>
           </div>
         </motion.div>
 
@@ -276,8 +293,9 @@ const ExplorationList = () => {
             <>
               {/* List Header */}
               <div className="grid grid-cols-1 md:grid-cols-12 gap-4 p-6 border-b border-gray-200 dark:border-white/10 bg-gray-50/50 dark:bg-white/5 text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                <div className="md:col-span-5 pl-2">Title</div>
+                <div className="md:col-span-4 pl-2">Title</div>
                 <div className="md:col-span-3 hidden md:block">Description</div>
+                <div className="md:col-span-1 hidden md:block">Audience</div>
                 <div className="md:col-span-2 hidden md:block">Created On</div>
                 <div className="md:col-span-2 text-right pr-2">Actions</div>
               </div>
@@ -301,7 +319,7 @@ const ExplorationList = () => {
                       className="grid grid-cols-1 md:grid-cols-12 gap-4 p-6 items-center hover:bg-gray-50/50 dark:hover:bg-white/5 transition-colors group"
                     >
                       {/* Title Column */}
-                      <div className="md:col-span-5 flex items-center gap-4">
+                      <div className="md:col-span-4 flex items-center gap-4">
                         <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-500/20 flex items-center justify-center text-blue-600 dark:text-blue-400">
                           <TbTelescope size={20} />
                         </div>
@@ -312,6 +330,11 @@ const ExplorationList = () => {
                           <p className="text-gray-600 dark:text-gray-400 text-sm line-clamp-2 mt-1 md:hidden">
                             {exploration.description || "No description provided."}
                           </p>
+                          <div className="mt-2 md:hidden">
+                            <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-500/10 dark:text-blue-200">
+                              {exploration.audience_type || "B2C"}
+                            </span>
+                          </div>
                           <p className="text-gray-500 dark:text-gray-500 text-xs mt-1 md:hidden">
                             Created: {formatDateToDDMMYYYY(exploration.created_at) || "N/A"}
                           </p>
@@ -323,6 +346,12 @@ const ExplorationList = () => {
                         <p className="text-gray-600 dark:text-gray-400 text-sm line-clamp-2">
                           {exploration.description || "No description provided."}
                         </p>
+                      </div>
+
+                      <div className="md:col-span-1 hidden md:block">
+                        <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-500/10 dark:text-blue-200">
+                          {exploration.audience_type || "B2C"}
+                        </span>
                       </div>
 
                       {/* Created On Column - Desktop only */}
@@ -381,6 +410,13 @@ const ExplorationList = () => {
         isOpen={showUpgrade}
         onClose={() => setShowUpgrade(false)}
         onUpgradeSuccess={() => setShowUpgrade(false)}
+      />
+      <InviteTeamModal
+        isOpen={showInviteModal}
+        workspaceId={workspaceId}
+        workspaceName={currentWorkspace?.name || "this workspace"}
+        onSkip={() => setShowInviteModal(false)}
+        onLaunch={() => setShowInviteModal(false)}
       />
     </div>
   );

@@ -36,8 +36,8 @@ router = APIRouter(prefix="/admin", tags=["Admin"])
 
 
 def _require_admin(current_user: User) -> None:
-    """Guard: only admin or super_admin roles are permitted."""
-    if current_user.role not in ("admin", "super_admin"):
+    """Guard: only super_admin may call these endpoints."""
+    if current_user.role != "super_admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
 
@@ -157,7 +157,7 @@ async def user_dashboard(
     )
 
 
-# New user management routes (admin + super_admin)
+# New user management routes (super_admin)
 
 @router.post("/users/provision", response_model=SuccessResponse, status_code=201)
 async def admin_create_user(
@@ -169,9 +169,7 @@ async def admin_create_user(
     """
     Admin provisions a new user with a generated temporary password.
 
-    Sends a welcome email with credentials in the background.
-    The temporary password is also returned in the response as a backup
-    in case the email is not delivered.
+    Credentials are delivered ONLY via email. Never returned in response.
     """
     _require_admin(current_user)
     user, temp_password = await create_user_by_admin(session, payload)
@@ -187,7 +185,6 @@ async def admin_create_user(
             "email": user.email,
             "role": user.role,
             "is_trial": user.is_trial,
-            "temporary_password": temp_password,
         }
     )
 
@@ -263,8 +260,7 @@ async def admin_reset_password(
     """
     Reset a user's password to a new temporary password.
 
-    Sends new credentials via email. The temporary password is also
-    returned in the response as a backup.
+    Credentials are delivered ONLY via email. Never returned in response.
     """
     _require_admin(current_user)
     result = await session.execute(select(User).where(User.id == user_id))
@@ -280,5 +276,5 @@ async def admin_reset_password(
     )
     return SuccessResponse(
         message="Password reset successfully. New credentials sent via email.",
-        data={"user_id": user_id, "temporary_password": temp_password},
+        data={"user_id": user_id},
     )

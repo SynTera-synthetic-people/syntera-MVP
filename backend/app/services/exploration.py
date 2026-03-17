@@ -106,6 +106,7 @@ async def create_exploration(
         workspace_id=workspace_id,
         title=data.title,
         description=data.description,
+        audience_type=data.audience_type,
         created_by=user_id,
     )
     session.add(exploration)
@@ -185,6 +186,9 @@ async def update_exploration(
 
     if data.description is not None:
         exploration.description = data.description
+
+    if data.audience_type is not None:
+        exploration.audience_type = data.audience_type
 
     exploration.updated_at = datetime.utcnow()
 

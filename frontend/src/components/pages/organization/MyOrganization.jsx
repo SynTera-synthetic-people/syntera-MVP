@@ -46,6 +46,7 @@ import logoForDark from "../../../assets/Logo_Dark_bg.png";
 import logoForLight from "../../../assets/Logo_Light_bg.png";
 import { useTheme } from "../../../context/ThemeContext";
 import { adminService } from "../../../services/adminService";
+import { getPostLoginPath } from "../../../utils/authRouting";
 
 // Internal component for individual floating particles
 const MouseParticle = ({ mouseX, mouseY, damping, stiffness, offsetX = 0, offsetY = 0, className }) => {
@@ -719,6 +720,12 @@ const MyOrganization = () => {
   const { organizations } = useSelector((state) => state.organizations);
   const organizationName = organizations?.data?.name || "My Organization";
   const orgId = organizations?.data?.id || "default-org";
+
+  useEffect(() => {
+    if (auth?.user && auth.user.account_tier !== "enterprise") {
+      navigate(getPostLoginPath(auth.user), { replace: true });
+    }
+  }, [auth?.user, navigate]);
 
   // Enterprise perspective dropdown states
   const [selectedMetric, setSelectedMetric] = React.useState('explorations');

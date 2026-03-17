@@ -50,7 +50,7 @@ const TabButton = ({ active, onClick, children }) => (
 // ---------------------------------------------------------------------------
 
 const AddMemberModal = ({ orgId, onClose, onAdded }) => {
-  const [form, setForm] = useState({ full_name: '', email: '', user_type: 'Researcher' });
+  const [form, setForm] = useState({ full_name: '', email: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -82,8 +82,6 @@ const AddMemberModal = ({ orgId, onClose, onAdded }) => {
 
   const inputClass =
     'w-full px-4 py-3 rounded-xl border-2 border-gray-300 dark:border-white/10 bg-white dark:bg-white/5 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20 transition-all outline-none disabled:opacity-50';
-  const selectClass =
-    'w-full px-4 py-3 rounded-xl border-2 border-gray-300 dark:border-white/10 bg-white dark:bg-[#1a1f2e] text-gray-900 dark:text-white focus:border-blue-500 outline-none disabled:opacity-50';
   const labelClass = 'block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5';
 
   return (
@@ -113,14 +111,6 @@ const AddMemberModal = ({ orgId, onClose, onAdded }) => {
           <div>
             <label className={labelClass}>Email <span className="text-red-500">*</span></label>
             <input type="email" name="email" value={form.email} onChange={handleChange} disabled={isSubmitting} placeholder="jane@acme.com" className={inputClass} />
-          </div>
-          <div>
-            <label className={labelClass}>User Type</label>
-            <select name="user_type" value={form.user_type} onChange={handleChange} disabled={isSubmitting} className={selectClass}>
-              <option value="Student">Student</option>
-              <option value="Startup">Startup</option>
-              <option value="Researcher">Researcher</option>
-            </select>
           </div>
           {errorMsg && (
             <p className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 rounded-lg px-4 py-2">
@@ -400,7 +390,7 @@ const EnterpriseOrgDetail = () => {
                       <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-1">{exp.description}</p>
                     )}
                     <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                      Workspace: {exp.workspace_id} · {exp.created_at ? new Date(exp.created_at).toLocaleDateString() : ''}
+                      Workspace: {exp.workspace_id} | {exp.created_at ? new Date(exp.created_at).toLocaleDateString() : ''}
                     </p>
                   </div>
                   <div className="flex gap-1 flex-shrink-0">

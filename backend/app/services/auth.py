@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timedelta
 import secrets
 from app.services.organization import create_organization_for_user
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,6 @@ async def create_user(
     email: str,
     password: str,
     full_name: str,
-    user_type: str = "Student",
     role: str = "user",
     is_trial: bool = True,
     must_change_password: bool = False,
@@ -39,7 +39,6 @@ async def create_user(
         full_name=full_name,
         hashed_password=hashed,
         role=role,
-        user_type=user_type,
         is_verified=True,
         verification_token=None,
         verification_expiry=None,
@@ -142,7 +141,7 @@ async def upgrade_to_tier1(session: AsyncSession, user: User) -> User:
     """
     user.account_tier = "tier1"
     user.is_trial = False
-    user.trial_exploration_limit = 3
+    user.trial_exploration_limit = settings.TIER1_EXPLORATION_LIMIT
     user.exploration_count = 0
     session.add(user)
     await session.commit()

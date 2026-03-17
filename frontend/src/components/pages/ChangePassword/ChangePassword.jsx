@@ -1,15 +1,18 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { motion } from 'framer-motion';
 import { TbLock, TbAlertTriangle, TbCheck } from 'react-icons/tb';
 import { authService } from '../../../services/authService';
-import { updateUser } from '../../../redux/slices/authSlice';
+import { setCredentials } from '../../../redux/slices/authSlice';
+import { buildAuthUser, getPostLoginPath } from '../../../utils/authRouting';
 
 const ChangePassword = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
-  const { user } = useSelector((state) => state.auth);
+  const [searchParams] = useSearchParams();
+  const inviteToken = searchParams.get("invite_token");
+  const { user, token } = useSelector((state) => state.auth);
 
   const [form, setForm] = useState({
     currentPassword: '',
@@ -45,8 +48,17 @@ const ChangePassword = () => {
         new_password: form.newPassword,
         confirm_password: form.confirmPassword,
       });
-      dispatch(updateUser({ must_change_password: false }));
-      navigate('/landing', { replace: true });
+      const meResponse = await authService.fetchMe();
+      const updatedUser = buildAuthUser(meResponse?.data || {});
+      localStorage.setItem("user", JSON.stringify(updatedUser));
+      dispatch(setCredentials({ user: updatedUser, token }));
+
+      if (inviteToken) {
+        navigate(`/accept-invitation?token=${encodeURIComponent(inviteToken)}`, { replace: true });
+        return;
+      }
+
+      navigate(getPostLoginPath(updatedUser), { replace: true });
     } catch (err) {
       const msg = err?.message || err?.detail || 'Failed to change password. Please try again.';
       setError(msg);

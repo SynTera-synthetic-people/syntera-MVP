@@ -146,3 +146,34 @@ async def add_enterprise_columns():
             ALTER TABLE organization
             ADD COLUMN IF NOT EXISTS exploration_count INTEGER NOT NULL DEFAULT 0;
         """))
+
+
+async def add_workspace_visibility_columns():
+    """Safe migration: add hidden/default flags for personal workspaces."""
+    async with async_engine.begin() as conn:
+        await conn.execute(text("""
+            ALTER TABLE workspace
+            ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN NOT NULL DEFAULT FALSE;
+        """))
+        await conn.execute(text("""
+            ALTER TABLE workspace
+            ADD COLUMN IF NOT EXISTS is_default_personal BOOLEAN NOT NULL DEFAULT FALSE;
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS ix_workspace_is_default_personal
+            ON workspace (is_default_personal);
+        """))
+
+
+async def add_exploration_audience_type_column():
+    """Safe migration: add audience_type to explorations and backfill legacy rows."""
+    async with async_engine.begin() as conn:
+        await conn.execute(text("""
+            ALTER TABLE explorations
+            ADD COLUMN IF NOT EXISTS audience_type VARCHAR NOT NULL DEFAULT 'B2C';
+        """))
+        await conn.execute(text("""
+            UPDATE explorations
+            SET audience_type = 'B2C'
+            WHERE audience_type IS NULL OR TRIM(audience_type) = '';
+        """))

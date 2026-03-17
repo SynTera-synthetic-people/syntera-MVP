@@ -5,91 +5,57 @@ import {
   TbUserPlus,
   TbArrowLeft,
   TbX,
-  TbCopy,
   TbCheck,
-  TbAlertTriangle,
+  TbMailForward,
 } from 'react-icons/tb';
 import { adminService } from '../../../services/adminService';
 
 // Modal shown after successful provisioning
-const TempPasswordModal = ({ email, tempPassword, onClose }) => {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(tempPassword);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
+const SuccessModal = ({ email, onClose }) => (
+  <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={onClose}
+      className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+    />
+    <motion.div
+      initial={{ opacity: 0, scale: 0.9, y: 20 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.9, y: 20 }}
+      className="relative w-full max-w-md bg-white dark:bg-[#1a1f2e] rounded-2xl shadow-2xl overflow-hidden border border-gray-200 dark:border-white/10 p-8"
+    >
+      <button
         onClick={onClose}
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-      />
-      <motion.div
-        initial={{ opacity: 0, scale: 0.9, y: 20 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.9, y: 20 }}
-        className="relative w-full max-w-md bg-white dark:bg-[#1a1f2e] rounded-2xl shadow-2xl overflow-hidden border border-gray-200 dark:border-white/10 p-8"
+        className="absolute top-4 right-4 p-2 rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
       >
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 p-2 rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
-        >
-          <TbX size={20} />
-        </button>
+        <TbX size={20} />
+      </button>
 
-        <div className="flex items-center gap-3 mb-2">
-          <div className="w-10 h-10 rounded-full bg-green-100 dark:bg-green-500/20 flex items-center justify-center text-green-600 dark:text-green-400">
-            <TbCheck size={22} />
-          </div>
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white">User Created</h2>
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-10 h-10 rounded-full bg-green-100 dark:bg-green-500/20 flex items-center justify-center text-green-600 dark:text-green-400">
+          <TbCheck size={22} />
         </div>
+        <h2 className="text-xl font-bold text-gray-900 dark:text-white">User Created</h2>
+      </div>
 
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
-          A welcome email with credentials has been sent to <strong>{email}</strong>. Save the temporary password below as a backup.
+      <div className="flex items-start gap-3 p-4 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/30 mb-6">
+        <TbMailForward className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+        <p className="text-sm text-blue-800 dark:text-blue-300">
+          A welcome email with login credentials has been sent to <strong>{email}</strong>. The user must use that email to sign in with their temporary password.
         </p>
+      </div>
 
-        {/* Warning */}
-        <div className="flex items-start gap-2 p-3 mb-5 rounded-lg bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30">
-          <TbAlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
-          <p className="text-xs text-amber-800 dark:text-amber-300 font-medium">
-            This password will only be shown once. Copy it now.
-          </p>
-        </div>
-
-        {/* Temp password display */}
-        <div className="flex items-center gap-3 p-4 rounded-xl bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 mb-6">
-          <code className="flex-1 text-base font-mono text-gray-900 dark:text-white break-all select-all">
-            {tempPassword}
-          </code>
-          <button
-            onClick={handleCopy}
-            className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
-              copied
-                ? 'bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-400'
-                : 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-500/30'
-            }`}
-          >
-            {copied ? <TbCheck size={14} /> : <TbCopy size={14} />}
-            {copied ? 'Copied!' : 'Copy'}
-          </button>
-        </div>
-
-        <button
-          onClick={onClose}
-          className="w-full py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold shadow-lg shadow-blue-500/30 transition-all hover:shadow-blue-500/40"
-        >
-          Done
-        </button>
-      </motion.div>
-    </div>
-  );
-};
+      <button
+        onClick={onClose}
+        className="w-full py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold shadow-lg shadow-blue-500/30 transition-all hover:shadow-blue-500/40"
+      >
+        Done
+      </button>
+    </motion.div>
+  </div>
+);
 
 const AdminUserProvision = () => {
   const navigate = useNavigate();
@@ -104,7 +70,7 @@ const AdminUserProvision = () => {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
-  const [successData, setSuccessData] = useState(null); // { email, tempPassword }
+  const [successData, setSuccessData] = useState(null); // { email }
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -128,10 +94,7 @@ const AdminUserProvision = () => {
     try {
       const response = await adminService.provisionUser(form);
       if (response.status === 'success') {
-        setSuccessData({
-          email: response.data.email,
-          tempPassword: response.data.temporary_password,
-        });
+        setSuccessData({ email: response.data.email });
       } else {
         setErrorMsg(response.message || 'Failed to provision user.');
       }
@@ -209,40 +172,22 @@ const AdminUserProvision = () => {
             />
           </div>
 
-          {/* Role + User Type row */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                Role
-              </label>
-              <select
-                name="role"
-                value={form.role}
-                onChange={handleChange}
-                disabled={isSubmitting}
-                className="w-full px-4 py-3 rounded-xl border-2 border-gray-300 dark:border-white/10 bg-white dark:bg-[#1a1f2e] text-gray-900 dark:text-white focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20 transition-all outline-none disabled:opacity-50"
-              >
-                <option value="user">User</option>
-                <option value="admin">Admin</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                User Type
-              </label>
-              <select
-                name="user_type"
-                value={form.user_type}
-                onChange={handleChange}
-                disabled={isSubmitting}
-                className="w-full px-4 py-3 rounded-xl border-2 border-gray-300 dark:border-white/10 bg-white dark:bg-[#1a1f2e] text-gray-900 dark:text-white focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20 transition-all outline-none disabled:opacity-50"
-              >
-                <option value="Student">Student</option>
-                <option value="Startup">Startup</option>
-                <option value="Researcher">Researcher</option>
-              </select>
-            </div>
+          {/* User Type */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+              User Type
+            </label>
+            <select
+              name="user_type"
+              value={form.user_type}
+              onChange={handleChange}
+              disabled={isSubmitting}
+              className="w-full px-4 py-3 rounded-xl border-2 border-gray-300 dark:border-white/10 bg-white dark:bg-[#1a1f2e] text-gray-900 dark:text-white focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20 transition-all outline-none disabled:opacity-50"
+            >
+              <option value="Student">Student</option>
+              <option value="Startup">Startup</option>
+              <option value="Researcher">Researcher</option>
+            </select>
           </div>
 
           {/* Account Tier */}
@@ -259,8 +204,10 @@ const AdminUserProvision = () => {
             >
               <option value="free">Free Trial (1 exploration)</option>
               <option value="tier1">Tier 1 (3 explorations)</option>
-              <option value="enterprise">Enterprise (org-level quota)</option>
             </select>
+            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+              Enterprise admins are provisioned from the Enterprise Organizations screen.
+            </p>
           </div>
 
           {/* Trial toggle */}
@@ -331,9 +278,8 @@ const AdminUserProvision = () => {
       {/* Success modal */}
       <AnimatePresence>
         {successData && (
-          <TempPasswordModal
+          <SuccessModal
             email={successData.email}
-            tempPassword={successData.tempPassword}
             onClose={() => {
               setSuccessData(null);
               navigate('/admin/users');

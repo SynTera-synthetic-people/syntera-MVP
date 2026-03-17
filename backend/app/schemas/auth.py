@@ -1,5 +1,4 @@
 from pydantic import BaseModel, EmailStr, validator
-from typing import Literal
 import re
 
 class SignupIn(BaseModel):
@@ -7,7 +6,6 @@ class SignupIn(BaseModel):
     email: EmailStr
     password: str
     confirm_password: str
-    user_type: Literal["Student", "Startup", "Researcher"]
 
     @validator("full_name")
     def name_length(cls, v):

@@ -34,9 +34,10 @@ import SurveyResults from "./components/pages/organization/Workspace/ResearchObj
 import RebuttalMode from "./components/pages/organization/Workspace/ResearchObjective/RebuttalMode/RebuttalMode"
 import Traceability from "./components/pages/Traceability/Traceability";
 import { useDispatch } from 'react-redux';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { setCredentials } from './redux/slices/authSlice';
 import { setAuthToken } from './utils/axiosConfig';
+import { buildAuthUser } from './utils/authRouting';
 import Settings from "./components/pages/settings/Settings";
 
 
@@ -50,22 +51,84 @@ import ChangePassword from "./components/pages/ChangePassword/ChangePassword";
 import Upgrade from "./components/pages/Upgrade/Upgrade";
 import EnterpriseOrgsPage from "./components/pages/Admin/EnterpriseOrgsPage";
 import EnterpriseOrgDetail from "./components/pages/Admin/EnterpriseOrgDetail";
+import AcceptInvitation from "./components/pages/Invitation/AcceptInvitation";
 
 const queryClient = new QueryClient();
+
+function getWebsiteHandoffPayload() {
+  const hash = window.location.hash.startsWith("#")
+    ? window.location.hash.slice(1)
+    : "";
+
+  if (!hash) {
+    return null;
+  }
+
+  const params = new URLSearchParams(hash);
+  const token = params.get("token");
+  const userParam = params.get("user");
+  const redirectPath = params.get("redirect");
+
+  if (!token || !userParam) {
+    return null;
+  }
+
+  try {
+    const user = buildAuthUser(JSON.parse(userParam));
+    return { token, user, redirectPath };
+  } catch (error) {
+    console.error("Failed to parse website handoff payload", error);
+    return null;
+  }
+}
+
 function App() {
 
   const dispatch = useDispatch();
+  const [isBootstrapped, setIsBootstrapped] = useState(false);
 
   useEffect(() => {
+    const handoffPayload = getWebsiteHandoffPayload();
+
+    if (handoffPayload) {
+      localStorage.setItem('token', handoffPayload.token);
+      localStorage.setItem('user', JSON.stringify(handoffPayload.user));
+      setAuthToken(handoffPayload.token);
+      dispatch(setCredentials({ user: handoffPayload.user, token: handoffPayload.token }));
+      window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
+      if (
+        handoffPayload.redirectPath &&
+        `${window.location.pathname}${window.location.search}` !== handoffPayload.redirectPath
+      ) {
+        window.location.replace(handoffPayload.redirectPath);
+      }
+      setIsBootstrapped(true);
+      return;
+    }
+
     // Check auth state on app initialization
     const token = localStorage.getItem('token');
-    const user = JSON.parse(localStorage.getItem('user'));
+    const userStr = localStorage.getItem('user');
+    const user = userStr ? buildAuthUser(JSON.parse(userStr)) : null;
 
     if (token && user) {
       setAuthToken(token);
       dispatch(setCredentials({ user, token }));
     }
+    setIsBootstrapped(true);
   }, [dispatch]);
+
+  if (!isBootstrapped) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-[#0f1115] text-gray-900 dark:text-white">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p>Loading workspace...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
@@ -113,9 +176,13 @@ function App() {
               }
             />
             <Route
+              path="/accept-invitation"
+              element={<AcceptInvitation />}
+            />
+            <Route
               path="/admin"
               element={
-                <ProtectedRoute allowedRoles={["Super Admin", "super_admin"]}>
+                <ProtectedRoute allowedRoles={["super_admin"]}>
                   <AdminLayout />
                 </ProtectedRoute>
               }

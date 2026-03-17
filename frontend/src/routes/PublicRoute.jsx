@@ -1,9 +1,11 @@
 // routes/PublicRoute.js
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { useSelector } from "react-redux";
+import { getPostLoginPath } from "../utils/authRouting";
 
 const PublicRoute = ({ children }) => {
   const { isAuthenticated, user, loading } = useSelector((state) => state.auth);
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -17,17 +19,15 @@ const PublicRoute = ({ children }) => {
   }
 
   if (isAuthenticated && user) {
-    const isSuperAdmin =
-      user?.user_type === "Super Admin" ||
-      user?.user_type === "super_admin" ||
-      user?.role === "Super Admin" ||
-      user?.role === "super_admin";
-
-    if (isSuperAdmin) {
-      return <Navigate to="/admin/dashboard" replace />;
+    const inviteToken = new URLSearchParams(location.search).get("invite_token");
+    if (inviteToken) {
+      if (user.must_change_password) {
+        return <Navigate to={`/change-password?invite_token=${encodeURIComponent(inviteToken)}`} replace />;
+      }
+      return <Navigate to={`/accept-invitation?token=${encodeURIComponent(inviteToken)}`} replace />;
     }
-    // Redirect to landing if already authenticated
-    return <Navigate to="/landing" replace />;
+
+    return <Navigate to={getPostLoginPath(user)} replace />;
   }
 
   return children;
