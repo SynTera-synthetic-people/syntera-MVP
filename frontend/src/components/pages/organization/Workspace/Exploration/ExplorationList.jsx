@@ -303,13 +303,6 @@ const ExplorationList = () => {
               {/* Exploration Rows */}
               <div className="divide-y divide-gray-200 dark:divide-white/10">
                 {[...explorations].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).map((exploration, index) => {
-                  // DEEP DEBUG: Log everything about this exploration
-                  console.log(`[RENDER] Exploration: "${exploration.title}"`, {
-                    id: exploration.id,
-                    is_end: exploration.is_end,
-                    type_of_is_end: typeof exploration.is_end,
-                    all_keys: Object.keys(exploration)
-                  });
                   return (
                     <motion.div
                       key={exploration.id}

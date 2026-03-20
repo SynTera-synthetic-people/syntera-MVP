@@ -62,7 +62,7 @@ async def auto_generate_personas(
 ):
     try:
         members = await ws_service.list_workspace_members(workspace_id)
-        if not any(m.user_id == current_user.id for m in members):
+        if not any(m["user_id"] == current_user.id for m in members):
             raise HTTPException(
                 status_code=403,
                 detail="Not authorized"
@@ -202,7 +202,7 @@ async def list_personas(
     current_user: User = Depends(get_current_active_user),
 ):
     members = await ws_service.list_workspace_members(workspace_id)
-    if not any(m.user_id == current_user.id for m in members):
+    if not any(m["user_id"] == current_user.id for m in members):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=ErrorResponse(status="error", message="You are not a member of this workspace").dict()
@@ -220,7 +220,7 @@ async def get_persona(
     current_user: User = Depends(get_current_active_user),
 ):
     members = await ws_service.list_workspace_members(workspace_id)
-    if not any(m.user_id == current_user.id for m in members):
+    if not any(m["user_id"] == current_user.id for m in members):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=ErrorResponse(status="error", message="You are not a member of this workspace").dict()
@@ -294,7 +294,7 @@ async def preview_persona(
     session: AsyncSession = Depends(get_session),
 ):
     members = await ws_service.list_workspace_members(workspace_id)
-    if not any(m.user_id == current_user.id for m in members):
+    if not any(m["user_id"] == current_user.id for m in members):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=ErrorResponse(status="error", message="You are not a member of this workspace").dict()
