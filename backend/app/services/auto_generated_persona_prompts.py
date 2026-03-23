@@ -33,7 +33,7 @@ _MANDATORY_FIELDS = """
 
 
 _SAMPLE_PERSONA = """
-    {
+    {{
         "name": "Social Butterfly Connector",
         "age_range": "65-75",
         "gender": "Female",
@@ -59,23 +59,23 @@ _SAMPLE_PERSONA = """
         "professional_traits": "Strong communicator, Facilitator of group activities",
         "digital_activity": "Active on social media, Uses dating apps designed for seniors",
         "preferences": "Prefers group dating experiences, Enjoys interactive events",
-        "ocean_profile":{
-        "scores": {
+        "ocean_profile":{{
+        "scores": {{
             "openness": 0.75,
             "conscientiousness": 0.6,
             "extraversion": 0.8,
             "agreeableness": 0.7,
             "neuroticism": 0.4
-        },
-        "labels": {
+        }},
+        "labels": {{
             "openness": "High",
             "conscientiousness": "Medium",
             "extraversion": "High",
             "agreeableness": "High",
             "neuroticism": "Medium"
-        },
-        }
-        "barriers_pain_points": {
+        }},
+        }}
+        "barriers_pain_points": {{
             "structural": [
                 "Hard to verify real durability pre-purchase",
                 "Inconsistent inventory of premium SKUs"
@@ -91,8 +91,8 @@ _SAMPLE_PERSONA = """
             "category_specific": [
                 "Beauty: refill systems limited; Hotels/services: assortment/restaurant hours reduced; Specialty retail: restocking and pricing opacity"
             ]
-        },
-        "triggers_opportunities": {
+        }},
+        "triggers_opportunities": {{
             "functional_triggers": [
                 "Repairability warranties, lifetime service",
                 "Materials/test data, version histories",
@@ -108,7 +108,7 @@ _SAMPLE_PERSONA = """
             "promotional_triggers": [
                 "Transparent bundle savings, trade-in credits, repair/refresh events"
             ]
-        },
+        }},
         "reference_sites_with_usage": [
             "https://www.reddit.com//r/BuyItForLife/comments/1nakdr8/subreddit_decline_in_quality/",
             "https://medium.com/%40nandinibrandfinity/why-so-many-big-brands-are-rebranding-in-2025-0340cb4ff2bf",
@@ -117,65 +117,65 @@ _SAMPLE_PERSONA = """
             "BIFL thread signals consumer distrust in quality drift and desire for durable goods.",
             "Medium posts show preference for authenticity, minimalism, and critical stance on rebrands.",
         ],
-        "evidence_snapshot": {
+        "evidence_snapshot": {{
             "total_conversations": 428,
             "sources": [
-              {
+              {{
                 "platform": "Reddit",
                 "threads_or_posts": 214
-              },
-              {
+              }},
+              {{
                 "platform": "Twitter",
                 "threads_or_posts": 137
-              },
-              {
+              }},
+              {{
                 "platform": "Product Hunt",
                 "threads_or_posts": 77
-              }
+              }}
             ],
-            "timeframe": {
+            "timeframe": {{
               "months_analyzed": 12,
-              "recent_activity": {
+              "recent_activity": {{
                 "months": 3,
                 "percentage": 46
-              }
-            },
-            "confidence_calculation_detail": {
+              }}
+            }},
+            "confidence_calculation_detail": {{
                 "method": "Evidence-based persona generation due to evidence gathered (Confidence > 0.70)",
                 "value": 0.91,
                 "level": "High",
-                "components": {
+                "components": {{
                     "volume_score": 0.90,
                     "source_diversity_score": 0.92,
                     "recency_score": 0.91,
                     "signal_clarity_score": 0.89,
                     "ro_alignment_score": 0.93,
-                },
+                }},
                 "weighted_total": 0.91,
-            },
-            "confidence_breakdown": {
-              "volume": {
+            }},
+            "confidence_breakdown": {{
+              "volume": {{
                 "count": 428,
                 "assessment": "Strong sample size with consistent thematic repetition"
-              },
-              "source_diversity": {
+              }},
+              "source_diversity": {{
                 "platform_count": 3,
                 "assessment": "Cross-platform validation reduces source bias"
-              },
-              "recency": {
+              }},
+              "recency": {{
                 "description": "Nearly half of the data originates from the past 3 months",
                 "assessment": "High recency relevance"
-              },
-              "signal_clarity": {
+              }},
+              "signal_clarity": {{
                 "description": "Clear, repeated problem statements with minimal ambiguity"
-              },
-              "ro_alignment": {
+              }},
+              "ro_alignment": {{
                 "description": "Direct alignment with stated research objective"
-              }
-            }
-        },
+              }}
+            }}
+        }},
         ...all other fields (ALL must relate to personas)...
-    }
+    }}
     """
 
 
