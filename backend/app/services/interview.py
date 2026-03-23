@@ -355,29 +355,29 @@ async def start_interview(
 # }}
 # """
 
-prompt = BATCH_INTERVIEW_PROMPT.format(
-    persona_json=persona_json,
-    flat_questions=json.dumps(flat_questions, indent=2),
-    question_count=len(flat_questions)
-)
+    prompt = BATCH_INTERVIEW_PROMPT.format(
+        persona_json=persona_json,
+        flat_questions=json.dumps(flat_questions, indent=2),
+        question_count=len(flat_questions)
+    )
 
-res = await client.chat.completions.create(
-    model="gpt-4o-mini",
-    response_format={"type": "json_object"},
-    messages=[
-        {
-            "role": "system",
-            "content": "You are a qualitative research simulation engine."
-        },
-        {
-            "role": "user",
-            "content": prompt
-        }
-    ]
-)
+    res = await client.chat.completions.create(
+        model="gpt-4o-mini",
+        response_format={"type": "json_object"},
+        messages=[
+            {
+                "role": "system",
+                "content": "You are a qualitative research simulation engine."
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ]
+    )
 
-data = json.loads(res.choices[0].message.content)
-answers = data.get("answers", [])
+    data = json.loads(res.choices[0].message.content)
+    answers = data.get("answers", [])
 
 
     gen_map = {}
@@ -533,31 +533,31 @@ async def add_user_message_and_get_persona_reply(
 # Reply briefly (2-4 sentences) in first-person as this persona:
 # """
 
-prompt = LIVE_REPLY_PROMPT.format(
-    persona_json=persona_json,
-    conversation_history=conversation_history,
-    user_text=user_text
-)
+    prompt = LIVE_REPLY_PROMPT.format(
+        persona_json=persona_json,
+        conversation_history=conversation_history,
+        user_text=user_text
+    )
 
-res_ai = await client.chat.completions.create(
-    model="gpt-4o-mini",
-    response_format={"type": "json_object"},
-    messages=[
-        {
-            "role": "system",
-            "content": "You are a qualitative research simulation engine."
-        },
-        {
-            "role": "user",
-            "content": prompt
-        }
-    ],
-    temperature=0.8
-)
+    res_ai = await client.chat.completions.create(
+        model="gpt-4o-mini",
+        response_format={"type": "json_object"},
+        messages=[
+            {
+                "role": "system",
+                "content": "You are a qualitative research simulation engine."
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
+        temperature=0.8
+    )
 
-data = json.loads(res_ai.choices[0].message.content)
-persona_reply = data.get("response", "")
-            
+    data = json.loads(res_ai.choices[0].message.content)
+    persona_reply = data.get("response", "")
+                
     persona_msg = {
         "role": "persona", 
         "text": persona_reply,
@@ -565,9 +565,9 @@ persona_reply = data.get("response", "")
         "ts": datetime.utcnow().isoformat()
     }
     iv.messages.append(persona_msg)
-            
+                
     flag_modified(iv, "messages")
-            
+                
     session.add(iv)
     await session.commit()
     await session.refresh(iv)
