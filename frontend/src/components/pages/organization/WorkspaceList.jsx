@@ -9,6 +9,8 @@ import logoForLight from "../../../assets/Logo_Light_bg.png";
 import { useTheme } from "../../../context/ThemeContext";
 import { formatDateToDDMMYYYY } from "../../../utils/formatDate";
 import { useWorkspace as useWorkspaceContext } from "../../../context/WorkspaceContext";
+import { useSelector } from "react-redux";
+import { getPostLoginPath } from "../../../utils/authRouting";
 // Internal component for individual floating particles
 const MouseParticle = ({ mouseX, mouseY, damping, stiffness, offsetX = 0, offsetY = 0, className }) => {
   const springX = useSpring(mouseX, { stiffness, damping });
@@ -65,11 +67,23 @@ const WorkspaceList = () => {
   const navigate = useNavigate();
   const { theme } = useTheme();
   const { setSelectedWorkspace } = useWorkspaceContext();
+  const { user } = useSelector((state) => state.auth);
 
   const { data: workspaces = [], isLoading, error, refetch } = useWorkspaces();
   const deleteMutation = useDeleteWorkspace();
 
   const [isHovered, setIsHovered] = React.useState(false);
+  const canManageWorkspaces = Boolean(user?.can_create_workspace);
+
+  React.useEffect(() => {
+    if (!user) {
+      return;
+    }
+
+    if (user.account_tier !== "enterprise") {
+      navigate(getPostLoginPath(user), { replace: true });
+    }
+  }, [navigate, user]);
 
   // Mouse Follow Logic
   const mouseX = useMotionValue(0);
@@ -176,32 +190,32 @@ const WorkspaceList = () => {
             </div>
           </div>
 
-          <div className="relative">
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              onMouseEnter={() => setIsHovered(true)}
-              onMouseLeave={() => setIsHovered(false)}
-              onClick={() => navigate("/main/organization/workspace/add")}
-              className="flex items-center gap-2 bg-gradient-to-r from-blue-600 via-blue-700 to-blue-600 bg-[length:200%_auto] hover:bg-right text-white px-6 py-3 rounded-xl shadow-lg shadow-blue-500/30 transition-all font-medium"
-            >
-              <TbPlus size={20} />
-              <span>Create Workspace</span>
-            </motion.button>
-
-            {/* Tooltip */}
-            {isHovered && (
-              <motion.div
-                initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                className="absolute right-0 top-full mt-2 z-50 w-64 p-3 text-xs font-medium text-white bg-gray-900 dark:bg-gray-800 rounded-xl shadow-2xl pointer-events-none"
+          {canManageWorkspaces && (
+            <div className="relative">
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onMouseEnter={() => setIsHovered(true)}
+                onMouseLeave={() => setIsHovered(false)}
+                onClick={() => navigate("/main/organization/workspace/add")}
+                className="flex items-center gap-2 bg-gradient-to-r from-blue-600 via-blue-700 to-blue-600 bg-[length:200%_auto] hover:bg-right text-white px-6 py-3 rounded-xl shadow-lg shadow-blue-500/30 transition-all font-medium"
               >
-                Create dedicated spaces for each department, product, or market to keep research initiatives organized in one hub.
-                {/* Arrow */}
-                <div className="absolute right-6 -top-1 border-4 border-transparent border-b-gray-900 dark:border-b-gray-800" />
-              </motion.div>
-            )}
-          </div>
+                <TbPlus size={20} />
+                <span>Create Workspace</span>
+              </motion.button>
+
+              {isHovered && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  className="absolute right-0 top-full mt-2 z-50 w-64 p-3 text-xs font-medium text-white bg-gray-900 dark:bg-gray-800 rounded-xl shadow-2xl pointer-events-none"
+                >
+                  Create dedicated spaces for each department, product, or market to keep research initiatives organized in one hub.
+                  <div className="absolute right-6 -top-1 border-4 border-transparent border-b-gray-900 dark:border-b-gray-800" />
+                </motion.div>
+              )}
+            </div>
+          )}
         </motion.div>
 
         {/* Main Card Container */}
@@ -284,19 +298,23 @@ const WorkspaceList = () => {
 
                     {/* Actions Column */}
                     <div className="col-span-12 md:col-span-4 flex items-center justify-start md:justify-end gap-2 overflow-visible">
-                      <TooltipButton
-                        onClick={() => navigate(`/main/organization/workspace/edit/${ws.id}`)}
-                        icon={<TbEdit size={18} />}
-                        label="Edit Workspace"
-                        colorClass="text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-500/10 hover:bg-blue-100 dark:hover:bg-blue-500/20"
-                      />
+                      {canManageWorkspaces && (
+                        <TooltipButton
+                          onClick={() => navigate(`/main/organization/workspace/edit/${ws.id}`)}
+                          icon={<TbEdit size={18} />}
+                          label="Edit Workspace"
+                          colorClass="text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-500/10 hover:bg-blue-100 dark:hover:bg-blue-500/20"
+                        />
+                      )}
 
-                      <TooltipButton
-                        onClick={() => navigate(`/main/organization/workspace/manage/${ws.id}`)}
-                        icon={<TbUsers size={18} />}
-                        label="Manage Users"
-                        colorClass="text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-500/10 hover:bg-green-100 dark:hover:bg-green-500/20"
-                      />
+                      {canManageWorkspaces && (
+                        <TooltipButton
+                          onClick={() => navigate(`/main/organization/workspace/manage/${ws.id}`)}
+                          icon={<TbUsers size={18} />}
+                          label="Manage Users"
+                          colorClass="text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-500/10 hover:bg-green-100 dark:hover:bg-green-500/20"
+                        />
+                      )}
 
                       <TooltipButton
                         onClick={() => {
@@ -308,14 +326,16 @@ const WorkspaceList = () => {
                         colorClass="text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-500/10 hover:bg-purple-100 dark:hover:bg-purple-500/20"
                       />
 
-                      <div className="h-6 w-px bg-gray-300 dark:bg-white/10 mx-2 hidden md:block"></div>
+                      {canManageWorkspaces && <div className="h-6 w-px bg-gray-300 dark:bg-white/10 mx-2 hidden md:block"></div>}
 
-                      <TooltipButton
-                        onClick={() => handleDelete(ws.id, ws.name)}
-                        icon={<TbTrash size={18} />}
-                        label="Delete Workspace"
-                        colorClass="text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10 hover:bg-red-100 dark:hover:bg-red-500/20"
-                      />
+                      {canManageWorkspaces && (
+                        <TooltipButton
+                          onClick={() => handleDelete(ws.id, ws.name)}
+                          icon={<TbTrash size={18} />}
+                          label="Delete Workspace"
+                          colorClass="text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10 hover:bg-red-100 dark:hover:bg-red-500/20"
+                        />
+                      )}
                     </div>
                   </motion.div>
                 ))}

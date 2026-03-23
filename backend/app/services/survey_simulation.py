@@ -5,6 +5,7 @@ from datetime import datetime
 from math import isfinite
 from app.models.survey_simulation import SurveySimulation
 from app.utils.id_generator import generate_id
+from app.utils.survey_results_normalize import build_normalized_survey_results
 from app.db import async_engine
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -33,13 +34,6 @@ def _normalize_pct(p):
         return max(0.0, min(100.0, p))
     except Exception:
         return 0.0
-
-
-def _ensure_int(v: Any, default: int = 0) -> int:
-    try:
-        return int(float(v))
-    except Exception:
-        return default
 
 
 def _build_simulation_prompt(research_desc: str, persona: dict, sample_size: int, questions: List[Dict]) -> str:
@@ -295,52 +289,11 @@ async def simulate_and_store(
 
     llm_source_explanation = data.get("llm_source_explanation", {})
 
-    normalized_results: Dict[str, List[Dict]] = {}
-    for q in data.get("question_results", []):
-        text = q.get("text", "") or ""
-        opts = q.get("options", []) or []
-
-        processed = []
-        total_counts = 0
-        for o in opts:
-            if isinstance(o, dict):
-                opt_text = o.get("option", "")
-                cnt = _ensure_int(o.get("count", 0), 0)
-            else:
-                opt_text = str(o)
-                cnt = 0
-            processed.append({"option": opt_text, "count": cnt})
-            total_counts += cnt
-
-        if len(processed) == 0:
-            processed = [{"option": "No option provided", "count": sample_size}]
-            total_counts = sample_size
-
-        if total_counts != sample_size:
-            if total_counts == 0:
-                n_opts = max(1, len(processed))
-                base = sample_size // n_opts
-                rem = sample_size - base * n_opts
-                for i, p in enumerate(processed):
-                    cnt = base + (1 if i < rem else 0)
-                    p["count"] = cnt
-            else:
-                raw_counts = [ (p["count"] / total_counts) * sample_size for p in processed ]
-                ints = [int(rc) for rc in raw_counts]
-                remainder = sample_size - sum(ints)
-                fracs = sorted([(raw_counts[i] - ints[i], i) for i in range(len(ints))], reverse=True)
-                for r in range(remainder):
-                    _, idx = fracs[r]
-                    ints[idx] += 1
-                for i, p in enumerate(processed):
-                    p["count"] = ints[i]
-
-        for p in processed:
-            cnt = int(p["count"])
-            pct = round(100.0 * cnt / sample_size, 1) if sample_size > 0 else 0.0
-            p["pct"] = pct
-
-        normalized_results[text] = processed
+    normalized_results = build_normalized_survey_results(
+        data.get("question_results", []),
+        flat_questions,
+        sample_size,
+    )
 
     grouped_output = _group_results_by_section(questions_sections, normalized_results)
 
@@ -394,10 +347,49 @@ async def simulate_and_store(
     return out
 
 
+def parse_survey_results_field(raw: Any) -> Optional[Dict[str, Any]]:
+    """
+    ORM JSON columns sometimes deserialize as dict; rarely as a JSON string.
+    Survey counts CSV needs a dict: { question_text: [ {option, count}, ... ] }.
+    """
+    if raw is None:
+        return None
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        s = raw.strip()
+        if not s:
+            return None
+        try:
+            parsed = json.loads(s)
+            return parsed if isinstance(parsed, dict) else None
+        except (json.JSONDecodeError, TypeError):
+            return None
+    return None
+
+
 async def get_survey_simulation_by_id(simulation_id: str):
     async with AsyncSession(async_engine) as session:
         survey = select(SurveySimulation).where(SurveySimulation.id == simulation_id)
         res = await session.execute(survey)
         return res.scalars().first()
+
+
+async def get_latest_survey_results_map(simulation_source_id: str) -> Optional[Dict]:
+    """
+    Results dict: { question_text: [ {option, count, pct?}, ... ], ... }
+    for the most recent survey run tied to this population simulation id.
+    """
+    async with AsyncSession(async_engine) as session:
+        stmt = (
+            select(SurveySimulation)
+            .where(SurveySimulation.simulation_source_id == simulation_source_id)
+            .order_by(SurveySimulation.created_at.desc())
+        )
+        res = await session.execute(stmt)
+        ss = res.scalars().first()
+        if not ss:
+            return None
+        return parse_survey_results_field(ss.results)
 
 

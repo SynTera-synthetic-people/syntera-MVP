@@ -8,8 +8,18 @@ import {
   simulateSurvey,
   downloadSurveyPdf,
   uploadQuestionnaire,
-  previewSurvey
+  previewSurvey,
+  listPopulationSimulations,
 } from '../services/quantitativeServices';
+
+/** Saved population + questionnaire runs for an exploration (for restore & exports). */
+export const usePopulationSimulations = (workspaceId, explorationId) => {
+  return useQuery({
+    queryKey: ['populationSimulations', workspaceId, explorationId],
+    queryFn: () => listPopulationSimulations({ workspaceId, explorationId }),
+    enabled: !!workspaceId && !!explorationId,
+  });
+};
 
 // Personas Query
 export const usePersonas = (workspaceId, explorationId) => {
@@ -32,6 +42,9 @@ export const useSimulatePopulation = () => {
       queryClient.invalidateQueries({
         queryKey: ['simulation', variables.workspaceId, variables.explorationId]
       });
+      queryClient.invalidateQueries({
+        queryKey: ['populationSimulations', variables.workspaceId, variables.explorationId],
+      });
     },
   });
 };
@@ -47,6 +60,9 @@ export const useGenerateQuestionnaire = () => {
       // Invalidate questionnaires query to refresh data
       queryClient.invalidateQueries({
         queryKey: ['questionnaires', variables.workspaceId, variables.explorationId]
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['populationSimulations', variables.workspaceId, variables.explorationId],
       });
       // Also set the generated questionnaire in cache
       queryClient.setQueryData(

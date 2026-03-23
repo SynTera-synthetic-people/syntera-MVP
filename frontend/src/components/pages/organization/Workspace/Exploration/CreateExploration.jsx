@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import UpgradeModal from "../../../Upgrade/UpgradeModal";
 import PremiumInput from "../../../../common/PremiumInput";
 import PremiumButton from "../../../../common/PremiumButton";
 import { motion } from "framer-motion";
@@ -26,13 +27,17 @@ const CreateExploration = () => {
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [audienceType, setAudienceType] = useState("B2C");
   const [errors, setErrors] = useState({});
+  const [showUpgrade, setShowUpgrade] = useState(false);
 
   // Fetch exploration data if in edit mode
   const { data: exploration, isLoading: isLoadingExploration, error: fetchError } =
     useExploration(explorationId, { enabled: isEditMode });
 
-  const createExplorationMutation = useCreateExploration();
+  const createExplorationMutation = useCreateExploration({
+    onTrialLimitReached: () => setShowUpgrade(true),
+  });
   const updateExplorationMutation = useUpdateExploration();
 
   // Populate form when in edit mode and data is loaded
@@ -40,6 +45,7 @@ const CreateExploration = () => {
     if (isEditMode && exploration) {
       setTitle(exploration.title || "");
       setDescription(exploration.description || "");
+      setAudienceType(exploration.audience_type || "B2C");
     }
   }, [isEditMode, exploration]);
 
@@ -60,7 +66,8 @@ const CreateExploration = () => {
         // Update existing exploration
         const updateData = {
           title: title.trim(),
-          description: description.trim()
+          description: description.trim(),
+          audience_type: audienceType,
         };
 
         await updateExplorationMutation.mutateAsync({
@@ -72,7 +79,8 @@ const CreateExploration = () => {
         const explorationData = {
           workspace_id: workspaceId,
           title: title.trim(),
-          description: description.trim()
+          description: description.trim(),
+          audience_type: audienceType,
         };
 
         await createExplorationMutation.mutateAsync(explorationData);
@@ -201,6 +209,35 @@ const CreateExploration = () => {
             {/* Description Field */}
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Audience Type *
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setAudienceType("B2C")}
+                  disabled={isLoading}
+                  className={`rounded-xl border px-4 py-3 text-left transition-all ${
+                    audienceType === "B2C"
+                      ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm dark:border-blue-400 dark:bg-blue-500/10 dark:text-blue-200"
+                      : "border-gray-300 bg-white text-gray-700 hover:border-gray-400 dark:border-white/10 dark:bg-white/5 dark:text-gray-200"
+                  }`}
+                >
+                  <div className="font-semibold">B2C</div>
+                  <div className="mt-1 text-xs opacity-80">Consumer audience research</div>
+                </button>
+                <button
+                  type="button"
+                  disabled
+                  className="rounded-xl border border-dashed border-gray-300 px-4 py-3 text-left text-gray-400 dark:border-white/10 dark:text-gray-500"
+                >
+                  <div className="font-semibold">B2B</div>
+                  <div className="mt-1 text-xs">Coming soon</div>
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Description
               </label>
               <textarea
@@ -244,6 +281,11 @@ const CreateExploration = () => {
       </div>
 
 
+      <UpgradeModal
+        isOpen={showUpgrade}
+        onClose={() => setShowUpgrade(false)}
+        onUpgradeSuccess={() => setShowUpgrade(false)}
+      />
     </div>
   );
 };

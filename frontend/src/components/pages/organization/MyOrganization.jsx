@@ -46,6 +46,13 @@ import logoForDark from "../../../assets/Logo_Dark_bg.png";
 import logoForLight from "../../../assets/Logo_Light_bg.png";
 import { useTheme } from "../../../context/ThemeContext";
 import { adminService } from "../../../services/adminService";
+import { getPostLoginPath } from "../../../utils/authRouting";
+import { useWorkspaces } from "../../../hooks/useWorkspaces";
+import { useExplorations } from "../../../hooks/useExplorations";
+import {
+  downloadLatestQuestionnaireCsvForExploration,
+  alertQuestionnaireExportError,
+} from "../../../utils/questionnaireExportFlow";
 
 // Internal component for individual floating particles
 const MouseParticle = ({ mouseX, mouseY, damping, stiffness, offsetX = 0, offsetY = 0, className }) => {
@@ -720,6 +727,12 @@ const MyOrganization = () => {
   const organizationName = organizations?.data?.name || "My Organization";
   const orgId = organizations?.data?.id || "default-org";
 
+  useEffect(() => {
+    if (auth?.user && auth.user.account_tier !== "enterprise") {
+      navigate(getPostLoginPath(auth.user), { replace: true });
+    }
+  }, [auth?.user, navigate]);
+
   // Enterprise perspective dropdown states
   const [selectedMetric, setSelectedMetric] = React.useState('explorations');
   const [isDropdownOpen, setIsDropdownOpen] = React.useState(false);
@@ -757,6 +770,54 @@ const MyOrganization = () => {
   const [dashboardData, setDashboardData] = React.useState(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState(null);
+
+  const [csvModalOpen, setCsvModalOpen] = React.useState(false);
+  const [csvWsId, setCsvWsId] = React.useState("");
+  const [csvExId, setCsvExId] = React.useState("");
+  const [csvBusy, setCsvBusy] = React.useState(false);
+
+  const { data: workspaceRaw } = useWorkspaces();
+  const workspaces = React.useMemo(() => {
+    if (!workspaceRaw) return [];
+    if (Array.isArray(workspaceRaw)) return workspaceRaw;
+    return workspaceRaw?.data ?? [];
+  }, [workspaceRaw]);
+
+  const { data: explorationsRaw, isLoading: explorationsLoading } = useExplorations(csvWsId, {
+    enabled: csvModalOpen && !!csvWsId,
+  });
+  const explorations = React.useMemo(() => {
+    if (!explorationsRaw) return [];
+    if (Array.isArray(explorationsRaw)) return explorationsRaw;
+    return explorationsRaw?.data ?? [];
+  }, [explorationsRaw]);
+
+  React.useEffect(() => {
+    setCsvExId("");
+  }, [csvWsId]);
+
+  const openCsvModal = () => {
+    setCsvModalOpen(true);
+    setCsvWsId("");
+    setCsvExId("");
+  };
+
+  const handleDashboardCsvDownload = async () => {
+    if (!csvWsId || !csvExId) return;
+    try {
+      setCsvBusy(true);
+      await downloadLatestQuestionnaireCsvForExploration({
+        workspaceId: csvWsId,
+        explorationId: csvExId,
+      });
+      setCsvModalOpen(false);
+    } catch (e) {
+      console.error(e);
+      alertQuestionnaireExportError(e);
+    } finally {
+      setCsvBusy(false);
+    }
+  };
 
   const fetchDashboardData = async () => {
     try {
@@ -976,15 +1037,28 @@ const MyOrganization = () => {
               )}
             </div>
 
-            <QuickAction
-              title="New Workspace" icon={TbPlus} primary delay={0.1}
-              onClick={() => navigate("/main/organization/workspace/add")}
-              className="!p-4 !rounded-2xl hover:scale-105 !shadow-blue-500/20"
-            />
-            <QuickAction
-              title="Settings" icon={TbSettings} delay={0.2} onClick={() => navigate("/main/settings")}
-              className="!p-4 !rounded-2xl hover:scale-105"
-            />
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              <motion.button
+                type="button"
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.1, duration: 0.5 }}
+                onClick={openCsvModal}
+                className="flex items-center justify-center gap-2 px-5 py-3 rounded-2xl border-2 border-gray-300/60 dark:border-white/10 bg-white dark:bg-white/5 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-white/10 transition-all font-black text-[10px] tracking-widest shadow-xl"
+              >
+                <TbDownload size={18} className="text-cyan-500" />
+                <span>Questionnaire CSV</span>
+              </motion.button>
+              <QuickAction
+                title="New Workspace" icon={TbPlus} primary delay={0.1}
+                onClick={() => navigate("/main/organization/workspace/add")}
+                className="!p-4 !rounded-2xl hover:scale-105 !shadow-blue-500/20"
+              />
+              <QuickAction
+                title="Settings" icon={TbSettings} delay={0.2} onClick={() => navigate("/main/settings")}
+                className="!p-4 !rounded-2xl hover:scale-105"
+              />
+            </div>
           </div>
         </motion.div>
 
@@ -1068,6 +1142,69 @@ const MyOrganization = () => {
         </div>
       </div >
 
+      {csvModalOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-[100] bg-black/50"
+            onClick={() => !csvBusy && setCsvModalOpen(false)}
+            aria-hidden
+          />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="fixed left-1/2 top-1/2 z-[110] w-[min(100%,420px)] max-h-[90vh] overflow-y-auto -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-gray-900 p-6 shadow-2xl"
+          >
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-1">Download questionnaire CSV</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+              Choose the workspace and exploration that has a saved population run and questionnaire.
+            </p>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Workspace</label>
+            <select
+              value={csvWsId}
+              onChange={(e) => setCsvWsId(e.target.value)}
+              className="w-full mb-4 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2 text-sm text-gray-900 dark:text-white"
+            >
+              <option value="">Choose workspace…</option>
+              {workspaces.map((w) => (
+                <option key={w.id} value={w.id}>{w.name || w.id}</option>
+              ))}
+            </select>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Exploration</label>
+            <select
+              value={csvExId}
+              onChange={(e) => setCsvExId(e.target.value)}
+              disabled={!csvWsId || explorationsLoading}
+              className="w-full mb-4 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2 text-sm text-gray-900 dark:text-white disabled:opacity-50"
+            >
+              <option value="">{explorationsLoading ? "Loading…" : "Choose exploration…"}</option>
+              {explorations.map((ex) => (
+                <option key={ex.id} value={ex.id}>{ex.title || ex.id}</option>
+              ))}
+            </select>
+            <div className="flex gap-2 justify-end">
+              <button
+                type="button"
+                disabled={csvBusy}
+                onClick={() => setCsvModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-sm font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/10"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={csvBusy || !csvWsId || !csvExId}
+                onClick={handleDashboardCsvDownload}
+                className="px-4 py-2 rounded-xl text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {csvBusy && (
+                  <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                )}
+                Download
+              </button>
+            </div>
+          </motion.div>
+        </>
+      )}
 
     </div >
   );

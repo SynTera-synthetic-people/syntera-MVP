@@ -1,7 +1,13 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
+import {
+  downloadLatestQuestionnaireCsvForExploration,
+  alertQuestionnaireExportError,
+} from "../../../../../utils/questionnaireExportFlow";
+import UpgradeModal from "../../../Upgrade/UpgradeModal";
 import { useNavigate, useParams } from "react-router-dom";
+import { useSelector } from "react-redux";
 import { motion, useMotionValue, useSpring, useTransform } from "framer-motion";
-import { TbPlus, TbEdit, TbTrash, TbArrowLeft, TbTelescope, TbSearch, TbChartDots } from "react-icons/tb";
+import { TbPlus, TbEdit, TbTrash, TbArrowLeft, TbTelescope, TbSearch, TbChartDots, TbAlertTriangle, TbArrowUpRight, TbUsers, TbDownload } from "react-icons/tb";
 import { useTheme } from "../../../../../context/ThemeContext";
 import logoForDark from "../../../../../assets/Logo_Dark_bg.png";
 import logoForLight from "../../../../../assets/Logo_Light_bg.png";
@@ -11,6 +17,7 @@ import {
 } from "../../../../../hooks/useExplorations";
 import { useWorkspace } from "../../../../../hooks/useWorkspaces";
 import { formatDateToDDMMYYYY } from "../../../../../utils/formatDate";
+import InviteTeamModal from "../InviteTeamModal";
 
 const MouseParticle = ({ mouseX, mouseY, damping, stiffness, offsetX = 0, offsetY = 0, className }) => {
   const springX = useSpring(mouseX, { stiffness, damping });
@@ -67,6 +74,14 @@ const ExplorationList = () => {
   const { workspaceId } = useParams();
   const { theme } = useTheme();
 
+  // Trial state from Redux
+  const { user } = useSelector((state) => state.auth);
+  const isTrialMaxed = user?.is_trial && user?.exploration_count >= user?.trial_exploration_limit;
+  const canInviteTeam = Boolean(user?.can_create_workspace);
+  const [showUpgrade, setShowUpgrade] = useState(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [csvDownloadingId, setCsvDownloadingId] = useState(null);
+
   // Use React Query hook to fetch explorations
   const { data: explorations, isLoading, error, refetch } = useExplorations(workspaceId);
   const deleteExplorationMutation = useDeleteExploration();
@@ -83,6 +98,21 @@ const ExplorationList = () => {
   const handleMouseMove = (e) => {
     mouseX.set(e.clientX);
     mouseY.set(e.clientY);
+  };
+
+  const handleDownloadQuestionnaireCsv = async (exploration) => {
+    try {
+      setCsvDownloadingId(exploration.id);
+      await downloadLatestQuestionnaireCsvForExploration({
+        workspaceId,
+        explorationId: exploration.id,
+      });
+    } catch (e) {
+      console.error(e);
+      alertQuestionnaireExportError(e);
+    } finally {
+      setCsvDownloadingId(null);
+    }
   };
 
   const handleDelete = async (id, title) => {
@@ -189,33 +219,76 @@ const ExplorationList = () => {
             </div>
           </div>
 
-          <div className="relative">
+          <div className="flex flex-wrap items-center gap-3">
+            {canInviteTeam && (
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => setShowInviteModal(true)}
+                className="flex items-center gap-2 px-6 py-3 rounded-xl border border-gray-300 dark:border-white/10 bg-white/80 dark:bg-white/5 text-gray-800 dark:text-white shadow-lg transition-all font-medium hover:bg-gray-50 dark:hover:bg-white/10"
+              >
+                <TbUsers size={20} />
+                <span>Invite Team</span>
+              </motion.button>
+            )}
+
+            <div className="relative">
             <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              onMouseEnter={() => setIsTooltipHovered(true)}
+              whileHover={isTrialMaxed ? {} : { scale: 1.02 }}
+              whileTap={isTrialMaxed ? {} : { scale: 0.98 }}
+              onMouseEnter={() => !isTrialMaxed && setIsTooltipHovered(true)}
               onMouseLeave={() => setIsTooltipHovered(false)}
-              onClick={() => navigate(`/main/organization/workspace/explorations/${workspaceId}/create`)}
-              className="flex items-center gap-2 bg-gradient-to-r from-blue-600 via-blue-700 to-blue-600 bg-[length:200%_auto] hover:bg-right text-white px-6 py-3 rounded-xl shadow-lg shadow-blue-500/30 transition-all font-medium"
+              onClick={() => !isTrialMaxed && navigate(`/main/organization/workspace/explorations/${workspaceId}/create`)}
+              disabled={isTrialMaxed}
+              className={`flex items-center gap-2 px-6 py-3 rounded-xl shadow-lg transition-all font-medium ${
+                isTrialMaxed
+                  ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed shadow-none'
+                  : 'bg-gradient-to-r from-blue-600 via-blue-700 to-blue-600 bg-[length:200%_auto] hover:bg-right text-white shadow-blue-500/30'
+              }`}
             >
               <TbPlus size={20} />
               <span>Research Exploration</span>
             </motion.button>
 
-            {/* Tooltip */}
-            {isTooltipHovered && (
+            {/* Tooltip — normal state */}
+            {isTooltipHovered && !isTrialMaxed && (
               <motion.div
                 initial={{ opacity: 0, y: 10, scale: 0.95 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 className="absolute right-0 top-full mt-2 z-50 w-64 p-3 text-xs font-medium text-white bg-gray-900 dark:bg-gray-800 rounded-xl shadow-2xl pointer-events-none"
               >
                 Create a dedicated exploration for each research question or study.
-                {/* Arrow */}
                 <div className="absolute right-6 -top-1 border-4 border-transparent border-b-gray-900 dark:border-b-gray-800" />
               </motion.div>
             )}
+            </div>
           </div>
         </motion.div>
+
+        {/* Trial Limit Banner */}
+        {isTrialMaxed && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6 flex items-center justify-between gap-4 p-4 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30"
+          >
+            <div className="flex items-center gap-3">
+              <TbAlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+              <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+                Your free trial exploration has been completed. Upgrade to continue.
+              </p>
+            </div>
+            <motion.button
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+              onClick={() => setShowUpgrade(true)}
+              className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-amber-500 hover:bg-amber-600 rounded-lg shadow-sm transition-colors flex-shrink-0"
+            >
+              <TbArrowUpRight size={14} />
+              Upgrade Now
+            </motion.button>
+          </motion.div>
+        )}
 
         {/* Main Card Container */}
         <motion.div
@@ -240,8 +313,9 @@ const ExplorationList = () => {
             <>
               {/* List Header */}
               <div className="grid grid-cols-1 md:grid-cols-12 gap-4 p-6 border-b border-gray-200 dark:border-white/10 bg-gray-50/50 dark:bg-white/5 text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                <div className="md:col-span-5 pl-2">Title</div>
+                <div className="md:col-span-4 pl-2">Title</div>
                 <div className="md:col-span-3 hidden md:block">Description</div>
+                <div className="md:col-span-1 hidden md:block">Audience</div>
                 <div className="md:col-span-2 hidden md:block">Created On</div>
                 <div className="md:col-span-2 text-right pr-2">Actions</div>
               </div>
@@ -249,13 +323,6 @@ const ExplorationList = () => {
               {/* Exploration Rows */}
               <div className="divide-y divide-gray-200 dark:divide-white/10">
                 {[...explorations].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).map((exploration, index) => {
-                  // DEEP DEBUG: Log everything about this exploration
-                  console.log(`[RENDER] Exploration: "${exploration.title}"`, {
-                    id: exploration.id,
-                    is_end: exploration.is_end,
-                    type_of_is_end: typeof exploration.is_end,
-                    all_keys: Object.keys(exploration)
-                  });
                   return (
                     <motion.div
                       key={exploration.id}
@@ -265,7 +332,7 @@ const ExplorationList = () => {
                       className="grid grid-cols-1 md:grid-cols-12 gap-4 p-6 items-center hover:bg-gray-50/50 dark:hover:bg-white/5 transition-colors group"
                     >
                       {/* Title Column */}
-                      <div className="md:col-span-5 flex items-center gap-4">
+                      <div className="md:col-span-4 flex items-center gap-4">
                         <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-500/20 flex items-center justify-center text-blue-600 dark:text-blue-400">
                           <TbTelescope size={20} />
                         </div>
@@ -276,6 +343,11 @@ const ExplorationList = () => {
                           <p className="text-gray-600 dark:text-gray-400 text-sm line-clamp-2 mt-1 md:hidden">
                             {exploration.description || "No description provided."}
                           </p>
+                          <div className="mt-2 md:hidden">
+                            <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-500/10 dark:text-blue-200">
+                              {exploration.audience_type || "B2C"}
+                            </span>
+                          </div>
                           <p className="text-gray-500 dark:text-gray-500 text-xs mt-1 md:hidden">
                             Created: {formatDateToDDMMYYYY(exploration.created_at) || "N/A"}
                           </p>
@@ -287,6 +359,12 @@ const ExplorationList = () => {
                         <p className="text-gray-600 dark:text-gray-400 text-sm line-clamp-2">
                           {exploration.description || "No description provided."}
                         </p>
+                      </div>
+
+                      <div className="md:col-span-1 hidden md:block">
+                        <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-500/10 dark:text-blue-200">
+                          {exploration.audience_type || "B2C"}
+                        </span>
                       </div>
 
                       {/* Created On Column - Desktop only */}
@@ -307,6 +385,20 @@ const ExplorationList = () => {
                               colorClass="text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-500/10 hover:bg-purple-100 dark:hover:bg-purple-500/20"
                             />
                           )}
+
+                          <TooltipButton
+                            onClick={() => handleDownloadQuestionnaireCsv(exploration)}
+                            icon={
+                              csvDownloadingId === exploration.id ? (
+                                <span className="inline-block w-[18px] h-[18px] border-2 border-cyan-600 border-t-transparent rounded-full animate-spin" />
+                              ) : (
+                                <TbDownload size={18} />
+                              )
+                            }
+                            label="Download questionnaire (CSV)"
+                            colorClass="text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-500/10 hover:bg-cyan-100 dark:hover:bg-cyan-500/20"
+                            className={csvDownloadingId === exploration.id ? "opacity-80 pointer-events-none" : ""}
+                          />
 
                           <TooltipButton
                             onClick={() => navigate(`/main/organization/workspace/research-objectives/${workspaceId}/${exploration.id}/research-mode`)}
@@ -341,6 +433,18 @@ const ExplorationList = () => {
           )}
         </motion.div>
       </div>
+      <UpgradeModal
+        isOpen={showUpgrade}
+        onClose={() => setShowUpgrade(false)}
+        onUpgradeSuccess={() => setShowUpgrade(false)}
+      />
+      <InviteTeamModal
+        isOpen={showInviteModal}
+        workspaceId={workspaceId}
+        workspaceName={currentWorkspace?.name || "this workspace"}
+        onSkip={() => setShowInviteModal(false)}
+        onLaunch={() => setShowInviteModal(false)}
+      />
     </div>
   );
 };

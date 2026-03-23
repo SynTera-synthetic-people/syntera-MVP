@@ -1,0 +1,61 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: syntera-mvp-ingress
+  namespace: syntera-mvp
+  annotations:                                                         
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/load-balancer-attributes: idle_timeout.timeout_seconds=600
+
+    # enable HTTPS listener + cert
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-south-1:175337843263:certificate/4555c02f-afb8-4a18-9e1a-033d039f1e22
+
+    # redirect HTTP -> HTTPS
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+  
+spec:
+  ingressClassName: alb
+  rules:
+    - host: staging-ui.synthetic-people.ai
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: synth-frontend-svc
+                port:
+                  number: 80
+    - host: staging-api.synthetic-people.ai
+      http:
+        paths:
+          - path: /auth/login
+            pathType: Prefix
+            backend:
+              service:
+                name: synth-backend-svc
+                port:
+                  number: 8000
+          - path: /workspaces
+            pathType: Prefix
+            backend:
+              service:
+                name: synth-backend-svc
+                port:
+                  number: 8000
+          - path: /personas
+            pathType: Prefix
+            backend:
+              service:
+                name: synth-backend-svc
+                port:
+                  number: 8000
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: synth-backend-svc
+                port:
+                  number: 8000

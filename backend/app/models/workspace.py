@@ -10,6 +10,8 @@ class Workspace(SQLModel, table=True):
     organization_id: str = Field(foreign_key="organization.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     department_name: Optional[str] = None
+    is_hidden: bool = Field(default=False)
+    is_default_personal: bool = Field(default=False)
     organization: "Organization" = Relationship(back_populates="workspaces")
     members: List["WorkspaceMember"] = Relationship(back_populates="workspace")
 

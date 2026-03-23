@@ -12,6 +12,7 @@ class Exploration(SQLModel, table=True):
 
     title: str = Field(max_length=255)
     description: str
+    audience_type: str = Field(default="B2C", max_length=20, nullable=False)
     clarification_attempts: int = Field(default=0)
     is_quantitative: bool = Field(default=False, nullable=False)
     is_qualitative: bool = Field(default=False, nullable=False)

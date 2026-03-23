@@ -1,4 +1,5 @@
 from typing import Optional
+from io import BytesIO
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import update
 from app.models.survey_simulation import SurveySimulation
@@ -33,15 +34,20 @@ from app.services.persona import get_persona
 from app.services.population import get_simulation
 from app.services.exploration import get_exploration
 from app.services.questionnaire import get_full_questionnaire
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 from app.utils.pdf_generator import generate_survey_pdf
-from app.services.survey_simulation import get_survey_simulation_by_id
+from app.services.survey_simulation import (
+    get_survey_simulation_by_id,
+    get_latest_survey_results_map,
+    parse_survey_results_field,
+    _to_percent_string,
+)
 from app.services.persona import get_persona
 from app.services.exploration import get_exploration
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Form
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Form, Query
 from app.services import questionnaire as questionnaire_service
 from app.services import workspace as ws_service
-from app.services.report_generation_quant_claude import generate_md_report
+from app.utils.questionnaire_csv import questionnaire_sections_to_csv_bytes
 
 
 router = APIRouter(
@@ -59,7 +65,7 @@ async def upload_questionnaire_file(
     current_user: User = Depends(get_current_active_user)
 ):
     members = await ws_service.list_workspace_members(workspace_id)
-    if not any(m.user_id == current_user.id for m in members):
+    if not any(m.get("user_id") == current_user.id for m in members):
         raise HTTPException(
             403, ErrorResponse(status="error", message="Not a workspace member").dict()
         )
@@ -99,9 +105,17 @@ async def upload_questionnaire_file(
             ).dict()
         )
 
+    respondent_counts_available = False
+    if simulation_id:
+        cm = await get_latest_survey_results_map(simulation_id)
+        respondent_counts_available = bool(cm)
+
     return SuccessResponse(
         message="File parsed & stored successfully",
-        data=stored
+        data={
+            "sections": stored,
+            "respondent_counts_available": respondent_counts_available,
+        },
     )
 
 
@@ -176,6 +190,50 @@ async def get_questionnaire_by_simulation(
         message="Questionnaires fetched successfully",
         data=questionnaires
     )
+
+
+@router.get("/export-csv/{simulation_id}")
+async def export_questionnaire_csv(
+    workspace_id: str,
+    exploration_id: str,
+    simulation_id: str,
+    survey_simulation_id: Optional[str] = Query(
+        None,
+        description="Optional survey run id; when set, counts come from that run. Otherwise uses latest survey for this population simulation.",
+    ),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Download questionnaire as CSV: Q No., Question Description, Options, Count (from survey simulation if available)."""
+    members = await ws_service.list_workspace_members(workspace_id)
+    if not any(m.get("user_id") == current_user.id for m in members):
+        raise HTTPException(
+            403, ErrorResponse(status="error", message="Not a workspace member").dict()
+        )
+
+    questionnaires = await service.get_questionnaire_by_simulation(workspace_id, exploration_id, simulation_id)
+    if not questionnaires:
+        raise HTTPException(status_code=404, detail="No questionnaire found for this simulation")
+
+    counts_map = None
+    if survey_simulation_id:
+        ss = await get_survey_simulation_by_id(survey_simulation_id)
+        if not ss:
+            raise HTTPException(status_code=404, detail="Survey simulation not found")
+        if ss.workspace_id != workspace_id or ss.exploration_id != exploration_id:
+            raise HTTPException(status_code=400, detail="Survey simulation does not match workspace or exploration")
+        if ss.simulation_source_id != simulation_id:
+            raise HTTPException(status_code=400, detail="Survey simulation does not match this population simulation")
+        counts_map = parse_survey_results_field(ss.results)
+    else:
+        counts_map = await get_latest_survey_results_map(simulation_id)
+
+    body = questionnaire_sections_to_csv_bytes(questionnaires, counts_map)
+    return StreamingResponse(
+        BytesIO(body),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="questionnaire_exploration.csv"'},
+    )
+
 
 @router.post("/sections", response_model=SuccessResponse)
 async def create_section(workspace_id: str, exploration_id: str, payload: SectionCreate,
@@ -307,6 +365,36 @@ async def simulate_survey(
     )
 
 
+async def build_survey_report_sections(sim) -> list:
+    """
+    Section/question/results structure used by survey preview and PDF download.
+    Parses `sim.results` when stored as JSON string so keys match question text.
+    """
+    sections = await get_full_questionnaire(sim.workspace_id, sim.exploration_id)
+    results_raw = parse_survey_results_field(sim.results)
+    if results_raw is None and isinstance(sim.results, dict):
+        results_raw = sim.results
+    if not isinstance(results_raw, dict):
+        results_raw = {}
+    grouped = []
+    for sec in sections:
+        qs = []
+        for q in sec["questions"]:
+            qtext = q["text"]
+            results = results_raw.get(qtext, [])
+            formatted_results = [
+                {
+                    "option": opt.get("option"),
+                    "count": opt.get("count"),
+                    "percentage": _to_percent_string(opt.get("pct", 0)),
+                }
+                for opt in results
+            ]
+            qs.append({"question": qtext, "results": formatted_results})
+        grouped.append({"title": sec["title"], "questions": qs})
+    return grouped
+
+
 @router.get("/simulation/{simulation_id}/preview", response_model=SuccessResponse)
 async def preview_survey_report(
     workspace_id: str,
@@ -337,36 +425,7 @@ async def preview_survey_report(
     async with AsyncSession(async_engine) as session:
         objective = await get_exploration(session, sim.exploration_id)
 
-    sections = await get_full_questionnaire(sim.workspace_id, sim.exploration_id)
-
-    from app.services.survey_simulation import _to_percent_string
-
-    grouped = []
-    for sec in sections:
-        qs = []
-
-        for q in sec["questions"]:
-            qtext = q["text"]
-            results = sim.results.get(qtext, [])
-
-            formatted_results = [
-                {
-                    "option": opt.get("option"),
-                    "count": opt.get("count"),
-                    "percentage": _to_percent_string(opt.get("pct", 0))
-                }
-                for opt in results
-            ]
-
-            qs.append({
-                "question": qtext,
-                "results": formatted_results
-            })
-
-        grouped.append({
-            "title": sec["title"],
-            "questions": qs
-        })
+    grouped = await build_survey_report_sections(sim)
 
     preview_data = {
         "simulation_id": sim.id,
@@ -389,7 +448,7 @@ async def preview_survey_report(
     return SuccessResponse(message="Survey report preview", data=preview_data)
 
 
-@router.get("/simulation/{simulation_id}/download", response_class=StreamingResponse)
+@router.get("/simulation/{simulation_id}/download")
 async def download_survey_pdf(
     workspace_id: str,
     exploration_id: str,
@@ -410,44 +469,16 @@ async def download_survey_pdf(
     
     from app.db import async_engine
     from sqlalchemy.ext.asyncio import AsyncSession
+
+    # Same data as preview: deterministic ReportLab PDF (not LLM-generated).
+    grouped = await build_survey_report_sections(sim)
+
     async with AsyncSession(async_engine) as session:
         objective = await get_exploration(session, sim.exploration_id)
-
-    sections = await get_full_questionnaire(sim.workspace_id, sim.exploration_id)
-
-    from app.services.survey_simulation import _to_percent_string
-
-    grouped = []
-    for sec in sections:
-        qs = []
-
-        for q in sec["questions"]:
-            qtext = q["text"]
-            results = sim.results.get(qtext, [])
-
-            formatted_results = [
-                {
-                    "option": opt.get("option"),
-                    "count": opt.get("count"),
-                    "percentage": _to_percent_string(opt.get("pct", 0))
-                }
-                for opt in results
-            ]
-
-            qs.append({
-                "question": qtext,
-                "results": formatted_results
-            })
-
-        grouped.append({
-            "title": sec["title"],
-            "questions": qs
-        })
-
-    # pdf_bytes = generate_survey_pdf(sim, grouped, personas_list, objective)
-    pdf_bytes = await generate_md_report(exploration_id,sim.id,personas_list)
-
-    async with AsyncSession(async_engine) as session:
+        # Read while session is active; ORM instance is detached after commit
+        research_objective_text = (
+            (objective.description or "") if objective is not None else ""
+        )
         await session.execute(
             update(SurveySimulation)
             .where(SurveySimulation.id == simulation_id)
@@ -455,9 +486,17 @@ async def download_survey_pdf(
         )
         await session.commit()
 
-    return StreamingResponse(
-        pdf_bytes,
+    pdf_buffer = generate_survey_pdf(
+        sim,
+        grouped,
+        personas_list,
+        {"description": research_objective_text},
+    )
+    pdf_body = pdf_buffer.getvalue()
+
+    return Response(
+        content=pdf_body,
         media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename=survey_report_{simulation_id}.pdf"}
+        headers={"Content-Disposition": f'attachment; filename="survey_report_{simulation_id}.pdf"'},
     )
 

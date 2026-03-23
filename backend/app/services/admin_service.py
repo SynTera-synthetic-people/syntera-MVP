@@ -1,7 +1,12 @@
+import logging
+import secrets
+from typing import Optional
+
 from sqlalchemy import select, func
 from sqlalchemy import case, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import Float
+from sqlalchemy.dialects.postgresql import JSONB
 from app.models.population import PopulationSimulation
 from app.models.survey_simulation import SurveySimulation
 from app.models.user import User
@@ -21,11 +26,15 @@ from sqlalchemy import extract
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import date
-from datetime import date, datetime
+from datetime import date, datetime, time
 from dateutil.relativedelta import relativedelta
 from sqlalchemy import func, select, cast, Float, literal_column
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql import lateral
+from app.utils.security import hash_password
+from app.schemas.admin import AdminCreateUserIn, AdminUpdateUserIn
+
+logger = logging.getLogger(__name__)
 
 
 from sqlalchemy import extract
@@ -172,7 +181,6 @@ async def explorations_monthly_count(
         .group_by(year_expr, month_expr)
         .order_by(year_expr, month_expr)
     )
-    print(">>>>>", stmt)
     result = await session.execute(stmt)
 
     return [
@@ -665,3 +673,199 @@ async def get_user_dashboard(
         }
     }
 
+
+# ---------------------------------------------------------------------------
+# User Management (admin provisioning)
+# ---------------------------------------------------------------------------
+
+async def create_user_by_admin(
+    session: AsyncSession,
+    data: AdminCreateUserIn,
+) -> tuple[User, str]:
+    """
+    Provision a new user as an admin.
+
+    Generates a secure temporary password, creates the user with
+    must_change_password=True, and provisions their default organization.
+
+    account_tier rules applied automatically:
+      - "free"       → is_trial=True,  trial_exploration_limit = 1
+      - "tier1"      → is_trial=False, trial_exploration_limit = settings.TIER1_EXPLORATION_LIMIT
+      - "enterprise" → is_trial=False, trial_exploration_limit = 0 (org-level limit applies)
+      - admin roles  → is_trial=False regardless of requested tier
+
+    Returns:
+        (user, temp_password) — temp_password must be sent via email only.
+    """
+    from app.config import settings as _settings
+
+    existing = await session.execute(select(User).where(User.email == data.email))
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Email already registered")
+
+    if data.role != "user":
+        raise HTTPException(
+            status_code=400,
+            detail="Generic user provisioning only supports the user role.",
+        )
+
+    temp_password = secrets.token_urlsafe(12)
+
+    # Resolve tier → trial flag + exploration limit
+    account_tier = data.account_tier
+    if account_tier == "tier1":
+        is_trial = False
+        exploration_limit = _settings.TIER1_EXPLORATION_LIMIT
+    else:
+        # "free" default
+        is_trial = data.is_trial
+        exploration_limit = 1
+
+    user = User(
+        full_name=data.full_name,
+        email=data.email,
+        hashed_password=hash_password(temp_password),
+        role=data.role,
+        user_type=data.user_type,
+        is_verified=True,
+        is_active=True,
+        is_trial=is_trial,
+        account_tier=account_tier,
+        trial_exploration_limit=exploration_limit,
+        must_change_password=True,
+    )
+    session.add(user)
+    await session.commit()
+    await session.refresh(user)
+
+    from app.services.organization import create_organization_for_user
+    await create_organization_for_user(user)
+
+    logger.info(
+        "Admin provisioned user",
+        extra={
+            "user_id": user.id,
+            "email": user.email,
+            "role": user.role,
+            "account_tier": account_tier,
+            "is_trial": is_trial,
+        },
+    )
+    return user, temp_password
+
+
+async def update_user_by_admin(
+    session: AsyncSession,
+    user_id: str,
+    data: AdminUpdateUserIn,
+) -> User:
+    """
+    Partial update of a user's profile and trial configuration.
+
+    Only fields that are explicitly set in the payload are updated.
+    """
+    result = await session.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if data.full_name is not None:
+        user.full_name = data.full_name
+    if data.email is not None:
+        dupe = await session.execute(
+            select(User).where(User.email == data.email, User.id != user_id)
+        )
+        if dupe.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="Email already in use")
+        user.email = data.email
+    if data.role is not None:
+        if user.organization_id and data.role != user.role:
+            raise HTTPException(
+                status_code=400,
+                detail="Use enterprise organisation flows to manage enterprise roles.",
+            )
+        if not user.organization_id and data.role == "enterprise_admin":
+            raise HTTPException(
+                status_code=400,
+                detail="Enterprise admins must be provisioned from the enterprise organisation flow.",
+            )
+        user.role = data.role
+    if data.user_type is not None:
+        user.user_type = data.user_type
+    if data.is_trial is not None:
+        user.is_trial = data.is_trial
+    if data.trial_exploration_limit is not None:
+        user.trial_exploration_limit = data.trial_exploration_limit
+    # Changing account_tier auto-adjusts is_trial and exploration limit
+    if data.account_tier is not None:
+        from app.config import settings as _settings
+        if user.organization_id and data.account_tier != "enterprise":
+            raise HTTPException(
+                status_code=400,
+                detail="Use enterprise organisation flows to move enterprise users out of enterprise access.",
+            )
+        if not user.organization_id and data.account_tier == "enterprise":
+            raise HTTPException(
+                status_code=400,
+                detail="Enterprise accounts must be created from the enterprise organisation flow.",
+            )
+        user.account_tier = data.account_tier
+        if data.account_tier == "free":
+            user.is_trial = True
+            if data.trial_exploration_limit is None:
+                user.trial_exploration_limit = 1
+        elif data.account_tier == "tier1":
+            user.is_trial = False
+            if data.trial_exploration_limit is None:
+                user.trial_exploration_limit = _settings.TIER1_EXPLORATION_LIMIT
+        elif data.account_tier == "enterprise":
+            user.is_trial = False
+            if data.trial_exploration_limit is None:
+                user.trial_exploration_limit = 0
+
+    session.add(user)
+    await session.commit()
+    await session.refresh(user)
+    logger.info(
+        "Admin updated user",
+        extra={"user_id": user_id, "account_tier": user.account_tier},
+    )
+    return user
+
+
+async def delete_user_by_admin(
+    session: AsyncSession,
+    user_id: str,
+) -> None:
+    """Hard-delete a user by ID."""
+    result = await session.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    await session.delete(user)
+    await session.commit()
+    logger.info("Admin deleted user", extra={"user_id": user_id})
+
+
+async def reset_user_password_by_admin(
+    session: AsyncSession,
+    user_id: str,
+) -> str:
+    """
+    Generate a new temporary password for a user and set must_change_password=True.
+
+    Returns the plaintext temp password so it can be emailed.
+    """
+    result = await session.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    temp_password = secrets.token_urlsafe(12)
+    user.hashed_password = hash_password(temp_password)
+    user.must_change_password = True
+    session.add(user)
+    await session.commit()
+    logger.info("Admin reset user password", extra={"user_id": user_id})
+    return temp_password
