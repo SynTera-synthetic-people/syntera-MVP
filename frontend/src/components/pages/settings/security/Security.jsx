@@ -1,22 +1,17 @@
 import React, { useState } from 'react';
 import { TbLock, TbShieldCheck, TbDeviceDesktop, TbDeviceMobile, TbHistory } from 'react-icons/tb';
-import { useDispatch } from 'react-redux';
-import { toast } from 'react-toastify';
 import GlassCard from '../../../common/GlassCard';
 import PremiumInput from '../../../common/PremiumInput';
 import PremiumButton from '../../../common/PremiumButton';
 import PremiumToggle from '../../../common/PremiumToggle';
-import { authService } from '../../../../services/authService';
-import { updateUser } from '../../../../redux/slices/authSlice';
 
 const Security = () => {
-  const dispatch = useDispatch();
   const [passwordForm, setPasswordForm] = useState({
     currentPassword: '',
     newPassword: '',
     confirmPassword: ''
   });
-  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
 
   const loginSessions = [
@@ -28,30 +23,6 @@ const Security = () => {
   const handlePasswordChange = (e) => {
     const { name, value } = e.target;
     setPasswordForm(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleSubmitPassword = async (e) => {
-    e.preventDefault();
-    if (!passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword) {
-      toast.error('Please fill in all password fields.');
-      return;
-    }
-    setIsSubmitting(true);
-    try {
-      await authService.changePassword({
-        current_password: passwordForm.currentPassword,
-        new_password: passwordForm.newPassword,
-        confirm_password: passwordForm.confirmPassword,
-      });
-      dispatch(updateUser({ must_change_password: false }));
-      toast.success('Password changed successfully.');
-      setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
-    } catch (err) {
-      const message = err?.message || err?.detail || 'Failed to change password.';
-      toast.error(message);
-    } finally {
-      setIsSubmitting(false);
-    }
   };
 
   return (
@@ -76,7 +47,7 @@ const Security = () => {
               Change Password
             </h3>
 
-            <form onSubmit={handleSubmitPassword} className="grid grid-cols-1 gap-6 max-w-xl">
+            <div className="grid grid-cols-1 gap-6 max-w-xl">
               <PremiumInput
                 type="password"
                 name="currentPassword"
@@ -84,16 +55,14 @@ const Security = () => {
                 placeholder="Enter current password"
                 value={passwordForm.currentPassword}
                 onChange={handlePasswordChange}
-                disabled={isSubmitting}
               />
               <PremiumInput
                 type="password"
                 name="newPassword"
                 label="New Password"
-                placeholder="Min 8 chars, uppercase, lowercase, number"
+                placeholder="Enter new password"
                 value={passwordForm.newPassword}
                 onChange={handlePasswordChange}
-                disabled={isSubmitting}
               />
               <PremiumInput
                 type="password"
@@ -102,19 +71,11 @@ const Security = () => {
                 placeholder="Confirm new password"
                 value={passwordForm.confirmPassword}
                 onChange={handlePasswordChange}
-                disabled={isSubmitting}
               />
               <div className="flex justify-end pt-2">
-                <PremiumButton type="submit" disabled={isSubmitting}>
-                  {isSubmitting ? (
-                    <span className="flex items-center gap-2">
-                      <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      Updating...
-                    </span>
-                  ) : 'Update Password'}
-                </PremiumButton>
+                <PremiumButton>Update Password</PremiumButton>
               </div>
-            </form>
+            </div>
           </GlassCard>
 
           {/* Two-Factor Authentication */}

@@ -6,8 +6,6 @@ __pycache__/
 # C extensions
 *.so
 
-
-.env
 # Distribution / packaging
 .Python
 build/
@@ -203,9 +201,6 @@ vcs.xml
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
-
-# Generated PDF reports (local dev)
-reports/
 
 # Marimo
 marimo/_static/

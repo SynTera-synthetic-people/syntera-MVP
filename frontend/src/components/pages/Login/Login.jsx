@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { loginStart, clearError } from "../../../redux/slices/authSlice";
 import { validateLogin } from "../../../utils/validation";
@@ -10,22 +10,30 @@ import logoForLight from "../../../assets/Logo_Light_bg.png";
 import { useTheme } from "../../../context/ThemeContext";
 
 const Login = () => {
-  const location = useLocation();
-  const inviteToken = useMemo(
-    () => new URLSearchParams(location.search).get("invite_token"),
-    [location.search],
-  );
-  const initialEmail = useMemo(
-    () => new URLSearchParams(location.search).get("email") || "",
-    [location.search],
-  );
-  const [values, setValues] = useState({ email: initialEmail, password: "" });
+  const [values, setValues] = useState({ email: "", password: "" });
   const [errors, setErrors] = useState({});
   const [showPassword, setShowPassword] = useState(false);
   const { theme, toggleTheme } = useTheme();
   const dispatch = useDispatch();
+  const navigate = useNavigate();
 
-  const { loading, error } = useSelector((state) => state.auth);
+  const { loading, error, isAuthenticated, user } = useSelector((state) => state.auth);
+
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      const isSuperAdmin =
+        user?.user_type === "Super Admin" ||
+        user?.user_type === "super_admin" ||
+        user?.role === "Super Admin" ||
+        user?.role === "super_admin";
+
+      if (isSuperAdmin) {
+        navigate("/admin/dashboard");
+      } else {
+        navigate("/landing");
+      }
+    }
+  }, [isAuthenticated, user, navigate]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -42,7 +50,6 @@ const Login = () => {
       setErrors(validationErrors);
       return;
     }
-    if (inviteToken) sessionStorage.setItem('pending_invite_token', inviteToken);
     dispatch(loginStart(values));
   };
 
@@ -170,21 +177,15 @@ const Login = () => {
         </form>
 
         <div className="mt-8 text-center">
-          {inviteToken ? (
-            <p className="text-gray-600 dark:text-gray-400 text-sm">
-              Use the temporary password from your invite email to sign in.
-            </p>
-          ) : (
-            <p className="text-gray-600 dark:text-gray-400 text-sm">
-              Don't have an account?{" "}
-              <Link
-                to={`/signup${location.search}`}
-                className="font-medium text-blue-600 dark:text-blue-primary-light hover:text-blue-500 dark:hover:text-blue-primary-lighter transition-colors"
-              >
-                Create Account
-              </Link>
-            </p>
-          )}
+          <p className="text-gray-600 dark:text-gray-400 text-sm">
+            Don't have an account?{" "}
+            <Link
+              to="/signup"
+              className="font-medium text-blue-600 dark:text-blue-primary-light hover:text-blue-500 dark:hover:text-blue-primary-lighter transition-colors"
+            >
+              Create Account
+            </Link>
+          </p>
         </div>
       </motion.div>
     </div>

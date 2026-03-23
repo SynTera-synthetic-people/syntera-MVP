@@ -13,7 +13,6 @@ import { useTheme } from "../../../../context/ThemeContext";
 import logoForDark from "../../../../assets/Logo_Dark_bg.png";
 import logoForLight from "../../../../assets/Logo_Light_bg.png";
 import { useWorkspace as useWorkspaceContext } from "../../../../context/WorkspaceContext";
-import { getPostLoginPath } from "../../../../utils/authRouting";
 const WorkspaceForm = () => {
   const navigate = useNavigate();
   const { id } = useParams();
@@ -44,12 +43,6 @@ const WorkspaceForm = () => {
     user?.organization_id ||
     user?.org_id ||
     "default-org";
-
-  useEffect(() => {
-    if (user && !user.can_create_workspace) {
-      navigate(getPostLoginPath(user), { replace: true });
-    }
-  }, [navigate, user]);
 
   useEffect(() => {
     const getField = (obj, keys) => {

@@ -1,4 +1,7 @@
 import json
+import platform
+import subprocess
+import sys
 
 from fastapi import FastAPI
 from fastapi import HTTPException
@@ -6,29 +9,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.requests import Request
 from fastapi.responses import JSONResponse
 
-from app.config import settings
-from app.db import (
-    init_db,
-    add_is_active_column,
-    add_trial_columns,
-    add_enterprise_columns,
-    add_workspace_visibility_columns,
-    add_exploration_audience_type_column,
-)
+from app.db import init_db, add_is_active_column
 from app.routers import (auth, orgs, workspace, research_objectives, personas, interview,
                          population, questionnaire, rebuttal, traceability, omi, exploration,
-                         omi_workflow, admin, enterprise)
+                         omi_workflow, admin)
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.requests import Request
+from fastapi import HTTPException
 from app.schemas.response import ErrorResponse
 import json
-import os
 from app.utils.create_superadmin import ensure_superadmin_exists
 
 
 app = FastAPI(title="Synthetic People")
-
-@app.get("/health")
-def health():
-    return {"status": "ok"}
 
 
 def normalize_detail(detail):
@@ -71,10 +65,6 @@ async def custom_http_exception_handler(request: Request, exc: HTTPException):
 async def startup():
     await init_db()
     await add_is_active_column()
-    await add_trial_columns()
-    await add_enterprise_columns()
-    await add_workspace_visibility_columns()
-    await add_exploration_audience_type_column()
     await ensure_superadmin_exists()
 
 
@@ -92,23 +82,10 @@ app.include_router(traceability.router)
 app.include_router(exploration.router)
 app.include_router(omi_workflow.router)
 app.include_router(admin.router)
-app.include_router(enterprise.router)
-
-# default_cors_origins = [
-#     "http://localhost:5173",
-#     "http://localhost:5174",
-#     "https://dev-ui.synthetic-people.ai",
-#     "https://synthetic-people.ai",
-#     "https://www.synthetic-people.ai",
-# ]
-
-#cors = os.getenv("CORS_ORIGINS",  "https://staging-ui.synthetic-people.ai" )
-#allow_origins = [x.strip() for x in cors.split(",") if x.strip()] 
 
 app.add_middleware(
     CORSMiddleware,
-    #allow_origins=allow_origins,
-    allow_origins=["*"],
+    allow_origins=["https://dev-ui.synthetic-people.ai"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

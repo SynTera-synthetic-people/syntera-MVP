@@ -1,36 +1,28 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import React, { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { useDispatch } from "react-redux";
 import { setCredentials } from "../../../redux/slices/authSlice";
 import { validateSignup } from "../../../utils/validation";
 import { signupUser } from "../../../utils/api";
 import { useUsers } from "../../../context/UserContext";
 import { motion } from "framer-motion";
-import { TbMail, TbLock, TbUser, TbEye, TbEyeOff, TbSun, TbMoon } from "react-icons/tb";
+import { TbMail, TbLock, TbUser, TbEye, TbEyeOff, TbSun, TbMoon, TbBriefcase } from "react-icons/tb";
 import logoForDark from "../../../assets/Logo_Dark_bg.png";
 import logoForLight from "../../../assets/Logo_Light_bg.png";
 import { useTheme } from "../../../context/ThemeContext";
 
 const Signup = () => {
   const navigate = useNavigate();
-  const location = useLocation();
   const dispatch = useDispatch();
   const { users, addUser } = useUsers();
   const { theme, toggleTheme } = useTheme();
-  const initialEmail = useMemo(
-    () => new URLSearchParams(location.search).get("email") || "",
-    [location.search],
-  );
-  const inviteToken = useMemo(
-    () => new URLSearchParams(location.search).get("invite_token"),
-    [location.search],
-  );
 
   const [values, setValues] = useState({
     full_name: "",
-    email: initialEmail,
+    email: "",
     password: "",
     confirm_password: "",
+    user_type: "",
   });
 
   const [errors, setErrors] = useState({});
@@ -40,16 +32,6 @@ const Signup = () => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const handleChange = (e) => setValues({ ...values, [e.target.name]: e.target.value });
-
-  useEffect(() => {
-    if (inviteToken) {
-      navigate(`/login${location.search}`, { replace: true });
-    }
-  }, [inviteToken, location.search, navigate]);
-
-  if (inviteToken) {
-    return null;
-  }
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -76,7 +58,7 @@ const Signup = () => {
       } else {
         // Otherwise just redirect to login
         addUser({ name: values.full_name, email: values.email });
-        navigate(`/login${location.search || ""}`);
+        navigate("/login");
       }
     } catch (err) {
       // Prefer backend message when available
@@ -167,6 +149,26 @@ const Signup = () => {
             {errors.email && <span className="text-xs text-red-400 mt-1 ml-1">{errors.email}</span>}
           </div>
 
+          {/* User Type */}
+          <div className="relative group">
+            <TbBriefcase className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-blue-500 transition-colors" />
+            <select
+              name="user_type"
+              value={values.user_type}
+              onChange={handleChange}
+              className={`w-full bg-gray-50 dark:bg-black/20 border ${errors.user_type ? 'border-red-500/50' : 'border-gray-200 dark:border-white/10 group-hover:border-blue-500/30 dark:group-hover:border-white/20'} rounded-xl py-3.5 pl-12 pr-4 text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 dark:focus:ring-blue-500/50 transition-all appearance-none`}
+            >
+              <option value="" className="bg-white dark:bg-[#1a1f3a]">Select User Type</option>
+              <option value="Startup" className="bg-white dark:bg-[#1a1f3a]">Startup</option>
+              <option value="Student" className="bg-white dark:bg-[#1a1f3a]">Student</option>
+              <option value="Researcher" className="bg-white dark:bg-[#1a1f3a]">Researcher</option>
+            </select>
+            <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
+              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+            </div>
+            {errors.user_type && <span className="text-xs text-red-400 mt-1 ml-1">{errors.user_type}</span>}
+          </div>
+
           {/* Password */}
           <div className="relative group">
             <TbLock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-blue-500 transition-colors" />
@@ -235,7 +237,7 @@ const Signup = () => {
           <p className="text-gray-600 dark:text-gray-400 text-sm">
             Already have an account?{" "}
             <Link
-              to={`/login${location.search}`}
+              to="/login"
               className="font-medium text-blue-600 dark:text-blue-primary-light hover:text-blue-500 dark:hover:text-blue-primary-lighter transition-colors"
             >
               Sign In

@@ -1,8 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useDispatch } from 'react-redux';
 import { explorationService } from '../services/explorationService';
-import { authService } from '../services/authService';
-import { updateUser } from '../redux/slices/authSlice';
 import { toast } from 'react-toastify';
 
 export const explorationKeys = {
@@ -61,40 +58,24 @@ export const useExploration = (explorationId, options = {}) => {
   });
 };
 
-// options.onTrialLimitReached — callback invoked when backend returns upgrade_required:true
-export const useCreateExploration = (options = {}) => {
-  const { onTrialLimitReached } = options;
+export const useCreateExploration = () => {
   const queryClient = useQueryClient();
-  const dispatch = useDispatch();
 
   return useMutation({
     mutationFn: (explorationData) => explorationService.create(explorationData),
-    onSuccess: async (response, explorationData) => {
-      queryClient.invalidateQueries({ queryKey: explorationKeys.all });
+    onSuccess: (response, explorationData) => {
+      // Invalidate ALL lists or specific workspace list
+      queryClient.invalidateQueries({
+        queryKey: explorationKeys.all
+      });
+      // OR be more specific:
       queryClient.invalidateQueries({
         queryKey: explorationKeys.lists(explorationData.workspace_id)
       });
-      // Refresh trial counters in Redux so the UI reflects the new exploration_count
-      try {
-        const meResponse = await authService.fetchMe();
-        if (meResponse?.data) {
-          dispatch(updateUser({
-            exploration_count: meResponse.data.exploration_count,
-            is_trial: meResponse.data.is_trial,
-            trial_exploration_limit: meResponse.data.trial_exploration_limit,
-            account_tier: meResponse.data.account_tier,
-            organization_id: meResponse.data.organization_id,
-          }));
-        }
-      } catch (_) { /* non-critical — stale count is acceptable */ }
       toast.success(response.message || 'Exploration created successfully');
     },
     onError: (error) => {
-      if (error?.upgrade_required) {
-        onTrialLimitReached?.();
-        return;
-      }
-      toast.error(error?.message || 'Failed to create exploration');
+      toast.error(error?.response?.data?.message || 'Failed to create exploration');
     },
   });
 };

@@ -256,7 +256,7 @@ async def list_objectives(exploration_id: str, current_user: User = Depends(get_
 
     exp_workspace_id = exp.workspace_id
     members = await ws_service.list_workspace_members(exp_workspace_id)
-    if not any(m.get("user_id") == current_user.id for m in members):
+    if not any(m.user_id == current_user.id for m in members):
         raise HTTPException(
             status_code=403,
             detail=ErrorResponse(
@@ -274,7 +274,7 @@ async def list_objectives(exploration_id: str, current_user: User = Depends(get_
 @router.get("/{objective_id}", response_model=SuccessResponse)
 async def get_objective(workspace_id: str, objective_id: str, current_user: User = Depends(get_current_active_user)):
     members = await ws_service.list_workspace_members(workspace_id)
-    if not any(m.get("user_id") == current_user.id for m in members):
+    if not any(m.user_id == current_user.id for m in members):
         raise HTTPException(
             status_code=403,
             detail=ErrorResponse(

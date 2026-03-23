@@ -21,7 +21,7 @@ async def simulate_population(
 ):
 
     members = await ws_service.list_workspace_members(workspace_id)
-    if not any(m.get("user_id") == current_user.id for m in members):
+    if not any(m.user_id == current_user.id for m in members):
         raise HTTPException(status_code=403, detail="Not a workspace member")
 
     research_obj = await get_exploration(session, payload.exploration_id)
@@ -60,7 +60,7 @@ async def list_simulations_for_objective(
 ):
 
     members = await ws_service.list_workspace_members(workspace_id)
-    if not any(m.get("user_id") == current_user.id for m in members):
+    if not any(m.user_id == current_user.id for m in members):
         raise HTTPException(status_code=403, detail="Not a workspace member")
 
     sims = await population_service.list_simulations_for_objective(workspace_id, exploration_id)
@@ -79,14 +79,11 @@ async def get_simulation(
 ):
 
     members = await ws_service.list_workspace_members(workspace_id)
-    if not any(m.get("user_id") == current_user.id for m in members):
+    if not any(m.user_id == current_user.id for m in members):
         raise HTTPException(status_code=403, detail="Not a workspace member")
 
     sim = await population_service.get_simulation(sim_id)
     if not sim:
         raise HTTPException(status_code=404, detail="Simulation not found")
 
-    return SuccessResponse(
-        message="Simulation fetched",
-        data=population_service.simulation_to_dict(sim),
-    )
+    return SuccessResponse(message="Simulation fetched", data=sim)

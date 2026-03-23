@@ -31,7 +31,7 @@ async def get_questions_for_rebuttal(
 ):
     # Permission: workspace member
     members = await list_workspace_members(workspace_id)
-    if not any(m.get("user_id") == current_user.id for m in members):
+    if not any(m.user_id == current_user.id for m in members):
         raise HTTPException(403, "Not a workspace member")
 
     # Get simulation-specific questionnaire with survey results if survey_simulation_id provided
@@ -47,7 +47,7 @@ async def get_questions_for_rebuttal(
 @router.post("/start", response_model=RebuttalStartOut)
 async def start_rebuttal_api(workspace_id: str, exploration_id: str, payload: RebuttalStartRequest = Body(...), current_user: User = Depends(get_current_active_user)):
     members = await list_workspace_members(workspace_id)
-    if not any(m.get("user_id") == current_user.id for m in members):
+    if not any(m.user_id == current_user.id for m in members):
         raise HTTPException(403, "Not a workspace member")
 
     try:
@@ -95,7 +95,7 @@ async def list_sessions(
     current_user: User = Depends(get_current_active_user)
 ):
     members = await list_workspace_members(workspace_id)
-    if not any(m.get("user_id") == current_user.id for m in members):
+    if not any(m.user_id == current_user.id for m in members):
         raise HTTPException(403, "Not a workspace member")
     
     sessions = await list_rebuttal_sessions(workspace_id, exploration_id)

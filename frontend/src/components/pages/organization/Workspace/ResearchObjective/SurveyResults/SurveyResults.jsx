@@ -6,8 +6,6 @@ import { useTheme } from "../../../../../../context/ThemeContext";
 import logoForDark from "../../../../../../assets/Logo_Dark_bg.png";
 import logoForLight from "../../../../../../assets/Logo_Light_bg.png";
 import { useDownloadSurveyPdf, useSimulateSurvey, usePreviewSurvey } from '../../../../../../hooks/useQuantitativeQueries';
-import { downloadQuestionnaireCsvExport } from '../../../../../../services/quantitativeServices';
-import { getAxiosErrorMessage } from '../../../../../../utils/axiosBlobError';
 import PreviewModal from './components/PreviewModal'; // Import the separate modal
 import { useOmniWorkflow } from '../../../../../../hooks/useOmiWorkflow';
 
@@ -108,7 +106,6 @@ const SurveyResults = () => {
   const [processedSections, setProcessedSections] = useState({});
   const [showPreview, setShowPreview] = useState(false);
   const [previewData, setPreviewData] = useState(null);
-  const [questionnaireCsvDownloading, setQuestionnaireCsvDownloading] = useState(false);
   const navigate = useNavigate();
   const { workspaceId, objectiveId } = useParams();
   const location = useLocation();
@@ -155,8 +152,7 @@ const SurveyResults = () => {
       });
     } catch (error) {
       console.error("Failed to download survey PDF:", error);
-      const detail = await getAxiosErrorMessage(error, 'Unknown error');
-      alert(`Failed to download survey report.\n\n${detail}`);
+      alert('Failed to download survey report. Please try again.');
     }
   };
 
@@ -173,31 +169,7 @@ const SurveyResults = () => {
       });
     } catch (error) {
       console.error("Failed to download survey PDF:", error);
-      const detail = await getAxiosErrorMessage(error, 'Unknown error');
-      alert(`Failed to download survey report.\n\n${detail}`);
-    }
-  };
-
-  const handleDownloadQuestionnaireCsv = async () => {
-    if (!surveyConfig?.explorationId || !surveyConfig?.simulationId) return;
-    try {
-      setQuestionnaireCsvDownloading(true);
-      await downloadQuestionnaireCsvExport({
-        workspaceId,
-        explorationId: surveyConfig.explorationId,
-        simulationId: surveyConfig.simulationId,
-        surveySimulationId: surveyResults?.id,
-      });
-    } catch (error) {
-      console.error('Failed to download questionnaire CSV:', error);
-      if (error.response?.status === 404) {
-        alert('No stored questionnaire found for this simulation.');
-      } else {
-        const detail = await getAxiosErrorMessage(error, 'Could not download questionnaire CSV.');
-        alert(detail);
-      }
-    } finally {
-      setQuestionnaireCsvDownloading(false);
+      alert('Failed to download survey report. Please try again.');
     }
   };
 
@@ -443,28 +415,7 @@ const SurveyResults = () => {
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
-              {surveyConfig && (
-                <button
-                  type="button"
-                  onClick={handleDownloadQuestionnaireCsv}
-                  disabled={questionnaireCsvDownloading}
-                  className="flex-1 lg:flex-none flex items-center justify-center gap-2 px-5 py-2.5 bg-white dark:bg-white/5 border border-cyan-200 dark:border-cyan-500/30 text-cyan-800 dark:text-cyan-200 rounded-xl font-semibold hover:bg-cyan-50 dark:hover:bg-cyan-500/10 transition-all disabled:opacity-50"
-                >
-                  {questionnaireCsvDownloading ? (
-                    <>
-                      <TbLoader className="w-5 h-5 animate-spin" />
-                      <span>Preparing CSV…</span>
-                    </>
-                  ) : (
-                    <>
-                      <TbDownload size={20} />
-                      <span>Questionnaire CSV</span>
-                    </>
-                  )}
-                </button>
-              )}
-
+            <div className="flex items-center gap-3 w-full lg:w-auto">
               {surveyResults && (
                 <button
                   onClick={handlePreview}

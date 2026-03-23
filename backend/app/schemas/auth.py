@@ -1,4 +1,5 @@
 from pydantic import BaseModel, EmailStr, validator
+from typing import Literal
 import re
 
 class SignupIn(BaseModel):
@@ -6,6 +7,7 @@ class SignupIn(BaseModel):
     email: EmailStr
     password: str
     confirm_password: str
+    user_type: Literal["Student", "Startup", "Researcher"]
 
     @validator("full_name")
     def name_length(cls, v):
@@ -41,29 +43,5 @@ class ForgotPasswordIn(BaseModel):
 
 class ResetPasswordIn(BaseModel):
     new_password: str
-
-
-class ChangePasswordIn(BaseModel):
-    """DTO for authenticated users changing their own password."""
-    current_password: str
-    new_password: str
-    confirm_password: str
-
-    @validator("new_password")
-    def new_password_strength(cls, v):
-        if (len(v) < 8 or
-                not re.search(r"[A-Z]", v) or
-                not re.search(r"[a-z]", v) or
-                not re.search(r"\d", v)):
-            raise ValueError(
-                "Password must contain at least 8 chars, one uppercase, one lowercase, and one number."
-            )
-        return v
-
-    @validator("confirm_password")
-    def passwords_match(cls, v, values):
-        if "new_password" in values and v != values["new_password"]:
-            raise ValueError("Passwords do not match.")
-        return v
 
 

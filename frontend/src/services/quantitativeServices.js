@@ -1,40 +1,5 @@
 import axiosInstance from "../utils/axiosConfig";
 
-/** List saved population simulations for an exploration (newest can be restored with questionnaire). */
-export const listPopulationSimulations = async ({ workspaceId, explorationId }) => {
-  const response = await axiosInstance.get(
-    `/workspaces/${workspaceId}/explorations/${explorationId}/population/simulations`
-  );
-  const payload = response.data;
-  return Array.isArray(payload?.data) ? payload.data : [];
-};
-
-/** Download questionnaire CSV from server (Q No., Question, Options, Count; counts from latest or chosen survey run). */
-export const downloadQuestionnaireCsvExport = async ({
-  workspaceId,
-  explorationId,
-  simulationId,
-  surveySimulationId,
-}) => {
-  const qs =
-    surveySimulationId != null && surveySimulationId !== ""
-      ? `?survey_simulation_id=${encodeURIComponent(surveySimulationId)}`
-      : "";
-  const response = await axiosInstance.get(
-    `/workspaces/${workspaceId}/explorations/${explorationId}/questionnaire/export-csv/${simulationId}${qs}`,
-    { responseType: "blob" }
-  );
-  const blob = new Blob([response.data], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "questionnaire_exploration.csv";
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-};
-
 export const simulatePopulation = async ({ workspaceId, explorationId, personaIds, sampleDistribution }) => {
   const response = await axiosInstance.post(
     `/workspaces/${workspaceId}/explorations/${explorationId}/population/simulate`,

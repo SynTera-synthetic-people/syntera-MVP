@@ -222,13 +222,17 @@ code, pre {
    FOOTER
    ============================ */
 
-/* xhtml2pdf does not support CSS Paged Media @bottom-center / running();
-   keep footer styling plain so PDF generation does not fail. */
 .footer {
+    position: running(footer);
     font-size: 20px;
     color: #666666;
     text-align: center;
-    margin-top: 24px;
+}
+
+@page {
+    @bottom-center {
+        content: "Synthetic People AI – Human Insights at Digital Speed";
+    }
 }
 
 /* ============================

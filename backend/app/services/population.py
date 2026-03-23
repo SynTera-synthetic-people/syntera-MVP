@@ -676,23 +676,6 @@ async def get_simulation(sim_id: str):
         r = await session.execute(simulation)
         return r.scalars().first()
 
-def simulation_to_dict(sim: PopulationSimulation) -> dict:
-    """JSON-serializable population simulation (persisted run: personas + sample sizes + questionnaire link)."""
-    return {
-        "id": sim.id,
-        "workspace_id": sim.workspace_id,
-        "exploration_id": sim.exploration_id,
-        "research_objective_id": sim.research_objective_id,
-        "persona_ids": sim.persona_ids or [],
-        "sample_distribution": sim.sample_distribution or {},
-        "persona_scores": sim.persona_scores,
-        "weighted_score": sim.weighted_score,
-        "global_insights": sim.global_insights,
-        "created_by": sim.created_by,
-        "created_at": sim.created_at.isoformat() if sim.created_at else None,
-    }
-
-
 async def list_simulations_for_objective(workspace_id: str, objective_id: str):
     async with AsyncSession(async_engine) as session:
         simulation = select(PopulationSimulation).where(
@@ -700,5 +683,4 @@ async def list_simulations_for_objective(workspace_id: str, objective_id: str):
             PopulationSimulation.exploration_id == objective_id
         )
         res = await session.execute(simulation)
-        rows = res.scalars().all()
-        return [simulation_to_dict(s) for s in rows]
+        return res.scalars().all()

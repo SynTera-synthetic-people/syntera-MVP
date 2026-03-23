@@ -8,10 +8,10 @@ const OMNI_STATE_KEY = ['omi-workflow-state'];
 
 const ResponseBar = () => {
   const location = useLocation();
+
   const { data } = useQuery({
     queryKey: OMNI_STATE_KEY,
-    queryFn: () => null,
-    enabled: false,
+    enabled: false, // ❗ purely passive subscriber
   });
 
   const isResearchWorkflow = location.pathname.includes('/research-objectives/');

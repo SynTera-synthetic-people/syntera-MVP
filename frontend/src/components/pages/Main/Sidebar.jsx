@@ -28,15 +28,12 @@ import {
 import { useWorkspaces } from "../../../hooks/useWorkspaces";
 import { useWorkspace as useWorkspaceContext } from "../../../context/WorkspaceContext";
 import WorkspacePopup from "../organization/Workspace/WorkspacePopup";
-import { getPostLoginPath } from "../../../utils/authRouting";
 
 const Sidebar = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const { user } = useSelector((state) => state.auth);
   const { theme, toggleTheme } = useTheme();
-  const showWorkspaceSection = user?.account_tier === "enterprise";
-  const dashboardPath = getPostLoginPath(user);
 
   const [isOpen, setIsOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(true);
@@ -60,13 +57,13 @@ const Sidebar = () => {
 
   // Set first workspace as selected on initial load if none selected
   useEffect(() => {
-    if (showWorkspaceSection && workspaces.length > 0 && !selectedWorkspace) {
+    if (workspaces.length > 0 && !selectedWorkspace) {
       const sortedWorkspaces = [...workspaces].sort((a, b) =>
         new Date(b.created_at) - new Date(a.created_at)
       );
       setSelectedWorkspace(sortedWorkspaces[0]);
     }
-  }, [showWorkspaceSection, workspaces, selectedWorkspace, setSelectedWorkspace]);
+  }, [workspaces, selectedWorkspace, setSelectedWorkspace]);
 
   // Handle sidebar mouse enter
   const handleSidebarMouseEnter = () => {
@@ -208,9 +205,6 @@ const Sidebar = () => {
   };
 
   const handleCreateWorkspace = () => {
-    if (!user?.can_create_workspace) {
-      return;
-    }
     setShowWorkspacePopup(true);
     setShowWorkspaceDropdown(false);
     if (window.innerWidth < 768) {
@@ -312,7 +306,7 @@ const Sidebar = () => {
             <nav className="flex flex-col space-y-1.5">
               {/* Research Dashboard */}
               <NavLink
-                to={dashboardPath}
+                to="/main/organization"
                 onClick={() => setIsOpen(false)}
                 onMouseEnter={(e) => isCollapsed && showTooltip("Research Dashboard", e)}
                 onMouseLeave={hideTooltip}
@@ -333,7 +327,6 @@ const Sidebar = () => {
               </NavLink>
 
               {/* Workspace Section with Dropdown */}
-              {showWorkspaceSection && (
               <div ref={workspaceDropdownRef} className="relative">
                 {/* Workspace Header */}
                 <div className="flex flex-col gap-2">
@@ -439,26 +432,23 @@ const Sidebar = () => {
                         )}
                       </div>
 
-                      {user?.can_create_workspace && (
-                        <>
-                          <div className="h-px bg-gray-200 dark:bg-white/10 mx-3"></div>
+                      {/* Divider */}
+                      <div className="h-px bg-gray-200 dark:bg-white/10 mx-3"></div>
 
-                          <div className="p-3">
-                            <button
-                              onClick={handleCreateWorkspace}
-                              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white rounded-lg transition-all duration-200 font-medium text-sm shadow-lg shadow-blue-500/30"
-                            >
-                              <TbPlus size={18} />
-                              <span>Create Workspace</span>
-                            </button>
-                          </div>
-                        </>
-                      )}
+                      {/* Create Workspace Button at Bottom */}
+                      <div className="p-3">
+                        <button
+                          onClick={handleCreateWorkspace}
+                          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white rounded-lg transition-all duration-200 font-medium text-sm shadow-lg shadow-blue-500/30"
+                        >
+                          <TbPlus size={18} />
+                          <span>Create Workspace</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
               </div>
-              )}
             </nav>
           </div>
 

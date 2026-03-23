@@ -36,14 +36,8 @@ async def get_current_active_user(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Account is inactive or has been deleted"
-        )
-
     now = datetime.utcnow()
-    # Idle timeout check
+    # 🔒 IDLE TIMEOUT CHECK
     if user.last_activity_at:
         if now - user.last_activity_at > timedelta(minutes=settings.IDLE_TIMEOUT):
             raise HTTPException(
@@ -51,7 +45,8 @@ async def get_current_active_user(
                 detail="Session expired due to inactivity"
             )
 
+    # ✅ UPDATE ACTIVITY (sliding session)
     user.last_activity_at = now
     await session.commit()
 
-    return user
+    return user  # ✅ STILL BOUND TO SESSION

@@ -1,5 +1,4 @@
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_session
 from app.schemas.exploration import (
@@ -12,10 +11,7 @@ from app.services.exploration import (
     get_explorations_by_workspace,
     get_exploration,
     update_exploration,
-    delete_exploration,
-    select_exploration_method,
-    TrialLimitReachedException,
-    PlanLimitReachedException,
+    delete_exploration, select_exploration_method,
 )
 from sqlmodel import select
 from app.models.user import User
@@ -34,34 +30,14 @@ router = APIRouter(prefix="/explorations", tags=["Explorations"])
 async def create(
     data: ExplorationCreate,
     session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(get_current_active_user),
+    user_id: User = Depends(get_current_active_user)
 ):
-    try:
-        return await create_exploration(
-            session,
-            data.workspace_id,
-            current_user.id,
-            data,
-            current_user=current_user,
-        )
-    except TrialLimitReachedException:
-        return JSONResponse(
-            status_code=403,
-            content={
-                "status": "error",
-                "message": "Trial limit reached. Upgrade your plan to continue.",
-                "upgrade_required": True,
-            },
-        )
-    except PlanLimitReachedException:
-        return JSONResponse(
-            status_code=403,
-            content={
-                "status": "error",
-                "message": "Exploration limit reached for your current plan. Please contact support to purchase additional explorations.",
-                "upgrade_required": True,
-            },
-        )
+    return await create_exploration(
+        session,
+        data.workspace_id,
+        user_id.id,
+        data
+    )
 
 
 
