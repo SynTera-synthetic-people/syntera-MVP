@@ -2,11 +2,17 @@ import React, { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import QuestionnaireTabs from './QuestionnaireTabs';
 import QuestionList from './QuestionList';
-import { TbUpload, TbLoader, TbCheck } from 'react-icons/tb';
+import { TbUpload, TbLoader, TbCheck, TbDownload } from 'react-icons/tb';
+import { downloadQuestionnaireCsv } from '../../../../../../../utils/questionnaireCsv';
 
 const QuestionnaireBuilder = ({ questionnaireData, loading, simulationId, workspaceId, explorationId, uploadQuestionnaireMutation }) => {
   const [activeSectionIndex, setActiveSectionIndex] = useState(0);
-  const [uploadStatus, setUploadStatus] = useState({ isLoading: false, isSuccess: false, error: null });
+  const [uploadStatus, setUploadStatus] = useState({
+    isLoading: false,
+    isSuccess: false,
+    error: null,
+    respondentCountsAvailable: false,
+  });
   const fileInputRef = useRef(null);
 
   const transformQuestionnaireData = (apiData) => {
@@ -23,6 +29,11 @@ const QuestionnaireBuilder = ({ questionnaireData, loading, simulationId, worksp
 
   const questionnaireSections = transformQuestionnaireData(questionnaireData);
 
+  const handleDownloadCsv = () => {
+    if (questionnaireSections.length === 0) return;
+    downloadQuestionnaireCsv(questionnaireSections, 'questionnaire_exploration.csv');
+  };
+
   const handleUploadClick = () => fileInputRef.current?.click();
 
   const handleFileChange = async (e) => {
@@ -30,36 +41,63 @@ const QuestionnaireBuilder = ({ questionnaireData, loading, simulationId, worksp
     if (!file) return;
 
     // Validate file type if needed
-    const validTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'];
-    if (!validTypes.includes(file.type) && !file.name.match(/\.(pdf|docx|txt)$/i)) {
-      setUploadStatus({ isLoading: false, isSuccess: false, error: 'Please upload a valid file (PDF, DOCX, or TXT)' });
+    const validTypes = [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain',
+      'text/csv',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ];
+    if (!validTypes.includes(file.type) && !file.name.match(/\.(pdf|docx|txt|csv|xlsx|xls)$/i)) {
+      setUploadStatus({
+        isLoading: false,
+        isSuccess: false,
+        error: 'Please upload a valid file (PDF, DOCX, TXT, CSV, or Excel)',
+        respondentCountsAvailable: false,
+      });
       return;
     }
 
-    setUploadStatus({ isLoading: true, isSuccess: false, error: null });
+    setUploadStatus({
+      isLoading: true,
+      isSuccess: false,
+      error: null,
+      respondentCountsAvailable: false,
+    });
 
     try {
-      // Call the upload mutation
-      await uploadQuestionnaireMutation.mutateAsync({
+      const apiRes = await uploadQuestionnaireMutation.mutateAsync({
         workspaceId,
         explorationId,
         simulationId,
         file
       });
+      const countsAvail = !!apiRes?.data?.respondent_counts_available;
 
-      setUploadStatus({ isLoading: false, isSuccess: true, error: null });
+      setUploadStatus({
+        isLoading: false,
+        isSuccess: true,
+        error: null,
+        respondentCountsAvailable: countsAvail,
+      });
 
-      // Reset success state after 3 seconds
       setTimeout(() => {
-        setUploadStatus({ isLoading: false, isSuccess: false, error: null });
-      }, 3000);
+        setUploadStatus({
+          isLoading: false,
+          isSuccess: false,
+          error: null,
+          respondentCountsAvailable: false,
+        });
+      }, 6000);
 
     } catch (error) {
       console.error('Upload error:', error);
       setUploadStatus({
         isLoading: false,
         isSuccess: false,
-        error: error.response?.data?.message || 'Failed to upload questionnaire. Please try again.'
+        error: error.response?.data?.message || 'Failed to upload questionnaire. Please try again.',
+        respondentCountsAvailable: false,
       });
     }
 
@@ -96,9 +134,16 @@ const QuestionnaireBuilder = ({ questionnaireData, loading, simulationId, worksp
             </div>
           )}
           {uploadStatus.isSuccess && (
-            <div className="flex items-center text-green-600">
-              <TbCheck className="w-5 h-5 mr-2" />
-              <span className="text-sm">Upload successful!</span>
+            <div className="flex flex-col text-green-600 max-w-md">
+              <div className="flex items-center">
+                <TbCheck className="w-5 h-5 mr-2 flex-shrink-0" />
+                <span className="text-sm">Upload successful!</span>
+              </div>
+              {uploadStatus.respondentCountsAvailable && (
+                <span className="text-xs text-gray-600 dark:text-gray-400 mt-1 pl-7">
+                  Survey results exist for this run. Use &quot;Download questionnaire (CSV)&quot; from the exploration list or Survey Results to export with respondent counts.
+                </span>
+              )}
             </div>
           )}
           {uploadStatus.error && (
@@ -111,8 +156,16 @@ const QuestionnaireBuilder = ({ questionnaireData, loading, simulationId, worksp
             ref={fileInputRef}
             className="hidden"
             onChange={handleFileChange}
-            accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+            accept=".pdf,.docx,.txt,.csv,.xlsx,.xls,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           />
+          <button
+            type="button"
+            onClick={handleDownloadCsv}
+            className="flex items-center gap-2 px-5 py-2.5 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-300 rounded-xl hover:bg-gray-50 dark:hover:bg-white/10 transition-all font-bold text-sm shadow-sm"
+          >
+            <TbDownload size={18} />
+            <span>Download CSV</span>
+          </button>
           <button
             onClick={handleUploadClick}
             disabled={uploadStatus.isLoading}

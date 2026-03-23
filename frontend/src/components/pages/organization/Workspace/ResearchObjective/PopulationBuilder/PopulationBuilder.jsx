@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TbLoader } from 'react-icons/tb';
@@ -6,8 +6,10 @@ import {
   usePersonas,
   useSimulatePopulation,
   useGenerateQuestionnaire,
-  useQuestionnaires
+  useQuestionnaires,
+  usePopulationSimulations,
 } from '../../../../../../hooks/useQuantitativeQueries';
+import { getAllQuestionnaires } from '../../../../../../services/quantitativeServices';
 import PopulationSetup from './components/PopulationSetup';
 import PopulationActive from './components/PopulationActive';
 import Header from './components/Header';
@@ -27,11 +29,17 @@ const PopulationBuilder = () => {
   const [questionnaireData, setQuestionnaireData] = useState([]);
   const [simulationId, setSimulationId] = useState(null); // Store simulation ID
   const { trigger } = useOmniWorkflow();
+  const restoredFromServerRef = useRef(false);
 
   const {
     data: personasData,
     isLoading: personasLoading
   } = usePersonas(workspaceId, explorationId);
+
+  const { data: simulationList = [], isFetched: simulationsFetched } = usePopulationSimulations(
+    workspaceId,
+    explorationId
+  );
 
   const simulatePopulationMutation = useSimulatePopulation();
   const generateQuestionnaireMutation = useGenerateQuestionnaire();
@@ -70,6 +78,73 @@ const PopulationBuilder = () => {
       setQuestionnaireData(questionnairesData.data);
     }
   }, [questionnairesData]);
+
+  // Restore latest saved population + questionnaire from DB (avoid re-running generation after refresh)
+  useEffect(() => {
+    if (restoredFromServerRef.current) return;
+    if (!simulationsFetched || !workspaceId || !explorationId) return;
+    if (!simulationList?.length || !personas?.length) return;
+
+    let cancelled = false;
+
+    (async () => {
+      const sorted = [...simulationList].sort(
+        (a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)
+      );
+      const latest = sorted[0];
+      try {
+        const qRes = await getAllQuestionnaires({
+          workspaceId,
+          explorationId,
+          simulationId: latest.id,
+        });
+        const qData = qRes?.data;
+        if (cancelled) return;
+        if (!Array.isArray(qData) || qData.length === 0) return;
+
+        restoredFromServerRef.current = true;
+
+        const pids = latest.persona_ids || [];
+        const idSet = new Set(pids);
+        const selected = personas
+          .filter((p) => idSet.has(p.id))
+          .map((p) => ({ id: p.id, name: p.name }));
+        const sd = latest.sample_distribution || {};
+        const nextSizes = { ...sd };
+        selected.forEach((p) => {
+          if (nextSizes[p.id] == null) nextSizes[p.id] = 50;
+        });
+
+        setSimulationId(latest.id);
+        setSimulationResult({
+          id: latest.id,
+          workspace_id: latest.workspace_id,
+          exploration_id: latest.exploration_id,
+          persona_ids: latest.persona_ids,
+          sample_distribution: latest.sample_distribution,
+          persona_scores: latest.persona_scores,
+          weighted_score: latest.weighted_score,
+          global_insights: latest.global_insights,
+        });
+        setQuestionnaireData(qData);
+        setSelectedPersonas(selected);
+        setSampleSizes(nextSizes);
+        setIsPopulationConfirmed(true);
+      } catch (e) {
+        console.warn('Could not restore saved population/questionnaire', e);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    simulationsFetched,
+    simulationList,
+    personas,
+    workspaceId,
+    explorationId,
+  ]);
 
   // Handlers
   const handleSelectPersona = (persona) => {

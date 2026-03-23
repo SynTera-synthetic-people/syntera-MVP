@@ -1,13 +1,15 @@
+import asyncio
 import json
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime
 from app.models.survey_simulation import SurveySimulation
 from app.utils.id_generator import generate_id
 from app.db import async_engine
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.config import OPENAI_API_KEY
+from app.config import OPENAI_API_KEY, settings
 from openai import AsyncOpenAI
-from app.services.survey_simulation import _ensure_int, _group_results_by_section, _fallback_simulation
+from app.services.survey_simulation import _group_results_by_section, _fallback_simulation
+from app.utils.survey_results_normalize import build_normalized_survey_results
 
 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
@@ -458,98 +460,46 @@ You should provide the output based on that in a JSON format including Statistic
     prompt_output = prompt + final_output_structure_prompt
     prompt_internal_info = prompt + information_gathered_prompt
 
+    survey_model = (settings.SURVEY_SIMULATION_MODEL or "gpt-4o-mini").strip()
 
-    res_internal_info = await client.chat.completions.create(
-        model="gpt-4.1",
-        response_format={"type": "json_object"},
-        messages=[
-            {"role": "system", "content": "You are a precise simulation engine that returns strict JSON."},
-            {"role": "user", "content": prompt_internal_info}
-        ],
-    )
-    raw_internal_info = res_internal_info.choices[0].message.content
-    data_res_internal_info = json.loads(raw_internal_info)
-
-    # Call LLM once for combined result
-    try:
+    async def _chat_json(user_content: str) -> Any:
         res = await client.chat.completions.create(
-            model="gpt-4.1",
+            model=survey_model,
             response_format={"type": "json_object"},
             messages=[
                 {"role": "system", "content": "You are a precise simulation engine that returns strict JSON."},
-                {"role": "user", "content": prompt_output}
+                {"role": "user", "content": user_content},
             ],
         )
-        
         raw = res.choices[0].message.content
-        
         if isinstance(raw, (dict, list)):
-            data = raw
-        else:
-            data = json.loads(raw)
-        
-        if not isinstance(data, dict) or "question_results" not in data:
-            data = _fallback_simulation(total_sample_size, flat_questions)
-            llm_error = "Invalid LLM response shape"
-        else:
-            llm_error = None
-            
-    except Exception as e:
-        data = _fallback_simulation(total_sample_size, flat_questions)
-        llm_error = str(e)
+            return raw
+        return json.loads(raw)
+
+    async def _run_main_simulation() -> Tuple[Dict, Optional[str]]:
+        try:
+            raw_data = await _chat_json(prompt_output)
+            if not isinstance(raw_data, dict) or "question_results" not in raw_data:
+                return _fallback_simulation(total_sample_size, flat_questions), "Invalid LLM response shape"
+            return raw_data, None
+        except Exception as e:
+            return _fallback_simulation(total_sample_size, flat_questions), str(e)
+
+    # Run both LLM calls in parallel (previously sequential — ~2× wall-clock time)
+    data_res_internal_info, (data, llm_error) = await asyncio.gather(
+        _chat_json(prompt_internal_info),
+        _run_main_simulation(),
+    )
     
     llm_source_explanation = data.get("llm_source_explanation", {})
-    
-    # Normalize results
-    normalized_results: Dict[str, List[Dict]] = {}
-    for q in data.get("question_results", []):
-        text = q.get("text", "") or ""
-        opts = q.get("options", []) or []
-        
-        processed = []
-        total_counts = 0
-        for o in opts:
-            if isinstance(o, dict):
-                opt_text = o.get("option", "")
-                cnt = _ensure_int(o.get("count", 0), 0)
-            else:
-                opt_text = str(o)
-                cnt = 0
-            processed.append({"option": opt_text, "count": cnt})
-            total_counts += cnt
-        
-        if len(processed) == 0:
-            processed = [{"option": "No option provided", "count": total_sample_size}]
-            total_counts = total_sample_size
-        
-        # Normalize counts to match total_sample_size
-        if total_counts != total_sample_size:
-            if total_counts == 0:
-                n_opts = max(1, len(processed))
-                base = total_sample_size // n_opts
-                rem = total_sample_size - base * n_opts
-                for i, p in enumerate(processed):
-                    cnt = base + (1 if i < rem else 0)
-                    p["count"] = cnt
-            else:
-                raw_counts = [(p["count"] / total_counts) * total_sample_size for p in processed]
-                ints = [int(rc) for rc in raw_counts]
-                remainder = total_sample_size - sum(ints)
-                fracs = sorted([(raw_counts[i] - ints[i], i) for i in range(len(ints))], reverse=True)
-                for r in range(remainder):
-                    _, idx = fracs[r]
-                    ints[idx] += 1
-                for i, p in enumerate(processed):
-                    p["count"] = ints[i]
-        
-        # Calculate percentages
-        for p in processed:
-            cnt = int(p["count"])
-            pct = round(100.0 * cnt / total_sample_size, 1) if total_sample_size > 0 else 0.0
-            p["pct"] = pct
-        
-        normalized_results[text] = processed
-    
+
+    # Key by canonical questionnaire text; align options; avoid zeros when sample allows
+    normalized_results: Dict[str, List[Dict]] = build_normalized_survey_results(
+        data.get("question_results", []),
+        flat_questions,
+        total_sample_size,
+    )
+
     # Group by sections
     grouped_output = _group_results_by_section(questions_sections, normalized_results)
     

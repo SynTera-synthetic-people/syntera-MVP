@@ -6,19 +6,17 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any
 
 import markdown
-import pdfkit
-from anthropic import Anthropic
 from dotenv import load_dotenv
+from xhtml2pdf import pisa
 
 from app.services.auto_generated_persona import (
     get_description,
     get_interviews_by_exploration_id,
     get_persona_details,
 )
+from app.utils.anthropic_client import get_anthropic_client
 
 load_dotenv()
-
-client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
 
 UPLOAD_DIR = "uploads/research"
@@ -514,6 +512,7 @@ async def call_anthropic(
     max_tokens: int = 20000,
     temperature: float = 0.9,
 ):
+    client = get_anthropic_client()
     response = await asyncio.to_thread(
         client.messages.create,
         model=model,
@@ -622,32 +621,43 @@ def llm_md_to_pdf(md_content: str, output_pdf_path: str, css_path: str) -> str:
         md_content, extensions=["tables", "fenced_code", "toc", "attr_list"]
     )
 
+    css_embed = ""
+    if css_path and os.path.isfile(css_path):
+        try:
+            with open(css_path, "r", encoding="utf-8") as cf:
+                css_embed = f'<style type="text/css">{cf.read()}</style>'
+        except OSError:
+            pass
+
     # ---------- HTML Wrapper ----------
-    html_document = f"""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="utf-8">
-    </head>
-    <body>
-        {html_body}
-    </body>
-    </html>
-    """
+    html_document = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+{css_embed}
+</head>
+<body>
+{html_body}
+</body>
+</html>"""
 
     # ---------- Ensure output directory exists ----------
     os.makedirs(os.path.dirname(output_pdf_path) or ".", exist_ok=True)
 
-    # ---------- Generate PDF ----------
+    # ---------- Generate PDF (pure Python — no wkhtmltopdf binary) ----------
     try:
-        pdfkit.from_string(
-            html_document,
-            output_pdf_path,
-            css=css_path,
-            options={"enable-local-file-access": ""},
-        )
+        with open(output_pdf_path, "w+b") as out_file:
+            pdf_doc = pisa.CreatePDF(
+                src=html_document,
+                dest=out_file,
+                encoding="utf-8",
+            )
+        if pdf_doc.err:
+            raise RuntimeError(f"xhtml2pdf reported errors: {pdf_doc.err}")
+    except RuntimeError:
+        raise
     except Exception as e:
-        raise RuntimeError(f"PDF generation failed: {e}")
+        raise RuntimeError(f"PDF generation failed: {e}") from e
 
     return output_pdf_path
 

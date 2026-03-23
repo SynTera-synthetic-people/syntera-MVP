@@ -39,7 +39,7 @@ async def create_section(
 ):
     """Create a new interview section"""
     members = await ws_service.list_workspace_members(workspace_id)
-    if not any(m.user_id == current_user.id for m in members):
+    if not any(m.get("user_id") == current_user.id for m in members):
         raise HTTPException(status_code=403, detail="Not a workspace member")
     
     section = await interview_service.create_interview_section(
@@ -177,7 +177,7 @@ async def start_interview(workspace_id: str, exploration_id: str, payload: Inter
 @router.get("/interviews", response_model=SuccessResponse)
 async def list_interviews(workspace_id: str, exploration_id: str, current_user: User = Depends(get_current_active_user)):
     members = await ws_service.list_workspace_members(workspace_id)
-    if not any(m.user_id == current_user.id for m in members):
+    if not any(m.get("user_id") == current_user.id for m in members):
         raise HTTPException(status_code=403, detail=ErrorResponse(status="error", message="Not a member").dict())
 
     data = await interview_service.list_interviews_for_objective(workspace_id, exploration_id)
@@ -187,7 +187,7 @@ async def list_interviews(workspace_id: str, exploration_id: str, current_user: 
 @router.get("/interviews/preview", response_model=SuccessResponse)
 async def preview_all_interviews(workspace_id: str, exploration_id: str, current_user: User = Depends(get_current_active_user)):
     members = await ws_service.list_workspace_members(workspace_id)
-    if not any(m.user_id == current_user.id for m in members):
+    if not any(m.get("user_id") == current_user.id for m in members):
         raise HTTPException(status_code=403, detail=ErrorResponse(status="error", message="Not a member").dict())
 
     interviews = await interview_service.list_interviews_for_objective(workspace_id, exploration_id)
@@ -273,7 +273,7 @@ async def preview_all_interviews(workspace_id: str, exploration_id: str, current
 async def export_all_interviews_pdf(workspace_id: str, exploration_id: str, current_user: User = Depends(get_current_active_user), db: AsyncSession = Depends(get_session)):
     try:
         members = await ws_service.list_workspace_members(workspace_id)
-        if not any(m.user_id == current_user.id for m in members):
+        if not any(m.get("user_id") == current_user.id for m in members):
             raise HTTPException(status_code=403, detail=ErrorResponse(status="error", message="Not a member").dict())
 
         # pdf_path = await interview_service.export_all_interviews_pdf(workspace_id, exploration_id, db)

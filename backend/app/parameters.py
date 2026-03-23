@@ -1,3 +1,4 @@
+'''
 import boto3
 import os
 
@@ -23,3 +24,4 @@ def load_ssm_parameters(path="/app/staging/"):
         print("DATABASE_URL has ssl flag:", ("ssl=require" in db) or ("sslmode=require" in db))
 
 load_ssm_parameters()
+'''

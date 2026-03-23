@@ -86,15 +86,16 @@ def generate_survey_pdf(simulation, sections, personas, research_objective):
         story.append(Spacer(1, 15))
 
     # ---- NARRATIVE SUMMARY ----
+    narrative = simulation.narrative or {}
     story.append(Paragraph("<b>Overall Summary</b>", styles["Heading2"]))
-    summary = _safe_str(simulation.narrative.get("summary", ""))
+    summary = _safe_str(narrative.get("summary", ""))
     story.append(Paragraph(summary, styles["Normal"]))
     story.append(Spacer(1, 15))
 
     # ---- LLM Source Explanation ----
-    if "llm_source_explanation" in simulation.narrative:
+    if "llm_source_explanation" in narrative:
         story.append(Paragraph("<b>LLM Source Explanation</b>", styles["Heading2"]))
-        llm_explanation = _safe_str(simulation.narrative["llm_source_explanation"])
+        llm_explanation = _safe_str(narrative["llm_source_explanation"])
         story.append(Paragraph(llm_explanation, styles["Normal"]))
         story.append(Spacer(1, 15))
 

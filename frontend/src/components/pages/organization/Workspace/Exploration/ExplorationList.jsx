@@ -1,9 +1,13 @@
 import React, { useEffect, useState } from "react";
+import {
+  downloadLatestQuestionnaireCsvForExploration,
+  alertQuestionnaireExportError,
+} from "../../../../../utils/questionnaireExportFlow";
 import UpgradeModal from "../../../Upgrade/UpgradeModal";
 import { useNavigate, useParams } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { motion, useMotionValue, useSpring, useTransform } from "framer-motion";
-import { TbPlus, TbEdit, TbTrash, TbArrowLeft, TbTelescope, TbSearch, TbChartDots, TbAlertTriangle, TbArrowUpRight, TbUsers } from "react-icons/tb";
+import { TbPlus, TbEdit, TbTrash, TbArrowLeft, TbTelescope, TbSearch, TbChartDots, TbAlertTriangle, TbArrowUpRight, TbUsers, TbDownload } from "react-icons/tb";
 import { useTheme } from "../../../../../context/ThemeContext";
 import logoForDark from "../../../../../assets/Logo_Dark_bg.png";
 import logoForLight from "../../../../../assets/Logo_Light_bg.png";
@@ -76,6 +80,7 @@ const ExplorationList = () => {
   const canInviteTeam = Boolean(user?.can_create_workspace);
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [csvDownloadingId, setCsvDownloadingId] = useState(null);
 
   // Use React Query hook to fetch explorations
   const { data: explorations, isLoading, error, refetch } = useExplorations(workspaceId);
@@ -93,6 +98,21 @@ const ExplorationList = () => {
   const handleMouseMove = (e) => {
     mouseX.set(e.clientX);
     mouseY.set(e.clientY);
+  };
+
+  const handleDownloadQuestionnaireCsv = async (exploration) => {
+    try {
+      setCsvDownloadingId(exploration.id);
+      await downloadLatestQuestionnaireCsvForExploration({
+        workspaceId,
+        explorationId: exploration.id,
+      });
+    } catch (e) {
+      console.error(e);
+      alertQuestionnaireExportError(e);
+    } finally {
+      setCsvDownloadingId(null);
+    }
   };
 
   const handleDelete = async (id, title) => {
@@ -365,6 +385,20 @@ const ExplorationList = () => {
                               colorClass="text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-500/10 hover:bg-purple-100 dark:hover:bg-purple-500/20"
                             />
                           )}
+
+                          <TooltipButton
+                            onClick={() => handleDownloadQuestionnaireCsv(exploration)}
+                            icon={
+                              csvDownloadingId === exploration.id ? (
+                                <span className="inline-block w-[18px] h-[18px] border-2 border-cyan-600 border-t-transparent rounded-full animate-spin" />
+                              ) : (
+                                <TbDownload size={18} />
+                              )
+                            }
+                            label="Download questionnaire (CSV)"
+                            colorClass="text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-500/10 hover:bg-cyan-100 dark:hover:bg-cyan-500/20"
+                            className={csvDownloadingId === exploration.id ? "opacity-80 pointer-events-none" : ""}
+                          />
 
                           <TooltipButton
                             onClick={() => navigate(`/main/organization/workspace/research-objectives/${workspaceId}/${exploration.id}/research-mode`)}

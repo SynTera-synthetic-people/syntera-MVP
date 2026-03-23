@@ -5,7 +5,7 @@ from app.config import settings
 from sqlalchemy import text
 from app.models import user, organization, workspace, exploration, persona, interview, population
 
-async_engine = create_async_engine(settings.DATABASE_URL, echo=True)
+async_engine = create_async_engine(settings.DATABASE_URL, echo=settings.SQLALCHEMY_ECHO)
 
 async_session = sessionmaker(
     async_engine, class_=AsyncSession, expire_on_commit=False

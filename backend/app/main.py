@@ -102,12 +102,13 @@ app.include_router(enterprise.router)
 #     "https://www.synthetic-people.ai",
 # ]
 
-cors = os.getenv("CORS_ORIGINS",  "https://staging-ui.synthetic-people.ai" )
-allow_origins = [x.strip() for x in cors.split(",") if x.strip()] 
+#cors = os.getenv("CORS_ORIGINS",  "https://staging-ui.synthetic-people.ai" )
+#allow_origins = [x.strip() for x in cors.split(",") if x.strip()] 
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allow_origins,
+    #allow_origins=allow_origins,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

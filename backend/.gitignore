@@ -204,6 +204,9 @@ vcs.xml
 .cursorignore
 .cursorindexingignore
 
+# Generated PDF reports (local dev)
+reports/
+
 # Marimo
 marimo/_static/
 marimo/_lsp/
