@@ -352,7 +352,7 @@ def persona_preview_from_dict(p, full_persona_info, confidence=None):
     confidence = confidence or "N/A"
 
     if full_persona_info:
-        full_persona_info.pop("confidence_scoring")
+        full_persona_info.pop("confidence_scoring", None)
         traits = full_persona_info
 
     else:
