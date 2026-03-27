@@ -122,3 +122,31 @@ export const previewSurvey = async ({ workspaceId, explorationId, simulationId }
   );
   return response.data;
 };
+
+// ── New 3-CTA report downloads ──────────────────────────────────────────────
+// These functions only fetch and return the blob.
+// Download triggering is handled by the useMutation onSuccess in useQuantitativeQueries.js.
+
+export const downloadQuantTranscripts = async ({ workspaceId, explorationId, simulationId }) => {
+  const response = await axiosInstance.get(
+    `/workspaces/${workspaceId}/explorations/${explorationId}/reports/quant/${simulationId}/transcripts`,
+    { responseType: 'blob' }
+  );
+  return response.data;
+};
+
+export const downloadQuantDecisionIntelligence = async ({ workspaceId, explorationId, simulationId }) => {
+  const response = await axiosInstance.get(
+    `/workspaces/${workspaceId}/explorations/${explorationId}/reports/quant/${simulationId}/decision-intelligence`,
+    { responseType: 'blob' }
+  );
+  return response.data;
+};
+
+export const downloadQuantBehaviorArchaeology = async ({ workspaceId, explorationId, simulationId }) => {
+  const response = await axiosInstance.get(
+    `/workspaces/${workspaceId}/explorations/${explorationId}/reports/quant/${simulationId}/behavior-archaeology`,
+    { responseType: 'blob' }
+  );
+  return response.data;
+};

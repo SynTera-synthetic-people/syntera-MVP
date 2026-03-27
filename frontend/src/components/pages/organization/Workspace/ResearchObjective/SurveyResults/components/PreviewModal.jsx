@@ -2,7 +2,20 @@ import { motion } from "framer-motion";
 import { TbDownload, TbLoader, TbX, TbChevronRight } from "react-icons/tb";
 import ReactDOM from 'react-dom';
 
-const PreviewModal = ({ isOpen, onClose, previewData, onDownload, isLoading = false, isDownloading = false }) => {
+const PreviewModal = ({
+  isOpen,
+  onClose,
+  previewData,
+  onDownload,        // legacy — kept for backward compat
+  isLoading = false,
+  isDownloading = false,
+  onDownloadTranscripts,
+  onDownloadDI,
+  onDownloadBA,
+  isDownloadingTranscripts = false,
+  isDownloadingDI = false,
+  isDownloadingBA = false,
+}) => {
   if (!isOpen) return null;
 
   // Use portal to render at root level
@@ -22,22 +35,41 @@ const PreviewModal = ({ isOpen, onClose, previewData, onDownload, isLoading = fa
               Review your survey results before downloading
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            {/* Transcripts CSV */}
             <button
-              onClick={onDownload}
-              disabled={isDownloading}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={onDownloadTranscripts || onDownload}
+              disabled={isDownloadingTranscripts || isDownloading}
+              className="flex items-center gap-2 px-3 py-2 border border-cyan-500 text-cyan-600 dark:text-cyan-400 rounded-lg font-medium text-sm hover:bg-cyan-50 dark:hover:bg-cyan-900/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isDownloading ? (
-                <>
-                  <TbLoader className="w-5 h-5 animate-spin" />
-                  <span>Downloading...</span>
-                </>
+              {isDownloadingTranscripts ? (
+                <><TbLoader className="w-4 h-4 animate-spin" /><span>CSV…</span></>
               ) : (
-                <>
-                  <TbDownload size={18} />
-                  <span>Download Report</span>
-                </>
+                <><TbDownload size={16} /><span>Transcripts</span></>
+              )}
+            </button>
+            {/* Decision Intelligence */}
+            <button
+              onClick={onDownloadDI}
+              disabled={isDownloadingDI}
+              className="flex items-center gap-2 px-3 py-2 border border-blue-500 text-blue-600 dark:text-blue-400 rounded-lg font-medium text-sm hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isDownloadingDI ? (
+                <><TbLoader className="w-4 h-4 animate-spin" /><span>Generating…</span></>
+              ) : (
+                <><TbDownload size={16} /><span>Decision Intelligence</span></>
+              )}
+            </button>
+            {/* Behavior Archaeology */}
+            <button
+              onClick={onDownloadBA}
+              disabled={isDownloadingBA}
+              className="flex items-center gap-2 px-3 py-2 bg-purple-600 text-white rounded-lg font-medium text-sm hover:bg-purple-700 transition-colors shadow-lg shadow-purple-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isDownloadingBA ? (
+                <><TbLoader className="w-4 h-4 animate-spin" /><span>Generating…</span></>
+              ) : (
+                <><TbDownload size={16} /><span>Behavior Archaeology</span></>
               )}
             </button>
             <button

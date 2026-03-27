@@ -11,9 +11,10 @@ html, body {
     background: #FFFFFF;
 }
 
-body {
-    word-wrap: break-word;
-    overflow-wrap: anywhere;
+.quant-report-root {
+    font-family: Calibri, Arial, sans-serif;
+    font-size: 11px;
+    color: #132033;
 }
 
 h1, h2, h3, h4 {
@@ -66,11 +67,6 @@ li {
     margin-bottom: 4px;
 }
 
-.body-text {
-    font-size: 10.5px;
-    color: #132033;
-}
-
 strong {
     font-weight: 700;
 }
@@ -88,17 +84,16 @@ blockquote {
     font-size: 10px;
 }
 
-.quote-attribution {
-    font-size: 9px;
-    color: #5A6B7F;
-    margin-top: 4px;
+.quant-table-wrap {
+    margin: 10px 0 14px 0;
+    page-break-inside: avoid;
 }
 
 table {
     width: 100%;
     border-collapse: collapse;
     table-layout: fixed;
-    margin: 10px 0 14px 0;
+    margin: 0;
     page-break-inside: avoid;
 }
 
@@ -139,88 +134,42 @@ tbody tr:nth-child(even) td {
     background: #F7FAFD;
 }
 
-.cover-page {
-    page-break-after: always;
-    text-align: center;
-    padding-top: 90px;
+.quant-record-list {
+    margin: 10px 0 14px 0;
 }
 
-.cover-title {
-    font-size: 30px;
-    font-weight: 700;
-    line-height: 1.2;
-    margin-bottom: 16px;
-    color: #1F4788;
+.quant-record {
+    border: 1px solid #D7E3F4;
+    background: #FBFCFE;
+    padding: 10px 12px;
+    margin: 0 0 10px 0;
+    page-break-inside: avoid;
 }
 
-.cover-meta {
+.quant-record-title {
     font-size: 11px;
-    color: #5A6B7F;
-    margin-bottom: 36px;
-}
-
-.cover-tagline {
-    font-size: 12px;
-    font-style: italic;
-    color: #1F4788;
-}
-
-.exec-summary {
-    page-break-after: always;
-}
-
-.challenge-box,
-.learning-box,
-.behavioral-box,
-.implication-box {
-    color: #FFFFFF;
-    padding: 10px 12px;
-    margin: 10px 0 14px 0;
-    page-break-inside: avoid;
-}
-
-.challenge-box {
-    background: #1F4788;
-}
-
-.learning-box {
-    background: #40B5AD;
-}
-
-.behavioral-box {
-    background: #D95C5C;
-}
-
-.implication-box {
-    background: #2B5AA7;
-}
-
-.challenge-box p,
-.learning-box p,
-.behavioral-box p,
-.implication-box p,
-.challenge-box li,
-.learning-box li,
-.behavioral-box li,
-.implication-box li {
-    color: #FFFFFF;
-}
-
-.behavioral-section {
-    page-break-before: always;
-}
-
-.pattern-callout {
-    background: #F5F8FC;
-    border-left: 4px solid #FF6B6B;
-    padding: 10px 12px;
-    margin: 10px 0 14px 0;
-    page-break-inside: avoid;
-}
-
-.insight-label {
     font-weight: 700;
     color: #1F4788;
+    margin: 0 0 8px 0;
+}
+
+.quant-record-item {
+    margin: 0 0 6px 0;
+}
+
+.quant-record-label {
+    font-size: 8.5px;
+    font-weight: 700;
+    color: #5A6B7F;
+    text-transform: uppercase;
+    letter-spacing: 0.2px;
+    margin: 0 0 2px 0;
+}
+
+.quant-record-value {
+    font-size: 10px;
+    color: #132033;
+    line-height: 1.35;
 }
 
 code, pre {
@@ -228,27 +177,4 @@ code, pre {
     font-size: 8.5px;
     background: #F4F6F8;
     padding: 3px 4px;
-}
-
-pre {
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-}
-
-img {
-    max-width: 100%;
-    height: auto;
-}
-
-.footer {
-    font-size: 9px;
-    color: #5A6B7F;
-    text-align: center;
-    margin-top: 12px;
-}
-
-.appendix {
-    page-break-before: always;
-    font-size: 10px;
-    color: #2C3E50;
 }

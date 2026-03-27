@@ -4,8 +4,10 @@ from __future__ import annotations
 import csv
 import io
 import json
+import random
 import re
 import unicodedata
+import zipfile
 from typing import Any, Dict, List, Optional, Tuple
 
 
@@ -238,3 +240,100 @@ def questionnaire_sections_to_csv_bytes(
             writer.writerow([q_no, q_text, "", 0])
 
     return ("\ufeff" + buffer.getvalue()).encode("utf-8")
+
+
+def build_survey_results_csv_bytes(
+    results: Dict[str, Any],
+    persona_sample_sizes: Dict[str, int],
+    persona_names_map: Dict[str, str],
+    seed: Optional[str] = None,
+) -> bytes:
+    """
+    Generates a per-respondent wide-format CSV matching the reference format:
+
+    Respondent_ID | Persona_Type | Persona_Sample_Size | Q1_<label> | Q2_<label> | ...
+
+    - results: { question_text: [ {option, count, pct?}, ... ] }  (SurveySimulation.results)
+    - persona_sample_sizes: { persona_id: sample_size }
+    - persona_names_map: { persona_id: persona_name }
+    - seed: deterministic seed (use simulation_id) so same run always produces same CSV
+
+    Uses weighted random sampling from the aggregate distribution per question.
+    Since per-persona breakdowns are not stored separately, the aggregate distribution
+    is used for all personas (consistent with what the simulation stores).
+    """
+    if not results or not persona_sample_sizes:
+        return b""
+
+    rng = random.Random(seed or "default")
+
+    # Build ordered question list + short column labels
+    # question_text -> [{option, count}]
+    questions: List[str] = list(results.keys())
+
+    def _short_label(text: str, idx: int) -> str:
+        """Generate Q{n}_ShortLabel from question text."""
+        # Take first 4 meaningful words, title-case, underscored
+        words = re.sub(r"[^\w\s]", "", text or "").split()
+        label = "_".join(w.title() for w in words[:4] if w)
+        return f"Q{idx + 1}_{label}" if label else f"Q{idx + 1}"
+
+    col_labels = [_short_label(q, i) for i, q in enumerate(questions)]
+
+    headers = ["Respondent_ID", "Persona_Type", "Persona_Sample_Size"] + col_labels
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(headers)
+
+    for persona_idx, (persona_id, sample_size) in enumerate(persona_sample_sizes.items(), 1):
+        persona_name = persona_names_map.get(persona_id, f"Persona_{persona_idx}")
+
+        # Pre-build option lists + weights per question (reused across all respondents)
+        q_options: List[List[str]] = []
+        q_weights: List[List[float]] = []
+        for q_text in questions:
+            opts_data = results.get(q_text) or []
+            if isinstance(opts_data, list):
+                opts = [str(d.get("option", "")) for d in opts_data if isinstance(d, dict)]
+                counts = [max(float(d.get("count", 0) or 0), 0) for d in opts_data if isinstance(d, dict)]
+            else:
+                opts, counts = [], []
+            q_options.append(opts)
+            q_weights.append(counts if sum(counts) > 0 else [1.0] * len(opts))
+
+        for respondent_num in range(1, sample_size + 1):
+            row: List[Any] = [
+                f"P{persona_idx}_{respondent_num:04d}",
+                persona_name,
+                sample_size,
+            ]
+            for opts, weights in zip(q_options, q_weights):
+                if opts:
+                    chosen = rng.choices(opts, weights=weights, k=1)[0]
+                else:
+                    chosen = ""
+                row.append(chosen)
+            writer.writerow(row)
+
+    return ("\ufeff" + buffer.getvalue()).encode("utf-8")
+
+
+def build_quant_transcripts_zip(
+    questionnaire_csv: bytes,
+    survey_results_csv: bytes,
+) -> bytes:
+    """
+    Package the two quant transcript CSVs into a single ZIP archive.
+
+    Archive layout:
+    quant_transcripts/
+      questionnaire_overview.csv   ← Q No., Question Description, Options, Count
+      survey_results.csv           ← One row per respondent (wide format)
+    """
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("quant_transcripts/questionnaire_overview.csv", questionnaire_csv)
+        zf.writestr("quant_transcripts/survey_results.csv", survey_results_csv)
+    buf.seek(0)
+    return buf.read()

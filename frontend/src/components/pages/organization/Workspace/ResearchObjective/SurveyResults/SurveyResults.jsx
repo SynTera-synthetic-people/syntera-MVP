@@ -5,7 +5,14 @@ import { TbArrowLeft, TbChevronRight, TbDownload, TbChartBar, TbUser, TbUsers, T
 import { useTheme } from "../../../../../../context/ThemeContext";
 import logoForDark from "../../../../../../assets/Logo_Dark_bg.png";
 import logoForLight from "../../../../../../assets/Logo_Light_bg.png";
-import { useDownloadSurveyPdf, useSimulateSurvey, usePreviewSurvey } from '../../../../../../hooks/useQuantitativeQueries';
+import {
+  useDownloadSurveyPdf,
+  useSimulateSurvey,
+  usePreviewSurvey,
+  useDownloadQuantTranscripts,
+  useDownloadQuantDecisionIntelligence,
+  useDownloadQuantBehaviorArchaeology,
+} from '../../../../../../hooks/useQuantitativeQueries';
 import { downloadQuestionnaireCsvExport } from '../../../../../../services/quantitativeServices';
 import { getAxiosErrorMessage } from '../../../../../../utils/axiosBlobError';
 import PreviewModal from './components/PreviewModal'; // Import the separate modal
@@ -120,6 +127,9 @@ const SurveyResults = () => {
   const simulateSurveyMutation = useSimulateSurvey();
   const downloadSurveyPdfMutation = useDownloadSurveyPdf();
   const previewSurveyMutation = usePreviewSurvey();
+  const downloadTranscriptsMutation = useDownloadQuantTranscripts();
+  const downloadDIMutation = useDownloadQuantDecisionIntelligence();
+  const downloadBAMutation = useDownloadQuantBehaviorArchaeology();
 
   // Handle preview with TanStack Query
   const handlePreview = async () => {
@@ -198,6 +208,51 @@ const SurveyResults = () => {
       }
     } finally {
       setQuestionnaireCsvDownloading(false);
+    }
+  };
+
+  const handleDownloadTranscripts = async () => {
+    if (!surveyConfig || !surveyResults) return;
+    try {
+      await downloadTranscriptsMutation.mutateAsync({
+        workspaceId,
+        explorationId: surveyConfig.explorationId,
+        simulationId: surveyResults.id,
+      });
+    } catch (error) {
+      console.error('Failed to download transcripts CSV:', error);
+      const detail = await getAxiosErrorMessage(error, 'Could not download transcripts.');
+      alert(detail);
+    }
+  };
+
+  const handleDownloadDI = async () => {
+    if (!surveyConfig || !surveyResults) return;
+    try {
+      await downloadDIMutation.mutateAsync({
+        workspaceId,
+        explorationId: surveyConfig.explorationId,
+        simulationId: surveyResults.id,
+      });
+    } catch (error) {
+      console.error('Failed to download Decision Intelligence:', error);
+      const detail = await getAxiosErrorMessage(error, 'Could not download Decision Intelligence.');
+      alert(detail);
+    }
+  };
+
+  const handleDownloadBA = async () => {
+    if (!surveyConfig || !surveyResults) return;
+    try {
+      await downloadBAMutation.mutateAsync({
+        workspaceId,
+        explorationId: surveyConfig.explorationId,
+        simulationId: surveyResults.id,
+      });
+    } catch (error) {
+      console.error('Failed to download Behavior Archaeology:', error);
+      const detail = await getAxiosErrorMessage(error, 'Could not download Behavior Archaeology.');
+      alert(detail);
     }
   };
 
@@ -402,6 +457,12 @@ const SurveyResults = () => {
         onDownload={handleDownloadFromPreview}
         isLoading={previewSurveyMutation.isPending}
         isDownloading={downloadSurveyPdfMutation.isPending}
+        onDownloadTranscripts={handleDownloadTranscripts}
+        onDownloadDI={handleDownloadDI}
+        onDownloadBA={handleDownloadBA}
+        isDownloadingTranscripts={downloadTranscriptsMutation.isPending}
+        isDownloadingDI={downloadDIMutation.isPending}
+        isDownloadingBA={downloadBAMutation.isPending}
       />
 
 

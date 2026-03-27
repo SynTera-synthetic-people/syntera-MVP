@@ -278,7 +278,7 @@ async def export_all_interviews_pdf(workspace_id: str, exploration_id: str, curr
 
         # pdf_path = await interview_service.export_all_interviews_pdf(workspace_id, exploration_id, db)
         bulk_path = generate_pdf_path(prefix="all_interviews")
-        pdf_path  = await generate_combined_interviews_pdf(objective_id=exploration_id, out_path=bulk_path)
+        pdf_path  = await generate_combined_interviews_pdf(objective_id=exploration_id, out_path=bulk_path, cta="BEHAVIORAL_ARCHAEOLOGY")
         print(pdf_path)
         if not pdf_path:
             raise HTTPException(status_code=404, detail=ErrorResponse(status="error", message="No interviews found").dict())
@@ -392,7 +392,7 @@ async def export_interview_report(workspace_id: str, exploration_id: str, interv
     # path = await interview_service.export_insights_pdf(interview_id)
     try:
         single_path = generate_pdf_path(prefix="single_interview")
-        path = await generate_combined_interviews_pdf(objective_id=exploration_id, interview_id=interview_id, out_path=single_path)
+        path = await generate_combined_interviews_pdf(objective_id=exploration_id, interview_id=interview_id, out_path=single_path, cta="BEHAVIORAL_ARCHAEOLOGY")
         print(path)
 
         if not path:

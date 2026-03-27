@@ -10,6 +10,9 @@ import {
   uploadQuestionnaire,
   previewSurvey,
   listPopulationSimulations,
+  downloadQuantTranscripts,
+  downloadQuantDecisionIntelligence,
+  downloadQuantBehaviorArchaeology,
 } from '../services/quantitativeServices';
 
 /** Saved population + questionnaire runs for an exploration (for restore & exports). */
@@ -163,5 +166,44 @@ export const usePreviewSurvey = () => {
       console.error('Error previewing survey:', error);
       throw error;
     }
+  });
+};
+
+function _triggerBlobDownload(blob, filename, mimeType = 'application/pdf') {
+  const url = window.URL.createObjectURL(new Blob([blob], { type: mimeType }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  window.URL.revokeObjectURL(url);
+  document.body.removeChild(a);
+}
+
+export const useDownloadQuantTranscripts = () => {
+  return useMutation({
+    mutationFn: ({ workspaceId, explorationId, simulationId }) =>
+      downloadQuantTranscripts({ workspaceId, explorationId, simulationId }),
+    // Returns a ZIP: questionnaire_overview.csv + survey_results.csv
+    onSuccess: (blob, { simulationId }) =>
+      _triggerBlobDownload(blob, `survey_transcripts_${simulationId}.zip`, 'application/zip'),
+  });
+};
+
+export const useDownloadQuantDecisionIntelligence = () => {
+  return useMutation({
+    mutationFn: ({ workspaceId, explorationId, simulationId }) =>
+      downloadQuantDecisionIntelligence({ workspaceId, explorationId, simulationId }),
+    onSuccess: (blob, { simulationId }) =>
+      _triggerBlobDownload(blob, `decision_intelligence_${simulationId}.pdf`),
+  });
+};
+
+export const useDownloadQuantBehaviorArchaeology = () => {
+  return useMutation({
+    mutationFn: ({ workspaceId, explorationId, simulationId }) =>
+      downloadQuantBehaviorArchaeology({ workspaceId, explorationId, simulationId }),
+    onSuccess: (blob, { simulationId }) =>
+      _triggerBlobDownload(blob, `behavior_archaeology_${simulationId}.pdf`),
   });
 };

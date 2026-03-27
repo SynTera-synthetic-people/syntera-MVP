@@ -1,5 +1,5 @@
 """Single place to build the Anthropic client from app settings (.env)."""
-from anthropic import Anthropic
+from anthropic import Anthropic, AsyncAnthropic
 
 from app.config import settings
 
@@ -19,3 +19,13 @@ def get_anthropic_client() -> Anthropic:
             "Create a key at https://console.anthropic.com/settings/keys"
         )
     return Anthropic(api_key=key)
+
+
+def get_async_anthropic_client() -> AsyncAnthropic:
+    key = _normalize_api_key(settings.ANTHROPIC_API_KEY or "")
+    if not key:
+        raise RuntimeError(
+            "ANTHROPIC_API_KEY is not set in backend/.env. "
+            "Create a key at https://console.anthropic.com/settings/keys"
+        )
+    return AsyncAnthropic(api_key=key)

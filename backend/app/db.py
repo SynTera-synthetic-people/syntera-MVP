@@ -177,3 +177,69 @@ async def add_exploration_audience_type_column():
             SET audience_type = 'B2C'
             WHERE audience_type IS NULL OR TRIM(audience_type) = '';
         """))
+
+
+async def create_report_cache_table():
+    """Create report_cache table and enforce one cache row per logical report."""
+    async with async_engine.begin() as conn:
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS report_cache (
+                id VARCHAR PRIMARY KEY,
+                exploration_id VARCHAR NOT NULL,
+                simulation_id VARCHAR,
+                report_type VARCHAR NOT NULL,
+                cta_type VARCHAR NOT NULL,
+                status VARCHAR NOT NULL DEFAULT 'done',
+                pdf_path VARCHAR,
+                content_md TEXT,
+                error_message TEXT,
+                created_at TIMESTAMP DEFAULT now(),
+                expires_at TIMESTAMP
+            )
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_report_cache_lookup
+            ON report_cache (exploration_id, simulation_id, cta_type)
+        """))
+        await conn.execute(text("""
+            WITH ranked AS (
+                SELECT
+                    id,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY exploration_id, cta_type, simulation_id
+                        ORDER BY created_at DESC NULLS LAST, id DESC
+                    ) AS rn
+                FROM report_cache
+                WHERE simulation_id IS NOT NULL
+            )
+            DELETE FROM report_cache rc
+            USING ranked
+            WHERE rc.id = ranked.id
+              AND ranked.rn > 1
+        """))
+        await conn.execute(text("""
+            WITH ranked AS (
+                SELECT
+                    id,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY exploration_id, cta_type
+                        ORDER BY created_at DESC NULLS LAST, id DESC
+                    ) AS rn
+                FROM report_cache
+                WHERE simulation_id IS NULL
+            )
+            DELETE FROM report_cache rc
+            USING ranked
+            WHERE rc.id = ranked.id
+              AND ranked.rn > 1
+        """))
+        await conn.execute(text("""
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_report_cache_qual
+            ON report_cache (exploration_id, cta_type)
+            WHERE simulation_id IS NULL
+        """))
+        await conn.execute(text("""
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_report_cache_quant
+            ON report_cache (exploration_id, simulation_id, cta_type)
+            WHERE simulation_id IS NOT NULL
+        """))

@@ -1,4 +1,6 @@
 import asyncio
+import csv
+import io
 import json
 import os
 import uuid
@@ -9,12 +11,28 @@ import markdown
 from dotenv import load_dotenv
 from xhtml2pdf import pisa
 
+DOCX_IMPORT_ERROR = None
+try:
+    from docx import Document
+    from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
+    from docx.enum.text import WD_COLOR_INDEX
+    from docx.shared import Pt, RGBColor
+except Exception as exc:
+    Document = None
+    WD_ALIGN_PARAGRAPH = None
+    WD_BREAK = None
+    WD_COLOR_INDEX = None
+    Pt = None
+    RGBColor = None
+    DOCX_IMPORT_ERROR = exc
+
 from app.services.auto_generated_persona import (
     get_description,
     get_interviews_by_exploration_id,
     get_persona_details,
 )
-from app.utils.anthropic_client import get_anthropic_client
+from app.services.persona import get_persona
+from app.utils.anthropic_client import get_async_anthropic_client
 
 load_dotenv()
 
@@ -58,7 +76,8 @@ HARD RULES:
 - If CTA = TRANSCRIPTS: Generate ONLY Study Details, TOC, Research Objective, Studied Personas, Verbatim, Research Methodology, Limitations & Transparency.
 - If CTA = DECISION_INTELLIGENCE: Generate ONLY Study Details, TOC, Research Objective, Studied Personas, Executive Summary, Strategic Implications, Whitespace Analysis, Competitor Analysis, Research Methodology, Limitations & Transparency.
 - If CTA = BEHAVIORAL_ARCHAEOLOGY: Generate ONLY Study Details, TOC, Research Objective, Studied Personas, Human Themes Overview, Behavioural Depth Analysis, Research Methodology, Limitations & Transparency.
-- NEVER mix sections across CTAs. NEVER add sections not specified for the selected CTA.
+- If CTA = ALL_COMBINED: Generate ALL sections in this order: Study Details, TOC, Research Objective, Studied Personas, Verbatim, Executive Summary, Strategic Implications, Whitespace Analysis, Competitor Analysis, Human Themes Overview, Behavioural Depth Analysis, Research Methodology, Limitations & Transparency. This is the complete master report combining all three report types.
+- NEVER mix sections across CTAs unless CTA = ALL_COMBINED. NEVER add sections not specified for the selected CTA.
 
 **SECTION 2: SHARED SECTIONS (ALL CTAs)**
 These sections appear in ALL three CTAs. Generate them identically regardless of CTA selection.
@@ -457,6 +476,13 @@ def generate_pdf_path(prefix: str = "report") -> str:
     filename = f"{prefix}_{uuid.uuid4().hex}.pdf"
     return os.path.join(UPLOAD_DIR, filename)
 
+
+def generate_docx_path(prefix: str = "report") -> str:
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    filename = f"{prefix}_{uuid.uuid4().hex}.docx"
+    return os.path.join(UPLOAD_DIR, filename)
+
+
 def extract_interview_qa(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Supports BOTH:
@@ -509,12 +535,11 @@ async def call_anthropic(
     payload: dict,
     system_prompt: str,
     model: str = "claude-sonnet-4-5",
-    max_tokens: int = 20000,
+    max_tokens: int = 30000,
     temperature: float = 0.9,
 ):
-    client = get_anthropic_client()
-    response = await asyncio.to_thread(
-        client.messages.create,
+    client = get_async_anthropic_client()
+    async with client.messages.stream(
         model=model,
         max_tokens=max_tokens,
         temperature=temperature,
@@ -525,11 +550,12 @@ async def call_anthropic(
                 "content": json.dumps(payload, ensure_ascii=False),
             }
         ],
-    )
-    return response
+    ) as stream:
+        return await stream.get_final_message()
 
 async def build_llm_payload(
     objective_id: str,
+    cta: str,
     interview_id: Optional[str] = None,
 ) -> Dict[str, Any]:
 
@@ -577,16 +603,19 @@ async def build_llm_payload(
     return {
         "research_objective": research_objective,
         "personas": personas_payload,
+        "cta": cta,
     }
 
 
 async def generate_report_markdown(
     objective_id: str,
+    cta: str,
     interview_id: Optional[str] = None,
 ) -> str:
 
     payload = await build_llm_payload(
         objective_id=objective_id,
+        cta=cta,
         interview_id=interview_id,
     )
 
@@ -601,6 +630,53 @@ async def generate_report_markdown(
         raise ValueError("Empty response from Claude")
 
     return md
+
+
+def html_to_pdf(
+    html_body: str,
+    output_pdf_path: str,
+    css_path: str,
+    extra_css: str = "",
+) -> str:
+    css_embed = ""
+    if css_path and os.path.isfile(css_path):
+        try:
+            with open(css_path, "r", encoding="utf-8") as cf:
+                css_embed = cf.read()
+        except OSError:
+            css_embed = ""
+
+    if extra_css:
+        css_embed = f"{css_embed}\n{extra_css}".strip()
+
+    html_document = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style type="text/css">{css_embed}</style>
+</head>
+<body>
+{html_body}
+</body>
+</html>"""
+
+    os.makedirs(os.path.dirname(output_pdf_path) or ".", exist_ok=True)
+
+    try:
+        with open(output_pdf_path, "w+b") as out_file:
+            pdf_doc = pisa.CreatePDF(
+                src=html_document,
+                dest=out_file,
+                encoding="utf-8",
+            )
+        if pdf_doc.err:
+            raise RuntimeError(f"xhtml2pdf reported errors: {pdf_doc.err}")
+    except RuntimeError:
+        raise
+    except Exception as e:
+        raise RuntimeError(f"PDF generation failed: {e}") from e
+
+    return output_pdf_path
 
 
 def llm_md_to_pdf(md_content: str, output_pdf_path: str, css_path: str) -> str:
@@ -621,53 +697,299 @@ def llm_md_to_pdf(md_content: str, output_pdf_path: str, css_path: str) -> str:
         md_content, extensions=["tables", "fenced_code", "toc", "attr_list"]
     )
 
-    css_embed = ""
-    if css_path and os.path.isfile(css_path):
-        try:
-            with open(css_path, "r", encoding="utf-8") as cf:
-                css_embed = f'<style type="text/css">{cf.read()}</style>'
-        except OSError:
-            pass
-
-    # ---------- HTML Wrapper ----------
-    html_document = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-{css_embed}
-</head>
-<body>
-{html_body}
-</body>
-</html>"""
-
-    # ---------- Ensure output directory exists ----------
-    os.makedirs(os.path.dirname(output_pdf_path) or ".", exist_ok=True)
-
-    # ---------- Generate PDF (pure Python — no wkhtmltopdf binary) ----------
-    try:
-        with open(output_pdf_path, "w+b") as out_file:
-            pdf_doc = pisa.CreatePDF(
-                src=html_document,
-                dest=out_file,
-                encoding="utf-8",
-            )
-        if pdf_doc.err:
-            raise RuntimeError(f"xhtml2pdf reported errors: {pdf_doc.err}")
-    except RuntimeError:
-        raise
-    except Exception as e:
-        raise RuntimeError(f"PDF generation failed: {e}") from e
-
-    return output_pdf_path
+    return html_to_pdf(html_body, output_pdf_path, css_path)
 
 
 async def generate_combined_interviews_pdf(
     objective_id: str,
     out_path: str,
+    cta: str,
     interview_id: Optional[str] = None,
 ) -> str:
-    md = await generate_report_markdown(objective_id, interview_id)
+    md = await generate_report_markdown(objective_id, cta, interview_id)
     return await asyncio.to_thread(
         llm_md_to_pdf, md, out_path, "app/css/report_generation.css"
     )
+
+
+def _persona_summary_line(persona: Dict[str, Any]) -> str:
+    details = persona.get("persona_details") if isinstance(persona.get("persona_details"), dict) else {}
+    name = persona.get("name") or details.get("name") or "Unknown Persona"
+    age = persona.get("age_range") or details.get("age_range")
+    occupation = persona.get("occupation") or details.get("occupation")
+    city = (
+        persona.get("location_state")
+        or details.get("location_state")
+        or persona.get("geography")
+        or details.get("geography")
+        or persona.get("location_country")
+        or details.get("location_country")
+    )
+
+    parts = [name]
+    profile_bits = [bit for bit in [age, occupation, city] if bit]
+    if profile_bits:
+        parts.append(" | ".join(str(bit) for bit in profile_bits))
+    return " | ".join(parts)
+
+
+def _format_metric(value: Any) -> str:
+    if value in (None, ""):
+        return "NA"
+    return str(value).strip() or "NA"
+
+
+def _extract_follow_up_pairs(messages: List[Dict[str, Any]]) -> List[Dict[str, str]]:
+    followups: List[Dict[str, str]] = []
+    pending_question: Optional[str] = None
+
+    for msg in messages:
+        role = msg.get("role")
+        meta = msg.get("meta") or {}
+
+        if meta.get("question"):
+            continue
+
+        text = (msg.get("text") or "").strip()
+        if not text:
+            continue
+
+        if role == "user":
+            pending_question = text
+        elif role == "persona" and pending_question:
+            followups.append({"question": pending_question, "answer": text})
+            pending_question = None
+
+    return followups
+
+
+def _transcript_plain_text(value: Any) -> str:
+    text = "" if value is None else str(value).strip()
+    return text or "Not Available"
+
+
+def _derive_transcript_title(research_objective: Optional[str]) -> str:
+    text = _transcript_plain_text(research_objective)
+    for chunk in text.splitlines():
+        chunk = chunk.strip()
+        if chunk:
+            return chunk[:90]
+    return "Qualitative Discussion Guide"
+
+
+def _apply_run_style(run, *, bold: bool = False, size: int = 11, color: Optional[RGBColor] = None,
+                     highlight: Optional[int] = None) -> None:
+    run.bold = bold
+    run.font.name = "Calibri"
+    run.font.size = Pt(size)
+    if color:
+        run.font.color.rgb = color
+    if highlight is not None:
+        run.font.highlight_color = highlight
+
+
+def _add_metric_paragraph(document: Document, quality: Any, independence: Any) -> None:
+    paragraph = document.add_paragraph()
+    paragraph.paragraph_format.space_after = Pt(8)
+    run = paragraph.add_run(
+        f"Quality: {_format_metric(quality)} | Independence: {_format_metric(independence)}"
+    )
+    _apply_run_style(run, size=9)
+    run.italic = True
+
+
+def _build_qual_transcripts_docx(
+    *,
+    objective_id: str,
+    research_objective: Optional[str],
+    interviews: List[Dict[str, Any]],
+    out_path: str,
+) -> str:
+    if Document is None:
+        raise RuntimeError(
+            "DOCX export requires python-docx. "
+            "Uninstall the legacy 'docx' package and install 'python-docx'."
+        ) from DOCX_IMPORT_ERROR
+
+    document = Document()
+    section = document.sections[0]
+    section.top_margin = Pt(50)
+    section.bottom_margin = Pt(50)
+    section.left_margin = Pt(50)
+    section.right_margin = Pt(50)
+
+    blue = RGBColor(68, 114, 196)
+    dark_blue = RGBColor(31, 71, 136)
+
+    title = document.add_paragraph()
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    title.paragraph_format.space_after = Pt(10)
+    run = title.add_run(f"Discussion Guide: {_derive_transcript_title(research_objective)}")
+    _apply_run_style(run, bold=True, size=14, color=blue)
+
+    overview_heading = document.add_paragraph()
+    overview_heading.paragraph_format.space_after = Pt(6)
+    overview_run = overview_heading.add_run("Overview:")
+    _apply_run_style(overview_run, bold=True, size=11, color=blue)
+
+    overview_lines = [
+        f"Exploration ID: {objective_id}",
+        f"Research Objective: {_transcript_plain_text(research_objective)}",
+        f"Total Personas Covered: {len(interviews)}",
+    ]
+    for line in overview_lines:
+        paragraph = document.add_paragraph()
+        paragraph.paragraph_format.space_after = Pt(4)
+        run = paragraph.add_run(line)
+        _apply_run_style(run, size=10)
+
+    for idx, interview in enumerate(interviews, start=1):
+        if idx > 1:
+            document.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
+
+        qa_data = extract_interview_qa(interview.get("messages", []))
+        if not qa_data:
+            continue
+
+        persona = interview.get("_persona") or {}
+        persona_name = persona.get("name") or "Unknown Persona"
+        generated_answers = interview.get("generated_answers") or {}
+
+        persona_heading = document.add_paragraph()
+        persona_heading.paragraph_format.space_after = Pt(3)
+        persona_run = persona_heading.add_run(f"Persona {idx}: {persona_name}")
+        _apply_run_style(persona_run, bold=True, size=13, color=dark_blue)
+
+        persona_meta = document.add_paragraph()
+        persona_meta.paragraph_format.space_after = Pt(10)
+        meta_run = persona_meta.add_run(_persona_summary_line(persona))
+        _apply_run_style(meta_run, size=10)
+
+        current_section: Optional[str] = None
+        for qa in qa_data:
+            question = _transcript_plain_text(qa.get("question"))
+            answer = _transcript_plain_text(qa.get("answer"))
+            metadata = qa.get("metadata") or {}
+            section_name = metadata.get("section") or "Discussion Guide"
+            answer_meta = generated_answers.get(qa.get("question"), {}) if isinstance(generated_answers, dict) else {}
+
+            if current_section != section_name:
+                current_section = section_name
+                section_para = document.add_paragraph()
+                section_para.paragraph_format.space_before = Pt(8)
+                section_para.paragraph_format.space_after = Pt(4)
+                section_run = section_para.add_run(str(section_name))
+                _apply_run_style(section_run, bold=True, size=11, color=blue)
+
+            question_para = document.add_paragraph(style="List Paragraph")
+            question_para.paragraph_format.space_after = Pt(2)
+            question_run = question_para.add_run(question)
+            _apply_run_style(question_run, size=10)
+
+            answer_para = document.add_paragraph()
+            answer_para.paragraph_format.space_after = Pt(2)
+            answer_run = answer_para.add_run(f"Respondent: {answer}")
+            _apply_run_style(answer_run, bold=True, size=10, highlight=WD_COLOR_INDEX.YELLOW)
+
+            _add_metric_paragraph(
+                document,
+                answer_meta.get("quality_score"),
+                answer_meta.get("independence_score"),
+            )
+
+        followups = _extract_follow_up_pairs(interview.get("messages", []))
+        if followups:
+            followup_heading = document.add_paragraph()
+            followup_heading.paragraph_format.space_before = Pt(8)
+            followup_heading.paragraph_format.space_after = Pt(4)
+            followup_run = followup_heading.add_run("Follow-up Discussion")
+            _apply_run_style(followup_run, bold=True, size=11, color=blue)
+
+            for followup in followups:
+                moderator_para = document.add_paragraph()
+                moderator_para.paragraph_format.space_after = Pt(2)
+                moderator_label = moderator_para.add_run("Moderator: ")
+                _apply_run_style(moderator_label, bold=True, size=10)
+                moderator_text = moderator_para.add_run(_transcript_plain_text(followup.get("question")))
+                _apply_run_style(moderator_text, size=10)
+
+                response_para = document.add_paragraph()
+                response_para.paragraph_format.space_after = Pt(6)
+                response_run = response_para.add_run(
+                    f"Respondent: {_transcript_plain_text(followup.get('answer'))}"
+                )
+                _apply_run_style(response_run, bold=True, size=10, highlight=WD_COLOR_INDEX.YELLOW)
+
+    os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+    document.save(out_path)
+    return out_path
+
+
+async def generate_qual_transcripts_docx(
+    objective_id: str,
+    out_path: str,
+    interview_id: Optional[str] = None,
+) -> str:
+    interviews = await get_interviews_by_exploration_id(objective_id)
+
+    if interview_id:
+        interviews = [
+            row for row in interviews
+            if row.get("interview_id") == interview_id or row.get("id") == interview_id
+        ]
+
+    if not interviews:
+        raise ValueError("No interviews found for transcript export")
+
+    research_objective = await get_description(objective_id)
+    prepared_interviews: List[Dict[str, Any]] = []
+    for interview in interviews:
+        qa_data = extract_interview_qa(interview.get("messages", []))
+        if not qa_data:
+            continue
+
+        persona = await get_persona(interview.get("persona_id")) or {}
+        prepared = dict(interview)
+        prepared["_persona"] = persona
+        prepared_interviews.append(prepared)
+
+    if not prepared_interviews:
+        raise ValueError("No valid interview transcript data found")
+
+    return await asyncio.to_thread(
+        _build_qual_transcripts_docx,
+        objective_id=objective_id,
+        research_objective=research_objective,
+        interviews=prepared_interviews,
+        out_path=out_path,
+    )
+
+
+async def generate_qual_transcripts_csv(objective_id: str) -> bytes:
+    """
+    Builds a verbatim Q&A CSV from all interviews for the exploration.
+    No LLM call — pure data extraction.
+    Columns: Persona, Question, Answer, Quality Score, Independence Score
+    """
+    interviews = await get_interviews_by_exploration_id(objective_id)
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Persona", "Question", "Answer", "Quality Score", "Independence Score"])
+
+    for interview in interviews:
+        persona_id = interview.get("persona_id")
+        persona_details = await get_persona_details(persona_id) or {}
+        persona_name = persona_details.get("name", "Unknown")
+        qa_data = extract_interview_qa(interview.get("messages", []))
+
+        for qa in qa_data:
+            meta = qa.get("metadata", {})
+            writer.writerow([
+                persona_name,
+                qa.get("question", ""),
+                qa.get("answer", ""),
+                meta.get("quality_score", ""),
+                meta.get("independence_score", ""),
+            ])
+
+    return output.getvalue().encode("utf-8-sig")  # BOM for Excel compatibility
