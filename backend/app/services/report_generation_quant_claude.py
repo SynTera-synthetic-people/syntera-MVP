@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import async_engine
 from app.models.survey_simulation import SurveySimulation
 from app.services.auto_generated_persona import get_description
-from app.services.quant_report_cta_prompt import CTA_ROUTED_QUANT_REPORT_PROMPT_V1
+from app.services.quant_report_cta_prompt import CTA_ROUTED_QUANT_REPORT_PROMPT_V2
 from app.services.report_generation_qual_claude import html_to_pdf
 from app.services.survey_simulation import parse_survey_results_field
 from app.utils.anthropic_client import get_async_anthropic_client
@@ -312,7 +312,7 @@ async def generate_md_report(exploration_id: str, sim_id: str, persona_details: 
     }
 
     # Verbatim CTA prompt (unchanged) + actual simulation payload only (fixes empty-input hallucinations).
-    user_message_content = CTA_ROUTED_QUANT_REPORT_PROMPT_V1 + "\n\n" + json.dumps(
+    user_message_content = CTA_ROUTED_QUANT_REPORT_PROMPT_V2 + "\n\n" + json.dumps(
         payload, ensure_ascii=False, default=str
     )
 
