@@ -18,7 +18,7 @@ reportlab
 pytesseract
 PyPDF2
 pdf2image
-docx
+python-docx
 pandas
 xhtml2pdf>=0.2.15
 Markdown==3.10.2

@@ -101,4 +101,38 @@ export const interviewService = {
     );
     return response.data;
   },
+
+  // ── New 3-CTA report downloads ──────────────────────────────────────────────
+
+  downloadQualTranscripts: async (workspaceId, explorationId) => {
+    const response = await axiosInstance.get(
+      `/workspaces/${workspaceId}/explorations/${explorationId}/reports/qual/transcripts`,
+      { responseType: 'blob' }
+    );
+    return response.data;
+  },
+
+  downloadQualDecisionIntelligence: async (workspaceId, explorationId) => {
+    const response = await axiosInstance.get(
+      `/workspaces/${workspaceId}/explorations/${explorationId}/reports/qual/decision-intelligence`,
+      { responseType: 'blob' }
+    );
+    return response.data;
+  },
+
+  downloadQualBehaviorArchaeology: async (workspaceId, explorationId) => {
+    const response = await axiosInstance.get(
+      `/workspaces/${workspaceId}/explorations/${explorationId}/reports/qual/behavior-archaeology`,
+      { responseType: 'blob' }
+    );
+    return response.data;
+  },
+
+  downloadQualAllCombined: async (workspaceId, explorationId) => {
+    const response = await axiosInstance.get(
+      `/workspaces/${workspaceId}/explorations/${explorationId}/reports/qual/all-combined`,
+      { responseType: 'blob' }
+    );
+    return response.data;
+  },
 };

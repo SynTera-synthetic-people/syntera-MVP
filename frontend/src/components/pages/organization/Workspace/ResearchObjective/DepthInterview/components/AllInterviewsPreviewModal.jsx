@@ -1,19 +1,19 @@
 import { useState } from 'react';
 import { TbX, TbDownload, TbLoader, TbAlertCircle, TbFileText, TbRefresh, TbUsers, TbChartBar, TbChevronDown, TbChevronUp } from 'react-icons/tb';
 import { motion, AnimatePresence } from 'framer-motion';
-import PremiumButton from '../../../../../../common/PremiumButton';
-import { useTheme } from '../../../../../../../context/ThemeContext';
-import { useExportAllInterviewsPdf, useAllInterviewPreview } from '../../../../../../../hooks/useInterview';
+import {
+  useAllInterviewPreview,
+  useDownloadQualTranscripts,
+  useDownloadQualDecisionIntelligence,
+  useDownloadQualBehaviorArchaeology,
+} from '../../../../../../../hooks/useInterview';
 
 const AllInterviewsPreviewModal = ({
   isOpen,
   onClose,
   workspaceId,
-  explorationId,
-  onDownload,
-  exportAllInterviewsMutation: externalMutation
+  explorationId
 }) => {
-  const { theme } = useTheme();
   const [expandedSections, setExpandedSections] = useState({});
 
   // Use the React Query hook for all interviews preview data
@@ -27,22 +27,9 @@ const AllInterviewsPreviewModal = ({
     enabled: isOpen && !!workspaceId && !!explorationId,
   });
 
-  const localMutation = useExportAllInterviewsPdf(workspaceId, explorationId);
-  const exportAllInterviewsMutation = externalMutation || localMutation;
-
-  const handleDownload = async () => {
-    if (onDownload) {
-      try {
-        await onDownload();
-        onClose(); // Close only after successful download
-      } catch (error) {
-        console.error("Download failed:", error);
-        // Keep modal open
-      }
-    } else {
-      onClose();
-    }
-  };
+  const transcriptsMutation = useDownloadQualTranscripts(workspaceId, explorationId);
+  const diMutation = useDownloadQualDecisionIntelligence(workspaceId, explorationId);
+  const baMutation = useDownloadQualBehaviorArchaeology(workspaceId, explorationId);
 
   const handleRetry = () => {
     refetch();
@@ -123,7 +110,40 @@ const AllInterviewsPreviewModal = ({
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap justify-end">
+              <button
+                onClick={() => transcriptsMutation.mutate()}
+                disabled={!previewData?.data || transcriptsMutation.isPending}
+                className="flex items-center gap-2 px-3 py-2 border border-cyan-500 text-cyan-600 dark:text-cyan-400 rounded-lg font-medium text-sm hover:bg-cyan-50 dark:hover:bg-cyan-900/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {transcriptsMutation.isPending ? (
+                  <><TbLoader className="w-4 h-4 animate-spin" /><span>DOCX…</span></>
+                ) : (
+                  <><TbDownload size={16} /><span>Transcripts</span></>
+                )}
+              </button>
+              <button
+                onClick={() => diMutation.mutate()}
+                disabled={!previewData?.data || diMutation.isPending}
+                className="flex items-center gap-2 px-3 py-2 border border-blue-500 text-blue-600 dark:text-blue-400 rounded-lg font-medium text-sm hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {diMutation.isPending ? (
+                  <><TbLoader className="w-4 h-4 animate-spin" /><span>Generating…</span></>
+                ) : (
+                  <><TbDownload size={16} /><span>Decision Intelligence</span></>
+                )}
+              </button>
+              <button
+                onClick={() => baMutation.mutate()}
+                disabled={!previewData?.data || baMutation.isPending}
+                className="flex items-center gap-2 px-3 py-2 bg-purple-600 text-white rounded-lg font-medium text-sm hover:bg-purple-700 transition-colors shadow-lg shadow-purple-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {baMutation.isPending ? (
+                  <><TbLoader className="w-4 h-4 animate-spin" /><span>Generating…</span></>
+                ) : (
+                  <><TbDownload size={16} /><span>Behavior Archaeology</span></>
+                )}
+              </button>
               <button
                 onClick={handleRetry}
                 disabled={isLoading}
@@ -142,7 +162,7 @@ const AllInterviewsPreviewModal = ({
           </div>
 
           {/* Content */}
-          <div className="overflow-y-auto max-h-[calc(90vh-180px)] p-6">
+          <div className="overflow-y-auto max-h-[calc(90vh-120px)] p-6">
             {isLoading ? (
               <div className="flex flex-col items-center justify-center py-12">
                 <TbLoader className="w-12 h-12 animate-spin text-purple-600 dark:text-purple-400 mb-4" />
@@ -417,41 +437,6 @@ const AllInterviewsPreviewModal = ({
                 </p>
               </div>
             )}
-          </div>
-
-          {/* Footer */}
-          <div className="border-t border-gray-200 dark:border-gray-700 p-6 bg-gray-50/50 dark:bg-gray-800/50">
-            <div className="flex items-center justify-between">
-              <div className="text-sm text-gray-500 dark:text-gray-400">
-                {previewData?.data ? 'Ready to download the full aggregated report?' : 'Preview the aggregated insights before downloading'}
-              </div>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={onClose}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
-                >
-                  Close
-                </button>
-                <PremiumButton
-                  onClick={handleDownload}
-                  variant="primary"
-                  className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700"
-                  disabled={!previewData?.data || exportAllInterviewsMutation?.isPending}
-                >
-                  {exportAllInterviewsMutation?.isPending ? (
-                    <>
-                      <TbLoader className="w-4 h-4 animate-spin" />
-                      Downloading...
-                    </>
-                  ) : (
-                    <>
-                      <TbDownload className="w-4 h-4" />
-                      Download All Interviews Report
-                    </>
-                  )}
-                </PremiumButton>
-              </div>
-            </div>
           </div>
         </motion.div>
       </motion.div>

@@ -145,3 +145,42 @@ export const useExportAllInterviewsPdf = (workspaceId, explorationId) => {
     },
   });
 };
+
+function _triggerBlobDownload(blob, filename) {
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  window.URL.revokeObjectURL(url);
+  document.body.removeChild(a);
+}
+
+export const useDownloadQualTranscripts = (workspaceId, explorationId) => {
+  return useMutation({
+    mutationFn: () => interviewService.downloadQualTranscripts(workspaceId, explorationId),
+    onSuccess: (blob) => _triggerBlobDownload(blob, `transcripts_${explorationId}.docx`),
+  });
+};
+
+export const useDownloadQualDecisionIntelligence = (workspaceId, explorationId) => {
+  return useMutation({
+    mutationFn: () => interviewService.downloadQualDecisionIntelligence(workspaceId, explorationId),
+    onSuccess: (blob) => _triggerBlobDownload(blob, `decision_intelligence_${explorationId}.pdf`),
+  });
+};
+
+export const useDownloadQualBehaviorArchaeology = (workspaceId, explorationId) => {
+  return useMutation({
+    mutationFn: () => interviewService.downloadQualBehaviorArchaeology(workspaceId, explorationId),
+    onSuccess: (blob) => _triggerBlobDownload(blob, `behavior_archaeology_${explorationId}.pdf`),
+  });
+};
+
+export const useDownloadQualAllCombined = (workspaceId, explorationId) => {
+  return useMutation({
+    mutationFn: () => interviewService.downloadQualAllCombined(workspaceId, explorationId),
+    onSuccess: (blob) => _triggerBlobDownload(blob, `all_combined_report_${explorationId}.pdf`),
+  });
+};
