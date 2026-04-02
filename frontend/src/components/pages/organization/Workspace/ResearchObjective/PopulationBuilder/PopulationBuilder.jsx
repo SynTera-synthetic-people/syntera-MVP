@@ -238,6 +238,15 @@ const PopulationBuilder = () => {
 
   const handleLaunchSurvey = () => {
     if (!simulationResult || selectedPersonas.length === 0) return;
+    const hasQuestionnaireQuestions = Array.isArray(questionnaireData)
+      && questionnaireData.some(
+        (section) => Array.isArray(section?.questions) && section.questions.length > 0
+      );
+
+    if (!hasQuestionnaireQuestions) {
+      alert('Please keep at least one question in the questionnaire before launching the survey.');
+      return;
+    }
 
     trigger({
       stage: 'survey-launch',

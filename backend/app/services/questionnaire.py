@@ -891,9 +891,13 @@ async def create_section(workspace_id, exploration_id, title, user_id, simulatio
         return sec
 
 
-async def update_section(section_id: str, title: str):
+async def update_section(section_id: str, workspace_id: str, exploration_id: str, title: str):
     async with AsyncSession(async_engine) as session:
-        questionnaire = select(QuestionnaireSection).where(QuestionnaireSection.id == section_id)
+        questionnaire = select(QuestionnaireSection).where(
+            QuestionnaireSection.id == section_id,
+            QuestionnaireSection.workspace_id == workspace_id,
+            QuestionnaireSection.exploration_id == exploration_id
+        )
         res = await session.execute(questionnaire)
         sec = res.scalars().first()
 
@@ -907,9 +911,13 @@ async def update_section(section_id: str, title: str):
         return sec
 
 
-async def delete_section(section_id: str):
+async def delete_section(section_id: str, workspace_id: str, exploration_id: str):
     async with AsyncSession(async_engine) as session:
-        questionnaire = select(QuestionnaireSection).where(QuestionnaireSection.id == section_id)
+        questionnaire = select(QuestionnaireSection).where(
+            QuestionnaireSection.id == section_id,
+            QuestionnaireSection.workspace_id == workspace_id,
+            QuestionnaireSection.exploration_id == exploration_id
+        )
         res = await session.execute(questionnaire)
         sec = res.scalars().first()
 
@@ -926,8 +934,25 @@ async def delete_section(section_id: str):
         return True
 
 
-async def create_question(section_id: str, text: str, options: list, user_id: str):
+async def create_question(
+    section_id: str,
+    workspace_id: str,
+    exploration_id: str,
+    text: str,
+    options: list,
+    user_id: str
+):
     async with AsyncSession(async_engine) as session:
+        section_query = select(QuestionnaireSection).where(
+            QuestionnaireSection.id == section_id,
+            QuestionnaireSection.workspace_id == workspace_id,
+            QuestionnaireSection.exploration_id == exploration_id
+        )
+        section = (await session.execute(section_query)).scalars().first()
+
+        if not section:
+            return None
+
         q = QuestionnaireQuestion(
             id=generate_id(),
             section_id=section_id,
@@ -941,9 +966,17 @@ async def create_question(section_id: str, text: str, options: list, user_id: st
         return q
 
 
-async def update_question(qid: str, text: str, options: list):
+async def update_question(qid: str, workspace_id: str, exploration_id: str, text: str, options: list):
     async with AsyncSession(async_engine) as session:
-        questionnaire = select(QuestionnaireQuestion).where(QuestionnaireQuestion.id == qid)
+        questionnaire = (
+            select(QuestionnaireQuestion)
+            .join(QuestionnaireSection, QuestionnaireQuestion.section_id == QuestionnaireSection.id)
+            .where(
+                QuestionnaireQuestion.id == qid,
+                QuestionnaireSection.workspace_id == workspace_id,
+                QuestionnaireSection.exploration_id == exploration_id
+            )
+        )
         res = await session.execute(questionnaire)
         q = res.scalars().first()
 
@@ -958,9 +991,17 @@ async def update_question(qid: str, text: str, options: list):
         return q
 
 
-async def delete_question(qid: str):
+async def delete_question(qid: str, workspace_id: str, exploration_id: str):
     async with AsyncSession(async_engine) as session:
-        questionnaire = select(QuestionnaireQuestion).where(QuestionnaireQuestion.id == qid)
+        questionnaire = (
+            select(QuestionnaireQuestion)
+            .join(QuestionnaireSection, QuestionnaireQuestion.section_id == QuestionnaireSection.id)
+            .where(
+                QuestionnaireQuestion.id == qid,
+                QuestionnaireSection.workspace_id == workspace_id,
+                QuestionnaireSection.exploration_id == exploration_id
+            )
+        )
         res = await session.execute(questionnaire)
         q = res.scalars().first()
 

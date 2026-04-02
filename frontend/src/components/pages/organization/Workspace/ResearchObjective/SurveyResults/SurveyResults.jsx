@@ -272,16 +272,11 @@ const SurveyResults = () => {
   // Trigger survey simulation
   const triggerSurveySimulation = async (config) => {
     try {
-      // Extract questions from questionnaire data
-      const questions = extractQuestionsFromQuestionnaire(config.questionnaireData);
-
       const result = await simulateSurveyMutation.mutateAsync({
         workspaceId,
         explorationId: config.explorationId,
         personaId: config.personaIds,
         simulationId: config.simulationId,
-        sampleSize: config.totalSampleSize,
-        questions
       });
 
       if (result.status === 'success') {
@@ -296,25 +291,6 @@ const SurveyResults = () => {
     } catch (error) {
       console.error('Error simulating survey:', error);
     }
-  };
-
-  // Extract questions from questionnaire data
-  const extractQuestionsFromQuestionnaire = (questionnaire) => {
-    if (!questionnaire || !Array.isArray(questionnaire)) return [];
-
-    const questions = [];
-    questionnaire.forEach(section => {
-      if (section.questions && Array.isArray(section.questions)) {
-        section.questions.forEach(question => {
-          questions.push({
-            id: question.id,
-            text: question.text,
-            options: question.options || []
-          });
-        });
-      }
-    });
-    return questions;
   };
 
   // Process survey results into sections
