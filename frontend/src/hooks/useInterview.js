@@ -15,6 +15,8 @@ export const interviewKeys = {
     [...interviewKeys.details(), { workspaceId, explorationId, interviewId }, 'messages'],
   insights: (workspaceId, explorationId, interviewId) =>
     [...interviewKeys.details(), { workspaceId, explorationId, interviewId }, 'insights'],
+  reportStatus: (workspaceId, explorationId) =>
+    [...interviewKeys.details(), { workspaceId, explorationId }, 'report-status'],
 };
 
 // Custom hooks
@@ -182,5 +184,27 @@ export const useDownloadQualAllCombined = (workspaceId, explorationId) => {
   return useMutation({
     mutationFn: () => interviewService.downloadQualAllCombined(workspaceId, explorationId),
     onSuccess: (blob) => _triggerBlobDownload(blob, `all_combined_report_${explorationId}.pdf`),
+  });
+};
+
+export const useQualReportStatus = (workspaceId, explorationId, options = {}) => {
+  return useQuery({
+    queryKey: interviewKeys.reportStatus(workspaceId, explorationId),
+    queryFn: () => interviewService.getQualReportStatus(workspaceId, explorationId),
+    enabled: !!(workspaceId && explorationId),
+    ...options,
+  });
+};
+
+export const usePrepareQualReport = (workspaceId, explorationId) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (reportSlug) => interviewService.prepareQualReport(workspaceId, explorationId, reportSlug),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: interviewKeys.reportStatus(workspaceId, explorationId),
+      });
+    },
   });
 };
