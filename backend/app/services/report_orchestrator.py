@@ -46,6 +46,23 @@ async def get_cached_report(
         return result.scalars().first()
 
 
+async def get_latest_report(
+    exploration_id: str,
+    cta_type: str,
+    simulation_id: Optional[str] = None,
+) -> Optional[ReportCache]:
+    """Return the latest cache row for a report, regardless of status."""
+    async with AsyncSession(async_engine) as session:
+        stmt = (
+            select(ReportCache)
+            .where(_cache_key_filter(exploration_id, cta_type, simulation_id))
+            .order_by(ReportCache.created_at.desc(), ReportCache.id.desc())
+            .limit(1)
+        )
+        result = await session.execute(stmt)
+        return result.scalars().first()
+
+
 async def store_report_cache(
     exploration_id: str,
     cta_type: str,
@@ -86,6 +103,58 @@ async def store_report_cache(
                 cta_type=cta_type,
                 status="done",
                 pdf_path=pdf_path,
+                expires_at=expires_at,
+            )
+            session.add(cache)
+
+        await session.commit()
+        await session.refresh(cache)
+        return cache
+
+
+async def set_report_status(
+    exploration_id: str,
+    cta_type: str,
+    report_type: str,
+    status: str,
+    simulation_id: Optional[str] = None,
+    pdf_path: Optional[str] = None,
+    error_message: Optional[str] = None,
+) -> ReportCache:
+    """Persist a non-terminal or failed report status for polling clients."""
+    async with AsyncSession(async_engine) as session:
+        now = datetime.utcnow()
+        expires_at = now + timedelta(hours=CACHE_TTL_HOURS)
+        stmt = (
+            select(ReportCache)
+            .where(_cache_key_filter(exploration_id, cta_type, simulation_id))
+            .order_by(ReportCache.created_at.desc(), ReportCache.id.desc())
+        )
+        result = await session.execute(stmt)
+        existing_entries = list(result.scalars())
+
+        if existing_entries:
+            cache = existing_entries[0]
+            cache.report_type = report_type
+            cache.status = status
+            cache.pdf_path = pdf_path
+            cache.content_md = None
+            cache.error_message = error_message
+            cache.created_at = now
+            cache.expires_at = expires_at
+
+            for duplicate in existing_entries[1:]:
+                await session.delete(duplicate)
+        else:
+            cache = ReportCache(
+                id=uuid.uuid4().hex,
+                exploration_id=exploration_id,
+                simulation_id=simulation_id,
+                report_type=report_type,
+                cta_type=cta_type,
+                status=status,
+                pdf_path=pdf_path,
+                error_message=error_message,
                 expires_at=expires_at,
             )
             session.add(cache)

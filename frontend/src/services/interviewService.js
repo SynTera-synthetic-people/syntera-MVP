@@ -135,4 +135,18 @@ export const interviewService = {
     );
     return response.data;
   },
+
+  getQualReportStatus: async (workspaceId, explorationId) => {
+    const response = await axiosInstance.get(
+      `/workspaces/${workspaceId}/explorations/${explorationId}/reports/status`
+    );
+    return response.data;
+  },
+
+  prepareQualReport: async (workspaceId, explorationId, reportSlug) => {
+    const response = await axiosInstance.post(
+      `/workspaces/${workspaceId}/explorations/${explorationId}/reports/qual/${reportSlug}/prepare`
+    );
+    return response.data;
+  },
 };
