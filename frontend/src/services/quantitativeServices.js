@@ -75,7 +75,7 @@ export const getPersonas = async ({ workspaceId, explorationId }) => {
   return response.data;
 };
 
-export const simulateSurvey = async ({ workspaceId, explorationId, personaId, simulationId, sampleSize, questions }) => {
+export const simulateSurvey = async ({ workspaceId, explorationId, personaId, simulationId }) => {
   const response = await axiosInstance.post(
     `/workspaces/${workspaceId}/explorations/${explorationId}/questionnaire/simulate`,
     {
@@ -112,6 +112,55 @@ export const uploadQuestionnaire = async ({ workspaceId, explorationId, simulati
         'Content-Type': 'multipart/form-data',
       },
     }
+  );
+  return response.data;
+};
+
+export const createQuestionnaireSection = async ({ workspaceId, explorationId, title, simulationId }) => {
+  const response = await axiosInstance.post(
+    `/workspaces/${workspaceId}/explorations/${explorationId}/questionnaire/sections`,
+    {
+      title,
+      simulation_id: simulationId,
+    }
+  );
+  return response.data;
+};
+
+export const updateQuestionnaireSection = async ({ workspaceId, explorationId, sectionId, title }) => {
+  const response = await axiosInstance.put(
+    `/workspaces/${workspaceId}/explorations/${explorationId}/questionnaire/sections/${sectionId}`,
+    { title }
+  );
+  return response.data;
+};
+
+export const deleteQuestionnaireSection = async ({ workspaceId, explorationId, sectionId }) => {
+  const response = await axiosInstance.delete(
+    `/workspaces/${workspaceId}/explorations/${explorationId}/questionnaire/sections/${sectionId}`
+  );
+  return response.data;
+};
+
+export const createQuestionnaireQuestion = async ({ workspaceId, explorationId, sectionId, text, options }) => {
+  const response = await axiosInstance.post(
+    `/workspaces/${workspaceId}/explorations/${explorationId}/questionnaire/sections/${sectionId}/questions`,
+    { text, options }
+  );
+  return response.data;
+};
+
+export const updateQuestionnaireQuestion = async ({ workspaceId, explorationId, questionId, text, options }) => {
+  const response = await axiosInstance.put(
+    `/workspaces/${workspaceId}/explorations/${explorationId}/questionnaire/questions/${questionId}`,
+    { text, options }
+  );
+  return response.data;
+};
+
+export const deleteQuestionnaireQuestion = async ({ workspaceId, explorationId, questionId }) => {
+  const response = await axiosInstance.delete(
+    `/workspaces/${workspaceId}/explorations/${explorationId}/questionnaire/questions/${questionId}`
   );
   return response.data;
 };

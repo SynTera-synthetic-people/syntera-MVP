@@ -1,12 +1,11 @@
 import React from 'react';
-import { motion } from 'framer-motion';
 
 const QuestionnaireTabs = ({ sections, activeIndex, onTabClick }) => {
   return (
     <div className="flex gap-8 overflow-x-auto border-b border-gray-200 dark:border-white/10 mb-8 no-scrollbar">
       {sections.map((section, index) => (
         <button
-          key={index}
+          key={section.section_id || section.id || index}
           onClick={() => onTabClick(index)}
           className={`pb-3 px-1 whitespace-nowrap transition-all font-bold text-sm relative ${activeIndex === index
             ? 'text-blue-600 dark:text-blue-400'
@@ -15,8 +14,7 @@ const QuestionnaireTabs = ({ sections, activeIndex, onTabClick }) => {
         >
           {section.title}
           {activeIndex === index && (
-            <motion.div
-              layoutId="activeTab"
+            <div
               className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 dark:bg-blue-400"
             />
           )}
