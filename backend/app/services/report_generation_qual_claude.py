@@ -596,14 +596,10 @@ def _build_toc_markdown(cta: str, headings: List[str]) -> str:
     if not ordered_entries:
         return ""
 
-    toc_lines = ["## TABLE OF CONTENTS", '<table class="report-toc">']
+    toc_lines = ["## TABLE OF CONTENTS", '<div class="report-toc-list">']
     for entry in ordered_entries:
-        toc_lines.append(
-            "<tr>"
-            f'<td class="report-toc-entry">{html.escape(entry)}</td>'
-            "</tr>"
-        )
-    toc_lines.append("</table>")
+        toc_lines.append(f'<div class="report-toc-item">{html.escape(entry)}</div>')
+    toc_lines.append("</div>")
 
     return "\n".join(toc_lines)
 
@@ -621,6 +617,16 @@ def _synchronize_toc(md_content: str, cta: str) -> str:
         return toc_pattern.sub(f"{toc_markdown}\n\n", md_content, count=1)
 
     return md_content
+
+
+def _annotate_report_html(html_body: str) -> str:
+    return re.sub(
+        r"(<h[1-6][^>]*>\s*(?:\d+(?:\.\d+)*)?\.?\s*STUDIED PERSONAS\s*</h[1-6]>\s*)(<table>)",
+        r'\1<table class="studied-personas-table">',
+        html_body,
+        count=1,
+        flags=re.IGNORECASE,
+    )
 
 
 async def _generate_report_markdown_once(
@@ -892,6 +898,7 @@ def llm_md_to_pdf(md_content: str, output_pdf_path: str, css_path: str) -> str:
     html_body = markdown.markdown(
         md_content, extensions=["tables", "fenced_code", "toc", "attr_list"]
     )
+    html_body = _annotate_report_html(html_body)
 
     return html_to_pdf(html_body, output_pdf_path, css_path)
 
