@@ -139,6 +139,46 @@ tbody tr:nth-child(even) td {
     background: #F7FAFD;
 }
 
+table.studied-personas-table {
+    width: 100%;
+    table-layout: auto;
+}
+
+table.studied-personas-table th:first-child,
+table.studied-personas-table td:first-child {
+    width: 28%;
+    white-space: normal;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    word-break: normal;
+}
+
+table.studied-personas-table th:nth-child(2),
+table.studied-personas-table td:nth-child(2) {
+    width: 72%;
+}
+
+table.studied-personas-table th,
+table.studied-personas-table td {
+    font-size: 9px;
+    line-height: 1.35;
+    padding: 8px 10px;
+    overflow-wrap: break-word;
+    word-break: normal;
+}
+
+.report-toc-list {
+    margin: 8px 0 14px 0;
+    text-align: left;
+}
+
+.report-toc-item {
+    font-size: 10.5px;
+    line-height: 1.45;
+    margin: 0 0 8px 0;
+    text-align: left;
+}
+
 .cover-page {
     page-break-after: always;
     text-align: center;

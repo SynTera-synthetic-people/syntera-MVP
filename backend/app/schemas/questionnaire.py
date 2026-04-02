@@ -10,6 +10,7 @@ class QuestionnaireGenerateRequest(BaseModel):
 
 class SectionCreate(BaseModel):
     title: str
+    simulation_id: Optional[str] = None
 
 
 class SectionUpdate(BaseModel):

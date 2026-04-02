@@ -1,8 +1,10 @@
 import asyncio
 import csv
+import html
 import io
 import json
 import os
+import re
 import uuid
 from datetime import datetime
 from typing import List, Optional, Dict, Any
@@ -456,7 +458,7 @@ LANGUAGE REGISTER CONTROL (ANTI-JARGON):
 "CTA Target Length Character"
 "Transcripts Determined by response data Raw data — no length constraint"
 "Decision Intelligence 8,000-15,000 words Strategic depth with actionable specificity"
-"Behavioral Archaeology 15,000-30,000 words Full psychological excavation"
+"Behavioral Archaeology 8,000-12,000 words Full psychological excavation, but concise enough to complete every required section"
 6.4 Anti-Patterns (NEVER Do These)
 - NEVER use generic section titles ("Key Findings"). Every title must contain an insight.
 - NEVER present data without interpretation. Every data point needs a "So What?"
@@ -469,6 +471,7 @@ LANGUAGE REGISTER CONTROL (ANTI-JARGON):
 - NEVER dramatize findings. If you catch yourself using “alarming”, “devastating”, “critical failure”, “existential threat”, or “urgent crisis”, check whether the finding is genuinely Tier 4 severity. If not, downgrade the language.
 - NEVER generate insights that “sound right” without grounding. If personas did not surface a pattern, do not invent one.
 - NEVER reproduce commonly available reviews or sentiment about well-known brands. Generate insights from the persona’s psychographic profile, not from public discourse about the brand.
+- If token budget gets tight, COMPRESS earlier sections and examples. Do NOT omit required ending sections like Research Methodology or Limitations & Transparency.
 6.5 Self-Validation Checklist
 Before generating the final report, verify:
 "• ☐ CTA routing is correct — ONLY specified sections are present"
@@ -486,6 +489,161 @@ Before generating the final report, verify:
 "• ☐ Every competitor has confidence tier (HIGH/MEDIUM/FLAG) with evidence base"
 "• ☐ ZERO competitors sourced from LLM training data alone — all grounded in RO or persona data"
 """
+
+REPORT_REQUIRED_SECTIONS = {
+    "TRANSCRIPTS": [
+        ("Research Objective", r"\bresearch objective\b"),
+        ("Studied Personas", r"\bstudied personas\b"),
+        ("Verbatim", r"\bverbatim\b"),
+        ("Research Methodology", r"\bresearch methodology\b"),
+        ("Limitations & Transparency", r"\blimitations\s*&\s*transparency\b"),
+    ],
+    "DECISION_INTELLIGENCE": [
+        ("Research Objective", r"\bresearch objective\b"),
+        ("Studied Personas", r"\bstudied personas\b"),
+        ("Executive Summary", r"\bexecutive summary\b"),
+        ("Strategic Implications", r"\bstrategic implications\b"),
+        ("Whitespace Analysis", r"\bwhitespace analysis\b"),
+        ("Competitor Analysis", r"\bcompetitor analysis\b"),
+        ("Research Methodology", r"\bresearch methodology\b"),
+        ("Limitations & Transparency", r"\blimitations\s*&\s*transparency\b"),
+    ],
+    "BEHAVIORAL_ARCHAEOLOGY": [
+        ("Research Objective", r"\bresearch objective\b"),
+        ("Studied Personas", r"\bstudied personas\b"),
+        ("Human Themes Overview", r"\bhuman themes overview\b"),
+        ("Behavioural Depth Analysis", r"\bbehavio[u]?ral depth analysis\b"),
+        ("Research Methodology", r"\bresearch methodology\b"),
+        ("Limitations & Transparency", r"\blimitations\s*&\s*transparency\b"),
+    ],
+}
+
+REPORT_OPTIONAL_SUBSECTIONS = {
+    "BEHAVIORAL_ARCHAEOLOGY": [
+        ("4.1 Behavioural Contradiction Matrix", r"\b4\.1\s+behavio[u]?ral contradiction matrix\b"),
+        ("4.2 Cognitive Bias Landscape", r"\b4\.2\s+cognitive bias landscape\b"),
+        ("4.3 Emotional Architecture Map", r"\b4\.3\s+emotional architecture map\b"),
+        ("4.4 Ritualized Behaviour Audit", r"\b4\.4\s+ritualized behavio[u]?r audit\b"),
+        ("4.5 Latent Motivation Excavation", r"\b4\.5\s+latent motivation excavation\b"),
+        ("4.6 Psychological Friction Map", r"\b4\.6\s+psychological friction map\b"),
+        ("4.7 Emergent Patterns", r"\b4\.7\s+emergent patterns\b"),
+        ("4.8 Decision Heuristic Library", r"\b4\.8\s+decision heuristic library\b"),
+    ]
+}
+
+
+def _normalize_whitespace(value: str) -> str:
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def _extract_markdown_headings(md_content: str) -> List[str]:
+    headings: List[str] = []
+
+    for raw_line in md_content.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        if re.match(r"^\|?[:\- ]+\|?$", line):
+            continue
+
+        heading = None
+        if re.match(r"^#{1,6}\s+", line):
+            heading = re.sub(r"^#{1,6}\s+", "", line).strip()
+        elif re.match(r"^\d+(?:\.\d+)*[.)]?\s+[A-Za-z]", line) and len(line) <= 140:
+            heading = line
+
+        if not heading:
+            continue
+
+        heading = _normalize_whitespace(heading)
+        if heading not in headings:
+            headings.append(heading)
+
+    return headings
+
+
+def _find_missing_sections(md_content: str, cta: str) -> List[str]:
+    normalized = _normalize_whitespace(md_content).lower()
+    missing: List[str] = []
+
+    for label, pattern in REPORT_REQUIRED_SECTIONS.get(cta, []):
+        if not re.search(pattern, normalized, flags=re.IGNORECASE):
+            missing.append(label)
+
+    return missing
+
+
+def _build_toc_markdown(cta: str, headings: List[str]) -> str:
+    if not headings:
+        return ""
+
+    ordered_entries: List[str] = []
+
+    def append_if_present(pattern: str) -> None:
+        for heading in headings:
+            if re.search(pattern, heading, flags=re.IGNORECASE):
+                if heading not in ordered_entries:
+                    ordered_entries.append(heading)
+                return
+
+    for label, pattern in REPORT_REQUIRED_SECTIONS.get(cta, []):
+        append_if_present(pattern)
+        if cta == "BEHAVIORAL_ARCHAEOLOGY" and label == "Behavioural Depth Analysis":
+            for _, subsection_pattern in REPORT_OPTIONAL_SUBSECTIONS.get(cta, []):
+                append_if_present(subsection_pattern)
+
+    if not ordered_entries:
+        return ""
+
+    toc_lines = ["## TABLE OF CONTENTS", '<div class="report-toc-list">']
+    for entry in ordered_entries:
+        toc_lines.append(f'<div class="report-toc-item">{html.escape(entry)}</div>')
+    toc_lines.append("</div>")
+
+    return "\n".join(toc_lines)
+
+
+def _synchronize_toc(md_content: str, cta: str) -> str:
+    toc_markdown = _build_toc_markdown(cta, _extract_markdown_headings(md_content))
+    if not toc_markdown:
+        return md_content
+
+    toc_pattern = re.compile(
+        r"(?is)^#{1,6}\s*table of contents?\s*$.*?(?=^#{1,6}\s+|\Z)",
+        re.MULTILINE,
+    )
+    if toc_pattern.search(md_content):
+        return toc_pattern.sub(f"{toc_markdown}\n\n", md_content, count=1)
+
+    return md_content
+
+
+def _annotate_report_html(html_body: str) -> str:
+    return re.sub(
+        r"(<h[1-6][^>]*>\s*(?:\d+(?:\.\d+)*)?\.?\s*STUDIED PERSONAS\s*</h[1-6]>\s*)(<table>)",
+        r'\1<table class="studied-personas-table">',
+        html_body,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+
+
+async def _generate_report_markdown_once(
+    payload: Dict[str, Any],
+    system_prompt: str,
+) -> str:
+    response = await call_anthropic(
+        payload=payload,
+        system_prompt=system_prompt
+    )
+
+    md = response.content[0].text.strip()
+    if not md:
+        raise ValueError("Empty response from Claude")
+
+    return md
+
 
 def generate_pdf_path(prefix: str = "report") -> str:
     os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -635,17 +793,45 @@ async def generate_report_markdown(
         interview_id=interview_id,
     )
 
-    response = await call_anthropic(
+    md = await _generate_report_markdown_once(
         payload=payload,
-        system_prompt=BIG_BEHAVIORAL_PROMPT
+        system_prompt=BIG_BEHAVIORAL_PROMPT,
+    )
+    md = _synchronize_toc(md, cta)
+
+    missing_sections = _find_missing_sections(md, cta)
+    if not missing_sections:
+        return md
+
+    repair_payload = {
+        **payload,
+        "missing_sections": missing_sections,
+    }
+    repair_prompt = (
+        f"{BIG_BEHAVIORAL_PROMPT}\n\n"
+        "REPAIR MODE:\n"
+        "- Rewrite the report from scratch in markdown.\n"
+        "- The previous draft omitted required sections.\n"
+        f"- Missing sections that MUST appear in the final report: {', '.join(missing_sections)}.\n"
+        "- The Table of Contents must match the final body exactly.\n"
+        "- If token budget gets tight, shorten quotes, examples, and explanations, but do not omit required sections.\n"
+        "- Return only the corrected final markdown report."
     )
 
-    md = response.content[0].text.strip()
+    repaired_md = await _generate_report_markdown_once(
+        payload=repair_payload,
+        system_prompt=repair_prompt,
+    )
+    repaired_md = _synchronize_toc(repaired_md, cta)
 
-    if not md:
-        raise ValueError("Empty response from Claude")
+    repaired_missing_sections = _find_missing_sections(repaired_md, cta)
+    if repaired_missing_sections:
+        raise ValueError(
+            "Generated report is incomplete after retry. Missing required sections: "
+            + ", ".join(repaired_missing_sections)
+        )
 
-    return md
+    return repaired_md
 
 
 def html_to_pdf(
@@ -712,6 +898,7 @@ def llm_md_to_pdf(md_content: str, output_pdf_path: str, css_path: str) -> str:
     html_body = markdown.markdown(
         md_content, extensions=["tables", "fenced_code", "toc", "attr_list"]
     )
+    html_body = _annotate_report_html(html_body)
 
     return html_to_pdf(html_body, output_pdf_path, css_path)
 

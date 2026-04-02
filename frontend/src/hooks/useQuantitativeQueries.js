@@ -13,7 +13,20 @@ import {
   downloadQuantTranscripts,
   downloadQuantDecisionIntelligence,
   downloadQuantBehaviorArchaeology,
+  createQuestionnaireSection,
+  updateQuestionnaireSection,
+  deleteQuestionnaireSection,
+  createQuestionnaireQuestion,
+  updateQuestionnaireQuestion,
+  deleteQuestionnaireQuestion,
 } from '../services/quantitativeServices';
+
+const questionnaireQueryKey = (workspaceId, explorationId, simulationId) => [
+  'questionnaires',
+  workspaceId,
+  explorationId,
+  simulationId,
+];
 
 /** Saved population + questionnaire runs for an exploration (for restore & exports). */
 export const usePopulationSimulations = (workspaceId, explorationId) => {
@@ -79,7 +92,7 @@ export const useGenerateQuestionnaire = () => {
 // Get All Questionnaires Query
 export const useQuestionnaires = (workspaceId, explorationId, simulationId, enabled = true) => {
   return useQuery({
-    queryKey: ['questionnaires', workspaceId, explorationId, simulationId],
+    queryKey: questionnaireQueryKey(workspaceId, explorationId, simulationId),
     queryFn: () => getAllQuestionnaires({ workspaceId, explorationId, simulationId }),
     enabled: enabled && !!workspaceId && !!explorationId && !!simulationId,
   });
@@ -88,22 +101,17 @@ export const useQuestionnaires = (workspaceId, explorationId, simulationId, enab
 // Get Single Questionnaire (from cache or API)
 export const useQuestionnaire = (workspaceId, explorationId, simulationId) => {
   return useQuery({
-    queryKey: ['questionnaire', workspaceId, explorationId, simulationId],
-    queryFn: () => getAllQuestionnaires({ workspaceId, explorationId }),
-    enabled: !!workspaceId && !!explorationId,
-    // Optionally filter to get specific questionnaire if needed
-    select: (data) => {
-      // Adjust this logic based on actual API response structure
-      return data;
-    },
+    queryKey: questionnaireQueryKey(workspaceId, explorationId, simulationId),
+    queryFn: () => getAllQuestionnaires({ workspaceId, explorationId, simulationId }),
+    enabled: !!workspaceId && !!explorationId && !!simulationId,
   });
 };
 
 
 export const useSimulateSurvey = () => {
   return useMutation({
-    mutationFn: ({ workspaceId, explorationId, personaId, simulationId, sampleSize, questions }) =>
-      simulateSurvey({ workspaceId, explorationId, personaId, simulationId, sampleSize, questions })
+    mutationFn: ({ workspaceId, explorationId, personaId, simulationId }) =>
+      simulateSurvey({ workspaceId, explorationId, personaId, simulationId }),
   });
 };
 
@@ -121,7 +129,7 @@ export const useSurveyResults = (workspaceId, explorationId, simulationId) => {
 
 export const useDownloadSurveyPdf = () => {
   return useMutation({
-    mutationFn: ({ workspaceId, explorationId, simulationId, personaName }) =>
+    mutationFn: ({ workspaceId, explorationId, simulationId }) =>
       downloadSurveyPdf({ workspaceId, explorationId, simulationId }),
     onSuccess: (blob, variables) => {
       // Create download link
@@ -153,7 +161,96 @@ export const useUploadQuestionnaire = () => {
     onSuccess: (data, variables) => {
       // Invalidate questionnaires query to refresh the data
       queryClient.invalidateQueries({
-        queryKey: ['questionnaires', variables.workspaceId, variables.explorationId, variables.simulationId]
+        queryKey: questionnaireQueryKey(variables.workspaceId, variables.explorationId, variables.simulationId)
+      });
+    },
+  });
+};
+
+export const useCreateQuestionnaireSection = (workspaceId, explorationId, simulationId) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ title, simulationId: nextSimulationId }) =>
+      createQuestionnaireSection({
+        workspaceId,
+        explorationId,
+        title,
+        simulationId: nextSimulationId ?? simulationId,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: questionnaireQueryKey(workspaceId, explorationId, simulationId),
+      });
+    },
+  });
+};
+
+export const useUpdateQuestionnaireSection = (workspaceId, explorationId, simulationId) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ sectionId, title }) =>
+      updateQuestionnaireSection({ workspaceId, explorationId, sectionId, title }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: questionnaireQueryKey(workspaceId, explorationId, simulationId),
+      });
+    },
+  });
+};
+
+export const useDeleteQuestionnaireSection = (workspaceId, explorationId, simulationId) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ sectionId }) =>
+      deleteQuestionnaireSection({ workspaceId, explorationId, sectionId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: questionnaireQueryKey(workspaceId, explorationId, simulationId),
+      });
+    },
+  });
+};
+
+export const useCreateQuestionnaireQuestion = (workspaceId, explorationId, simulationId) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ sectionId, text, options }) =>
+      createQuestionnaireQuestion({ workspaceId, explorationId, sectionId, text, options }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: questionnaireQueryKey(workspaceId, explorationId, simulationId),
+      });
+    },
+  });
+};
+
+export const useUpdateQuestionnaireQuestion = (workspaceId, explorationId, simulationId) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ questionId, text, options }) =>
+      updateQuestionnaireQuestion({ workspaceId, explorationId, questionId, text, options }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: questionnaireQueryKey(workspaceId, explorationId, simulationId),
+      });
+    },
+  });
+};
+
+export const useDeleteQuestionnaireQuestion = (workspaceId, explorationId, simulationId) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ questionId }) =>
+      deleteQuestionnaireQuestion({ workspaceId, explorationId, questionId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: questionnaireQueryKey(workspaceId, explorationId, simulationId),
       });
     },
   });

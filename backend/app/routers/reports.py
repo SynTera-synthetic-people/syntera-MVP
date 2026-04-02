@@ -8,6 +8,7 @@ URL pattern:
   /workspaces/{workspace_id}/explorations/{exploration_id}/reports/qual/<type>
   /workspaces/{workspace_id}/explorations/{exploration_id}/reports/quant/{simulation_id}/<type>
 """
+import asyncio
 import os
 from typing import Optional
 
@@ -39,8 +40,29 @@ router = APIRouter(
 )
 
 QUAL_TRANSCRIPTS_CACHE_KEY = "TRANSCRIPTS_QA_DOCX_V3"
+QUAL_DI_CACHE_KEY = "DECISION_INTELLIGENCE_V8"
+QUAL_BA_CACHE_KEY = "BEHAVIORAL_ARCHAEOLOGY_V8"
+QUAL_ALL_CACHE_KEY = "ALL_COMBINED_V4"
 QUANT_DI_CACHE_KEY = "DECISION_INTELLIGENCE_V2"
 QUANT_BA_CACHE_KEY = "BEHAVIORAL_ARCHAEOLOGY_V2"
+QUAL_PREPARE_CONFIG = {
+    "decision-intelligence": {
+        "cache_key": QUAL_DI_CACHE_KEY,
+        "cta": "DECISION_INTELLIGENCE",
+        "prefix": "qual_di",
+    },
+    "behavior-archaeology": {
+        "cache_key": QUAL_BA_CACHE_KEY,
+        "cta": "BEHAVIORAL_ARCHAEOLOGY",
+        "prefix": "qual_ba",
+    },
+    "all-combined": {
+        "cache_key": QUAL_ALL_CACHE_KEY,
+        "cta": "ALL_COMBINED",
+        "prefix": "qual_all_combined",
+    },
+}
+_qual_report_tasks: dict[tuple[str, str], asyncio.Task] = {}
 
 
 # ─── helpers ─────────────────────────────────────────────────────────────────
@@ -69,7 +91,84 @@ async def _personas_for_simulation(simulation_id: str):
     return personas
 
 
+def _qual_task_key(exploration_id: str, cache_key: str) -> tuple[str, str]:
+    return (exploration_id, cache_key)
+
+
+async def _run_qual_report_generation(
+    exploration_id: str,
+    cache_key: str,
+    cta: str,
+    prefix: str,
+) -> None:
+    task_key = _qual_task_key(exploration_id, cache_key)
+    try:
+        out_path = generate_pdf_path(prefix=prefix)
+        pdf_path = await generate_combined_interviews_pdf(
+            objective_id=exploration_id,
+            out_path=out_path,
+            cta=cta,
+        )
+        await cache.store_report_cache(exploration_id, cache_key, pdf_path, "qual")
+    except Exception as exc:
+        await cache.set_report_status(
+            exploration_id=exploration_id,
+            cta_type=cache_key,
+            report_type="qual",
+            status="failed",
+            error_message=str(exc),
+        )
+    finally:
+        _qual_report_tasks.pop(task_key, None)
+
+
+async def _ensure_qual_report_preparing(
+    exploration_id: str,
+    report_slug: str,
+) -> dict:
+    config = QUAL_PREPARE_CONFIG.get(report_slug)
+    if not config:
+        raise HTTPException(404, "Unsupported qualitative report type")
+
+    cache_key = config["cache_key"]
+    cached = await cache.get_cached_report(exploration_id, cache_key)
+    if cached and cached.pdf_path and os.path.exists(cached.pdf_path):
+        return {"status": "done", "available": True}
+
+    task_key = _qual_task_key(exploration_id, cache_key)
+    existing_task = _qual_report_tasks.get(task_key)
+    if existing_task and not existing_task.done():
+        return {"status": "pending", "available": False}
+
+    await cache.set_report_status(
+        exploration_id=exploration_id,
+        cta_type=cache_key,
+        report_type="qual",
+        status="pending",
+    )
+    _qual_report_tasks[task_key] = asyncio.create_task(
+        _run_qual_report_generation(
+            exploration_id=exploration_id,
+            cache_key=cache_key,
+            cta=config["cta"],
+            prefix=config["prefix"],
+        )
+    )
+    return {"status": "pending", "available": False}
+
+
 # ─── QUAL REPORTS ─────────────────────────────────────────────────────────────
+
+@router.post("/qual/{report_slug}/prepare")
+async def prepare_qual_report(
+    workspace_id: str,
+    exploration_id: str,
+    report_slug: str,
+    current_user: User = Depends(get_current_active_user),
+):
+    """Start qualitative report generation in the background and return immediately."""
+    return await _ensure_qual_report_preparing(exploration_id, report_slug)
+
 
 @router.get("/qual/transcripts")
 async def qual_transcripts(
@@ -104,7 +203,7 @@ async def qual_decision_intelligence(
     current_user: User = Depends(get_current_active_user),
 ):
     """Decision Intelligence PDF for qualitative interviews."""
-    cached = await cache.get_cached_report(exploration_id, "DECISION_INTELLIGENCE")
+    cached = await cache.get_cached_report(exploration_id, QUAL_DI_CACHE_KEY)
     if cached and cached.pdf_path and os.path.exists(cached.pdf_path):
         content = _read_file(cached.pdf_path)
     else:
@@ -115,7 +214,7 @@ async def qual_decision_intelligence(
             cta="DECISION_INTELLIGENCE",
         )
         content = _read_file(pdf_path)
-        await cache.store_report_cache(exploration_id, "DECISION_INTELLIGENCE", pdf_path, "qual")
+        await cache.store_report_cache(exploration_id, QUAL_DI_CACHE_KEY, pdf_path, "qual")
 
     return Response(
         content=content,
@@ -131,7 +230,7 @@ async def qual_behavior_archaeology(
     current_user: User = Depends(get_current_active_user),
 ):
     """Behavior Archaeology PDF for qualitative interviews."""
-    cached = await cache.get_cached_report(exploration_id, "BEHAVIORAL_ARCHAEOLOGY")
+    cached = await cache.get_cached_report(exploration_id, QUAL_BA_CACHE_KEY)
     if cached and cached.pdf_path and os.path.exists(cached.pdf_path):
         content = _read_file(cached.pdf_path)
     else:
@@ -142,7 +241,7 @@ async def qual_behavior_archaeology(
             cta="BEHAVIORAL_ARCHAEOLOGY",
         )
         content = _read_file(pdf_path)
-        await cache.store_report_cache(exploration_id, "BEHAVIORAL_ARCHAEOLOGY", pdf_path, "qual")
+        await cache.store_report_cache(exploration_id, QUAL_BA_CACHE_KEY, pdf_path, "qual")
 
     return Response(
         content=content,
@@ -161,7 +260,7 @@ async def qual_all_combined(
     Master report — all three sections (Transcripts + DI + BA) in a single PDF.
     Uses CTA=ALL_COMBINED which instructs the LLM to generate every section.
     """
-    cached = await cache.get_cached_report(exploration_id, "ALL_COMBINED")
+    cached = await cache.get_cached_report(exploration_id, QUAL_ALL_CACHE_KEY)
     if cached and cached.pdf_path and os.path.exists(cached.pdf_path):
         content = _read_file(cached.pdf_path)
     else:
@@ -172,7 +271,7 @@ async def qual_all_combined(
             cta="ALL_COMBINED",
         )
         content = _read_file(pdf_path)
-        await cache.store_report_cache(exploration_id, "ALL_COMBINED", pdf_path, "qual")
+        await cache.store_report_cache(exploration_id, QUAL_ALL_CACHE_KEY, pdf_path, "qual")
 
     return Response(
         content=content,
@@ -316,8 +415,8 @@ async def report_status(
     """Check which reports are cached and ready — no generation triggered."""
     qual_ctas = {
         "TRANSCRIPTS": QUAL_TRANSCRIPTS_CACHE_KEY,
-        "DECISION_INTELLIGENCE": "DECISION_INTELLIGENCE",
-        "BEHAVIORAL_ARCHAEOLOGY": "BEHAVIORAL_ARCHAEOLOGY",
+        "DECISION_INTELLIGENCE": QUAL_DI_CACHE_KEY,
+        "BEHAVIORAL_ARCHAEOLOGY": QUAL_BA_CACHE_KEY,
     }
     quant_ctas = {
         "CSV_DATA": "CSV_DATA",
@@ -328,10 +427,18 @@ async def report_status(
     result = {"qual": {}, "quant": {}}
     for public_cta, cache_cta in qual_ctas.items():
         cached = await cache.get_cached_report(exploration_id, cache_cta)
+        latest = await cache.get_latest_report(exploration_id, cache_cta)
+        status = "done" if cached else "idle"
+        error_message = None
+        if not cached and latest and latest.status in {"pending", "failed"}:
+            status = latest.status
+            error_message = latest.error_message
         result["qual"][public_cta] = {
             "available": cached is not None,
             "generated_at": cached.created_at.isoformat() if cached else None,
             "expires_at": cached.expires_at.isoformat() if cached else None,
+            "status": status,
+            "error_message": error_message,
         }
 
     if simulation_id:

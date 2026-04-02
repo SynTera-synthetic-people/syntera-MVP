@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { TbX, TbDownload, TbLoader, TbAlertCircle, TbFileText, TbRefresh, TbUsers, TbChartBar, TbChevronDown, TbChevronUp } from 'react-icons/tb';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -6,7 +6,24 @@ import {
   useDownloadQualTranscripts,
   useDownloadQualDecisionIntelligence,
   useDownloadQualBehaviorArchaeology,
+  usePrepareQualReport,
+  useQualReportStatus,
 } from '../../../../../../../hooks/useInterview';
+import { getAxiosErrorMessage } from '../../../../../../../utils/axiosBlobError';
+
+const REPORT_CONFIG = {
+  DECISION_INTELLIGENCE: {
+    slug: 'decision-intelligence',
+    defaultLabel: 'Decision Intelligence',
+  },
+  BEHAVIORAL_ARCHAEOLOGY: {
+    slug: 'behavior-archaeology',
+    defaultLabel: 'Behavior Archaeology',
+  },
+};
+
+const EMPTY_QUAL_STATUSES = {};
+const MotionDiv = motion.div;
 
 const AllInterviewsPreviewModal = ({
   isOpen,
@@ -15,8 +32,8 @@ const AllInterviewsPreviewModal = ({
   explorationId
 }) => {
   const [expandedSections, setExpandedSections] = useState({});
+  const [queuedDownloads, setQueuedDownloads] = useState({});
 
-  // Use the React Query hook for all interviews preview data
   const {
     data: previewData,
     isLoading,
@@ -27,16 +44,46 @@ const AllInterviewsPreviewModal = ({
     enabled: isOpen && !!workspaceId && !!explorationId,
   });
 
+  const {
+    data: reportStatusData,
+    refetch: refetchReportStatus,
+  } = useQualReportStatus(workspaceId, explorationId, {
+    enabled: isOpen && !!workspaceId && !!explorationId,
+    refetchInterval: isOpen ? 5000 : false,
+  });
+
   const transcriptsMutation = useDownloadQualTranscripts(workspaceId, explorationId);
   const diMutation = useDownloadQualDecisionIntelligence(workspaceId, explorationId);
   const baMutation = useDownloadQualBehaviorArchaeology(workspaceId, explorationId);
+  const prepareReportMutation = usePrepareQualReport(workspaceId, explorationId);
+  const qualStatuses = reportStatusData?.qual ?? EMPTY_QUAL_STATUSES;
+
+  const clearQueuedDownload = (reportKey) => {
+    setQueuedDownloads((prev) => {
+      if (!prev[reportKey]) {
+        return prev;
+      }
+
+      const next = { ...prev };
+      delete next[reportKey];
+      return next;
+    });
+  };
+
+  const getDownloadMutation = (reportKey) => {
+    if (reportKey === 'DECISION_INTELLIGENCE') {
+      return diMutation;
+    }
+    return baMutation;
+  };
 
   const handleRetry = () => {
     refetch();
+    refetchReportStatus();
   };
 
   const toggleSection = (sectionIndex) => {
-    setExpandedSections(prev => ({
+    setExpandedSections((prev) => ({
       ...prev,
       [sectionIndex]: !prev[sectionIndex]
     }));
@@ -44,13 +91,115 @@ const AllInterviewsPreviewModal = ({
 
   const toggleQuestion = (sectionIndex, questionIndex) => {
     const key = `${sectionIndex}-${questionIndex}`;
-    setExpandedSections(prev => ({
+    setExpandedSections((prev) => ({
       ...prev,
       [key]: !prev[key]
     }));
   };
 
-  // Calculate insights summary
+  const triggerReportDownload = async (reportKey) => {
+    try {
+      await getDownloadMutation(reportKey).mutateAsync();
+    } catch (downloadError) {
+      const detail = await getAxiosErrorMessage(downloadError, 'Failed to download report. Please try again.');
+      window.alert(detail);
+    } finally {
+      clearQueuedDownload(reportKey);
+    }
+  };
+
+  const startQueuedReportDownload = async (reportKey) => {
+    const config = REPORT_CONFIG[reportKey];
+    if (!config || !previewData?.data) {
+      return;
+    }
+
+    const status = qualStatuses[reportKey];
+    if (status?.available || status?.status === 'done') {
+      await triggerReportDownload(reportKey);
+      return;
+    }
+
+    setQueuedDownloads((prev) => ({ ...prev, [reportKey]: true }));
+
+    try {
+      await prepareReportMutation.mutateAsync(config.slug);
+      await refetchReportStatus();
+    } catch (prepareError) {
+      clearQueuedDownload(reportKey);
+      const detail = await getAxiosErrorMessage(prepareError, 'Failed to prepare report. Please try again.');
+      window.alert(detail);
+    }
+  };
+
+  const getReportButtonState = (reportKey) => {
+    const status = qualStatuses[reportKey];
+    const queued = !!queuedDownloads[reportKey];
+    const mutation = getDownloadMutation(reportKey);
+
+    if (mutation.isPending) {
+      return { label: 'Downloading...', disabled: true, showSpinner: true };
+    }
+
+    if (queued) {
+      return { label: 'Preparing...', disabled: true, showSpinner: true };
+    }
+
+    if (status?.status === 'pending') {
+      return { label: 'Preparing...', disabled: false, showSpinner: true };
+    }
+
+    return {
+      label: REPORT_CONFIG[reportKey]?.defaultLabel || 'Download Report',
+      disabled: false,
+      showSpinner: false,
+    };
+  };
+
+  useEffect(() => {
+    if (!isOpen) {
+      setQueuedDownloads({});
+      return;
+    }
+
+    let cancelled = false;
+
+    const processQueuedDownloads = async () => {
+      for (const reportKey of Object.keys(queuedDownloads)) {
+        if (cancelled) {
+          return;
+        }
+
+        const status = qualStatuses[reportKey];
+        const mutation = reportKey === 'DECISION_INTELLIGENCE' ? diMutation : baMutation;
+
+        if (mutation.isPending) {
+          continue;
+        }
+
+        if (status?.status === 'done' || status?.available) {
+          try {
+            await mutation.mutateAsync();
+          } catch (downloadError) {
+            const detail = await getAxiosErrorMessage(downloadError, 'Failed to download report. Please try again.');
+            window.alert(detail);
+          } finally {
+            clearQueuedDownload(reportKey);
+          }
+        } else if (status?.status === 'failed') {
+          clearQueuedDownload(reportKey);
+          window.alert(status?.error_message || 'Report generation failed. Please try again.');
+        }
+      }
+    };
+
+    void processQueuedDownloads();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, queuedDownloads, qualStatuses, diMutation, baMutation]);
+
   const calculateInsights = () => {
     if (!previewData?.data?.sections) return null;
 
@@ -58,8 +207,8 @@ const AllInterviewsPreviewModal = ({
     let totalResponses = 0;
     const sectionCounts = {};
 
-    previewData.data.sections.forEach(section => {
-      section.questions.forEach(question => {
+    previewData.data.sections.forEach((section) => {
+      section.questions.forEach((question) => {
         totalQuestions++;
         totalResponses += question.response_count || 0;
         sectionCounts[section.section] = (sectionCounts[section.section] || 0) + 1;
@@ -75,19 +224,21 @@ const AllInterviewsPreviewModal = ({
   };
 
   const insights = calculateInsights();
+  const diButtonState = getReportButtonState('DECISION_INTELLIGENCE');
+  const baButtonState = getReportButtonState('BEHAVIORAL_ARCHAEOLOGY');
 
   if (!isOpen) return null;
 
   return (
     <AnimatePresence>
-      <motion.div
+      <MotionDiv
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
         onClick={onClose}
       >
-        <motion.div
+        <MotionDiv
           initial={{ opacity: 0, scale: 0.95, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 20 }}
@@ -95,7 +246,6 @@ const AllInterviewsPreviewModal = ({
           className="relative w-full max-w-[900px] max-h-[90vh] overflow-hidden bg-white dark:bg-gray-900 rounded-2xl shadow-2xl"
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Header */}
           <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-lg bg-purple-100 dark:bg-purple-500/20">
@@ -117,31 +267,31 @@ const AllInterviewsPreviewModal = ({
                 className="flex items-center gap-2 px-3 py-2 border border-cyan-500 text-cyan-600 dark:text-cyan-400 rounded-lg font-medium text-sm hover:bg-cyan-50 dark:hover:bg-cyan-900/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {transcriptsMutation.isPending ? (
-                  <><TbLoader className="w-4 h-4 animate-spin" /><span>DOCX…</span></>
+                  <><TbLoader className="w-4 h-4 animate-spin" /><span>DOCX...</span></>
                 ) : (
                   <><TbDownload size={16} /><span>Transcripts</span></>
                 )}
               </button>
               <button
-                onClick={() => diMutation.mutate()}
-                disabled={!previewData?.data || diMutation.isPending}
+                onClick={() => startQueuedReportDownload('DECISION_INTELLIGENCE')}
+                disabled={!previewData?.data || diButtonState.disabled}
                 className="flex items-center gap-2 px-3 py-2 border border-blue-500 text-blue-600 dark:text-blue-400 rounded-lg font-medium text-sm hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {diMutation.isPending ? (
-                  <><TbLoader className="w-4 h-4 animate-spin" /><span>Generating…</span></>
+                {diButtonState.showSpinner ? (
+                  <><TbLoader className="w-4 h-4 animate-spin" /><span>{diButtonState.label}</span></>
                 ) : (
-                  <><TbDownload size={16} /><span>Decision Intelligence</span></>
+                  <><TbDownload size={16} /><span>{diButtonState.label}</span></>
                 )}
               </button>
               <button
-                onClick={() => baMutation.mutate()}
-                disabled={!previewData?.data || baMutation.isPending}
+                onClick={() => startQueuedReportDownload('BEHAVIORAL_ARCHAEOLOGY')}
+                disabled={!previewData?.data || baButtonState.disabled}
                 className="flex items-center gap-2 px-3 py-2 bg-purple-600 text-white rounded-lg font-medium text-sm hover:bg-purple-700 transition-colors shadow-lg shadow-purple-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {baMutation.isPending ? (
-                  <><TbLoader className="w-4 h-4 animate-spin" /><span>Generating…</span></>
+                {baButtonState.showSpinner ? (
+                  <><TbLoader className="w-4 h-4 animate-spin" /><span>{baButtonState.label}</span></>
                 ) : (
-                  <><TbDownload size={16} /><span>Behavior Archaeology</span></>
+                  <><TbDownload size={16} /><span>{baButtonState.label}</span></>
                 )}
               </button>
               <button
@@ -161,7 +311,6 @@ const AllInterviewsPreviewModal = ({
             </div>
           </div>
 
-          {/* Content */}
           <div className="overflow-y-auto max-h-[calc(90vh-120px)] p-6">
             {isLoading ? (
               <div className="flex flex-col items-center justify-center py-12">
@@ -185,7 +334,6 @@ const AllInterviewsPreviewModal = ({
               </div>
             ) : previewData?.data ? (
               <div className="space-y-6">
-                {/* Overview Stats */}
                 <div className="bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-500/5 dark:to-blue-500/5 rounded-xl p-6 border border-purple-100 dark:border-purple-500/20">
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
                     <TbChartBar className="w-5 h-5" />
@@ -219,7 +367,6 @@ const AllInterviewsPreviewModal = ({
                   </div>
                 </div>
 
-                {/* Sections */}
                 {previewData.data.sections && previewData.data.sections.length > 0 ? (
                   <div className="space-y-6">
                     <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
@@ -229,7 +376,6 @@ const AllInterviewsPreviewModal = ({
 
                     {previewData.data.sections.map((section, sectionIndex) => (
                       <div key={sectionIndex} className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-                        {/* Section Header */}
                         <button
                           onClick={() => toggleSection(sectionIndex)}
                           className="w-full p-4 bg-gray-50 dark:bg-gray-700/50 text-left flex justify-between items-center hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
@@ -256,10 +402,9 @@ const AllInterviewsPreviewModal = ({
                           )}
                         </button>
 
-                        {/* Section Content */}
                         <AnimatePresence>
                           {expandedSections[sectionIndex] && (
-                            <motion.div
+                            <MotionDiv
                               initial={{ opacity: 0, height: 0 }}
                               animate={{ opacity: 1, height: 'auto' }}
                               exit={{ opacity: 0, height: 0 }}
@@ -268,7 +413,6 @@ const AllInterviewsPreviewModal = ({
                               <div className="p-4 space-y-4">
                                 {section.questions.map((question, questionIndex) => (
                                   <div key={questionIndex} className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
-                                    {/* Question Header */}
                                     <button
                                       onClick={() => toggleQuestion(sectionIndex, questionIndex)}
                                       className="w-full text-left flex justify-between items-start gap-3 mb-3"
@@ -298,10 +442,9 @@ const AllInterviewsPreviewModal = ({
                                       )}
                                     </button>
 
-                                    {/* Answers Preview */}
                                     <AnimatePresence>
                                       {expandedSections[`${sectionIndex}-${questionIndex}`] && question.answers && (
-                                        <motion.div
+                                        <MotionDiv
                                           initial={{ opacity: 0 }}
                                           animate={{ opacity: 1 }}
                                           exit={{ opacity: 0 }}
@@ -356,13 +499,13 @@ const AllInterviewsPreviewModal = ({
                                               </span>
                                             </div>
                                           )}
-                                        </motion.div>
+                                        </MotionDiv>
                                       )}
                                     </AnimatePresence>
                                   </div>
                                 ))}
                               </div>
-                            </motion.div>
+                            </MotionDiv>
                           )}
                         </AnimatePresence>
                       </div>
@@ -375,7 +518,6 @@ const AllInterviewsPreviewModal = ({
                   </div>
                 )}
 
-                {/* Key Insights Summary */}
                 {previewData.data.sections && previewData.data.sections.length > 0 && (
                   <div className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-500/5 dark:to-emerald-500/5 rounded-xl p-6 border border-green-100 dark:border-green-500/20">
                     <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
@@ -438,8 +580,8 @@ const AllInterviewsPreviewModal = ({
               </div>
             )}
           </div>
-        </motion.div>
-      </motion.div>
+        </MotionDiv>
+      </MotionDiv>
     </AnimatePresence>
   );
 };
