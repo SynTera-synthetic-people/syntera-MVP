@@ -1,0 +1,264 @@
+/* ── InviteTeamModal ─────────────────────────────────────────────────────── */
+
+.itm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+}
+
+/* ── Card ── */
+.itm-card {
+  position: relative;
+  width: 100%;
+  max-width: 36rem;
+  background: var(--T-Base-B1, #000000);
+  border:  1px solid var(--T-GreyScale-Grey-700, #4F535F);
+  border-radius: 1.25rem;
+  padding: 2rem 2rem 1.75rem;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+  color: #ffffff;
+}
+
+/* ── Close button ── */
+.itm-close {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  width: 2rem;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: transparent;
+  border: none;
+  color: #6b7280;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.itm-close:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: #ffffff;
+}
+
+/* ── Header ── */
+.itm-header {
+  text-align: center;
+  margin-bottom: 1.75rem;
+}
+
+.itm-title {
+  font-size: 1.625rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0 0 0.5rem 0;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+}
+
+.itm-subtitle {
+  font-size: 0.875rem;
+  color: #9ca3af;
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* ── Field ── */
+.itm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.itm-label {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #d1d5db;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.itm-required {
+  color: #ef4444;
+}
+
+/* ── Input row ── */
+.itm-input-row {
+  display: flex;
+  align-items: center;
+  background: #1a1d24;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.75rem;
+  padding: 0 0.75rem;
+  transition: border-color 0.2s ease;
+}
+
+.itm-input-row:focus-within {
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.itm-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 0.875rem 0.5rem;
+  font-size: 0.875rem;
+  color: #ffffff;
+  font-family: inherit;
+}
+
+.itm-input::placeholder {
+  color: #4b5563;
+}
+
+.itm-add-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  background: transparent;
+  border: none;
+  color: #6b7280;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.itm-add-btn:hover:not(:disabled) {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.itm-add-btn:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+/* ── Error message ── */
+.itm-error {
+  padding: 0.625rem 0.875rem;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 0.625rem;
+  font-size: 0.8125rem;
+  color: #f87171;
+}
+
+/* ── Email chips ── */
+.itm-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.itm-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.75rem;
+  background: #1e2128;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.5rem;
+  font-size: 0.8125rem;
+  color: #d1d5db;
+}
+
+.itm-chip-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: #6b7280;
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.15s ease;
+  line-height: 1;
+}
+
+.itm-chip-remove:hover {
+  color: #ef4444;
+}
+
+/* ── "You can add X more" counter ── */
+.itm-counter {
+  font-size: 0.75rem;
+  color: #6b7280;
+  margin-bottom: 1.25rem;
+}
+
+/* ── Footer buttons ── */
+.itm-footer {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+.itm-btn-cancel {
+  flex: 1;
+  padding: 0.75rem 1.25rem;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.75rem;
+  color: #d1d5db;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+  font-family: inherit;
+}
+
+.itm-btn-cancel:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.itm-btn-cancel:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.itm-btn-invite {
+  flex: 1;
+  padding: 0.75rem 1.25rem;
+  background: #1e2128;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.75rem;
+  color: #6b7280;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  cursor: not-allowed;
+  transition: background 0.2s ease, color 0.2s ease;
+  font-family: inherit;
+}
+
+.itm-btn-invite--active {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.itm-btn-invite--active:hover:not(:disabled) {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+
+.itm-btn-invite:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

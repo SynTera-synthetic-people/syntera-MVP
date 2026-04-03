@@ -1,0 +1,287 @@
+/* ═══════════════════════════════════════════════════════════════
+   UpgradeStyle.css
+   Non-admin Settings › Upgrade Plan inline page.
+   Prefix: up-
+═══════════════════════════════════════════════════════════════ */
+
+/* ── Page shell ── */
+.up-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 900px;
+}
+
+/* ── Page heading row ── */
+.up-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.up-page-heading {
+  font-size: 18px;
+  font-weight: 700;
+  color: #f3f4f6;
+  margin: 0;
+  letter-spacing: -0.2px;
+}
+
+/* ── Subtitle block ── */
+.up-subtitle-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.up-subtitle-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #f3f4f6;
+  margin: 0;
+  letter-spacing: -0.3px;
+}
+
+.up-subtitle-desc {
+  font-size: 13px;
+  color: #9ca3af;
+  line-height: 1.65;
+  margin: 0;
+  max-width: 680px;
+}
+
+/* ── Cards row ── */
+.up-cards-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 700px) {
+  .up-cards-row { grid-template-columns: 1fr; }
+}
+
+/* ── Card base ── */
+.up-card {
+  border-radius: 16px;
+  padding: 18px 22px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  position: relative;
+}
+
+/* Extra top padding on featured card so content clears the absolute badge */
+.up-card--featured {
+  padding-top: 26px;
+}
+
+/* Featured (Explorer) card — dark ash-grey matching Figma, no blue tint */
+.up-card--featured {
+  background: #1E2126;
+}
+
+/* Default (Enterprise) card */
+.up-card--default {
+  background: #16181C;
+  border: 1px solid var(--T-GreyScale-Grey-800, #393C45);
+}
+
+/* ── Most Popular badge ───────────────────────────────────────────────────────
+   Matches Figma: pill floats centered above the card, straddling the top
+   border. Achieved with position:absolute + negative top offset on the wrap,
+   and overflow:visible on the card.
+─────────────────────────────────────────────────────────────────────────────── */
+.up-card--featured {
+  overflow: visible;             /* allow badge to overflow above card edge */
+}
+
+.up-badge-wrap {
+  position: absolute;
+  top: 0;
+  right: 0;
+  pointer-events: none;
+}
+
+.up-badge {
+  background: #EC0E7D;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  padding: 8px 24px;
+  border-radius: 0 14px 0 14px; /* key change */
+  line-height: 1;
+}
+
+/* ── Card header ── */
+.up-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.up-card-icon--blue  { color: #3b82f6; flex-shrink: 0; }
+.up-card-icon--muted { color: #9ca3af; flex-shrink: 0; }
+
+.up-card-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #f3f4f6;
+  margin: 0;
+}
+
+.up-card-desc {
+  font-size: 12px;
+  color: #6b7280;
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* ── Feature list ── */
+.up-feature-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1;
+}
+
+.up-feature-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12.5px;
+  color: #d1d5db;
+  line-height: 1.5;
+}
+
+.up-feature-check        { flex-shrink: 0; margin-top: 1px; }
+.up-feature-check--blue  { color: #3b82f6; }
+.up-feature-check--muted { color: #6b7280; }
+
+/* ── CTA buttons ── */
+.up-cta-btn {
+  width: 100%;
+  padding: 11px 0;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 4px;
+}
+
+.up-cta-btn--primary {
+  background: #2563eb;
+  border: none;
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
+}
+
+.up-cta-btn--primary:hover { background: #1d4ed8; }
+
+.up-cta-btn--secondary {
+  background: transparent;
+  border: 1.5px solid rgba(255, 255, 255, 0.15);
+  color: #d1d5db;
+}
+
+.up-cta-btn--secondary:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+/* ════════════════════════════════════════════════════════════════
+   LOADING STATE
+════════════════════════════════════════════════════════════════ */
+
+.up-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 80px 0;
+}
+
+.up-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid rgba(37, 99, 235, 0.2);
+  border-top-color: #2563eb;
+  border-radius: 50%;
+  animation: up-spin 0.8s linear infinite;
+}
+
+@keyframes up-spin { to { transform: rotate(360deg); } }
+
+.up-loading-text {
+  font-size: 14px;
+  color: #9ca3af;
+  margin: 0;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   THANK YOU STATE
+════════════════════════════════════════════════════════════════ */
+
+.up-thankyou {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 60px 20px;
+  text-align: center;
+}
+
+.up-thankyou-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #22c55e;
+}
+
+.up-thankyou-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #f3f4f6;
+  margin: 0;
+}
+
+.up-thankyou-desc {
+  font-size: 13.5px;
+  color: #9ca3af;
+  margin: 0;
+  max-width: 380px;
+  line-height: 1.6;
+}
+
+.up-thankyou-btn {
+  padding: 10px 28px;
+  border-radius: 9px;
+  border: none;
+  background: #2563eb;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+  margin-top: 4px;
+}
+
+.up-thankyou-btn:hover { background: #1d4ed8; }

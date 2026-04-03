@@ -1,0 +1,64 @@
+/* ── ResearchObjectiveLayout ─────────────────────────────────────────────── */
+
+.rol-root {
+  display: flex;
+  height: 100vh;
+  width: 100%;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ── Background ── */
+.rol-background {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 0;
+}
+
+.rol-bg-base {
+  position: absolute;
+  inset: 0;
+  background: #000000;
+}
+
+.rol-bg-orb {
+  display: none;
+}
+
+.rol-bg-orb--1 {
+  display: none;
+}
+
+.rol-bg-orb--2 {
+  display: none;
+}
+
+.rol-bg-orb--3 {
+  display: none;
+}
+
+/* ── Separator strip between sidebar and content ── */
+.rol-separator {
+  width: 40px;
+  background: #121317;
+  flex-shrink: 0;
+  align-self: stretch;
+}
+
+/* ── Content column ── */
+.rol-content {
+  position: relative;
+  z-index: 10;
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: #0E0F12;
+}

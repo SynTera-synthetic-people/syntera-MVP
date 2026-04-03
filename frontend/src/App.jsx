@@ -22,6 +22,7 @@ import ManageUsers from "./components/pages/organization/Workspace/ManageUsers";
 import WorkspaceForm from "./components/pages/organization/Workspace/WorkspaceForm"
 
 import PersonaBuilder from "./components/pages/organization/Workspace/ResearchObjective/Persona/personaBuilder/PersonaBuilder";
+import PersonaGenerationLoader from "./components/pages/organization/Workspace/ResearchObjective/PersonaGenerationLoader";
 import AddPersona from "./components/pages/organization/Workspace/ResearchObjective/Persona/AddPersona";
 import PersonaPreview from "./components/pages/organization/Workspace/ResearchObjective/Persona/PersonaPreview";
 import { ThemeProvider } from "./context/ThemeContext";
@@ -213,14 +214,6 @@ function App() {
                 </ProtectedRoute>
               }
             />
-            <Route
-              path="/landing"
-              element={
-                <ProtectedRoute>
-                  <LandingPage />
-                </ProtectedRoute>
-              }
-            />
 
             <Route
               path="/main"
@@ -240,12 +233,23 @@ function App() {
                 element={<CreateExploration />} />
 
               {/* RESEARCH OBJECTIVE WIZARD ROUTES (WITH LAYOUT) */}
+              {/* ── ONLY CHANGE FROM ORIGINAL ──────────────────────────────────
+                  :explorationId renamed to :objectiveId on research-mode and
+                  persona-generating routes so all child routes use the same
+                  param name. This fixes useStepProgress() receiving undefined
+                  and the sidebar never showing completed steps.
+                  The actual URL structure is identical — same ID, same paths.
+              ──────────────────────────────────────────────────────────────── */}
               <Route path="organization/workspace/research-objectives/:workspaceId" element={<ResearchObjectiveLayout />}>
-                <Route path=":explorationId/research-mode" element={<AddResearchObjective />} />
+                <Route path=":objectiveId/research-mode" element={<AddResearchObjective />} />
                 {/* <Route
                   path=":objectiveId/edit"
                   element={<EditResearchObjective />}
                 /> */}
+                <Route
+                  path=":objectiveId/persona-generating"
+                  element={<PersonaGenerationLoader />}
+                />
                 <Route
                   path=":objectiveId/persona/add"
                   element={<AddPersona />}
@@ -290,6 +294,7 @@ function App() {
               <Route path="settings" element={<Settings />} />
               <Route path="traceability" element={<Traceability />} />
               <Route path="traceability/:workspaceId/:explorationId" element={<Traceability />} />
+              <Route path="landing" element={<LandingPage />} />
 
             </Route>
           </Routes>

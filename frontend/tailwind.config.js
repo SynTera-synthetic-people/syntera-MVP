@@ -23,7 +23,7 @@ module.exports = {
         // Dark Mode - Black Primary
         'black-primary': '#000000',
         'black-primary-dark': '#0a0d14',
-        'black-primary-light': '#121724',
+        'black-primary-light': '#0E0F12',
         'black-primary-lighter': '#1d263b',
 
         // Legacy/Existing Colors (kept for compatibility, can be refactored later)

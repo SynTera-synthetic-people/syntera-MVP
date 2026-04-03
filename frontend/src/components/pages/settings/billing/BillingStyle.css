@@ -1,0 +1,513 @@
+/* ═══════════════════════════════════════════════════════════════
+   BillingStyle.css  — Settings › Billing
+   Prefix: bl-
+   No inline styles — all layout & decoration lives here.
+═══════════════════════════════════════════════════════════════ */
+
+/* ── Page shell ── */
+.bl-page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  position: relative;
+}
+
+/* Page heading */
+.bl-heading {
+  font-size: 20px;
+  font-weight: 700;
+  color: #f3f4f6;
+  margin: 0;
+  letter-spacing: -0.2px;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   SUCCESS TOAST
+════════════════════════════════════════════════════════════════ */
+
+.bl-toast {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  font-weight: 600;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  white-space: nowrap;
+  animation: bl-toast-in 0.25s ease;
+}
+
+@keyframes bl-toast-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+.bl-toast--success {
+  background:  var(--Color-Alert-Success-Success, #1AAB18);
+  border: 1px solid #15803d;
+  color: #bbf7d0;
+}
+
+.bl-toast-icon {
+  flex-shrink: 0;
+  color: #4ade80;
+}
+
+.bl-toast-close {
+  margin-left: 8px;
+  background: transparent;
+  border: none;
+  color: #86efac;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  padding: 0;
+  transition: color 0.15s;
+}
+
+.bl-toast-close:hover { color: #fff; }
+
+/* ════════════════════════════════════════════════════════════════
+   PENDING INVOICE CARDS ROW
+════════════════════════════════════════════════════════════════ */
+
+.bl-pending-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+/* "No pending payment" state */
+.bl-no-pending {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.bl-no-pending-icon {
+  flex-shrink: 0;
+  color: #6b7280;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   BAR CHART SECTION
+════════════════════════════════════════════════════════════════ */
+
+.bl-chart-section {
+  background: #0E0F12;
+  border: 1px solid #1e2028;
+  border-radius: 14px;
+  padding: 20px 24px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Header row */
+.bl-chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.bl-chart-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #f3f4f6;
+}
+
+/* ── Shared dropdown styles ── */
+.bl-dropdown-wrap {
+  position: relative;
+}
+
+.bl-dropdown-btn,
+.bl-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 7px;
+  border: 1px solid #2a2d35;
+  background: #0a0b0e;
+  color: #9ca3af;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.bl-dropdown-btn:hover,
+.bl-filter-btn:hover {
+  border-color: #374151;
+  color: #e5e7eb;
+}
+
+.bl-filter-btn--active {
+  border-color: #3b82f6;
+  color: #60a5fa;
+}
+
+.bl-dropdown-chevron {
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+.bl-dropdown-chevron--open {
+  transform: rotate(180deg);
+}
+
+.bl-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 0;
+  background: #090c10;
+  border: 1px solid #212122;
+  border-radius: 8px;
+  padding: 4px;
+  min-width: 120px;
+  z-index: 200;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.6);
+}
+
+.bl-dropdown-menu--right {
+  left: auto;
+  right: 0;
+}
+
+.bl-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #e5e7eb;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.bl-dropdown-item:hover { background: rgba(255, 255, 255, 0.07); }
+.bl-dropdown-item--active { color: #60a5fa; }
+
+/* ── Chart canvas ── */
+.bl-chart-area {
+  position: relative;
+  border-left: 1.5px solid rgba(255,255,255,0.12);
+  border-bottom: 1.5px solid rgba(255,255,255,0.15);
+  height: 200px;
+}
+
+.bl-bars {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 6px;
+  height: 100%;
+}
+
+.bl-bar-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 1;
+  height: 100%;
+  position: relative;
+  cursor: pointer;
+  gap: 5px;
+}
+
+/* Tooltip */
+.bl-bar-tooltip {
+  position: absolute;
+  top: -26px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1f2937;
+  border: 1px solid #374151;
+  border-radius: 5px;
+  padding: 2px 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #f3f4f6;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* Bar itself */
+.bl-bar {
+  width: 40px;
+  border-radius: 4px 4px 0 0;
+  background: #393C45;
+  transition: background 0.15s, transform 0.1s;
+  min-height: 4px;
+}
+
+/* Pink highlight on hover — matches Figma */
+.bl-bar--hovered {
+  background: #ec4899;
+}
+
+/* X-axis label */
+.bl-bar-label {
+  position: absolute;
+  bottom: -22px;
+  font-size: 10px;
+  color: #6b7280;
+  white-space: nowrap;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   INVOICES SECTION
+════════════════════════════════════════════════════════════════ */
+
+.bl-invoices-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.bl-invoices-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #f3f4f6;
+  margin: 0;
+}
+
+/* Toolbar */
+.bl-invoice-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.bl-invoice-search-wrap {
+  flex: 1;
+  min-width: 200px;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.bl-invoice-search-icon {
+  position: absolute;
+  left: 11px;
+  color: #6b7280;
+  pointer-events: none;
+}
+
+.bl-invoice-search-input {
+  width: 100%;
+  padding: 9px 14px 9px 33px;
+  background: #0a0b0e;
+  border: 1px solid #2a2d35;
+  border-radius: 8px;
+  color: #e5e7eb;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+}
+
+.bl-invoice-search-input::placeholder { color: #4b5563; }
+.bl-invoice-search-input:focus         { border-color: #374151; }
+
+/* Filter buttons */
+.bl-filter-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+/* ── Invoice table ── */
+.bl-table-card {
+  background: #0a0b0e;
+  border: 1px solid #1e2028;
+  border-radius: 1.25rem;
+  overflow: visible;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+}
+
+.bl-table-header {
+  display: grid;
+  grid-template-columns: 1.3fr 1.1fr 1.3fr 1fr 0.9fr 1fr 0.8fr 80px;
+  gap: 0.75rem;
+  padding: 11px 18px;
+  border-bottom: 1px solid #2a2d35;
+  background: #000;
+  border-radius: 1.25rem 1.25rem 0 0;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.bl-hcell {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+}
+
+.bl-hcell--right { justify-content: flex-end; }
+
+.bl-table-body {
+  background: #000;
+  border-radius: 0 0 1.25rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.bl-table-row {
+  display: grid;
+  grid-template-columns: 1.3fr 1.1fr 1.3fr 1fr 0.9fr 1fr 0.8fr 80px;
+  gap: 0.75rem;
+  padding: 11px 18px;
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  background: #000;
+  transition: background 0.15s;
+  overflow: visible;
+}
+
+.bl-table-row:hover { background: #0f1115; }
+.bl-table-row:last-child {
+  border-bottom: none;
+  border-radius: 0 0 1.25rem 1.25rem;
+}
+
+.bl-cell {
+  font-size: 13px;
+  color: #d1d5db;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bl-cell--mono  { font-family: 'Courier New', monospace; font-size: 12px; }
+.bl-cell--muted { color: #9ca3af; }
+
+.bl-cell--actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  overflow: visible;
+}
+
+/* ── Status badges ── */
+.bl-status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: 20px;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.bl-status-badge--paid {
+  background: rgba(34, 197, 94, 0.12);
+  color: #22c55e;
+  border: 1px solid rgba(34, 197, 94, 0.2);
+}
+
+.bl-status-badge--pending {
+  background: rgba(234, 179, 8, 0.12);
+  color: #eab308;
+  border: 1px solid rgba(234, 179, 8, 0.2);
+}
+
+.bl-status-badge--overdue {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+/* Action buttons */
+.bl-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.bl-action-btn:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: #e5e7eb;
+}
+
+/* Empty state */
+.bl-empty {
+  padding: 40px 20px;
+  text-align: center;
+  font-size: 13.5px;
+  color: #4b5563;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   RESPONSIVE
+════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 900px) {
+  .bl-table-header,
+  .bl-table-row {
+    grid-template-columns: 1fr 1fr 0.8fr 80px;
+  }
+
+  /* hide less critical columns */
+  .bl-table-header .bl-hcell:nth-child(2),
+  .bl-table-row    .bl-cell:nth-child(2),
+  .bl-table-header .bl-hcell:nth-child(3),
+  .bl-table-row    .bl-cell:nth-child(3),
+  .bl-table-header .bl-hcell:nth-child(6),
+  .bl-table-row    .bl-cell:nth-child(6) {
+    display: none;
+  }
+}
+
+@media (max-width: 600px) {
+  .bl-bars { gap: 3px; }
+  .bl-bar-label { font-size: 8px; }
+  .bl-chart-area { height: 150px; }
+}
+.bl-receipt-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #3b82f6;
+  text-decoration: none;
+  transition: color 0.15s;
+}
+ 
+.bl-receipt-link:hover {
+  color: #60a5fa;
+}
+.bl-table-header--simple,
+.bl-table-row--simple {
+  grid-template-columns: 1.4fr 1.6fr 1.2fr 1fr 120px;
+}

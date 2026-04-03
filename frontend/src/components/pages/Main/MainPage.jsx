@@ -1,13 +1,23 @@
 import React, { useRef, useState } from "react";
 import { FaPlus, FaPaperPlane } from "react-icons/fa";
 import Sidebar from "../Main/Sidebar";
-import { Outlet } from "react-router-dom";
+import { Outlet, useLocation } from "react-router-dom";
 import Chatbot from "../../Chatbot/Chatbot";
 import ResponseBar from "../../common/ResponseBar";
+
+// Routes where the main Sidebar should be hidden
+// giving the page full width for their own layout
+const FULL_SCREEN_ROUTES = ["/research-objectives/"];
 
 const MainPage = () => {
   const fileInputRef = useRef(null);
   const [inputValue, setInputValue] = useState("");
+  const { pathname } = useLocation();
+
+  // Hide sidebar when inside the research objective flow
+  const isFullScreen = FULL_SCREEN_ROUTES.some((route) =>
+    pathname.includes(route)
+  );
 
   const handlePlusClick = () => {
     fileInputRef.current?.click();
@@ -38,9 +48,9 @@ const MainPage = () => {
 
   return (
     <div className="flex h-screen bg-gray-50 text-gray-900 dark:text-white overflow-hidden transition-colors duration-300 bg-white dark:bg-black-primary-light">
-      <Sidebar />
+      {!isFullScreen && <Sidebar />}
 
-      <div className="flex-1 flex flex-col overflow-hidden relative">
+      <div className={`${isFullScreen ? "w-full" : "flex-1"} flex flex-col overflow-hidden relative`}>
         {/* <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-black-primary-light">
           <div className="flex items-center gap-2 max-w-4xl mx-auto">
             <div className="flex-1 relative group">
@@ -89,7 +99,7 @@ const MainPage = () => {
             <Outlet />
           </div>
         </div>
-        <ResponseBar />
+        {!isFullScreen && <ResponseBar />}
       </div>
       {/* <Chatbot /> */}
       {/* <Chatbot /> */}

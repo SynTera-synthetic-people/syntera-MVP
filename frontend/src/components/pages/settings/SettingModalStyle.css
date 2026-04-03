@@ -1,0 +1,463 @@
+/* ═══════════════════════════════════════════════════════════════
+   SettingsModalsStyle.css
+   Shared modal shell + ManageUsersModal + EditUserModal + ShareInvoiceModal
+   Prefix: sm-
+   No inline styles — all layout here.
+═══════════════════════════════════════════════════════════════ */
+
+/* ════════════════════════════════════════════════════════════════
+   OVERLAY + SHELL
+════════════════════════════════════════════════════════════════ */
+
+.sm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 600;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: sm-overlay-in 0.15s ease;
+}
+
+@keyframes sm-overlay-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.sm-modal {
+  width: 100%;
+  background: var(--T-Base-B1, #08090a);
+  border: 1px solid var(--T-GreyScale-Grey-700, #4F535F);
+  border-radius: 16px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.7);
+  display: flex;
+  flex-direction: column;
+  animation: sm-modal-in 0.18s ease;
+  overflow: hidden;
+}
+
+@keyframes sm-modal-in {
+  from { opacity: 0; transform: scale(0.96) translateY(10px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0); }
+}
+
+/* ── Header ── */
+.sm-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 24px 24px 0;
+  gap: 12px;
+}
+
+.sm-modal-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  text-align: center;
+  align-items: center;
+}
+
+.sm-modal-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #f3f4f6;
+  margin: 0;
+  letter-spacing: -0.2px;
+}
+
+.sm-modal-subtitle {
+  font-size: 13px;
+  color: #9ca3af;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.sm-close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+
+.sm-close-btn:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: #e5e7eb;
+}
+
+/* ── Body ── */
+.sm-modal-body {
+  padding: 20px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ── Global error ── */
+.sm-error-msg {
+  font-size: 12.5px;
+  color: #f87171;
+  margin: 0;
+  padding: 8px 12px;
+  background: rgba(248, 113, 113, 0.08);
+  border: 1px solid rgba(248, 113, 113, 0.2);
+  border-radius: 7px;
+}
+
+/* ── Spinner ── */
+.sm-spinner-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 0;
+}
+
+.sm-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid rgba(255, 255, 255, 0.06);
+  border-top-color: #2563eb;
+  border-radius: 50%;
+  animation: sm-spin 0.8s linear infinite;
+}
+
+@keyframes sm-spin { to { transform: rotate(360deg); } }
+
+/* ── Empty ── */
+.sm-empty-text {
+  font-size: 13px;
+  color: #4b5563;
+  text-align: center;
+  padding: 20px 0;
+  margin: 0;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   SAVE / SEND BUTTONS
+════════════════════════════════════════════════════════════════ */
+
+.sm-save-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 10px 24px;
+  border-radius: 9px;
+  border: none;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #9ca3af;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  align-self: center;
+  min-width: 120px;
+}
+
+.sm-save-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  color: #e5e7eb;
+}
+
+.sm-save-btn--full {
+  width: 100%;
+  align-self: stretch;
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+
+.sm-save-btn--full:hover:not(:disabled) {
+  background: #1d4ed8;
+  color: #fff;
+}
+
+.sm-save-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sm-send-btn {
+  width: 100%;
+  padding: 12px;
+  border-radius: 9px;
+  border: none;
+  background: #2563eb;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s;
+  letter-spacing: 0.1px;
+}
+
+.sm-send-btn:hover:not(:disabled) { background: #1d4ed8; }
+.sm-send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ════════════════════════════════════════════════════════════════
+   1. MANAGE USERS MODAL — member list
+════════════════════════════════════════════════════════════════ */
+
+.sm-member-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 340px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #2a2d35 transparent;
+}
+
+.sm-member-list::-webkit-scrollbar { width: 4px; }
+.sm-member-list::-webkit-scrollbar-thumb {
+  background: #2a2d35;
+  border-radius: 4px;
+}
+
+.sm-member-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  transition: background 0.12s;
+}
+
+.sm-member-row:hover { background: rgba(255, 255, 255, 0.04); }
+
+/* Avatar circle */
+.sm-member-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 20px;
+  background:linear-gradient(135deg, #005D46, #005D46);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+  letter-spacing: 0.5px;
+}
+
+.sm-member-info {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sm-member-name {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: #e5e7eb;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Admin badge */
+.sm-member-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.sm-member-badge--admin {
+  background: rgba(255, 255, 255, 0.1);
+  color: #d1d5db;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+/* Remove (×) button */
+.sm-member-remove-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.12s, color 0.12s;
+}
+
+.sm-member-remove-btn:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.1);
+  color: #f87171;
+}
+
+.sm-member-remove-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ════════════════════════════════════════════════════════════════
+   2. EDIT USER MODAL — form fields
+════════════════════════════════════════════════════════════════ */
+
+.sm-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 420px) {
+  .sm-form-row { grid-template-columns: 1fr; }
+}
+
+.sm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.sm-field--full {
+  grid-column: 1 / -1;
+}
+
+.sm-label {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #d1d5db;
+}
+
+.sm-required { color: #f87171; }
+
+.sm-input {
+  padding: 9px 13px;
+  background: #0d0f14;
+  border: 1px solid #2a2d35;
+  border-radius: 8px;
+  color: #e5e7eb;
+  font-size: 13.5px;
+  outline: none;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.sm-input::placeholder { color: #4b5563; }
+.sm-input:focus         { border-color: #374151; }
+.sm-input--error        { border-color: #f87171 !important; }
+
+/* Read-only/disabled email field */
+.sm-input--disabled {
+  background: #0a0c10;
+  color: #6b7280;
+  cursor: default;
+}
+
+.sm-field-error {
+  font-size: 11.5px;
+  color: #f87171;
+  margin: 0;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   3. SHARE INVOICE MODAL — email chip input
+════════════════════════════════════════════════════════════════ */
+
+.sm-email-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.sm-input--chip-input {
+  flex: 1;
+}
+
+.sm-add-email-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid #2a2d35;
+  background: rgba(255, 255, 255, 0.05);
+  color: #9ca3af;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+
+.sm-add-email-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  color: #e5e7eb;
+}
+
+.sm-add-email-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Chip container */
+.sm-chips-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* Individual chip */
+.sm-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.sm-chip-label {
+  font-size: 12.5px;
+  color: #d1d5db;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sm-chip-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: color 0.12s;
+}
+
+.sm-chip-remove:hover { color: #f87171; }
+
+/* Hint text */
+.sm-hint {
+  font-size: 12px;
+  color: #6b7280;
+  margin: 4px 0 0;
+}

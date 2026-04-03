@@ -1,0 +1,129 @@
+/* ═══════════════════════════════════════════════════════════════
+   PendingInvoiceCardStyle.css
+   Standalone pending/overdue invoice card — matches Figma exactly.
+   Prefix: pic-
+═══════════════════════════════════════════════════════════════ */
+
+.pic-card {
+  background: #111318;
+  border: 1px solid #1e2028;
+  border-radius: 14px;
+  padding: 18px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 280px;
+  flex-shrink: 0;
+}
+
+/* ── Status badge ── */
+.pic-status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 11.5px;
+  font-weight: 600;
+  align-self: flex-start;
+}
+
+.pic-status-badge--pending {
+  background: rgba(234, 179, 8, 0.15);
+  color: #eab308;
+  border: 1px solid rgba(234, 179, 8, 0.25);
+}
+
+.pic-status-badge--overdue {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+/* ── Title ── */
+.pic-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #f3f4f6;
+  margin: 0;
+  line-height: 1.4;
+  /* truncate long titles */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ── 2-col meta grid ── */
+.pic-meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.pic-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.pic-meta-label {
+  font-size: 11px;
+  color: #6b7280;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pic-cal-icon {
+  flex-shrink: 0;
+  color: #6b7280;
+}
+
+.pic-meta-value {
+  font-size: 13px;
+  font-weight: 500;
+  color: #e5e7eb;
+}
+
+/* ── Divider ── */
+.pic-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+/* ── Amount ── */
+.pic-amount-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.pic-amount-label {
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.pic-amount-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: #f3f4f6;
+  letter-spacing: -0.3px;
+}
+
+/* ── CTA button ── */
+.pic-pay-btn {
+  width: 100%;
+  padding: 10px 0;
+  border-radius: 8px;
+  border: none;
+  background: #2563eb;
+  color: #fff;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+  margin-top: 2px;
+}
+
+.pic-pay-btn:hover:not(:disabled) { background: #1d4ed8; }
+.pic-pay-btn:disabled { opacity: 0.6; cursor: not-allowed; }
