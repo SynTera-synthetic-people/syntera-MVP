@@ -22,6 +22,7 @@ import ManageUsers from "./components/pages/organization/Workspace/ManageUsers";
 import WorkspaceForm from "./components/pages/organization/Workspace/WorkspaceForm"
 
 import PersonaBuilder from "./components/pages/organization/Workspace/ResearchObjective/Persona/personaBuilder/PersonaBuilder";
+import PersonaBuilderManual from "./components/pages/organization/Workspace/ResearchObjective/Persona/personaBuilder/PersonaBuilderManual/PersonaBuilderManual";
 import PersonaGenerationLoader from "./components/pages/organization/Workspace/ResearchObjective/PersonaGenerationLoader";
 import AddPersona from "./components/pages/organization/Workspace/ResearchObjective/Persona/AddPersona";
 import PersonaPreview from "./components/pages/organization/Workspace/ResearchObjective/Persona/PersonaPreview";
@@ -48,11 +49,12 @@ import AdminDashboard from "./components/pages/Admin/AdminDashboard";
 import AdminUserList from "./components/pages/Admin/AdminUserList";
 import AdminUserProvision from "./components/pages/Admin/AdminUserProvision";
 import AdminUserDetail from "./components/pages/Admin/AdminUserDetail";
-import ChangePassword from "./components/pages/ChangePassword/ChangePassword";
+// import ChangePassword from "./components/pages/ChangePassword/ChangePassword";
 import Upgrade from "./components/pages/Upgrade/Upgrade";
 import EnterpriseOrgsPage from "./components/pages/Admin/EnterpriseOrgsPage";
 import EnterpriseOrgDetail from "./components/pages/Admin/EnterpriseOrgDetail";
 import AcceptInvitation from "./components/pages/Invitation/AcceptInvitation";
+import SpIconProvider from './components/SPIconProvider';
 
 const queryClient = new QueryClient();
 
@@ -133,6 +135,7 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
+        <SpIconProvider />
         <Router>
           <Routes>
             {/* PUBLIC ROUTES */}
@@ -198,14 +201,14 @@ function App() {
             </Route>
 
             {/* PROTECTED ROUTES */}
-            <Route
+            {/* <Route
               path="/change-password"
               element={
                 <ProtectedRoute>
                   <ChangePassword />
                 </ProtectedRoute>
               }
-            />
+            /> */}
             <Route
               path="/upgrade"
               element={
@@ -257,6 +260,10 @@ function App() {
                 <Route
                   path=":objectiveId/persona-builder"
                   element={<PersonaBuilder />}
+                />
+                <Route
+                  path=":objectiveId/persona-builder/manual"
+                  element={<PersonaBuilderManual />}
                 />
                 <Route
                   path=":objectiveId/persona-preview/:personaId"

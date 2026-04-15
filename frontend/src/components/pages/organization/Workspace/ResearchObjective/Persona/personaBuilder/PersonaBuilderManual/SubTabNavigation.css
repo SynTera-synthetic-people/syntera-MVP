@@ -1,0 +1,78 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   SubTabNavigation Styles — Figma Accurate
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.subtab-nav {
+  overflow-x: auto;
+  scrollbar-width: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  margin-bottom: 20px;
+}
+
+.subtab-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.subtab-nav__container {
+  display: flex;
+  padding: 0 20px;
+  min-width: min-content;
+}
+
+.subtab-nav__item {
+  position: relative;
+  padding: 12px 14px;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 13px;
+  font-weight: 400;
+  cursor: pointer;
+  transition: color 0.15s;
+  white-space: nowrap;
+  outline: none;
+  border-bottom: 2px solid transparent;
+  position: relative;
+  top: 1px;
+  font-family: inherit;
+}
+
+.subtab-nav__item:hover {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.subtab-nav__item--active {
+  color: #00D4A8;
+  border-bottom-color: #00D4A8;
+  font-weight: 500;
+}
+
+.subtab-nav__item--completed {
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.subtab-nav__label {
+  position: relative;
+  z-index: 1;
+}
+
+/* Completed checkmark */
+.subtab-nav__item--completed:not(.subtab-nav__item--active) .subtab-nav__label::after {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #00D4A8;
+  margin-left: 6px;
+  vertical-align: middle;
+  position: relative;
+  top: -1px;
+}
+
+@media (max-width: 768px) {
+  .subtab-nav__item {
+    padding: 10px 10px;
+    font-size: 12px;
+  }
+}

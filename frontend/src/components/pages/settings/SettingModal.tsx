@@ -1,13 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   TbX,
-  TbDeviceFloppy,
-  TbTrash,
   TbPlus,
-  TbMail,
-  TbSend,
-  TbUsers,
+  TbLogout,
+  TbUserX,
 } from 'react-icons/tb';
+import SpIcon from '../../SPIcon';
 import { workspaceService } from '../../../services/workspaceService';
 import './SettingModalStyle.css';
 
@@ -27,7 +25,6 @@ interface ModalShellProps {
 const ModalShell: React.FC<ModalShellProps> = ({
   isOpen, onClose, title, subtitle, children, maxWidth = 480,
 }) => {
-  // Close on Escape
   useEffect(() => {
     if (!isOpen) return;
     const handler = (e: KeyboardEvent) => {
@@ -64,10 +61,89 @@ const ModalShell: React.FC<ModalShellProps> = ({
   );
 };
 
+/**
+ * ConfirmShell — shared layout used by all 4 new confirmation modals.
+ *
+ * Renders:
+ *   - blurred backdrop
+ *   - centered card with close ✕
+ *   - icon box (variant: 'danger' | 'primary') with a small ✕ badge on the icon
+ *   - bold title + muted subtitle
+ *   - two-button row (action + Cancel)
+ */
+interface ConfirmShellProps {
+  isOpen: boolean;
+  onClose: () => void;
+  /** Icon rendered inside the coloured box */
+  icon: React.ReactNode;
+  /** 'danger' = red box, 'primary' = blue box */
+  variant: 'danger' | 'primary';
+  title: string;
+  subtitle: string | React.ReactNode;
+  actionLabel: string;
+  onAction: () => void;
+  actionLoading?: boolean;
+  maxWidth?: number;
+}
+
+const ConfirmShell: React.FC<ConfirmShellProps> = ({
+  isOpen, onClose, icon, variant, title, subtitle,
+  actionLabel, onAction, actionLoading = false, maxWidth = 300,
+}) => {
+  useEffect(() => {
+    if (!isOpen) return;
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="sm-overlay" onClick={onClose}>
+      <div
+        className="sm-confirm-card"
+        style={{ maxWidth }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Close button — top-right of card */}
+        <button className="sm-confirm-close" onClick={onClose} aria-label="Close">
+          <TbX size={16} />
+        </button>
+
+        {/* Icon box */}
+        <div className={`sm-confirm-icon-wrap sm-confirm-icon-wrap--${variant}`}>
+          {icon}
+        </div>
+
+        {/* Title + subtitle */}
+        <h2 className="sm-confirm-title">{title}</h2>
+        <p className="sm-confirm-subtitle">{subtitle}</p>
+
+        {/* Buttons */}
+        <div className="sm-confirm-actions">
+          <button
+            className={`sm-confirm-action-btn sm-confirm-action-btn--${variant}`}
+            onClick={onAction}
+            disabled={actionLoading}
+          >
+            {actionLoading ? 'Please wait…' : actionLabel}
+          </button>
+          <button
+            className="sm-confirm-cancel-btn"
+            onClick={onClose}
+            disabled={actionLoading}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ══════════════════════════════════════════════════════════════════════════════
-// 1.  MANAGE USERS MODAL
-//     Opens from Workspace table kebab → "Manage Users" in Settings context.
-//     Shows existing members with remove option + Save.
+// 1.  MANAGE USERS MODAL  (existing — unchanged)
 // ══════════════════════════════════════════════════════════════════════════════
 
 interface ModalMember {
@@ -88,13 +164,12 @@ interface ManageUsersModalProps {
 export const ManageUsersModal: React.FC<ManageUsersModalProps> = ({
   isOpen, onClose, workspaceId, workspaceName,
 }) => {
-  const [members, setMembers] = useState<ModalMember[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [members, setMembers]     = useState<ModalMember[]>([]);
+  const [loading, setLoading]     = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
+  const [saving, setSaving]       = useState(false);
+  const [error, setError]         = useState('');
 
-  // Fetch members when the modal opens
   useEffect(() => {
     if (!isOpen || !workspaceId) return;
     setLoading(true);
@@ -122,7 +197,6 @@ export const ManageUsersModal: React.FC<ManageUsersModalProps> = ({
   const handleSave = async () => {
     setSaving(true);
     try {
-      // TODO: wire to bulk-update API if needed
       await new Promise((r) => setTimeout(r, 400));
       onClose();
     } finally {
@@ -132,15 +206,12 @@ export const ManageUsersModal: React.FC<ManageUsersModalProps> = ({
 
   const getInitials = (m: ModalMember) =>
     (m.full_name || m.email || '?')
-      .split(' ')
-      .slice(0, 2)
-      .map((w) => w[0]?.toUpperCase() ?? '')
-      .join('');
+      .split(' ').slice(0, 2)
+      .map((w) => w[0]?.toUpperCase() ?? '').join('');
 
   return (
     <ModalShell
-      isOpen={isOpen}
-      onClose={onClose}
+      isOpen={isOpen} onClose={onClose}
       title="Manage Users"
       subtitle={workspaceName ? `Members of ${workspaceName}` : 'Content goes here'}
       maxWidth={520}
@@ -153,13 +224,9 @@ export const ManageUsersModal: React.FC<ManageUsersModalProps> = ({
         <div className="sm-member-list">
           {members.map((member, idx) => (
             <div key={member.id} className="sm-member-row">
-              <div className="sm-member-avatar">
-                {getInitials(member)}
-              </div>
+              <div className="sm-member-avatar">{getInitials(member)}</div>
               <div className="sm-member-info">
-                <span className="sm-member-name">
-                  {member.full_name || member.email}
-                </span>
+                <span className="sm-member-name">{member.full_name || member.email}</span>
                 {idx === 0 && member.role?.toLowerCase() === 'admin' && (
                   <span className="sm-member-badge sm-member-badge--admin">Admin</span>
                 )}
@@ -176,20 +243,12 @@ export const ManageUsersModal: React.FC<ManageUsersModalProps> = ({
               )}
             </div>
           ))}
-
-          {members.length === 0 && (
-            <p className="sm-empty-text">No members yet.</p>
-          )}
+          {members.length === 0 && <p className="sm-empty-text">No members yet.</p>}
         </div>
       )}
 
-      {/* Save */}
-      <button
-        className="sm-save-btn"
-        onClick={handleSave}
-        disabled={saving || loading}
-      >
-        <TbDeviceFloppy size={16} />
+      <button className="sm-save-btn" onClick={handleSave} disabled={saving || loading}>
+        <SpIcon name="sp-System-Save" />
         {saving ? 'Saving…' : 'Save'}
       </button>
     </ModalShell>
@@ -197,9 +256,7 @@ export const ManageUsersModal: React.FC<ManageUsersModalProps> = ({
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
-// 2.  EDIT USER MODAL
-//     Opens from Team Management table in Settings context.
-//     Edits First Name, Last Name, Email Address.
+// 2.  EDIT USER MODAL  (existing — unchanged)
 // ══════════════════════════════════════════════════════════════════════════════
 
 export interface EditUserData {
@@ -225,20 +282,13 @@ interface EditUserErrors {
 export const EditUserModal: React.FC<EditUserModalProps> = ({
   isOpen, onClose, user, onSave,
 }) => {
-  const [form, setForm] = useState<EditUserData>({
-    id: '', firstName: '', lastName: '', email: '',
-  });
-  const [errors, setErrors] = useState<EditUserErrors>({});
-  const [saving, setSaving] = useState(false);
+  const [form, setForm]           = useState<EditUserData>({ id: '', firstName: '', lastName: '', email: '' });
+  const [errors, setErrors]       = useState<EditUserErrors>({});
+  const [saving, setSaving]       = useState(false);
   const [saveError, setSaveError] = useState('');
 
-  // Sync form when user prop changes
   useEffect(() => {
-    if (user) {
-      setForm({ ...user });
-      setErrors({});
-      setSaveError('');
-    }
+    if (user) { setForm({ ...user }); setErrors({}); setSaveError(''); }
   }, [user]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -261,78 +311,41 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
 
   const handleSave = async () => {
     if (!validate()) return;
-    setSaving(true);
-    setSaveError('');
-    try {
-      await onSave(form);
-      onClose();
-    } catch (err: any) {
-      setSaveError(err?.message || 'Failed to save changes.');
-    } finally {
-      setSaving(false);
-    }
+    setSaving(true); setSaveError('');
+    try { await onSave(form); onClose(); }
+    catch (err: any) { setSaveError(err?.message || 'Failed to save changes.'); }
+    finally { setSaving(false); }
   };
 
   return (
     <ModalShell isOpen={isOpen} onClose={onClose} title="Edit User" maxWidth={420}>
       {saveError && <p className="sm-error-msg">{saveError}</p>}
 
-      {/* First Name + Last Name row */}
       <div className="sm-form-row">
         <div className="sm-field">
-          <label className="sm-label">
-            First Name <span className="sm-required">*</span>
-          </label>
-          <input
-            name="firstName"
-            className={`sm-input ${errors.firstName ? 'sm-input--error' : ''}`}
-            value={form.firstName}
-            onChange={handleChange}
-            placeholder="First name"
-          />
+          <label className="sm-label">First Name <span className="sm-required">*</span></label>
+          <input name="firstName" className={`sm-input ${errors.firstName ? 'sm-input--error' : ''}`}
+            value={form.firstName} onChange={handleChange} placeholder="First name" />
           {errors.firstName && <p className="sm-field-error">{errors.firstName}</p>}
         </div>
-
         <div className="sm-field">
-          <label className="sm-label">
-            Last Name <span className="sm-required">*</span>
-          </label>
-          <input
-            name="lastName"
-            className={`sm-input ${errors.lastName ? 'sm-input--error' : ''}`}
-            value={form.lastName}
-            onChange={handleChange}
-            placeholder="Last name"
-          />
+          <label className="sm-label">Last Name <span className="sm-required">*</span></label>
+          <input name="lastName" className={`sm-input ${errors.lastName ? 'sm-input--error' : ''}`}
+            value={form.lastName} onChange={handleChange} placeholder="Last name" />
           {errors.lastName && <p className="sm-field-error">{errors.lastName}</p>}
         </div>
       </div>
 
-      {/* Email */}
       <div className="sm-field sm-field--full">
-        <label className="sm-label">
-          Email Address <span className="sm-required">*</span>
-        </label>
-        <input
-          name="email"
-          type="email"
+        <label className="sm-label">Email Address <span className="sm-required">*</span></label>
+        <input name="email" type="email"
           className={`sm-input sm-input--disabled ${errors.email ? 'sm-input--error' : ''}`}
-          value={form.email}
-          onChange={handleChange}
-          placeholder="email@example.com"
-          // Email is read-only — shown greyed out matching Figma
-          readOnly
-        />
+          value={form.email} onChange={handleChange} placeholder="email@example.com" readOnly />
         {errors.email && <p className="sm-field-error">{errors.email}</p>}
       </div>
 
-      {/* Save */}
-      <button
-        className="sm-save-btn sm-save-btn--full"
-        onClick={handleSave}
-        disabled={saving}
-      >
-        <TbDeviceFloppy size={16} />
+      <button className="sm-save-btn sm-save-btn--full" onClick={handleSave} disabled={saving}>
+        <SpIcon name="sp-System-Save" />
         {saving ? 'Saving…' : 'Save'}
       </button>
     </ModalShell>
@@ -340,10 +353,7 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
-// 3.  SHARE INVOICE MODAL
-//     Opens from Billing table share button.
-//     Email chip input — add via + button or Enter, remove with ×.
-//     Max 5 recipients.
+// 3.  SHARE INVOICE MODAL  (existing — unchanged)
 // ══════════════════════════════════════════════════════════════════════════════
 
 export interface ShareInvoiceModalProps {
@@ -355,99 +365,61 @@ export interface ShareInvoiceModalProps {
 }
 
 const MAX_RECIPIENTS = 5;
-
-const isValidEmail = (val: string) =>
-  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val.trim());
+const isValidEmail = (val: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val.trim());
 
 export const ShareInvoiceModal: React.FC<ShareInvoiceModalProps> = ({
   isOpen, onClose, invoiceId, invoiceTitle, onSend,
 }) => {
-  const [inputVal, setInputVal] = useState('');
-  const [emails, setEmails] = useState<string[]>([]);
+  const [inputVal, setInputVal]   = useState('');
+  const [emails, setEmails]       = useState<string[]>([]);
   const [inputError, setInputError] = useState('');
-  const [sending, setSending] = useState(false);
+  const [sending, setSending]     = useState(false);
   const [sendError, setSendError] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Reset when modal opens
   useEffect(() => {
-    if (isOpen) {
-      setEmails([]);
-      setInputVal('');
-      setInputError('');
-      setSendError('');
-    }
+    if (isOpen) { setEmails([]); setInputVal(''); setInputError(''); setSendError(''); }
   }, [isOpen]);
 
   const addEmail = () => {
     const val = inputVal.trim();
     if (!val) return;
-    if (!isValidEmail(val)) {
-      setInputError('Enter a valid email address.');
-      return;
-    }
-    if (emails.includes(val)) {
-      setInputError('This email is already added.');
-      return;
-    }
-    if (emails.length >= MAX_RECIPIENTS) {
-      setInputError(`Maximum ${MAX_RECIPIENTS} recipients allowed.`);
-      return;
-    }
+    if (!isValidEmail(val))       { setInputError('Enter a valid email address.'); return; }
+    if (emails.includes(val))     { setInputError('This email is already added.'); return; }
+    if (emails.length >= MAX_RECIPIENTS) { setInputError(`Maximum ${MAX_RECIPIENTS} recipients allowed.`); return; }
     setEmails((prev) => [...prev, val]);
-    setInputVal('');
-    setInputError('');
+    setInputVal(''); setInputError('');
     inputRef.current?.focus();
   };
 
-  const removeEmail = (email: string) => {
-    setEmails((prev) => prev.filter((e) => e !== email));
-  };
+  const removeEmail = (email: string) => setEmails((prev) => prev.filter((e) => e !== email));
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') { e.preventDefault(); addEmail(); }
-    if (e.key === 'Backspace' && inputVal === '' && emails.length > 0) {
+    if (e.key === 'Backspace' && inputVal === '' && emails.length > 0)
       setEmails((prev) => prev.slice(0, -1));
-    }
   };
 
   const handleSend = async () => {
-    if (emails.length === 0) {
-      setInputError('Add at least one email address.');
-      return;
-    }
-    setSending(true);
-    setSendError('');
-    try {
-      await onSend(invoiceId, emails);
-      onClose();
-    } catch (err: any) {
-      setSendError(err?.message || 'Failed to send invoice.');
-    } finally {
-      setSending(false);
-    }
+    if (emails.length === 0) { setInputError('Add at least one email address.'); return; }
+    setSending(true); setSendError('');
+    try { await onSend(invoiceId, emails); onClose(); }
+    catch (err: any) { setSendError(err?.message || 'Failed to send invoice.'); }
+    finally { setSending(false); }
   };
 
   return (
-    <ModalShell
-      isOpen={isOpen}
-      onClose={onClose}
+    <ModalShell isOpen={isOpen} onClose={onClose}
       title="Share Invoice"
       subtitle="Share this invoice with your team or stakeholders for review and process."
       maxWidth={520}
     >
       {sendError && <p className="sm-error-msg">{sendError}</p>}
 
-      {/* Email input */}
       <div className="sm-field sm-field--full">
-        <label className="sm-label">
-          Email Address <span className="sm-required">*</span>
-        </label>
-
+        <label className="sm-label">Email Address <span className="sm-required">*</span></label>
         <div className="sm-email-input-row">
-          <input
-            ref={inputRef}
-            type="email"
+          <input ref={inputRef} type="email"
             className={`sm-input sm-input--chip-input ${inputError ? 'sm-input--error' : ''}`}
             placeholder="Enter email addresses to share this invoice"
             value={inputVal}
@@ -455,49 +427,250 @@ export const ShareInvoiceModal: React.FC<ShareInvoiceModalProps> = ({
             onKeyDown={handleKeyDown}
             disabled={emails.length >= MAX_RECIPIENTS}
           />
-          <button
-            className="sm-add-email-btn"
-            onClick={addEmail}
-            disabled={emails.length >= MAX_RECIPIENTS}
-            aria-label="Add email"
-          >
+          <button className="sm-add-email-btn" onClick={addEmail}
+            disabled={emails.length >= MAX_RECIPIENTS} aria-label="Add email">
             <TbPlus size={16} />
           </button>
         </div>
-
         {inputError && <p className="sm-field-error">{inputError}</p>}
-
-        {/* Email chips */}
         {emails.length > 0 && (
           <div className="sm-chips-wrap">
             {emails.map((email) => (
               <div key={email} className="sm-chip">
                 <span className="sm-chip-label">{email}</span>
-                <button
-                  className="sm-chip-remove"
-                  onClick={() => removeEmail(email)}
-                  aria-label={`Remove ${email}`}
-                >
+                <button className="sm-chip-remove" onClick={() => removeEmail(email)}
+                  aria-label={`Remove ${email}`}>
                   <TbX size={11} />
                 </button>
               </div>
             ))}
           </div>
         )}
-
-        <p className="sm-hint">
-          You can share this invoice with up to {MAX_RECIPIENTS} recipients.
-        </p>
+        <p className="sm-hint">You can share this invoice with up to {MAX_RECIPIENTS} recipients.</p>
       </div>
 
-      {/* Send */}
-      <button
-        className="sm-send-btn"
-        onClick={handleSend}
-        disabled={sending || emails.length === 0}
-      >
+      <button className="sm-send-btn" onClick={handleSend} disabled={sending || emails.length === 0}>
         {sending ? 'Sending…' : 'Send Invoice'}
       </button>
     </ModalShell>
+  );
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 4.  DELETE WORKSPACE MODAL  (new)
+//     Triggered from Workspace Management tab → delete workspace action.
+//     Calls onConfirm() which should invoke the workspace delete API.
+// ══════════════════════════════════════════════════════════════════════════════
+
+export interface DeleteWorkspaceModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  workspaceName?: string;
+  /** Should call the workspace delete API and resolve on success */
+  onConfirm: () => Promise<void>;
+}
+
+export const DeleteWorkspaceModal: React.FC<DeleteWorkspaceModalProps> = ({
+  isOpen, onClose, workspaceName, onConfirm,
+}) => {
+  const [loading, setLoading] = useState(false);
+  const [error, setError]     = useState('');
+
+  const handleDelete = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      await onConfirm();
+      onClose();
+    } catch (err: any) {
+      setError(err?.message || 'Failed to delete workspace. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <ConfirmShell
+      isOpen={isOpen}
+      onClose={onClose}
+      variant="danger"
+      icon={<SpIcon name="sp-Interface-Trash_Empty" />}
+      title="Delete Workspace"
+      subtitle={
+        <>
+          This will permanently remove the workspace
+          {workspaceName ? <> <strong>"{workspaceName}"</strong></> : ''} and all
+          associated data — explorations, personas, reports, and logs.
+          <br />This action cannot be reversed.
+          {error && <span className="sm-confirm-inline-error">{error}</span>}
+        </>
+      }
+      actionLabel="Delete"
+      onAction={handleDelete}
+      actionLoading={loading}
+      maxWidth={320}
+    />
+  );
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 5.  REMOVE USER MODAL  (new)
+//     Triggered from Team Management tab → remove user action.
+//     Calls onConfirm() which should invoke the remove-member API.
+// ══════════════════════════════════════════════════════════════════════════════
+
+export interface RemoveUserModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  userName?: string;
+  /** Should call the remove-member API and resolve on success */
+  onConfirm: () => Promise<void>;
+}
+
+export const RemoveUserModal: React.FC<RemoveUserModalProps> = ({
+  isOpen, onClose, userName, onConfirm,
+}) => {
+  const [loading, setLoading] = useState(false);
+  const [error, setError]     = useState('');
+
+  const handleRemove = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      await onConfirm();
+      onClose();
+    } catch (err: any) {
+      setError(err?.message || 'Failed to remove user. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <ConfirmShell
+      isOpen={isOpen}
+      onClose={onClose}
+      variant="danger"
+      icon={<SpIcon name="sp-User-User_Remove"  size={30}/>}
+      title="Remove User"
+      subtitle={
+        <>
+          Access to this workspace will be revoked
+          {userName ? <> for <strong>{userName}</strong></> : ''}.
+          {error && <span className="sm-confirm-inline-error">{error}</span>}
+        </>
+      }
+      actionLabel="Yes, Remove"
+      onAction={handleRemove}
+      actionLoading={loading}
+      maxWidth={300}
+    />
+  );
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 6.  DELETE ACCOUNT MODAL  (new)
+//     Triggered from Settings → Profile tab → "Delete Account" button.
+//     Calls onConfirm() which should invoke the delete-account API,
+//     then redirect to login.
+// ══════════════════════════════════════════════════════════════════════════════
+
+export interface DeleteAccountModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  /** Should call the delete-account API, clear auth, and navigate to /login */
+  onConfirm: () => Promise<void>;
+}
+
+export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
+  isOpen, onClose, onConfirm,
+}) => {
+  const [loading, setLoading] = useState(false);
+  const [error, setError]     = useState('');
+
+  const handleDelete = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      await onConfirm();
+      onClose();
+    } catch (err: any) {
+      setError(err?.message || 'Failed to delete account. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <ConfirmShell
+      isOpen={isOpen}
+      onClose={onClose}
+      variant="danger"
+      icon={<TbUserX size={26} />}
+      title="Delete Account"
+      subtitle={
+        <>
+          Access to this workspace will be revoked.
+          {error && <span className="sm-confirm-inline-error">{error}</span>}
+        </>
+      }
+      actionLabel="Yes, Remove"
+      onAction={handleDelete}
+      actionLoading={loading}
+      maxWidth={280}
+    />
+  );
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 7.  LOGOUT MODAL  (new)
+//     Triggered from Settings sidebar → Logout button.
+//     Shows the user's email. Calls onConfirm() which should clear auth
+//     state and navigate to /login.
+// ══════════════════════════════════════════════════════════════════════════════
+
+export interface LogoutModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  appName?: string;
+  userEmail?: string;
+  /** Should clear auth state and navigate to /login */
+  onConfirm: () => Promise<void>;
+}
+
+export const LogoutModal: React.FC<LogoutModalProps> = ({
+  isOpen, onClose, appName = 'the app', userEmail, onConfirm,
+}) => {
+  const [loading, setLoading] = useState(false);
+
+  const handleLogout = async () => {
+    setLoading(true);
+    try {
+      await onConfirm();
+      // onConfirm is expected to navigate — no onClose() needed
+    } catch {
+      // Navigation already happened or will happen; swallow error
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <ConfirmShell
+      isOpen={isOpen}
+      onClose={onClose}
+      variant="primary"
+      icon={<SpIcon name="sp-Other-Logout" size= {30} />}
+      title="Logout"
+      subtitle={
+        userEmail
+          ? `Log out of ${appName} as ${userEmail}?`
+          : `Are you sure you want to log out?`
+      }
+      actionLabel="Logout"
+      onAction={handleLogout}
+      actionLoading={loading}
+      maxWidth={300}
+    />
   );
 };

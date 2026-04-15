@@ -298,7 +298,7 @@
   width: 2.5rem;
   height: 2.5rem;
   border-radius: 0.5rem;
-  background: linear-gradient(135deg, rgba(14, 99, 236, 0.2), rgba(13, 86, 209, 0.2));
+  background: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -434,7 +434,7 @@
   color: #ffffff;
 }
 .workspace-item-selected {
-  background: rgba(55, 65, 90, 0.5);
+  background: transparent;
   color: #ffffff;
 }
 
@@ -443,15 +443,15 @@
 }
 
 .workspace-item:hover .workspace-item-icon {
-  background: rgba(14, 99, 236, 0.2);
+  background: transparent;
 }
 
 .workspace-item-icon-selected {
-  background: rgba(14, 99, 236, 0.2);
+  background:transparent;
 }
 
 .icon-selected {
-  color: #0E63EC;
+  color: transparent;
 }
 
 .icon-default {
@@ -459,7 +459,7 @@
 }
 
 .workspace-item:hover .icon-default {
-  color: #0E63EC;
+  color: transparent;
 }
 
 .workspace-item-info {

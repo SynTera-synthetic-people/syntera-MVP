@@ -1,0 +1,57 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   PersonaSummaryView Styles — Figma Accurate
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.persona-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 8px 0;
+}
+
+/* Persona name + edit icon */
+.persona-summary__header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 4px 0 8px;
+}
+
+.persona-summary__name {
+  font-size: 18px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.persona-summary__edit-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #FFFFFF;
+  transition: background 0.15s, color 0.15s;
+}
+
+.persona-summary__edit-btn:hover {
+  background:transparent;
+  color: #FFFFFF;
+}
+
+/* 2×2 summary cards grid */
+.persona-summary__cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 700px) {
+  .persona-summary__cards {
+    grid-template-columns: 1fr;
+  }
+}

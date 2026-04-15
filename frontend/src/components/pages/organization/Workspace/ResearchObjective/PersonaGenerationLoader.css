@@ -111,7 +111,6 @@
   align-items: center;
   justify-content: center;
   background: #1a1d2e;
-  border: 2px solid rgba(37, 99, 235, 0.35);
   position: relative;
   z-index: 1;
 }
@@ -120,6 +119,7 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center 30%;
 }
 
 .pgl-step-label {
@@ -274,6 +274,26 @@
   font-size: 0.875rem;
 }
 
+/* ── Final redirect row — spinner + label ── */
+.pgl-final-redirect {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.625rem;
+  margin-top: 1.25rem;
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+.pgl-final-spinner {
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid rgba(255, 255, 255, 0.12);
+  border-top-color: #2563eb;
+  border-radius: 50%;
+  animation: pgl-spin 0.75s linear infinite;
+}
+
 /* ── Animations ── */
 @keyframes pgl-fade-in {
   from { opacity: 0; transform: translateY(8px); }
@@ -283,4 +303,8 @@
 @keyframes pgl-fade-in-up {
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pgl-spin {
+  to { transform: rotate(360deg); }
 }

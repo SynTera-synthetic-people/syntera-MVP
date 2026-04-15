@@ -307,14 +307,14 @@ const AddResearchObjective: React.FC = () => {
   };
 
   const handleBuildManually = () => {
-    trigger({
-      stage: 'persona_builder',
-      event: 'PERSONA_WORKFLOW_LOADED',
-      payload: {},
-    });
-    const targetUrl = `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-builder`;
-    navigate(targetUrl);
-  };
+  trigger({
+    stage: 'persona_builder',
+    event: 'PERSONA_WORKFLOW_LOADED',
+    payload: {},
+  });
+  const targetUrl = `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-builder/manual`;
+  navigate(targetUrl, { state: { flow: "manual" } });
+};
 
   // ── Message sending ──────────────────────────────────────────────────────
 

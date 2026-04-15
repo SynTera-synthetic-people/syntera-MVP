@@ -1,0 +1,49 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   AttributePillButton Styles — Figma Accurate
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.attribute-pill {
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 13px;
+  font-weight: 400;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+  white-space: nowrap;
+  outline: none;
+  font-family: inherit;
+}
+
+.attribute-pill:hover:not(.attribute-pill--disabled) {
+  border-color: rgba(255, 255, 255, 0.35);
+  color: #fff;
+}
+
+/* Selected state — solid teal fill, dark text, exactly as Figma */
+.attribute-pill--selected {
+  background: #00D4A8;
+  border-color: #00D4A8;
+  color: #0a0f14;
+  font-weight: 600;
+}
+
+.attribute-pill--selected:hover:not(.attribute-pill--disabled) {
+  background: #00bc95;
+  border-color: #00bc95;
+  color: #0a0f14;
+}
+
+.attribute-pill--disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.attribute-pill--custom {
+  border-style: dashed;
+  border-width: 1px;
+  color: rgba(255, 255, 255, 0.5);
+}

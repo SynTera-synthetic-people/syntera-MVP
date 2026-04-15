@@ -1,0 +1,181 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   AttributeSelectionPanel Styles — Figma Accurate
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.attribute-selection {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 0 4px;
+}
+
+.attribute-selection__title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #fff;
+  margin: 0 0 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.attribute-selection__badge {
+  font-size: 11px;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.07);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+/* Pills row — wraps naturally */
+.attribute-selection__pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+/* "or" separator */
+.attribute-selection__or {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.35);
+  padding: 0 2px;
+  flex-shrink: 0;
+}
+
+/* "+ Add Custom" button */
+.attribute-selection__add-custom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.attribute-selection__add-custom:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.35);
+  color: #fff;
+}
+
+.attribute-selection__add-custom:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Custom input inline */
+.attribute-selection__custom-input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.attribute-selection__custom-input {
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 13px;
+  outline: none;
+  font-family: inherit;
+  width: 180px;
+  transition: border-color 0.15s;
+}
+
+.attribute-selection__custom-input::placeholder {
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.attribute-selection__custom-input:focus {
+  border-color: #00D4A8;
+}
+
+.attribute-selection__custom-btn {
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  outline: none;
+  font-family: inherit;
+  transition: opacity 0.15s;
+}
+
+.attribute-selection__custom-btn--add {
+  background: #00D4A8;
+  color: #0a0f14;
+}
+
+.attribute-selection__custom-btn--add:hover:not(:disabled) {
+  background: #00bc95;
+}
+
+.attribute-selection__custom-btn--add:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.attribute-selection__custom-btn--cancel {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.attribute-selection__custom-btn--cancel:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.attribute-selection__hint {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.4);
+  margin: 0;
+}
+
+/* Geography dropdowns */
+.attribute-selection__geo-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.attribute-selection__geo-select {
+  padding: 8px 32px 8px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: #1e2128;
+  color: #fff;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='rgba(255,255,255,0.4)' stroke-width='2' viewBox='0 0 24 24'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.attribute-selection__geo-select:hover {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.attribute-selection__geo-select option {
+  background: #1e2128;
+}
+
+@media (max-width: 768px) {
+  .attribute-selection__custom-input {
+    width: 140px;
+  }
+}

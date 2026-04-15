@@ -4,26 +4,11 @@ import { useSelector } from "react-redux";
 import "./ExplorationStyle.css";
 import { motion, useMotionValue, useSpring, useTransform } from "framer-motion";
 import {
-  TbPlus,
-  TbEdit,
-  TbTrash,
-  TbChartDots,
-  TbDotsVertical,
-  TbFileReport,
-  TbArrowRight,
-  TbBell,
   TbSearch,
   TbChevronDown,
-  TbSettings,
-  TbInfoCircle,
-  TbHelp,
-  TbLogout,
   TbX,
-  TbAlertTriangle,
-  TbArrowUpRight,
-  TbUsers,
-  TbDownload,
 } from "react-icons/tb";
+import SpIcon from '../../../../SPIcon';
 import { useTheme } from "../../../../../context/ThemeContext";
 import {
   useExplorations,
@@ -203,9 +188,6 @@ const ExplorationList: React.FC = () => {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [isTooltipHovered, setIsTooltipHovered] = useState(false);
   const [csvDownloadingId, setCsvDownloadingId] = useState<string | null>(null);
-
-  // ── Edit Workspace modal state ───────────────────────────────────────────
-  // showEditWorkspace opens WorkspacePopup in edit mode with the current workspaceId
   const [showEditWorkspace, setShowEditWorkspace] = useState(false);
 
   // Top-bar kebab (admin only)
@@ -230,10 +212,8 @@ const ExplorationList: React.FC = () => {
   const deleteExplorationMutation = useDeleteExploration();
   const { data: currentWorkspace, refetch: refetchWorkspace } = useWorkspace(workspaceId);
 
-  // Smart workspace heading
   const workspaceHeading = getWorkspaceLabel(user, currentWorkspace?.name);
 
-  // Mouse follow
   const mouseX = useMotionValue(0);
   const mouseY = useMotionValue(0);
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -241,7 +221,6 @@ const ExplorationList: React.FC = () => {
     mouseY.set(e.clientY);
   };
 
-  // Close dropdowns on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (topKebabRef.current && !topKebabRef.current.contains(e.target as Node))
@@ -294,7 +273,6 @@ const ExplorationList: React.FC = () => {
     setOpenMenuId(openMenuId === id ? null : id);
   };
 
-  // Filtered + sorted list
   const visibleExplorations = ((explorations as Exploration[]) ?? [])
     .filter((exp) => {
       const q = searchQuery.toLowerCase();
@@ -341,7 +319,6 @@ const ExplorationList: React.FC = () => {
   return (
     <div onMouseMove={handleMouseMove} className="exploration-page">
 
-      {/* Background */}
       <div className="exploration-background">
         <div className="base-gradient" />
         <div className="gradient-orb gradient-orb-1" />
@@ -361,14 +338,10 @@ const ExplorationList: React.FC = () => {
           </div>
 
           <div className="top-bar-right">
-
-            {/* Notification bell */}
             <button className="topbar-icon-btn bell-btn" aria-label="Notifications">
-              <TbBell size={18} />
-              <span className="notif-dot" />
+              <SpIcon name="sp-Communication-Bell" />
             </button>
 
-            {/* Create Exploration button */}
             <div className="create-btn-wrapper">
               <motion.button
                 whileHover={effectivelyMaxed ? {} : { scale: 1.02 }}
@@ -379,16 +352,11 @@ const ExplorationList: React.FC = () => {
                 disabled={effectivelyMaxed}
                 className={`create-exploration-btn ${effectivelyMaxed ? "disabled" : ""}`}
               >
-                <TbPlus size={20} />
+                <SpIcon name="sp-Edit-Add_Plus" />
                 <span>Create Exploration</span>
               </motion.button>
-
               {isTooltipHovered && !effectivelyMaxed && (
-                <motion.div
-                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  className="create-tooltip"
-                >
+                <motion.div initial={{ opacity: 0, y: 10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} className="create-tooltip">
                   Create a dedicated exploration for each research question or study.
                   <div className="tooltip-arrow" />
                 </motion.div>
@@ -403,53 +371,34 @@ const ExplorationList: React.FC = () => {
                   aria-label="More options"
                   onClick={() => setShowTopKebab((v) => !v)}
                 >
-                  <TbDotsVertical size={18} />
+                  <SpIcon name="sp-Menu-More_Vertical" />
                 </button>
 
                 {showTopKebab && (
                   <div className="topbar-kebab-menu">
-
-                    {/* ── Manage Users ── */}
                     <div
                       className="menu-item"
-                      onClick={() => {
-                        setShowTopKebab(false);
-                        navigate(`/main/organization/workspace/manage/${workspaceId}`);
-                      }}
+                      onClick={() => { setShowTopKebab(false); navigate(`/main/organization/workspace/manage/${workspaceId}`); }}
                     >
-                      <TbSettings size={16} />
+                      <SpIcon name="sp-User-Users" />
                       Manage Users
                     </div>
-
-                    {/* ── Invite People ── */}
                     <div
                       className="menu-item"
-                      onClick={() => {
-                        setShowInviteModal(true);
-                        setShowTopKebab(false);
-                      }}
+                      onClick={() => { setShowInviteModal(true); setShowTopKebab(false); }}
                     >
-                      <TbInfoCircle size={16} />
+                      <SpIcon name="sp-User-User_Add" />
                       Invite People
                     </div>
-
-                    {/* ── Edit Workspace ── */}
                     <div
                       className="menu-item"
-                      onClick={() => {
-                        setShowEditWorkspace(true);
-                        setShowTopKebab(false);
-                      }}
+                      onClick={() => { setShowEditWorkspace(true); setShowTopKebab(false); }}
                     >
-                      <TbHelp size={16} />
+                      <SpIcon name="sp-Edit-Edit_Pencil_01" />
                       Edit Workspace
                     </div>
-
-                    <div className="kebab-divider" />
-
-                    {/* ── Delete Workspace ── */}
                     <div className="menu-item menu-item-delete">
-                      <TbLogout size={16} />
+                      <SpIcon name="sp-Interface-Trash_Empty" />
                       Delete Workspace
                     </div>
                   </div>
@@ -464,22 +413,6 @@ const ExplorationList: React.FC = () => {
           <h1 className="page-title">Research Exploration</h1>
         </motion.div>
 
-        {/* ── Trial Limit Banner ── */}
-        {effectivelyMaxed && (
-          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="trial-banner">
-            <div className="trial-banner-left">
-              <TbAlertTriangle size={18} className="trial-banner-icon" />
-              <p className="trial-banner-text">
-                Your free trial exploration has been completed. Upgrade to continue.
-              </p>
-            </div>
-            <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} onClick={() => setShowUpgrade(true)} className="trial-banner-btn">
-              <TbArrowUpRight size={14} />
-              Upgrade Now
-            </motion.button>
-          </motion.div>
-        )}
-
         {/* ── Search + Filters ── */}
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="search-filter-row">
           <div className="search-wrapper">
@@ -487,7 +420,6 @@ const ExplorationList: React.FC = () => {
             <input type="text" className="search-input" placeholder="Search here..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
           </div>
 
-          {/* Status filter */}
           <div className="filter-wrapper" ref={statusRef}>
             <button
               className={`filter-btn ${statusFilter !== "all" ? "filter-btn--active" : ""}`}
@@ -518,7 +450,6 @@ const ExplorationList: React.FC = () => {
             )}
           </div>
 
-          {/* Audience filter */}
           <div className="filter-wrapper" ref={audienceRef}>
             <button
               className={`filter-btn ${audienceFilter !== "all" ? "filter-btn--active" : ""}`}
@@ -564,7 +495,6 @@ const ExplorationList: React.FC = () => {
             </div>
           ) : (
             <>
-              {/* Table Header */}
               <div className="table-header">
                 <div className="header-cell header-title">Title</div>
                 <div className="header-cell header-description">Description</div>
@@ -574,7 +504,6 @@ const ExplorationList: React.FC = () => {
                 <div className="header-cell header-actions">Actions</div>
               </div>
 
-              {/* Table Body */}
               <div className="table-body">
                 {visibleExplorations.map((exploration, index) => (
                   <motion.div
@@ -602,30 +531,28 @@ const ExplorationList: React.FC = () => {
                         className="continue-exp-btn"
                         onClick={() => navigate(`/main/organization/workspace/research-objectives/${workspaceId}/${exploration.id}/research-mode`)}
                       >
-                        Continue <TbArrowRight size={16} />
+                        Continue <SpIcon name="sp-Arrow-Arrow_Right_SM" />
                       </button>
-
                       <div className="action-tooltip-group" />
-
                       <div className="kebab-menu-container">
                         <button className="kebab-btn" onClick={() => toggleMenu(exploration.id)}>
-                          <TbDotsVertical size={18} />
+                          <SpIcon name="sp-Menu-More_Vertical" />
                         </button>
                         {openMenuId === exploration.id && (
                           <div className="kebab-menu">
                             <div className="menu-item" onClick={() => { navigate(`/main/organization/workspace/explorations/${workspaceId}/${exploration.id}/edit`); setOpenMenuId(null); }}>
-                              <TbEdit size={16} />Edit
+                              <SpIcon name="sp-Edit-Edit_Pencil_01" />Edit
                             </div>
                             <div className="menu-item" onClick={() => { handleDownloadQuestionnaireCsv(exploration); setOpenMenuId(null); }}>
-                              <TbFileReport size={16} />Report
+                              <SpIcon name="sp-File-File_Blank" />Report
                             </div>
                             {exploration.is_end && (
                               <div className="menu-item" onClick={() => { navigate(`/main/traceability/${workspaceId}/${exploration.id}`); setOpenMenuId(null); }}>
-                                <TbChartDots size={16} />Traceability
+                                <SpIcon name="sp-File-File_Document" />Traceability
                               </div>
                             )}
                             <div className="menu-item menu-item-delete" onClick={() => handleDelete(exploration.id, exploration.title)}>
-                              <TbTrash size={16} />Delete
+                              <SpIcon name="sp-Interface-Trash_Empty" />Delete
                             </div>
                           </div>
                         )}
@@ -637,7 +564,7 @@ const ExplorationList: React.FC = () => {
             </>
           )}
 
-          {/* Trial Limit Overlay */}
+          {/* Trial Limit Overlay — upgrade CTA lives here, banner above removed */}
           {effectivelyMaxed && (
             <motion.div className="trial-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
               <div className="trial-overlay-content">
@@ -663,25 +590,15 @@ const ExplorationList: React.FC = () => {
         onLaunch={() => setShowInviteModal(false)}
       />
 
-      {/*
-        Edit Workspace modal — reuses WorkspacePopup in edit mode.
-        Passing workspaceId switches it into edit mode: it fetches the current
-        workspace data, pre-fills the form, and calls useUpdateWorkspace on submit.
-        On success we refetch the workspace so the heading updates immediately.
-      */}
       {showEditWorkspace && workspaceId && (
         <WorkspacePopup
           isOpen={showEditWorkspace}
           workspaceId={workspaceId}
           onClose={() => setShowEditWorkspace(false)}
-          onSuccess={() => {
-            setShowEditWorkspace(false);
-            refetchWorkspace();
-          }}
+          onSuccess={() => { setShowEditWorkspace(false); refetchWorkspace(); }}
         />
       )}
 
-      {/* Delete Confirmation Modal */}
       {deleteModalId && (
         <motion.div
           className="delete-modal-overlay"
@@ -701,7 +618,7 @@ const ExplorationList: React.FC = () => {
             <button className="delete-modal-close" onClick={() => setDeleteModalId(null)}>
               <TbX size={16} />
             </button>
-            <div className="delete-modal-icon"><TbTrash size={24} /></div>
+            <div className="delete-modal-icon"><SpIcon name="sp-Interface-Trash_Empty" /></div>
             <h3 className="delete-modal-title">Delete Exploration</h3>
             <p className="delete-modal-subtitle">This will erase "{deleteModalTitle}"</p>
             <div className="delete-modal-actions">

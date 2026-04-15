@@ -1,12 +1,11 @@
 /* ═══════════════════════════════════════════════════════════════
-   SettingsModalsStyle.css
-   Shared modal shell + ManageUsersModal + EditUserModal + ShareInvoiceModal
+   SettingModalStyle.css
+   Shared modal shell + all settings modals
    Prefix: sm-
-   No inline styles — all layout here.
 ═══════════════════════════════════════════════════════════════ */
 
 /* ════════════════════════════════════════════════════════════════
-   OVERLAY + SHELL
+   OVERLAY + SHELL  (shared by ModalShell + ConfirmShell)
 ════════════════════════════════════════════════════════════════ */
 
 .sm-overlay {
@@ -155,9 +154,8 @@
   gap: 7px;
   padding: 10px 24px;
   border-radius: 9px;
-  border: none;
-  background: rgba(255, 255, 255, 0.07);
   border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.07);
   color: #9ca3af;
   font-size: 14px;
   font-weight: 600;
@@ -208,7 +206,7 @@
 .sm-send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ════════════════════════════════════════════════════════════════
-   1. MANAGE USERS MODAL — member list
+   1. MANAGE USERS MODAL
 ════════════════════════════════════════════════════════════════ */
 
 .sm-member-list {
@@ -222,10 +220,7 @@
 }
 
 .sm-member-list::-webkit-scrollbar { width: 4px; }
-.sm-member-list::-webkit-scrollbar-thumb {
-  background: #2a2d35;
-  border-radius: 4px;
-}
+.sm-member-list::-webkit-scrollbar-thumb { background: #2a2d35; border-radius: 4px; }
 
 .sm-member-row {
   display: flex;
@@ -238,12 +233,11 @@
 
 .sm-member-row:hover { background: rgba(255, 255, 255, 0.04); }
 
-/* Avatar circle */
 .sm-member-avatar {
   width: 32px;
   height: 32px;
   border-radius: 20px;
-  background:linear-gradient(135deg, #005D46, #005D46);
+  background: linear-gradient(135deg, #005D46, #005D46);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -271,7 +265,6 @@
   white-space: nowrap;
 }
 
-/* Admin badge */
 .sm-member-badge {
   display: inline-flex;
   align-items: center;
@@ -288,7 +281,6 @@
   border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
-/* Remove (×) button */
 .sm-member-remove-btn {
   display: flex;
   align-items: center;
@@ -312,7 +304,7 @@
 .sm-member-remove-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* ════════════════════════════════════════════════════════════════
-   2. EDIT USER MODAL — form fields
+   2. EDIT USER MODAL
 ════════════════════════════════════════════════════════════════ */
 
 .sm-form-row {
@@ -331,9 +323,7 @@
   gap: 5px;
 }
 
-.sm-field--full {
-  grid-column: 1 / -1;
-}
+.sm-field--full { grid-column: 1 / -1; }
 
 .sm-label {
   font-size: 12.5px;
@@ -360,7 +350,6 @@
 .sm-input:focus         { border-color: #374151; }
 .sm-input--error        { border-color: #f87171 !important; }
 
-/* Read-only/disabled email field */
 .sm-input--disabled {
   background: #0a0c10;
   color: #6b7280;
@@ -374,7 +363,7 @@
 }
 
 /* ════════════════════════════════════════════════════════════════
-   3. SHARE INVOICE MODAL — email chip input
+   3. SHARE INVOICE MODAL
 ════════════════════════════════════════════════════════════════ */
 
 .sm-email-input-row {
@@ -383,9 +372,7 @@
   align-items: center;
 }
 
-.sm-input--chip-input {
-  flex: 1;
-}
+.sm-input--chip-input { flex: 1; }
 
 .sm-add-email-btn {
   display: flex;
@@ -409,7 +396,6 @@
 
 .sm-add-email-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-/* Chip container */
 .sm-chips-wrap {
   display: flex;
   flex-wrap: wrap;
@@ -417,7 +403,6 @@
   margin-top: 8px;
 }
 
-/* Individual chip */
 .sm-chip {
   display: inline-flex;
   align-items: center;
@@ -455,9 +440,157 @@
 
 .sm-chip-remove:hover { color: #f87171; }
 
-/* Hint text */
 .sm-hint {
   font-size: 12px;
   color: #6b7280;
   margin: 4px 0 0;
 }
+
+/* ════════════════════════════════════════════════════════════════
+   4–7. CONFIRM SHELL
+        Used by: DeleteWorkspace, RemoveUser, DeleteAccount, Logout
+════════════════════════════════════════════════════════════════ */
+
+/* Card */
+.sm-confirm-card {
+  position: relative;
+  width: 100%;
+  background: #111318;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  padding: 36px 28px 28px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.75);
+  animation: sm-modal-in 0.18s ease;
+}
+
+/* Close button — top-right corner of card */
+.sm-confirm-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+.sm-confirm-close:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: #e5e7eb;
+}
+
+/* ── Icon box ─────────────────────────────────────────────────────────────────
+   Rounded square with coloured background. No badge/overlay — removed ::after.
+─────────────────────────────────────────────────────────────────────────────── */
+.sm-confirm-icon-wrap {
+  width: 68px;
+  height: 68px;
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 4px;
+  flex-shrink: 0;
+}
+
+/* Danger variant — red (Delete workspace / Remove user / Delete account) */
+.sm-confirm-icon-wrap--danger {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  color: #ef4444;
+}
+
+/* Primary variant — blue (Logout) */
+.sm-confirm-icon-wrap--primary {
+  background: rgba(37, 99, 235, 0.15);
+  border: 1px solid rgba(37, 99, 235, 0.25);
+  color: #3b82f6;
+}
+
+/* ── Title ── */
+.sm-confirm-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #f3f4f6;
+  margin: 0;
+  letter-spacing: -0.2px;
+}
+
+/* ── Subtitle ── */
+.sm-confirm-subtitle {
+  font-size: 13px;
+  color: #9ca3af;
+  margin: 0;
+  line-height: 1.6;
+  max-width: 260px;
+}
+
+/* Inline error inside subtitle */
+.sm-confirm-inline-error {
+  display: block;
+  margin-top: 8px;
+  font-size: 12px;
+  color: #f87171;
+}
+
+/* ── Action buttons row ── */
+.sm-confirm-actions {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  margin-top: 4px;
+}
+
+/* Action button (Delete / Remove / Logout) */
+.sm-confirm-action-btn {
+  flex: 1;
+  padding: 11px 0;
+  border-radius: 10px;
+  border: none;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+  color: #fff;
+}
+
+.sm-confirm-action-btn--danger  { background: #ef4444; }
+.sm-confirm-action-btn--primary { background: #2563eb; }
+
+.sm-confirm-action-btn--danger:hover:not(:disabled)  { background: #dc2626; }
+.sm-confirm-action-btn--primary:hover:not(:disabled) { background: #1d4ed8; }
+
+.sm-confirm-action-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* Cancel button */
+.sm-confirm-cancel-btn {
+  flex: 1;
+  padding: 11px 0;
+  border-radius: 10px;
+  border: 1.5px solid rgba(255, 255, 255, 0.12);
+  background: transparent;
+  color: #d1d5db;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.sm-confirm-cancel-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.sm-confirm-cancel-btn:disabled { opacity: 0.55; cursor: not-allowed; }

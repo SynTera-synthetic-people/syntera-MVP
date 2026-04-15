@@ -792,7 +792,7 @@
   display: flex;
   align-items: center;
   gap: 0.375rem;
-  color: #22c55e;
+  color: #37FFCE;
   font-weight: 500;
   font-size: 0.875rem;
   background: none;
@@ -802,7 +802,7 @@
 }
 
 .continue-exp-btn:hover {
-  color: #16a34a;
+  color: #37FFCE;
 }
 
 /* Kebab Menu */
@@ -859,7 +859,7 @@
 }
 
 .menu-item-delete {
-  color: #ef4444;
+  color: #F8F9F9;
 }
 
 .menu-item-delete:hover {

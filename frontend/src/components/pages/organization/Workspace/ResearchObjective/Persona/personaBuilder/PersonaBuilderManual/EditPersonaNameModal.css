@@ -1,0 +1,158 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   EditPersonaNameModal.css — Figma Accurate
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Backdrop */
+.epn-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+/* Modal card */
+.epn-modal {
+  position: relative;
+  background: var(--T-Base-B1, #0E0F12);
+  border:1px solid var(--T-GreyScale-Grey-700, #4F535F);
+  border-radius: 24px;
+  padding: 28px 28px 24px;
+  width: 100%;
+  max-width: 440px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Title */
+.epn-title {
+  font-size: 40px;
+  font-weight: 600;
+  color:  var(--T-Text-Headings, #FFF);
+  margin: 0;
+  text-align: center;
+}
+
+.epn-subtitle {
+  font-size: 16px;
+  color: var(--T-Text-P, #D2D5DE);
+  margin: -14px 0 0;
+  text-align: center;
+}
+
+/* Input */
+.epn-input-wrapper {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.epn-input {
+  width: 100%;
+  padding: 12px 14px;
+  background: transparent;
+  border: 1.5px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.epn-input::placeholder {
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.epn-input:focus {
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.epn-char-count {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.3);
+  text-align: right;
+}
+
+/* Action buttons row */
+.epn-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.epn-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 11px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+  border: none;
+  outline: none;
+}
+
+.epn-btn--cancel {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.epn-btn--cancel:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.epn-btn--save {
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.epn-btn--save:not(:disabled) {
+  background: #2a2d35;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.epn-btn--save:not(:disabled):hover {
+  background: #333740;
+  color: #fff;
+}
+
+.epn-btn--save:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* X close button — bottom center per Figma */
+.epn-close {
+  position: absolute;
+  bottom: -44px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.6);
+  transition: background 0.15s, color 0.15s;
+}
+
+.epn-close:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+}

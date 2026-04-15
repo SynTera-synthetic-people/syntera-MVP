@@ -1,30 +1,13 @@
 import React, { useState, createContext, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useSelector } from 'react-redux';
-import {
-  TbChevronDown,
-  TbBuilding,
-  TbBriefcase,
-  TbUsers,
-  TbCreditCard,
-  TbSettings,
-  TbBell,
-  TbUser,
-  TbHelp,
-  TbLogout,
-  TbArrowLeft,
-  TbDeviceFloppy,
-  TbTool,
-  TbBook,
-  TbFileText,
-  TbRocket,
-} from 'react-icons/tb';
+import { useSelector, useDispatch } from 'react-redux';
+import SpIcon from '../../SPIcon';
 
 import Billing from './billing/Billing';
 import Notifications from './notifications/Notifications';
 import Account from './account/Account';
-import Security from './security/Security';
 import Privacy from './privacy/Privacy';
+import ChangePassword from './ChangePassword/ChangePassword';  // ← added
 
 import { useWorkspace as useWorkspaceContext } from '../../../context/WorkspaceContext';
 import ManageUsers from '../organization/Workspace/ManageUsers';
@@ -33,6 +16,10 @@ import UpgradePlanPage from '../Upgrade/Upgrade';
 import HelpCentre from './help/HelpCenter';
 import UsageManual from './help/UsageManual';
 import TermsAndPolicies from './help/TermsAndPolicies';
+import { LogoutModal } from './SettingModal';
+// Import the logout action that clears your auth slice state.
+// Common names: logout, logoutUser, clearAuth, signOut — match yours exactly.
+import { logout } from '../../../redux/slices/authSlice';
 
 import { useAutoSave } from '../../../hooks/useAutoSave';
 import type { SaveStatus } from '../../../hooks/useAutoSave';
@@ -67,6 +54,7 @@ type AdminView =
   | 'settings-profile'
   | 'settings-security'
   | 'settings-privacy'
+  | 'settings-change-password'     // ← added
   | 'help-centre'
   | 'help-manual'
   | 'help-terms';
@@ -79,6 +67,7 @@ type NonAdminView =
   | 'settings-profile'
   | 'settings-security'
   | 'settings-privacy'
+  | 'settings-change-password'     // ← added
   | 'help-centre'
   | 'help-manual'
   | 'help-terms';
@@ -96,6 +85,9 @@ interface RootState {
     user: {
       is_admin?: boolean;
       role?: string;
+      account_tier?: string;
+      is_trial?: boolean;
+      email?: string;
     } | null;
   };
 }
@@ -109,6 +101,22 @@ const isAdminUser = (user: RootState['auth']['user']): boolean => {
   return false;
 };
 
+/**
+ * showUpgradeTab: visible ONLY for trial (free) or explorer users.
+ * Hidden for: admins, enterprise users, and any other tier.
+ *
+ * Trial  → is_trial=true  AND account_tier='free'
+ * Explorer → account_tier='tier1'  (exhausted or not — they can always renew)
+ */
+const showUpgradeTab = (user: RootState['auth']['user'], isAdmin: boolean): boolean => {
+  if (isAdmin) return false;
+  if (!user) return false;
+  const tier = user.account_tier ?? '';
+  const isTrial = user.is_trial === true && tier === 'free';
+  const isExplorer = tier === 'tier1';
+  return isTrial || isExplorer;
+};
+
 // Views that show the auto-save badge
 const AUTOSAVE_VIEWS: ActiveView[] = [
   'settings-notification',
@@ -117,22 +125,23 @@ const AUTOSAVE_VIEWS: ActiveView[] = [
   'settings-privacy',
 ];
 
-// Views where component renders its own heading+button row
+// Views where the component renders its own heading+button row
 const SELF_HEADING_VIEWS: ActiveView[] = ['org-workspace', 'org-team', 'upgrade'];
 
 // Content headings for all other views
 const HEADING: Record<string, string> = {
-  'org-workspace':         'Workspace Management',
-  'org-team':              'Team Management',
-  'upgrade':               'Upgrade Plan to Continue Explorations',
-  'billing':               'Billing',
-  'settings-notification': 'Settings > Notification',
-  'settings-profile':      'Settings > Profile',
-  'settings-security':     'Settings > Security',
-  'settings-privacy':      'Settings > Privacy',
-  'help-centre':           'Settings > Help Centre',
-  'help-manual':           'Settings > Usage Manual',
-  'help-terms':            'Settings > Terms & Policies',
+  'org-workspace':              'Workspace Management',
+  'org-team':                   'Team Management',
+  'upgrade':                    'Upgrade Plan to Continue Explorations',
+  'billing':                    'Billing',
+  'settings-notification':      'Settings > Notification',
+  'settings-profile':           'Settings > Profile',
+  'settings-security':          'Settings > Security',
+  'settings-privacy':           'Settings > Privacy',
+  'settings-change-password':   'Settings > Change Password',  // ← added
+  'help-centre':                'Settings > Help Centre',
+  'help-manual':                'Settings > Usage Manual',
+  'help-terms':                 'Settings > Terms & Policies',
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -141,20 +150,27 @@ const HEADING: Record<string, string> = {
 
 const Settings: React.FC = () => {
   const navigate = useNavigate();
+  const dispatch = useDispatch();
   const { selectedWorkspace } = useWorkspaceContext();
   const { user } = useSelector((state: RootState) => state.auth);
 
-  const isAdmin = isAdminUser(user);
+  const isAdmin     = isAdminUser(user);
+  const canUpgrade  = showUpgradeTab(user, isAdmin);
 
-  // Default view differs by role
-  const [activeView, setActiveView] = useState<ActiveView>(
-    isAdmin ? 'org-workspace' : 'upgrade'
-  );
+  // Default view: admin → workspace, trial/explorer → upgrade, others → billing
+  const defaultView: ActiveView = isAdmin
+    ? 'org-workspace'
+    : canUpgrade
+    ? 'upgrade'
+    : 'billing';
+
+  const [activeView, setActiveView] = useState<ActiveView>(defaultView);
   const [open, setOpen] = useState<OpenGroups>({
     org: true,
     settings: false,
     help: false,
   });
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
 
   const { lastSavedLabel, status, triggerSave, recordSave } = useAutoSave();
   const showAutosave = AUTOSAVE_VIEWS.includes(activeView);
@@ -182,20 +198,20 @@ const Settings: React.FC = () => {
           />
         );
 
-      // ── Non-admin only ────────────────────────────────────────────────────
+      // ── Trial / Explorer only ─────────────────────────────────────────────
       case 'upgrade':
-        return <UpgradePlanPage />;
+        return canUpgrade ? <UpgradePlanPage /> : null;
 
       // ── Shared views ──────────────────────────────────────────────────────
-      case 'billing':               return <Billing />;
-      case 'settings-notification': return <Notifications />;
-      case 'settings-profile':      return <Account />;
-      case 'settings-security':     return <Security />;
-      case 'settings-privacy':      return <Privacy />;
-      case 'help-centre':           return <HelpCentre />;
-      case 'help-manual':           return <UsageManual />;
-      case 'help-terms':            return <TermsAndPolicies />;
-      default:                      return null;
+      case 'billing':                    return <Billing />;
+      case 'settings-notification':      return <Notifications />;
+      case 'settings-profile':           return <Account />;
+      case 'settings-privacy':           return <Privacy />;
+      case 'settings-change-password':   return <ChangePassword />;  // ← added
+      case 'help-centre':                return <HelpCentre />;
+      case 'help-manual':                return <UsageManual />;
+      case 'help-terms':                 return <TermsAndPolicies />;
+      default:                           return null;
     }
   };
 
@@ -212,10 +228,9 @@ const Settings: React.FC = () => {
             onClick={() => toggleGroup('org')}
           >
             <span className="acc-nav-item-left">
-              <TbBuilding size={17} /> Organisation Control
+              <SpIcon name="sp-Navigation-Building_04" /> Organisation Control
             </span>
-            <TbChevronDown
-              size={13}
+            <SpIcon name="sp-Arrow-Chevron_Down"
               className={`acc-nav-chevron ${open.org ? 'acc-nav-chevron--open' : ''}`}
             />
           </button>
@@ -225,26 +240,30 @@ const Settings: React.FC = () => {
                 className={`acc-nav-child ${activeView === 'org-workspace' ? 'acc-nav-child--active' : ''}`}
                 onClick={() => goTo('org-workspace')}
               >
-                <TbBriefcase size={14} /> Workspace
+                <SpIcon name="sp-Navigation-Building_04" /> Workspace
               </button>
               <button
                 className={`acc-nav-child ${activeView === 'org-team' ? 'acc-nav-child--active' : ''}`}
                 onClick={() => goTo('org-team')}
               >
-                <TbUsers size={14} /> Team Management
+                <SpIcon name="sp-User-Users" /> Team Management
               </button>
             </div>
           )}
         </div>
       )}
 
-      {/* ── NON-ADMIN: Upgrade Plan ── */}
-      {!isAdmin && (
+      {/*
+        ── Upgrade Plan tab ──────────────────────────────────────────────────
+        Only rendered for trial (free) and explorer users.
+        Hidden for: admins, enterprise, and any other tier.
+      */}
+      {canUpgrade && (
         <button
           className={`acc-nav-flat ${activeView === 'upgrade' ? 'acc-nav-flat--active' : ''}`}
           onClick={() => goTo('upgrade')}
         >
-          <TbRocket size={17} /> Upgrade Plan
+          <SpIcon name="sp-Arrow-Arrow_Circle_Up" /> Upgrade Plan
         </button>
       )}
 
@@ -253,7 +272,7 @@ const Settings: React.FC = () => {
         className={`acc-nav-flat ${activeView === 'billing' ? 'acc-nav-flat--active' : ''}`}
         onClick={() => goTo('billing')}
       >
-        <TbCreditCard size={17} /> Billing
+        <SpIcon name="sp-Interface-Credit_Card_01" /> Billing
       </button>
 
       {/* ── Settings (both) ── */}
@@ -263,10 +282,9 @@ const Settings: React.FC = () => {
           onClick={() => toggleGroup('settings')}
         >
           <span className="acc-nav-item-left">
-            <TbSettings size={17} /> Settings
+            <SpIcon name="sp-Interface-Settings" /> Settings
           </span>
-          <TbChevronDown
-            size={13}
+          <SpIcon name="sp-Arrow-Chevron_Down"
             className={`acc-nav-chevron ${open.settings ? 'acc-nav-chevron--open' : ''}`}
           />
         </button>
@@ -276,13 +294,20 @@ const Settings: React.FC = () => {
               className={`acc-nav-child ${activeView === 'settings-notification' ? 'acc-nav-child--active' : ''}`}
               onClick={() => goTo('settings-notification')}
             >
-              <TbBell size={14} /> Notification
+              <SpIcon name="sp-Communication-Bell" /> Notification
             </button>
             <button
               className={`acc-nav-child ${activeView === 'settings-profile' ? 'acc-nav-child--active' : ''}`}
               onClick={() => goTo('settings-profile')}
             >
-              <TbUser size={14} /> Profile
+              <SpIcon name="sp-User-User_03" /> Profile
+            </button>
+            {/* ── Change Password — added to Settings dropdown ── */}
+            <button
+              className={`acc-nav-child ${activeView === 'settings-change-password' ? 'acc-nav-child--active' : ''}`}
+              onClick={() => goTo('settings-change-password')}
+            >
+              <SpIcon name="sp-Interface-Lock" /> Change Password
             </button>
           </div>
         )}
@@ -295,10 +320,9 @@ const Settings: React.FC = () => {
           onClick={() => toggleGroup('help')}
         >
           <span className="acc-nav-item-left">
-            <TbHelp size={17} /> Help
+            <SpIcon name="sp-Warning-Shield_Check" /> Help
           </span>
-          <TbChevronDown
-            size={13}
+          <SpIcon name="sp-Arrow-Chevron_Down"
             className={`acc-nav-chevron ${open.help ? 'acc-nav-chevron--open' : ''}`}
           />
         </button>
@@ -308,29 +332,27 @@ const Settings: React.FC = () => {
               className={`acc-nav-child ${activeView === 'help-centre' ? 'acc-nav-child--active' : ''}`}
               onClick={() => goTo('help-centre')}
             >
-              <TbTool size={14} /> Help Centre
+              <SpIcon name="sp-Environment-Sun" /> Help Centre
             </button>
             <button
               className={`acc-nav-child ${activeView === 'help-manual' ? 'acc-nav-child--active' : ''}`}
               onClick={() => goTo('help-manual')}
             >
-              <TbBook size={14} /> Usage Manuel
+              <SpIcon name="sp-Communication-Bell" /> Usage Manuel
             </button>
             <button
               className={`acc-nav-child ${activeView === 'help-terms' ? 'acc-nav-child--active' : ''}`}
               onClick={() => goTo('help-terms')}
             >
-              <TbFileText size={14} /> Terms &amp; Policies
+              <SpIcon name="sp-User-User_03" /> Terms &amp; Policies
             </button>
           </div>
         )}
       </div>
 
-      <div className="acc-nav-divider" />
-
-      {/* ── Logout (both) ── */}
-      <button className="acc-nav-flat" onClick={() => navigate('/login')}>
-        <TbLogout size={17} /> Logout
+      {/* ── Logout — opens confirmation modal ── */}
+      <button className="acc-nav-flat" onClick={() => setShowLogoutModal(true)}>
+        <SpIcon name="sp-Other-Logout" /> Logout
       </button>
     </nav>
   );
@@ -344,12 +366,12 @@ const Settings: React.FC = () => {
         {/* Top bar */}
         <div className="acc-topbar">
           <button className="acc-back-btn" onClick={() => navigate(-1)}>
-            <TbArrowLeft size={14} /> Back
+            <SpIcon name="sp-Arrow-Arrow_Left_SM" /> Back
           </button>
 
           {showAutosave && (
             <div className={`acc-autosave acc-autosave--${status}`}>
-              <TbDeviceFloppy size={14} />
+              <SpIcon name="sp-System-Save" />
               {status === 'saving'
                 ? 'Saving…'
                 : status === 'error'
@@ -371,11 +393,6 @@ const Settings: React.FC = () => {
 
           {/* Content area */}
           <div className="acc-content">
-            {/*
-              Components that render their own heading+button row
-              (org-workspace, org-team, upgrade) suppress the standalone heading
-              to avoid duplication and layout gaps.
-            */}
             {!SELF_HEADING_VIEWS.includes(activeView) && (
               <h2 className="acc-content-heading">
                 {HEADING[activeView]}
@@ -385,6 +402,18 @@ const Settings: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Logout confirmation modal */}
+      <LogoutModal
+        isOpen={showLogoutModal}
+        onClose={() => setShowLogoutModal(false)}
+        appName="Synthetic People"
+        {...(user?.email ? { userEmail: user.email } : {})}
+        onConfirm={async () => {
+          dispatch(logout());       // clears Redux auth state
+          navigate('/login', { replace: true }); // replace so back-button doesn't return
+        }}
+      />
     </AutoSaveContext.Provider>
   );
 };

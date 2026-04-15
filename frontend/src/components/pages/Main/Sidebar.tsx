@@ -7,17 +7,10 @@ import logoForDark from "../../../assets/synlogo-dark.svg";
 import syntheticLogoForLight from "../../../assets/SyntheticLogo_Light_bg.png";
 import { useTheme } from "../../../context/ThemeContext";
 import {
-  TbMoon,
-  TbSun,
-  TbLayoutDashboard,
-  TbBriefcase,
   TbChevronDown,
-  TbLogout,
-  TbSettings,
-  TbTelescope,
-  TbPlus,
   TbCheck,
 } from "react-icons/tb";
+import SpIcon from "../../SPIcon";
 import { useWorkspaces } from "../../../hooks/useWorkspaces";
 import { useWorkspace as useWorkspaceContext } from "../../../context/WorkspaceContext";
 import WorkspacePopup from "../organization/Workspace/WorkspacePopup";
@@ -344,7 +337,7 @@ const Sidebar: React.FC = () => {
                   }
                   end
                 >
-                  <TbLayoutDashboard size={22} className="nav-icon" />
+                  <SpIcon name="sp-Other-Dashboard" className="nav-icon" />
                   {!isCollapsed && <span className="nav-text">Dashboard</span>}
                 </NavLink>
               )}
@@ -359,7 +352,7 @@ const Sidebar: React.FC = () => {
                   className={`workspace-toggle ${showWorkspaceDropdown ? "workspace-toggle-active" : ""} ${isCollapsed ? "workspace-toggle-collapsed" : ""}`}
                 >
                   <div className="workspace-toggle-left">
-                    <TbBriefcase size={22} className="nav-icon" />
+                    <SpIcon name="sp-Navigation-Building_04" className="nav-icon" />
                     {!isCollapsed && <span className="nav-text">Workspaces</span>}
                   </div>
                   {!isCollapsed && (
@@ -374,7 +367,7 @@ const Sidebar: React.FC = () => {
                     className="selected-workspace-btn"
                   >
                     <div className="workspace-icon-container">
-                      <TbBriefcase size={18} className="workspace-icon" />
+                      <SpIcon name="sp-Navigation-Building_04" className="nav-icon" />
                     </div>
                     <div className="workspace-info">
                       {/*
@@ -391,10 +384,9 @@ const Sidebar: React.FC = () => {
                         )}
                       </p>
                       <p className="workspace-desc">
-                        {selectedWorkspace.description || "No description"}
+                        {selectedWorkspace.description || "No descripicon-defaulttion"}
                       </p>
                     </div>
-                    <TbTelescope size={16} className="workspace-telescope" />
                   </button>
                 )}
 
@@ -418,7 +410,7 @@ const Sidebar: React.FC = () => {
                               className={`workspace-item ${selectedWorkspace?.id === ws.id ? "workspace-item-selected" : ""}`}
                             >
                               <div className={`workspace-item-icon ${selectedWorkspace?.id === ws.id ? "workspace-item-icon-selected" : ""}`}>
-                                <TbBriefcase size={16} className={selectedWorkspace?.id === ws.id ? "icon-selected" : "icon-default"} />
+                                <SpIcon name="sp-Navigation-Building_04" className={selectedWorkspace?.id === ws.id ? "icon-selected" : "icon-default"} />
                               </div>
                               <div className="workspace-item-info">
                                 <div className="workspace-item-header">
@@ -434,9 +426,6 @@ const Sidebar: React.FC = () => {
                                       ws.id === primaryWorkspaceId
                                     )}
                                   </p>
-                                  {selectedWorkspace?.id === ws.id && (
-                                    <TbCheck size={14} className="workspace-item-check" />
-                                  )}
                                 </div>
                                 <p className="workspace-item-desc">
                                   {ws.description || "No description"}
@@ -452,7 +441,7 @@ const Sidebar: React.FC = () => {
                       {userIsAdmin && (
                         <div className="create-workspace-container">
                           <button onClick={handleCreateWorkspace} className="create-workspace-btn">
-                            <TbPlus size={18} />
+                            <SpIcon name="sp-Edit-Add_Plus" />
                             <span>Create Workspace</span>
                           </button>
                         </div>
@@ -504,16 +493,16 @@ const Sidebar: React.FC = () => {
                 <div className={`profile-popup ${isCollapsed ? "profile-popup-collapsed" : "profile-popup-expanded"}`}>
                   <div className="profile-menu">
                     <button onClick={toggleTheme} className="profile-menu-item">
-                      <span className="menu-icon">{theme === "dark" ? <TbSun size={20} /> : <TbMoon size={20} />}</span>
+                      <span className="menu-icon">{theme === "dark" ? <SpIcon name="sp-Environment-Sun" /> : <SpIcon name="sp-Environment-Moon" />}</span>
                       {theme === "dark" ? "Light Mode" : "Dark Mode"}
                     </button>
                     <button onClick={() => navigate("/main/settings")} className="profile-menu-item">
-                      <span className="menu-icon"><TbSettings size={20} /></span>
+                      <span className="menu-icon"><SpIcon name="sp-Interface-Settings" /></span>
                       Settings
                     </button>
                     {/* <div className="profile-menu-divider" /> */}
                     <button onClick={handleLogout} className="profile-menu-item profile-menu-logout">
-                      <TbLogout size={20} />
+                      <SpIcon name="sp-Interface-Log_Out" />
                       Logout
                     </button>
                   </div>

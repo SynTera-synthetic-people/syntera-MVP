@@ -63,8 +63,6 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
   // explorationId is used in research-mode route, objectiveId in all others
   const currentId = explorationId || objectiveId;
 
-  const isStepCompleted = (step: number) => completedSteps.includes(step);
-
   // Determine active step from current pathname
   const getActiveStep = (): number => {
     if (pathname.includes("research-mode")) return 1;
@@ -92,6 +90,16 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
 
   const activeStep = getActiveStep();
 
+  /**
+   * A step is considered completed if:
+   * 1. It's explicitly in the completedSteps array, OR
+   * 2. The user has progressed past it (activeStep is greater than this step).
+   *    This handles the case where the backend hasn't yet pushed the step into
+   *    completedSteps but the user is clearly on a later step.
+   */
+  const isStepCompleted = (stepNumber: number): boolean =>
+    completedSteps.includes(stepNumber) || activeStep > stepNumber;
+
   const handleStepClick = (step: StepItem) => {
     if (!isStepUnlocked(step.number)) return;
     if (!workspaceId || !currentId) return;
@@ -103,9 +111,7 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
 
   const handleBack = () => {
     if (workspaceId) {
-      navigate(
-        `/main/organization/workspace/explorations/${workspaceId}`
-      );
+      navigate(`/main/organization/workspace/explorations/${workspaceId}`);
     } else {
       navigate(-1);
     }

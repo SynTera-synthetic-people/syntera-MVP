@@ -12,7 +12,7 @@ import {
 
 import { workspaceService } from "../../../../services/workspaceService";
 import InviteTeamModal from "./InviteTeamModal";
-import { EditUserModal } from "../../settings/SettingModal";
+import { EditUserModal, RemoveUserModal } from "../../settings/SettingModal";  // ← added RemoveUserModal
 import type { EditUserData } from "../../settings/SettingModal";
 import "./ManageUsersStyle.css";
 
@@ -75,7 +75,7 @@ const ManageUsers: React.FC<ManageUsersProps> = ({
   const navigate = useNavigate();
 
   const workspaceId = propWorkspaceId || paramId;
-  const handleBack  = propOnBack || (() => navigate("/main/organization/workspace"));
+  const handleBack = propOnBack || (() => navigate(-1));
 
   const [members, setMembers]               = useState<Member[]>([]);
   const [loading, setLoading]               = useState(true);
@@ -86,6 +86,9 @@ const ManageUsers: React.FC<ManageUsersProps> = ({
   const [openMenuId, setOpenMenuId]         = useState<string | null>(null);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [editUser, setEditUser]             = useState<EditUserData | null>(null);
+
+  // ── NEW: tracks which member's "Remove" was clicked — drives RemoveUserModal ──
+  const [pendingRemoveId, setPendingRemoveId] = useState<string | null>(null);
 
   // ── Filtered list ─────────────────────────────────────────────────────────
 
@@ -108,8 +111,6 @@ const ManageUsers: React.FC<ManageUsersProps> = ({
     try {
       let response: any;
       if (mode === "team") {
-        // Team Management: fetch all members across the organisation
-        // Falls back to workspace members if no org-level endpoint exists
         response = workspaceId
           ? await workspaceService.getMembers(workspaceId)
           : await (workspaceService as any).getOrganisationMembers?.() ?? { data: [] };
@@ -139,19 +140,34 @@ const ManageUsers: React.FC<ManageUsersProps> = ({
 
   // ── Handlers ─────────────────────────────────────────────────────────────
 
-  const handleRemoveUser = async (memberId: string) => {
-    if (!window.confirm("Remove this member from the workspace?")) return;
-    setRemovingId(memberId);
+  /**
+   * Called when "Remove" is clicked in the kebab menu.
+   * Sets pendingRemoveId → opens RemoveUserModal.
+   * Replaces the old window.confirm approach.
+   */
+  const handleRemoveClick = (memberId: string) => {
+    setOpenMenuId(null);           // close kebab first
+    setPendingRemoveId(memberId);  // open modal
+  };
+
+  /**
+   * Called when user confirms inside RemoveUserModal.
+   * Performs the actual API call.
+   */
+  const handleRemoveConfirm = async () => {
+    if (!pendingRemoveId) return;
+    setRemovingId(pendingRemoveId);
     setError("");
     setSuccessMessage("");
     try {
-      await workspaceService.removeMember(workspaceId!, memberId);
-      setMembers((prev) => prev.filter((m) => m.id !== memberId));
+      await workspaceService.removeMember(workspaceId!, pendingRemoveId);
+      setMembers((prev) => prev.filter((m) => m.id !== pendingRemoveId));
       setSuccessMessage("Member removed successfully.");
     } catch (err: any) {
       setError(err?.message || "Failed to remove member.");
     } finally {
       setRemovingId(null);
+      setPendingRemoveId(null);
     }
   };
 
@@ -201,7 +217,7 @@ const ManageUsers: React.FC<ManageUsersProps> = ({
         <div className="mu-menu-divider" />
         <div
           className="mu-menu-item mu-menu-item--danger"
-          onClick={() => { setOpenMenuId(null); handleRemoveUser(member.id); }}
+          onClick={() => handleRemoveClick(member.id)}  // ← was handleRemoveUser(member.id)
         >
           <TbTrash size={14} />
           {removingId === member.id ? "Removing..." : "Remove"}
@@ -212,208 +228,215 @@ const ManageUsers: React.FC<ManageUsersProps> = ({
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
-  return (
-    <div className={`mu-page ${isEmbedded ? 'mu-page--embedded' : ''}`}>
+  // Derive the pending member's display name for the modal subtitle
+  const pendingMember = members.find((m) => m.id === pendingRemoveId);
 
-      {/*
-        Top bar layout:
-        - Standalone page:  [Back btn]  [Title]  ............  [Add User]
-        - Embedded (Settings): [Title]  ...................  [Add User]
-        Both have heading + button on the SAME horizontal line.
-      */}
-      <div className="mu-top-bar">
-        <div className="mu-top-bar-left">
-          {/* Back button — standalone page only */}
-          {!isEmbedded && (
-            <motion.button
-              whileHover={{ scale: 1.04 }}
-              whileTap={{ scale: 0.96 }}
-              className="mu-back-btn"
-              onClick={handleBack}
-            >
-              <TbArrowLeft size={14} />
-              Back
-            </motion.button>
-          )}
-          {/*
-            Always show the title — in embedded mode Settings suppresses
-            its own acc-content-heading for org-workspace / org-team views
-            so this component owns the heading.
-          */}
-          <h1 className="mu-title">
-            {mode === "team" ? "Team Management" : "Manage Users"}
-          </h1>
+  return (
+    <>
+      <div className={`mu-page ${isEmbedded ? 'mu-page--embedded' : ''}`}>
+
+        <div className="mu-top-bar">
+          <div className="mu-top-bar-left">
+            {!isEmbedded && (
+              <motion.button
+                whileHover={{ scale: 1.04 }}
+                whileTap={{ scale: 0.96 }}
+                className="mu-back-btn"
+                onClick={handleBack}
+              >
+                <TbArrowLeft size={14} />
+                Back
+              </motion.button>
+            )}
+            <h1 className="mu-title">
+              {mode === "team" ? "Team Management" : "Manage Users"}
+            </h1>
+          </div>
+
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            className="mu-add-btn"
+            onClick={() => setShowInviteModal(true)}
+          >
+            <TbUserPlus size={17} />
+            Add User
+          </motion.button>
         </div>
 
-        <motion.button
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          className="mu-add-btn"
-          onClick={() => setShowInviteModal(true)}
-        >
-          <TbUserPlus size={17} />
-          Add User
-        </motion.button>
-      </div>
+        {/* Feedback */}
+        {successMessage && (
+          <p className="mu-feedback mu-feedback--success">{successMessage}</p>
+        )}
+        {error && !showInviteModal && (
+          <p className="mu-feedback mu-feedback--error">{error}</p>
+        )}
 
-      {/* Feedback */}
-      {successMessage && (
-        <p className="mu-feedback mu-feedback--success">{successMessage}</p>
-      )}
-      {error && !showInviteModal && (
-        <p className="mu-feedback mu-feedback--error">{error}</p>
-      )}
+        {/* Search */}
+        <div className="mu-search-wrapper">
+          <TbSearch size={15} className="mu-search-icon" />
+          <input
+            type="text"
+            className="mu-search-input"
+            placeholder="Search here..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
 
-      {/* Search */}
-      <div className="mu-search-wrapper">
-        <TbSearch size={15} className="mu-search-icon" />
-        <input
-          type="text"
-          className="mu-search-input"
-          placeholder="Search here..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
+        {/* Table */}
+        <div className="mu-table-card">
+          {loading ? (
+            <div className="mu-loading"><div className="mu-spinner" /></div>
+          ) : filteredMembers.length === 0 ? (
+            <div className="mu-empty-state">
+              <h3 className="mu-empty-title">
+                {searchQuery ? "No users match your search." : "No users found."}
+              </h3>
+              <p className="mu-empty-description">
+                {searchQuery ? "Try adjusting your search." : "Click 'Add User' to invite someone."}
+              </p>
+            </div>
+          ) : mode === "team" ? (
+
+            /* ── TEAM mode — 4-column layout ── */
+            <>
+              <div className="mu-table-header mu-table-header--team">
+                <div className="mu-hcell">USER NAME</div>
+                <div className="mu-hcell">EMAIL ADDRESS</div>
+                <div className="mu-hcell">ACTIVE WORKSPACE</div>
+                <div className="mu-hcell mu-hcell-actions">ACTIONS</div>
+              </div>
+
+              <div className="mu-table-body">
+                {filteredMembers.map((member, index) => (
+                  <motion.div
+                    key={member.id}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: index * 0.04 }}
+                    className="mu-table-row mu-table-row--team"
+                  >
+                    <div className="mu-cell mu-cell-name">
+                      {formatMemberName(member)}
+                    </div>
+                    <div className="mu-cell mu-cell-secondary">
+                      {member.email}
+                    </div>
+                    <div className="mu-cell mu-cell-secondary">
+                      {member.workspace_name || propWorkspaceName || "—"}
+                    </div>
+                    <div className="mu-cell mu-cell-actions">
+                      <div className="mu-kebab-wrap">
+                        <button
+                          className="mu-kebab-btn"
+                          onClick={() => toggleMenu(member.id)}
+                          aria-label="Row actions"
+                        >
+                          <TbDotsVertical size={17} />
+                        </button>
+                        {renderKebabMenu(member)}
+                      </div>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            </>
+
+          ) : (
+
+            /* ── WORKSPACE mode — full 7-column layout ── */
+            <>
+              <div className="mu-table-header">
+                <div className="mu-hcell">USER NAME</div>
+                <div className="mu-hcell">WORKSPACE NAME</div>
+                <div className="mu-hcell">EMAIL</div>
+                <div className="mu-hcell">INVITED ON</div>
+                <div className="mu-hcell">STATUS</div>
+                <div className="mu-hcell">ACCEPTED ON</div>
+                <div className="mu-hcell mu-hcell-actions">ACTIONS</div>
+              </div>
+
+              <div className="mu-table-body">
+                {filteredMembers.map((member, index) => (
+                  <motion.div
+                    key={member.id}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: index * 0.04 }}
+                    className="mu-table-row"
+                  >
+                    <div className="mu-cell mu-cell-name">{formatMemberName(member)}</div>
+                    <div className="mu-cell mu-cell-secondary">
+                      {member.workspace_name || propWorkspaceName || "—"}
+                    </div>
+                    <div className="mu-cell mu-cell-secondary">{member.email}</div>
+                    <div className="mu-cell mu-cell-secondary">{formatDate(member.invited_at)}</div>
+                    <div className="mu-cell">
+                      <span className={`mu-status-badge ${
+                        member.accepted ? "mu-status-badge--accepted" : "mu-status-badge--pending"
+                      }`}>
+                        {member.accepted ? "Accepted" : "Pending"}
+                      </span>
+                    </div>
+                    <div className="mu-cell mu-cell-secondary">
+                      {member.accepted ? formatDate(member.accepted_at) : "—"}
+                    </div>
+                    <div className="mu-cell mu-cell-actions">
+                      <div className="mu-kebab-wrap">
+                        <button
+                          className="mu-kebab-btn"
+                          onClick={() => toggleMenu(member.id)}
+                          aria-label="Row actions"
+                        >
+                          <TbDotsVertical size={17} />
+                        </button>
+                        {renderKebabMenu(member)}
+                      </div>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Invite modal */}
+        <InviteTeamModal
+          isOpen={showInviteModal}
+          workspaceId={workspaceId}
+          workspaceName={propWorkspaceName || "this workspace"}
+          onSkip={() => setShowInviteModal(false)}
+          onLaunch={() => {
+            setShowInviteModal(false);
+            fetchMembers();
+            setSuccessMessage("Invitations sent successfully.");
+          }}
+        />
+
+        {/* Edit user modal */}
+        <EditUserModal
+          isOpen={editUser !== null}
+          onClose={() => setEditUser(null)}
+          user={editUser}
+          onSave={handleSaveEditUser}
         />
       </div>
 
-      {/* Table */}
-      <div className="mu-table-card">
-        {loading ? (
-          <div className="mu-loading"><div className="mu-spinner" /></div>
-        ) : filteredMembers.length === 0 ? (
-          <div className="mu-empty-state">
-            <h3 className="mu-empty-title">
-              {searchQuery ? "No users match your search." : "No users found."}
-            </h3>
-            <p className="mu-empty-description">
-              {searchQuery ? "Try adjusting your search." : "Click 'Add User' to invite someone."}
-            </p>
-          </div>
-        ) : mode === "team" ? (
-
-          /* ── TEAM mode — 4-column layout matching Figma ── */
-          <>
-            <div className="mu-table-header mu-table-header--team">
-              <div className="mu-hcell">USER NAME</div>
-              <div className="mu-hcell">EMAIL ADDRESS</div>
-              <div className="mu-hcell">ACTIVE WORKSPACE</div>
-              <div className="mu-hcell mu-hcell-actions">ACTIONS</div>
-            </div>
-
-            <div className="mu-table-body">
-              {filteredMembers.map((member, index) => (
-                <motion.div
-                  key={member.id}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: index * 0.04 }}
-                  className="mu-table-row mu-table-row--team"
-                >
-                  <div className="mu-cell mu-cell-name">
-                    {formatMemberName(member)}
-                  </div>
-                  <div className="mu-cell mu-cell-secondary">
-                    {member.email}
-                  </div>
-                  <div className="mu-cell mu-cell-secondary">
-                    {member.workspace_name || propWorkspaceName || "—"}
-                  </div>
-                  <div className="mu-cell mu-cell-actions">
-                    <div className="mu-kebab-wrap">
-                      <button
-                        className="mu-kebab-btn"
-                        onClick={() => toggleMenu(member.id)}
-                        aria-label="Row actions"
-                      >
-                        <TbDotsVertical size={17} />
-                      </button>
-                      {renderKebabMenu(member)}
-                    </div>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-          </>
-
-        ) : (
-
-          /* ── WORKSPACE mode — full 7-column layout ── */
-          <>
-            <div className="mu-table-header">
-              <div className="mu-hcell">USER NAME</div>
-              <div className="mu-hcell">WORKSPACE NAME</div>
-              <div className="mu-hcell">EMAIL</div>
-              <div className="mu-hcell">INVITED ON</div>
-              <div className="mu-hcell">STATUS</div>
-              <div className="mu-hcell">ACCEPTED ON</div>
-              <div className="mu-hcell mu-hcell-actions">ACTIONS</div>
-            </div>
-
-            <div className="mu-table-body">
-              {filteredMembers.map((member, index) => (
-                <motion.div
-                  key={member.id}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: index * 0.04 }}
-                  className="mu-table-row"
-                >
-                  <div className="mu-cell mu-cell-name">{formatMemberName(member)}</div>
-                  <div className="mu-cell mu-cell-secondary">
-                    {member.workspace_name || propWorkspaceName || "—"}
-                  </div>
-                  <div className="mu-cell mu-cell-secondary">{member.email}</div>
-                  <div className="mu-cell mu-cell-secondary">{formatDate(member.invited_at)}</div>
-                  <div className="mu-cell">
-                    <span className={`mu-status-badge ${
-                      member.accepted ? "mu-status-badge--accepted" : "mu-status-badge--pending"
-                    }`}>
-                      {member.accepted ? "Accepted" : "Pending"}
-                    </span>
-                  </div>
-                  <div className="mu-cell mu-cell-secondary">
-                    {member.accepted ? formatDate(member.accepted_at) : "—"}
-                  </div>
-                  <div className="mu-cell mu-cell-actions">
-                    <div className="mu-kebab-wrap">
-                      <button
-                        className="mu-kebab-btn"
-                        onClick={() => toggleMenu(member.id)}
-                        aria-label="Row actions"
-                      >
-                        <TbDotsVertical size={17} />
-                      </button>
-                      {renderKebabMenu(member)}
-                    </div>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* Invite modal */}
-      <InviteTeamModal
-        isOpen={showInviteModal}
-        workspaceId={workspaceId}
-        workspaceName={propWorkspaceName || "this workspace"}
-        onSkip={() => setShowInviteModal(false)}
-        onLaunch={() => {
-          setShowInviteModal(false);
-          fetchMembers();
-          setSuccessMessage("Invitations sent successfully.");
-        }}
+      {/*
+        Remove user confirmation modal — rendered OUTSIDE mu-page so it
+        sits at the top of the stacking context and is never clipped.
+        Opens when pendingRemoveId is set; closes on cancel or after confirm.
+      */}
+      <RemoveUserModal
+        isOpen={pendingRemoveId !== null}
+        onClose={() => setPendingRemoveId(null)}
+        {...(pendingMember
+          ? { userName: pendingMember.full_name || pendingMember.email }
+          : {})}
+        onConfirm={handleRemoveConfirm}
       />
-
-      {/* Edit user modal */}
-      <EditUserModal
-        isOpen={editUser !== null}
-        onClose={() => setEditUser(null)}
-        user={editUser}
-        onSave={handleSaveEditUser}
-      />
-    </div>
+    </>
   );
 };
 

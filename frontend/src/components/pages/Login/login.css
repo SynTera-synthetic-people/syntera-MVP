@@ -355,3 +355,13 @@ input.success {
     font-size: 16px;
   }
 }
+.continue-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.continue-content svg {
+  width: 16px;
+  height: 16px;
+}

@@ -1,0 +1,85 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   CategorySummaryCard Styles — Figma Accurate
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.category-card {
+  background: #121317;
+  border: 1px solid var(--T-GreyScale-Grey-800, #393C45);
+  border-radius: 20px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 140px;
+}
+
+.category-card__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  margin: 0 0 4px;
+}
+
+.category-card__description {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.35);
+  font-style: italic;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.category-card__content {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.category-card__attribute {
+  display: contents; 
+  align-items: flex-start;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.category-card__attribute-label {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.4);
+  white-space: nowrap;
+  padding-top: 2px;
+}
+
+.category-card__pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.category-card__pill {
+  font-size: 12px;
+  color: #FFFFFF;
+  background: #393C45;
+  border-radius: 100px;
+  padding: var(--xs-4-px, 4px) var(--m-12-px, 12px);
+}
+.category-card__formative-text {
+  font-size: 12px;
+  color: #FFFFFF;
+  line-height: 1.6;
+  margin: 0;
+  white-space: pre-wrap;
+  background: #393C45;
+  border-radius: 8px;
+  padding: 8px 12px;
+
+  /* ── Key fix: hug text, expand up to full width ── */
+  width: fit-content;
+  max-width: 100%;
+  box-sizing: border-box;
+
+  /* Clamp long content */
+  display: -webkit-box;
+  -webkit-line-clamp: 8;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}

@@ -6,6 +6,7 @@ import { validateLogin } from "../../../utils/validation";
 import { motion } from "framer-motion";
 import HalfGlobe from "./HalfGlobe";
 import Logo from "../../common/Logo";
+import SpIcon from '../../SPIcon';
 import "./login.css";
 
 interface LoginValues {
@@ -148,19 +149,18 @@ const Login: React.FC = () => {
                   showError && emailStatus === "error"
                     ? "error"
                     : emailStatus === "success"
-                    ? "success"
-                    : ""
+                      ? "success"
+                      : ""
                 }
               />
 
               <small
-                className={`message ${
-                  showError && emailStatus === "error"
+                className={`message ${showError && emailStatus === "error"
                     ? "error"
                     : emailStatus === "success"
-                    ? "success"
-                    : ""
-                }`}
+                      ? "success"
+                      : ""
+                  }`}
               >
                 {showError && emailStatus === "error" && "Please enter a valid email"}
                 {emailStatus === "success" && "Email is Valid"}
@@ -229,9 +229,8 @@ const Login: React.FC = () => {
             {/* Login Button */}
             <button
               type="submit"
-              className={`continue-btn ${
-                isEmailValid && values.password ? "active" : ""
-              }`}
+              className={`continue-btn ${isEmailValid && values.password ? "active" : ""
+                }`}
               disabled={!isEmailValid || !values.password || loading}
             >
               {loading ? (
@@ -240,7 +239,10 @@ const Login: React.FC = () => {
                   <span>Signing in...</span>
                 </div>
               ) : (
-                "Continue →"
+                <span className="continue-content">
+                  Continue
+                  <SpIcon name="sp-Arrow-Arrow_Right_SM" />
+                </span>
               )}
             </button>
 

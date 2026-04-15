@@ -1,14 +1,12 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
-  TbSearch,
-  TbChevronDown,
-  TbFileInvoice,
   TbDownload,
   TbShare,
   TbInfoCircle,
   TbCheck,
   TbX,
 } from 'react-icons/tb';
+import SpIcon from '../../../SPIcon';
 import { useSelector } from 'react-redux';
 import PendingInvoiceCard from './PendingInvoiceCard';
 import type { PendingInvoice } from './PendingInvoiceCard';
@@ -137,8 +135,7 @@ const BarChart: React.FC<BarChartProps> = ({ data, labels, filter, onFilterChang
             onClick={() => setDropOpen((v) => !v)}
           >
             {filter}
-            <TbChevronDown
-              size={13}
+            <SpIcon name="sp-Arrow-Chevron_Down"
               className={`bl-dropdown-chevron ${dropOpen ? 'bl-dropdown-chevron--open' : ''}`}
             />
           </button>
@@ -250,7 +247,7 @@ const InvoiceTable: React.FC<InvoiceTableProps> = ({
       <div className="bl-invoice-toolbar">
         {/* Search */}
         <div className="bl-invoice-search-wrap">
-          <TbSearch size={14} className="bl-invoice-search-icon" />
+          <SpIcon name="sp-Interface-Search_Magnifying_Glass" className="bl-invoice-search-icon" />
           <input
             type="text"
             className="bl-invoice-search-input"
@@ -267,7 +264,7 @@ const InvoiceTable: React.FC<InvoiceTableProps> = ({
             onClick={() => { setStatusDropOpen((v) => !v); setNameDropOpen(false); }}
           >
             {statusFilter === 'All' ? 'Status' : statusFilter}
-            <TbChevronDown size={13} className={`bl-dropdown-chevron ${statusDropOpen ? 'bl-dropdown-chevron--open' : ''}`} />
+            <SpIcon name="sp-Arrow-Chevron_Down" className={`bl-dropdown-chevron ${statusDropOpen ? 'bl-dropdown-chevron--open' : ''}`} />
           </button>
           {statusDropOpen && (
             <div className="bl-dropdown-menu bl-dropdown-menu--right">
@@ -292,7 +289,7 @@ const InvoiceTable: React.FC<InvoiceTableProps> = ({
             onClick={() => { setNameDropOpen((v) => !v); setStatusDropOpen(false); }}
           >
             Filter Name
-            <TbChevronDown size={13} className={`bl-dropdown-chevron ${nameDropOpen ? 'bl-dropdown-chevron--open' : ''}`} />
+            <SpIcon name="sp-Arrow-Chevron_Down" className={`bl-dropdown-chevron ${nameDropOpen ? 'bl-dropdown-chevron--open' : ''}`} />
           </button>
           {nameDropOpen && (
             <div className="bl-dropdown-menu bl-dropdown-menu--right">
@@ -345,14 +342,14 @@ const InvoiceTable: React.FC<InvoiceTableProps> = ({
                     title="Download invoice"
                     onClick={() => {/* TODO: download */}}
                   >
-                    <TbFileInvoice size={16} />
+                    <SpIcon name="sp-File-File_Download" />
                   </button>
                   <button
                     className="bl-action-btn"
                     title="Share invoice"
                     onClick={() => onShareInvoice(inv)}
                   >
-                    <TbShare size={16} />
+                    <SpIcon name="sp-Communication-Share_iOS_Export" />
                   </button>
                 </div>
               </div>
@@ -393,7 +390,7 @@ const SimpleInvoiceTable: React.FC<SimpleInvoiceTableProps> = ({
       {/* Toolbar — search only, no PO/status filters needed */}
       <div className="bl-invoice-toolbar">
         <div className="bl-invoice-search-wrap">
-          <TbSearch size={14} className="bl-invoice-search-icon" />
+          <SpIcon name="sp-Interface-Search_Magnifying_Glass" className="bl-invoice-search-icon" />
           <input
             type="text"
             className="bl-invoice-search-input"
@@ -448,14 +445,14 @@ const SimpleInvoiceTable: React.FC<SimpleInvoiceTableProps> = ({
                     title="View invoice"
                     onClick={() => {/* TODO: view invoice */}}
                   >
-                    <TbFileInvoice size={16} />
+                   <SpIcon name="sp-File-File_Download" />
                   </button>
                   <button
                     className="bl-action-btn"
                     title="Share invoice"
                     onClick={() => onShareInvoice(inv)}
                   >
-                    <TbShare size={16} />
+                    <SpIcon name="sp-Communication-Share_iOS_Export" />
                   </button>
                 </div>
               </div>

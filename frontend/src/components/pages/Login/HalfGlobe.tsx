@@ -1,22 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { PEOPLE_IMAGES, PERSON_NAMES, PERSON_PROFESSIONS, PERSON_COUNTRIES } from "../../../data/people";
 
-const CALLOUT_MESSAGES = [
-    "I research longer when money is tight, not when the choice is complex",
-    "I look for reviews that confirm the decision I've already made",
-    "I open five tabs to compare, then still choose what I liked first",
-    "I don't want new, I want familiar, dressed up as better",
-    "I choose what works now, even if it costs more later",
-    "I delay decisions because choosing means owning the outcome",
-    "I compromise for harmony, then justify it as practical",
-    "I say I'm loyal, what I mean is I'm tired of relearning",
-    "I call myself rational, but I decide to reduce anxiety",
-    "I buy what won't create friction at home",
-    "I decide faster when the consequences aren't mine alone",
-    "I avoid brands that don't seem to understand my world",
-    "I pay more attention to warnings than promises",
-    "I don't remember why I chose something, only how it felt after",
-];
 
 interface GlobePoint {
     phi: number;
@@ -29,13 +13,6 @@ interface GlobePoint {
     country: string;
 }
 
-interface AutoCallout {
-    x: number;
-    y: number;
-    message: string;
-    spawnTime: number;
-    side: 'left' | 'right';
-}
 
 function seededRandom(seed: number) {
     const x = Math.sin(seed) * 43758.5453;
@@ -131,11 +108,6 @@ function drawRoundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, w:
     ctx.closePath();
 }
 
-const CALLOUT_LIFETIME = 5000;
-const CALLOUT_FADE_IN = 500;
-const CALLOUT_FADE_OUT = 600;
-const CALLOUT_COOLDOWN = 2000;
-
 export default function HalfGlobe() {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const loadedImages = useRef<HTMLImageElement[]>([]);
@@ -144,9 +116,6 @@ export default function HalfGlobe() {
     const animRef = useRef(0);
     const mouseRef = useRef<{ x: number; y: number }>({ x: -9999, y: -9999 });
     const hoverScalesRef = useRef<Map<number, number>>(new Map());
-    const activeCalloutRef = useRef<AutoCallout | null>(null);
-    const calloutEndTimeRef = useRef(0);
-    const lastMsgIdxRef = useRef(-1);
 
     useEffect(() => {
         PEOPLE_IMAGES.forEach((url, i) => {
@@ -326,135 +295,6 @@ export default function HalfGlobe() {
                 }
             }
 
-            if (activeCalloutRef.current && now - activeCalloutRef.current.spawnTime >= CALLOUT_LIFETIME) {
-                activeCalloutRef.current = null;
-                calloutEndTimeRef.current = now;
-            }
-
-            if (
-                !activeCalloutRef.current &&
-                now - calloutEndTimeRef.current > CALLOUT_COOLDOWN &&
-                visibleFaces.length > 0
-            ) {
-                const face = visibleFaces[Math.floor(Math.random() * visibleFaces.length)]!;
-                let msgIdx = Math.floor(Math.random() * CALLOUT_MESSAGES.length);
-                if (msgIdx === lastMsgIdxRef.current) {
-                    msgIdx = (msgIdx + 1) % CALLOUT_MESSAGES.length;
-                }
-                lastMsgIdxRef.current = msgIdx;
-
-                activeCalloutRef.current = {
-                    x: face.x,
-                    y: face.y,
-                    message: CALLOUT_MESSAGES[msgIdx]!,  // Add ! here
-                    spawnTime: now,
-                    side: face.x > w / 2 ? 'left' : 'right',
-                };
-            }
-
-            if (activeCalloutRef.current) {
-                const callout = activeCalloutRef.current;
-                const age = now - callout.spawnTime;
-                let opacity = 1;
-                if (age < CALLOUT_FADE_IN) opacity = age / CALLOUT_FADE_IN;
-                else if (age > CALLOUT_LIFETIME - CALLOUT_FADE_OUT) opacity = (CALLOUT_LIFETIME - age) / CALLOUT_FADE_OUT;
-
-                ctx.save();
-                ctx.globalAlpha = opacity;
-
-                ctx.beginPath();
-                ctx.arc(callout.x, callout.y, 18, 0, Math.PI * 2);
-                ctx.strokeStyle = `rgba(255, 255, 255, ${0.6 * opacity})`;
-                ctx.lineWidth = 2;
-                ctx.stroke();
-
-                ctx.beginPath();
-                ctx.arc(callout.x, callout.y, 22, 0, Math.PI * 2);
-                ctx.strokeStyle = `rgba(255, 255, 255, ${0.2 * opacity})`;
-                ctx.lineWidth = 1;
-                ctx.stroke();
-
-                const quoteFont = 'italic 11px "Inter", -apple-system, sans-serif';
-                ctx.font = quoteFont;
-                const maxTextW = 195;
-                const lines = wrapText(ctx, callout.message, maxTextW);
-
-                const padX = 11;
-                const padY = 9;
-                const accentW = 3;
-                const lineH = 16;
-                const bw = maxTextW + padX * 2 + accentW;
-                const bh = padY * 2 + lines.length * lineH - 4;
-
-                let bx: number;
-                if (callout.side === 'right') {
-                    bx = callout.x + 34;
-                } else {
-                    bx = callout.x - 34 - bw;
-                }
-                bx = Math.max(10, Math.min(w - bw - 10, bx));
-                const by = Math.max(MIN_CALLOUT_Y, Math.min(h - bh - 10, callout.y - bh / 2));
-
-                const cardEdgeX = callout.side === 'right' ? bx : bx + bw;
-                const cardEdgeY = by + bh / 2;
-
-                ctx.beginPath();
-                ctx.moveTo(callout.x, callout.y);
-                ctx.lineTo(cardEdgeX, cardEdgeY);
-                ctx.strokeStyle = `rgba(148, 163, 184, ${0.5 * opacity})`;
-                ctx.lineWidth = 1.5;
-                ctx.stroke();
-
-                ctx.beginPath();
-                ctx.arc(callout.x, callout.y, 4, 0, Math.PI * 2);
-                ctx.fillStyle = `rgba(255, 255, 255, ${0.9 * opacity})`;
-                ctx.fill();
-
-                const triSize = 8;
-                const triX = cardEdgeX;
-                const triY = cardEdgeY;
-                const triDir = callout.side === 'right' ? -1 : 1;
-                ctx.beginPath();
-                ctx.moveTo(triX, triY);
-                ctx.lineTo(triX + triDir * triSize, triY - triSize * 0.5);
-                ctx.lineTo(triX + triDir * triSize, triY + triSize * 0.5);
-                ctx.closePath();
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.97)';
-                ctx.fill();
-
-                drawRoundedRect(ctx, bx, by, bw, bh, 10);
-                ctx.shadowColor = 'rgba(0, 0, 0, 0.18)';
-                ctx.shadowBlur = 24;
-                ctx.shadowOffsetX = 0;
-                ctx.shadowOffsetY = 6;
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.97)';
-                ctx.fill();
-                ctx.shadowColor = 'transparent';
-                ctx.shadowBlur = 0;
-                ctx.shadowOffsetX = 0;
-                ctx.shadowOffsetY = 0;
-
-                ctx.strokeStyle = 'rgba(0, 0, 0, 0.06)';
-                ctx.lineWidth = 1;
-                ctx.stroke();
-
-                ctx.save();
-                drawRoundedRect(ctx, bx, by, bw, bh, 10);
-                ctx.clip();
-                ctx.fillStyle = '#1e293b';
-                ctx.fillRect(bx, by, accentW, bh);
-                ctx.restore();
-
-                ctx.font = quoteFont;
-                ctx.fillStyle = '#334155';
-                ctx.textBaseline = 'top';
-                for (let i = 0; i < lines.length; i++) {
-                    ctx.fillText(lines[i]!, bx + accentW + padX, by + padY + i * lineH);  // Add ! here
-                }
-
-                ctx.restore();
-            }
-
             if (hoveredFace && hoveredFace.scale > 1.08) {
                 const hf = hoveredFace;
                 const calloutAlpha = Math.min((hf.scale - 1) * 2, 1);
@@ -528,8 +368,7 @@ export default function HalfGlobe() {
                 ctx.restore();
             }
 
-            const hasActiveCallout = !!activeCalloutRef.current;
-            if (!isHoveringAny && !hasActiveCallout) {
+            if (!isHoveringAny) {
                 rotationRef.current += 0.0012;
             }
 
