@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { motion } from "framer-motion";
 import { TbArrowLeft, TbChevronRight, TbDownload, TbChartBar, TbUser, TbUsers, TbLoader, TbExternalLink } from "react-icons/tb";
 import { useTheme } from "../../../../../../context/ThemeContext";
@@ -8,6 +9,7 @@ import logoForLight from "../../../../../../assets/Logo_Light_bg.png";
 import {
   useDownloadSurveyPdf,
   useSimulateSurvey,
+  useGetSurveySimulationBySource,
   usePreviewSurvey,
   useDownloadQuantTranscripts,
   useDownloadQuantDecisionIntelligence,
@@ -116,6 +118,10 @@ const SurveyResults = () => {
   const [showPreview, setShowPreview] = useState(false);
   const [previewData, setPreviewData] = useState(null);
   const [questionnaireCsvDownloading, setQuestionnaireCsvDownloading] = useState(false);
+  // Track whether we've already attempted to load/run the simulation for the
+  // current simulationId so we never fire it twice in the same mount cycle.
+  const simulationAttemptedRef = useRef(null);
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { workspaceId, objectiveId } = useParams();
   const location = useLocation();
@@ -123,6 +129,17 @@ const SurveyResults = () => {
   const { trigger } = useOmniWorkflow();
 
   const explorationId = objectiveId;
+
+  // The population simulation ID coming from navigation state
+  const populationSimulationId = location.state?.surveyConfig?.simulationId ?? null;
+
+  // Try to load an already-completed survey simulation from the server first.
+  // staleTime=Infinity means this result is cached for the lifetime of the page.
+  const {
+    data: existingSimData,
+    isLoading: existingSimLoading,
+    isFetched: existingSimFetched,
+  } = useGetSurveySimulationBySource(workspaceId, explorationId, populationSimulationId);
 
   const simulateSurveyMutation = useSimulateSurvey();
   const downloadSurveyPdfMutation = useDownloadSurveyPdf();
@@ -256,20 +273,41 @@ const SurveyResults = () => {
     }
   };
 
-  // Get survey config from navigation state
+  // Step 1: Extract surveyConfig from navigation state and guard against missing config.
   useEffect(() => {
     if (location.state?.surveyConfig) {
       setSurveyConfig(location.state.surveyConfig);
-      triggerSurveySimulation(location.state.surveyConfig);
     } else {
-      // If no config, redirect back
-      navigate(`/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/population-builder`, {
-        replace: true
-      });
+      navigate(
+        `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/population-builder`,
+        { replace: true }
+      );
     }
   }, [location.state]);
 
-  // Trigger survey simulation
+  // Step 2: Once we know whether an existing simulation result is available,
+  // either load it directly or run the simulation for the first time.
+  // We gate on `existingSimFetched` so we always wait for the server check
+  // before deciding — this prevents a race where we start simulating before
+  // knowing a result already exists.
+  useEffect(() => {
+    if (!surveyConfig || !existingSimFetched) return;
+
+    // Deduplicate: only act once per populationSimulationId per mount.
+    if (simulationAttemptedRef.current === surveyConfig.simulationId) return;
+    simulationAttemptedRef.current = surveyConfig.simulationId;
+
+    if (existingSimData?.data) {
+      // Restore from server — no AI call needed.
+      setSurveyResults(existingSimData.data);
+      processSurveyResults(existingSimData.data);
+    } else {
+      // No existing result — run simulation for the first time.
+      triggerSurveySimulation(surveyConfig);
+    }
+  }, [surveyConfig, existingSimFetched, existingSimData]);
+
+  // Run the actual AI simulation (only called when no existing result exists).
   const triggerSurveySimulation = async (config) => {
     try {
       const result = await simulateSurveyMutation.mutateAsync({
@@ -281,6 +319,12 @@ const SurveyResults = () => {
 
       if (result.status === 'success') {
         setSurveyResults(result.data);
+        // Seed the cache so re-navigations find this result immediately
+        // without making a redundant POST (backend guard is still a safety net).
+        queryClient.setQueryData(
+          ['surveySimulationBySource', workspaceId, explorationId, config.simulationId],
+          result
+        );
         trigger({
           stage: 'survey-success',
           event: 'SURVEY_SUCCESS',
@@ -386,7 +430,7 @@ const SurveyResults = () => {
     if (!content) {
       return (
         <div className="flex flex-col items-center justify-center min-h-[400px] text-center space-y-6">
-          {simulateSurveyMutation.isPending ? (
+          {(existingSimLoading || simulateSurveyMutation.isPending) ? (
             <div className="flex flex-col items-center animate-in fade-in zoom-in duration-500">
               <div className="relative mb-6">
                 <div className="absolute inset-0 bg-blue-500/20 blur-2xl rounded-full animate-pulse" />
@@ -408,14 +452,14 @@ const SurveyResults = () => {
     }
 
     if (activeItem === 'Summary') {
-      return <InsightCard {...content} loading={simulateSurveyMutation.isPending} />;
+      return <InsightCard {...content} loading={existingSimLoading || simulateSurveyMutation.isPending} />;
     }
 
     if (Array.isArray(content)) {
       return (
         <div className="space-y-4">
           {content.map((item, index) => (
-            <InsightCard key={index} {...item} loading={simulateSurveyMutation.isPending} />
+            <InsightCard key={index} {...item} loading={existingSimLoading || simulateSurveyMutation.isPending} />
           ))}
         </div>
       );
@@ -567,7 +611,7 @@ const SurveyResults = () => {
                       title={item}
                       isActive={activeItem === item}
                       onClick={() => setActiveItem(item)}
-                      hasData={!simulateSurveyMutation.isPending}
+                      hasData={!existingSimLoading && !simulateSurveyMutation.isPending}
                     />
                   ))
                 ) : (

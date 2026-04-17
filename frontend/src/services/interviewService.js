@@ -11,6 +11,19 @@ export const interviewService = {
     return response.data;
   },
 
+  // Get the most recent interview for a specific persona (null on 404)
+  getInterviewByPersona: async (workspaceId, explorationId, personaId) => {
+    try {
+      const response = await axiosInstance.get(
+        `/workspaces/${workspaceId}/explorations/${explorationId}/in-depth/interviews/by-persona/${personaId}`
+      );
+      return response.data;
+    } catch (err) {
+      if (err?.response?.status === 404) return null;
+      throw err;
+    }
+  },
+
   // Get interview by ID
   getInterview: async (workspaceId, explorationId, interviewId) => {
     const response = await axiosInstance.get(

@@ -6,6 +6,7 @@ import {
   getAllQuestionnaires,
   getPersonas,
   simulateSurvey,
+  getSurveySimulationBySource,
   downloadSurveyPdf,
   uploadQuestionnaire,
   previewSurvey,
@@ -115,15 +116,33 @@ export const useSimulateSurvey = () => {
   });
 };
 
+/**
+ * Fetch an already-completed survey simulation for a population simulation ID.
+ * Returns null (not an error) when no result exists yet.
+ * Used by SurveyResults to avoid re-running the AI on every re-navigation.
+ */
+const FIVE_MINUTES = 5 * 60 * 1000;
+
+export const useGetSurveySimulationBySource = (workspaceId, explorationId, simulationSourceId) => {
+  return useQuery({
+    queryKey: ['surveySimulationBySource', workspaceId, explorationId, simulationSourceId],
+    queryFn: () => getSurveySimulationBySource({ workspaceId, explorationId, simulationSourceId }),
+    enabled: !!workspaceId && !!explorationId && !!simulationSourceId,
+    // 5 min stale time: fresh enough for re-navigation, long enough to not spam.
+    // Cache is also seeded by setQueryData after a fresh POST so re-navigations
+    // within 5 min hit cache, not the network.
+    staleTime: FIVE_MINUTES,
+    retry: false, // getSurveySimulationBySource swallows 404s (returns null)
+  });
+};
+
 export const useSurveyResults = (workspaceId, explorationId, simulationId) => {
   return useQuery({
     queryKey: ['surveyResults', workspaceId, explorationId, simulationId],
-    queryFn: async () => {
-      // If you have a GET endpoint for survey results, implement it here
-      // For now, we'll return null since we're simulating
-      return null;
-    },
+    queryFn: () => getSurveySimulationBySource({ workspaceId, explorationId, simulationSourceId: simulationId }),
     enabled: !!workspaceId && !!explorationId && !!simulationId,
+    staleTime: FIVE_MINUTES,
+    retry: false,
   });
 };
 

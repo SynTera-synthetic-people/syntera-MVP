@@ -8,7 +8,7 @@ import PremiumButton from "../../../../../common/PremiumButton";
 import logoForDark from "../../../../../../assets/Logo_Dark_bg.png";
 import logoForLight from "../../../../../../assets/Logo_Light_bg.png";
 import { usePersonaBuilder } from '../../../../../../hooks/usePersonaBuilder';
-import { useStartInterview, useSendMessage, useInterview, useExportInterviewReport, useExportAllInterviewsPdf } from '../../../../../../hooks/useInterview';
+import { useStartInterview, useSendMessage, useInterview, useInterviewByPersona, useExportInterviewReport, useExportAllInterviewsPdf } from '../../../../../../hooks/useInterview';
 import PreviewReportModal from './components/PreviewReportModal';
 import AllInterviewsPreviewModal from './components/AllInterviewsPreviewModal';
 import { useOmniWorkflow } from '../../../../../../hooks/useOmiWorkflow';
@@ -42,6 +42,14 @@ const ChatView = () => {
   const sendMessageMutation = useSendMessage(workspaceId, objectiveId, interviewId);
   const exportInterviewReportMutation = useExportInterviewReport(workspaceId, objectiveId);
   const exportAllInterviewsMutation = useExportAllInterviewsPdf(workspaceId, objectiveId);
+
+  // Pre-fetch any existing interview for the currently selected persona so we
+  // can restore it instantly instead of re-running the LLM on every re-visit.
+  const {
+    data: existingInterviewData,
+    isLoading: isCheckingExisting,
+    isFetched: existingInterviewFetched,
+  } = useInterviewByPersona(workspaceId, objectiveId, selectedPersona);
 
   const { data: interviewData, isLoading: isInterviewLoading } = useInterview(workspaceId, objectiveId, interviewId, {
     enabled: !!interviewId,
@@ -171,37 +179,50 @@ const ChatView = () => {
   };
 
   const handleStartConversation = async () => {
-    if (selectedPersona) {
-      try {
-        const result = await startInterviewMutation.mutateAsync(selectedPersona);
+    if (!selectedPersona) return;
 
-        if (result.data?.id) {
-          setInterviewId(result.data.id);
-          setIsChatActive(true);
+    try {
+      // If an existing interview is found for this persona, restore it directly
+      // without re-running the LLM. Messages are loaded automatically by the
+      // useInterview hook once interviewId is set.
+      const existingInterview = existingInterviewData?.data ?? null;
 
-          setMessages([
-            {
-              sender: 'bot',
-              text: `Hello! I'm ${selectedPersonaName}. You can ask me questions about my experiences and perspectives.`,
-              timestamp: new Date().toISOString()
-            },
-            {
-              sender: 'bot',
-              text: 'You can type your questions below, or use the microphone for voice input.',
-              timestamp: new Date().toISOString()
-            }
-          ]);
-        }
-      } catch (error) {
-        console.error("Failed to start interview:", error);
+      if (existingInterview?.id) {
+        setInterviewId(existingInterview.id);
+        setIsChatActive(true);
+        // Messages will be populated by the useInterview useEffect above.
+        return;
+      }
+
+      // No existing interview — start a fresh one (LLM call).
+      const result = await startInterviewMutation.mutateAsync(selectedPersona);
+
+      if (result.data?.id) {
+        setInterviewId(result.data.id);
+        setIsChatActive(true);
+
         setMessages([
           {
             sender: 'bot',
-            text: 'Sorry, there was an error starting the interview. Please try again.',
+            text: `Hello! I'm ${selectedPersonaName}. You can ask me questions about my experiences and perspectives.`,
+            timestamp: new Date().toISOString()
+          },
+          {
+            sender: 'bot',
+            text: 'You can type your questions below, or use the microphone for voice input.',
             timestamp: new Date().toISOString()
           }
         ]);
       }
+    } catch (error) {
+      console.error("Failed to start interview:", error);
+      setMessages([
+        {
+          sender: 'bot',
+          text: 'Sorry, there was an error starting the interview. Please try again.',
+          timestamp: new Date().toISOString()
+        }
+      ]);
     }
   };
 
@@ -342,9 +363,9 @@ const ChatView = () => {
                 <PremiumButton
                   onClick={handleStartConversation}
                   className="w-full"
-                  disabled={!selectedPersona || startInterviewMutation.isPending}
+                  disabled={!selectedPersona || isCheckingExisting || startInterviewMutation.isPending}
                 >
-                  {startInterviewMutation.isPending ? 'Starting Interview...' : 'Start Interview'}
+                  {(isCheckingExisting || startInterviewMutation.isPending) ? 'Starting...' : 'Start Interview'}
                 </PremiumButton>
               </div>
             </motion.div>
@@ -374,7 +395,7 @@ const ChatView = () => {
                       <div className="flex items-center gap-2">
                         <h3 className="text-lg font-bold text-gray-900 dark:text-white leading-none">{selectedPersonaName}</h3>
                         {isChatActive && <span className="flex h-2 w-2 rounded-full bg-green-500 animate-pulse" />}
-                        {startInterviewMutation.isPending && (
+                        {(isCheckingExisting || startInterviewMutation.isPending) && (
                           <TbLoader className="w-4 h-4 animate-spin text-blue-600 dark:text-blue-400" />
                         )}
                       </div>
@@ -443,7 +464,7 @@ const ChatView = () => {
                 <div className="flex-1 overflow-y-auto p-6 space-y-6">
                   {isChatActive ? (
                     <>
-                      {messages.length === 0 && (isInterviewLoading || startInterviewMutation.isPending) ? (
+                      {messages.length === 0 && (isInterviewLoading || isCheckingExisting || startInterviewMutation.isPending) ? (
                         <div className="h-full flex flex-col items-center justify-center p-8 text-center">
                           <TbLoader className="w-12 h-12 animate-spin text-blue-600 dark:text-blue-400 mb-4" />
                           <p className="text-gray-500 dark:text-gray-400">Setting up the interview...</p>
@@ -461,9 +482,9 @@ const ChatView = () => {
                             onClick={handleStartConversation}
                             variant="primary"
                             className="min-w-[200px] shadow-lg shadow-blue-500/30"
-                            disabled={startInterviewMutation.isPending}
+                            disabled={isCheckingExisting || startInterviewMutation.isPending}
                           >
-                            {startInterviewMutation.isPending ? 'Starting...' : 'Start Interview'}
+                            {(isCheckingExisting || startInterviewMutation.isPending) ? 'Starting...' : 'Start Interview'}
                           </PremiumButton>
                         </div>
                       ) : (
@@ -534,9 +555,9 @@ const ChatView = () => {
                         onClick={handleStartConversation}
                         variant="primary"
                         className="min-w-[200px] shadow-lg shadow-blue-500/30"
-                        disabled={startInterviewMutation.isPending}
+                        disabled={isCheckingExisting || startInterviewMutation.isPending}
                       >
-                        {startInterviewMutation.isPending ? 'Starting...' : 'Start Interview'}
+                        {(isCheckingExisting || startInterviewMutation.isPending) ? 'Starting...' : 'Start Interview'}
                       </PremiumButton>
                     </div>
                   )}

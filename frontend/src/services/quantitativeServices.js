@@ -75,6 +75,22 @@ export const getPersonas = async ({ workspaceId, explorationId }) => {
   return response.data;
 };
 
+/**
+ * Fetch an already-completed survey simulation for a given population simulation ID.
+ * Returns null (not throws) when no result exists yet, so callers can branch on it.
+ */
+export const getSurveySimulationBySource = async ({ workspaceId, explorationId, simulationSourceId }) => {
+  try {
+    const response = await axiosInstance.get(
+      `/workspaces/${workspaceId}/explorations/${explorationId}/questionnaire/simulation/by-source/${simulationSourceId}`
+    );
+    return response.data;
+  } catch (err) {
+    if (err?.response?.status === 404) return null;
+    throw err;
+  }
+};
+
 export const simulateSurvey = async ({ workspaceId, explorationId, personaId, simulationId }) => {
   const response = await axiosInstance.post(
     `/workspaces/${workspaceId}/explorations/${explorationId}/questionnaire/simulate`,

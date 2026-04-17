@@ -38,6 +38,7 @@ from fastapi.responses import StreamingResponse, Response
 from app.utils.pdf_generator import generate_survey_pdf
 from app.services.survey_simulation import (
     get_survey_simulation_by_id,
+    get_survey_simulation_by_source_id,
     get_latest_survey_results_map,
     parse_survey_results_field,
     _to_percent_string,
@@ -348,6 +349,27 @@ async def simulate_survey(
     if not payload.persona_id:
         raise HTTPException(status_code=400, detail="persona_id must be provided")
 
+    # Idempotency guard: if a survey simulation already exists for this population
+    # simulation, return the stored result instead of re-running the AI simulation.
+    if payload.simulation_id:
+        existing = await get_survey_simulation_by_source_id(payload.simulation_id)
+        if existing:
+            sections = await build_survey_report_sections(existing)
+            return SuccessResponse(
+                message="Survey simulation already exists for this population run",
+                data={
+                    "id": existing.id,
+                    "workspace_id": existing.workspace_id,
+                    "exploration_id": existing.exploration_id,
+                    "total_sample_size": existing.total_sample_size,
+                    "personas": (existing.narrative or {}).get("personas", []),
+                    "sections": sections,
+                    "results": existing.results,
+                    "narrative": existing.narrative,
+                    "created_at": existing.created_at.isoformat(),
+                },
+            )
+
     questions = payload.questions
     if not questions:
         if payload.simulation_id:
@@ -451,6 +473,41 @@ async def build_survey_report_sections(sim) -> list:
             qs.append({"question": qtext, "results": formatted_results})
         grouped.append({"title": sec["title"], "questions": qs})
     return grouped
+
+
+@router.get("/simulation/by-source/{simulation_source_id}", response_model=SuccessResponse)
+async def get_survey_simulation_by_source(
+    workspace_id: str,
+    exploration_id: str,
+    simulation_source_id: str,
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Return the most recent completed survey simulation for a given population
+    simulation ID (simulation_source_id).  Used by the frontend to avoid
+    re-running the AI simulation when the user navigates away and back.
+    Returns the same payload shape as POST /simulate so the frontend can
+    treat both responses identically.
+    """
+    existing = await get_survey_simulation_by_source_id(simulation_source_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="No survey simulation found for this population run")
+
+    sections = await build_survey_report_sections(existing)
+    return SuccessResponse(
+        message="Survey simulation fetched successfully",
+        data={
+            "id": existing.id,
+            "workspace_id": existing.workspace_id,
+            "exploration_id": existing.exploration_id,
+            "total_sample_size": existing.total_sample_size,
+            "personas": (existing.narrative or {}).get("personas", []),
+            "sections": sections,
+            "results": existing.results,
+            "narrative": existing.narrative,
+            "created_at": existing.created_at.isoformat(),
+        },
+    )
 
 
 @router.get("/simulation/{simulation_id}/preview", response_model=SuccessResponse)
