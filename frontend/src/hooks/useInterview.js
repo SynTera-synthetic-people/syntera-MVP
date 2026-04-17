@@ -20,17 +20,37 @@ export const interviewKeys = {
 };
 
 // Custom hooks
+/**
+ * Fetch the most recent existing interview for a specific persona.
+ * Returns null (not an error) when no interview exists yet.
+ * Used by ChatView to restore an existing interview instead of re-generating.
+ */
+export const useInterviewByPersona = (workspaceId, explorationId, personaId) => {
+  return useQuery({
+    queryKey: [...interviewKeys.details(), { workspaceId, explorationId, personaId }, 'by-persona'],
+    queryFn: () => interviewService.getInterviewByPersona(workspaceId, explorationId, personaId),
+    enabled: !!workspaceId && !!explorationId && !!personaId,
+    staleTime: 30_000, // 30s — short enough to pick up a just-created interview
+    retry: false,      // service already swallows 404s
+  });
+};
+
 export const useStartInterview = (workspaceId, explorationId) => {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: (personaId) => interviewService.startInterview(workspaceId, explorationId, personaId),
-    onSuccess: (newInterview) => {
+    onSuccess: (newInterview, personaId) => {
       // Invalidate interviews list
       queryClient.invalidateQueries({
         queryKey: interviewKeys.list(workspaceId, explorationId),
       });
-      return newInterview;
+      // Seed the by-persona cache so re-navigation within the staleTime window
+      // restores the interview instantly without a round-trip to the server.
+      queryClient.setQueryData(
+        [...interviewKeys.details(), { workspaceId, explorationId, personaId }, 'by-persona'],
+        newInterview
+      );
     },
   });
 };
