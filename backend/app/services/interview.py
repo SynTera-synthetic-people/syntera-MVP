@@ -616,6 +616,25 @@ async def get_interview(interview_id: str) -> Optional[InterviewOut]:
             return None
         return _map_interview_row_to_out(iv)
 
+async def get_interview_by_persona(workspace_id: str, exploration_id: str, persona_id: str) -> Optional[InterviewOut]:
+    """Return the most recent interview for a persona within an exploration (None if not found)."""
+    async with AsyncSession(async_engine) as session:
+        query = (
+            select(Interview)
+            .where(
+                Interview.workspace_id == workspace_id,
+                Interview.exploration_id == exploration_id,
+                Interview.persona_id == persona_id,
+            )
+            .order_by(Interview.created_at.desc())
+        )
+        res = await session.execute(query)
+        iv = res.scalars().first()
+        if not iv:
+            return None
+        return _map_interview_row_to_out(iv)
+
+
 async def list_interviews_for_objective(workspace_id: str, exploration_id: str) -> List[InterviewOut]:
     async with AsyncSession(async_engine) as session:
         query = select(Interview).where(

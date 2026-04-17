@@ -375,6 +375,18 @@ async def get_survey_simulation_by_id(simulation_id: str):
         return res.scalars().first()
 
 
+async def get_survey_simulation_by_source_id(simulation_source_id: str):
+    """Return the most recent SurveySimulation for a given population simulation_source_id."""
+    async with AsyncSession(async_engine) as session:
+        stmt = (
+            select(SurveySimulation)
+            .where(SurveySimulation.simulation_source_id == simulation_source_id)
+            .order_by(SurveySimulation.created_at.desc())
+        )
+        res = await session.execute(stmt)
+        return res.scalars().first()
+
+
 async def get_latest_survey_results_map(simulation_source_id: str) -> Optional[Dict]:
     """
     Results dict: { question_text: [ {option, count, pct?}, ... ], ... }
