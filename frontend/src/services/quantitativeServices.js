@@ -91,15 +91,15 @@ export const getSurveySimulationBySource = async ({ workspaceId, explorationId, 
   }
 };
 
-export const simulateSurvey = async ({ workspaceId, explorationId, personaId, simulationId }) => {
+export const simulateSurvey = async ({ workspaceId, explorationId, personaId, simulationId, forceRerun = false }) => {
   const response = await axiosInstance.post(
     `/workspaces/${workspaceId}/explorations/${explorationId}/questionnaire/simulate`,
     {
       exploration_id: explorationId,
       persona_id: personaId,
       simulation_id: simulationId,
-      // questions: questions || []
-      questions: []
+      questions: [],
+      force_rerun: forceRerun,
     }
   );
   return response.data;

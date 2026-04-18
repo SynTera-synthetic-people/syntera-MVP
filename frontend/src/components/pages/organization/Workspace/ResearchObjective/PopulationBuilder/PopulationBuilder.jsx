@@ -28,6 +28,7 @@ const PopulationBuilder = () => {
   const [simulationResult, setSimulationResult] = useState(null);
   const [questionnaireData, setQuestionnaireData] = useState([]);
   const [simulationId, setSimulationId] = useState(null); // Store simulation ID
+  const [questionnaireModified, setQuestionnaireModified] = useState(false);
   const { trigger } = useOmniWorkflow();
   const restoredFromServerRef = useRef(false);
 
@@ -266,8 +267,9 @@ const PopulationBuilder = () => {
     };
 
     navigate(`/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/survey-results`, {
-      state: { surveyConfig, fromPopulationBuilder: true }
+      state: { surveyConfig, fromPopulationBuilder: true, forceRerun: questionnaireModified }
     });
+    setQuestionnaireModified(false);
   };
 
   const handleEditConfiguration = () => {
@@ -308,6 +310,10 @@ const PopulationBuilder = () => {
                 questionnairesLoading={questionnairesLoading}
                 onEditConfiguration={handleEditConfiguration}
                 onLaunchSurvey={handleLaunchSurvey}
+                onModified={() => {
+                  setQuestionnaireModified(true);
+                  sessionStorage.setItem(`forceRerun_${explorationId}`, 'true');
+                }}
                 workspaceId={workspaceId}
                 explorationId={explorationId}
               />

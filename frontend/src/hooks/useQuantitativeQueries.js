@@ -111,8 +111,8 @@ export const useQuestionnaire = (workspaceId, explorationId, simulationId) => {
 
 export const useSimulateSurvey = () => {
   return useMutation({
-    mutationFn: ({ workspaceId, explorationId, personaId, simulationId }) =>
-      simulateSurvey({ workspaceId, explorationId, personaId, simulationId }),
+    mutationFn: ({ workspaceId, explorationId, personaId, simulationId, forceRerun }) =>
+      simulateSurvey({ workspaceId, explorationId, personaId, simulationId, forceRerun }),
   });
 };
 

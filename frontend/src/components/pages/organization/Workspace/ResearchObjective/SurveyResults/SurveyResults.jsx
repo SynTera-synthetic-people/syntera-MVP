@@ -132,14 +132,23 @@ const SurveyResults = () => {
 
   // The population simulation ID coming from navigation state
   const populationSimulationId = location.state?.surveyConfig?.simulationId ?? null;
+  // True when the user edited the questionnaire — bypass cached results and force a fresh run.
+  // Reads from both navigation state (normal flow) and sessionStorage (survives page refresh).
+  const forceRerun =
+    location.state?.forceRerun === true ||
+    sessionStorage.getItem(`forceRerun_${explorationId}`) === 'true';
 
   // Try to load an already-completed survey simulation from the server first.
-  // staleTime=Infinity means this result is cached for the lifetime of the page.
+  // Disabled when forceRerun=true so we skip the cache check and go straight to simulation.
   const {
     data: existingSimData,
     isLoading: existingSimLoading,
     isFetched: existingSimFetched,
-  } = useGetSurveySimulationBySource(workspaceId, explorationId, populationSimulationId);
+  } = useGetSurveySimulationBySource(
+    forceRerun ? null : workspaceId,
+    forceRerun ? null : explorationId,
+    forceRerun ? null : populationSimulationId,
+  );
 
   const simulateSurveyMutation = useSimulateSurvey();
   const downloadSurveyPdfMutation = useDownloadSurveyPdf();
@@ -287,14 +296,25 @@ const SurveyResults = () => {
 
   // Step 2: Once we know whether an existing simulation result is available,
   // either load it directly or run the simulation for the first time.
-  // We gate on `existingSimFetched` so we always wait for the server check
-  // before deciding — this prevents a race where we start simulating before
-  // knowing a result already exists.
+  // When forceRerun=true we skip the cache check entirely and run fresh.
   useEffect(() => {
-    if (!surveyConfig || !existingSimFetched) return;
+    if (!surveyConfig) return;
 
     // Deduplicate: only act once per populationSimulationId per mount.
     if (simulationAttemptedRef.current === surveyConfig.simulationId) return;
+
+    if (forceRerun) {
+      // User edited the questionnaire — purge stale cache then run fresh.
+      queryClient.removeQueries({
+        queryKey: ['surveySimulationBySource', workspaceId, explorationId, surveyConfig.simulationId],
+      });
+      simulationAttemptedRef.current = surveyConfig.simulationId;
+      triggerSurveySimulation(surveyConfig, true);
+      return;
+    }
+
+    // Normal path: wait for the server cache check before deciding.
+    if (!existingSimFetched) return;
     simulationAttemptedRef.current = surveyConfig.simulationId;
 
     if (existingSimData?.data) {
@@ -303,22 +323,24 @@ const SurveyResults = () => {
       processSurveyResults(existingSimData.data);
     } else {
       // No existing result — run simulation for the first time.
-      triggerSurveySimulation(surveyConfig);
+      triggerSurveySimulation(surveyConfig, false);
     }
-  }, [surveyConfig, existingSimFetched, existingSimData]);
+  }, [surveyConfig, existingSimFetched, existingSimData, forceRerun]);
 
-  // Run the actual AI simulation (only called when no existing result exists).
-  const triggerSurveySimulation = async (config) => {
+  // Run the actual AI simulation (only called when no existing result exists, or forceRerun=true).
+  const triggerSurveySimulation = async (config, shouldForceRerun = false) => {
     try {
       const result = await simulateSurveyMutation.mutateAsync({
         workspaceId,
         explorationId: config.explorationId,
         personaId: config.personaIds,
         simulationId: config.simulationId,
+        forceRerun: shouldForceRerun,
       });
 
       if (result.status === 'success') {
         setSurveyResults(result.data);
+        sessionStorage.removeItem(`forceRerun_${explorationId}`);
         // Seed the cache so re-navigations find this result immediately
         // without making a redundant POST (backend guard is still a safety net).
         queryClient.setQueryData(
