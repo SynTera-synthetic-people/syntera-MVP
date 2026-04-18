@@ -13,6 +13,7 @@ const PopulationActive = ({
   questionnairesLoading,
   onEditConfiguration,
   onLaunchSurvey,
+  onModified,
   workspaceId,
   explorationId
 }) => {
@@ -43,6 +44,7 @@ const PopulationActive = ({
         workspaceId={workspaceId}
         explorationId={explorationId}
         uploadQuestionnaireMutation={uploadQuestionnaireMutation}
+        onModified={onModified}
       />
 
       <div className="flex justify-center pt-10 pb-4">

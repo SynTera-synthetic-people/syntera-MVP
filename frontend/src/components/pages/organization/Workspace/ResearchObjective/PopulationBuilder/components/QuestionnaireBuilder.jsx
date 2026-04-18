@@ -45,6 +45,7 @@ const QuestionnaireBuilder = ({
   workspaceId,
   explorationId,
   uploadQuestionnaireMutation,
+  onModified,
 }) => {
   const [activeSectionIndex, setActiveSectionIndex] = useState(0);
   const [uploadStatus, setUploadStatus] = useState({
@@ -133,6 +134,7 @@ const QuestionnaireBuilder = ({
         error: null,
         respondentCountsAvailable: countsAvail,
       });
+      onModified?.();
 
       setTimeout(() => {
         setUploadStatus({
@@ -179,6 +181,7 @@ const QuestionnaireBuilder = ({
         title,
       });
       handleCancelEditSection();
+      onModified?.();
     } catch (error) {
       console.error('Failed to update section:', error);
     }
@@ -193,6 +196,7 @@ const QuestionnaireBuilder = ({
         title: 'New Section',
         simulationId,
       });
+      onModified?.();
     } catch (error) {
       console.error('Failed to create section:', error);
     }
@@ -210,6 +214,7 @@ const QuestionnaireBuilder = ({
       if (deletedIndex >= 0 && deletedIndex <= activeSectionIndex) {
         setActiveSectionIndex(Math.max(0, activeSectionIndex - 1));
       }
+      onModified?.();
     } catch (error) {
       console.error('Failed to delete section:', error);
     } finally {
@@ -257,6 +262,7 @@ const QuestionnaireBuilder = ({
         options: payload.options,
       });
       handleCancelAddQuestion();
+      onModified?.();
     } catch (error) {
       console.error('Failed to create question:', error);
     }
@@ -285,6 +291,7 @@ const QuestionnaireBuilder = ({
         options: payload.options,
       });
       handleCancelEditQuestion();
+      onModified?.();
     } catch (error) {
       console.error('Failed to update question:', error);
     }
@@ -298,6 +305,7 @@ const QuestionnaireBuilder = ({
     setDeletingQuestionId(questionId);
     try {
       await deleteQuestionMutation.mutateAsync({ questionId });
+      onModified?.();
     } catch (error) {
       console.error('Failed to delete question:', error);
     } finally {

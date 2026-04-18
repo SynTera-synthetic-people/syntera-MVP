@@ -17,6 +17,7 @@ class SurveySimulationRequest(BaseModel):
     simulation_id: Optional[str] = None
     sample_size: Optional[int] = None
     questions: Optional[List[Dict]] = None
+    force_rerun: bool = False  # Skip idempotency guard when questionnaire was edited
 
 class SurveySimulationOut(BaseModel):
     id: str

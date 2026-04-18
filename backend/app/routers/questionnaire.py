@@ -351,7 +351,8 @@ async def simulate_survey(
 
     # Idempotency guard: if a survey simulation already exists for this population
     # simulation, return the stored result instead of re-running the AI simulation.
-    if payload.simulation_id:
+    # Skipped when force_rerun=True (user edited the questionnaire and wants a fresh run).
+    if payload.simulation_id and not payload.force_rerun:
         existing = await get_survey_simulation_by_source_id(payload.simulation_id)
         if existing:
             sections = await build_survey_report_sections(existing)
