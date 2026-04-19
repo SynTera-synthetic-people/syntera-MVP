@@ -4,29 +4,42 @@ import { optionData, optionTooltips, multiSelectAttributes } from "../data";
 import { TbPlus, TbCheck, TbX, TbTrash } from "react-icons/tb";
 import Tooltip from '../../../../../../../common/Tooltip';
 
+// Normalize any backend value to a plain string before use in this component.
+const toStr = (val) => {
+  if (!val && val !== 0) return '';
+  if (typeof val === 'string') return val;
+  if (Array.isArray(val)) return val.map(toStr).filter(Boolean).join(', ');
+  if (typeof val === 'object') return val.text ?? val.label ?? '';
+  return String(val);
+};
+
 const SelectionPanel = ({ editingItem, currentValue, onSelect }) => {
   const [customValue, setCustomValue] = useState('');
+  const trimmedCustomValue = customValue.trim();
 
   const isMultiSelect = multiSelectAttributes.includes(editingItem?.item);
   const options = optionData[editingItem?.item] || [];
   const tooltips = optionTooltips[editingItem?.item] || {};
 
-  // Normalize currentValue to an array for multi-select
+  // Normalize currentValue - preserve array for multi-select, convert to string for single-select
+  const normalizedValue = toStr(currentValue).trim();
   const selectedOptions = isMultiSelect
-    ? (Array.isArray(currentValue) ? currentValue : (currentValue ? currentValue.split(',').map(s => s.trim()) : []))
-    : [currentValue];
+    ? (Array.isArray(currentValue)
+        ? currentValue.map(toStr).map(s => s.trim()).filter(Boolean)
+        : (normalizedValue ? normalizedValue.split(',').map(s => s.trim()).filter(Boolean) : []))
+    : [normalizedValue];
 
-  const isCustomValue = !isMultiSelect && currentValue && !options.includes(currentValue);
+  const isCustomValue = !isMultiSelect && normalizedValue && !options.includes(normalizedValue);
 
   useEffect(() => {
     if (editingItem) {
       if (isCustomValue) {
-        setCustomValue(currentValue);
+        setCustomValue(normalizedValue);
       } else {
         setCustomValue('');
       }
     }
-  }, [editingItem, currentValue, isCustomValue]);
+  }, [editingItem, normalizedValue, isCustomValue]);
 
   const toggleOption = (option) => {
     if (isMultiSelect) {
@@ -129,22 +142,22 @@ const SelectionPanel = ({ editingItem, currentValue, onSelect }) => {
                 onChange={(e) => setCustomValue(e.target.value)}
                 placeholder={`Enter custom ${editingItem.item.toLowerCase()}...`}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && customValue.trim() && customValue !== currentValue) {
-                    onSelect(customValue.trim());
+                  if (e.key === 'Enter' && trimmedCustomValue && trimmedCustomValue !== normalizedValue) {
+                    onSelect(trimmedCustomValue);
                   }
                 }}
                 className="flex-grow bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-3 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all"
               />
               <button
-                onClick={() => customValue.trim() && onSelect(customValue.trim())}
-                disabled={!customValue.trim() || customValue === currentValue}
-                title={customValue === currentValue && isCustomValue ? "Current Value" : "Apply Custom Value"}
-                className={`p-3 rounded-xl transition-all flex items-center justify-center min-w-[3.5rem] ${customValue === currentValue && isCustomValue
+                onClick={() => trimmedCustomValue && onSelect(trimmedCustomValue)}
+                disabled={!trimmedCustomValue || trimmedCustomValue === normalizedValue}
+                title={trimmedCustomValue === normalizedValue && isCustomValue ? "Current Value" : "Apply Custom Value"}
+                className={`p-3 rounded-xl transition-all flex items-center justify-center min-w-[3.5rem] ${trimmedCustomValue === normalizedValue && isCustomValue
                   ? 'bg-green-500 text-white cursor-default'
                   : 'bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-500/30 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed'
                   }`}
               >
-                {customValue === currentValue && isCustomValue ? <TbCheck size={24} /> : <TbPlus size={24} />}
+                {trimmedCustomValue === normalizedValue && isCustomValue ? <TbCheck size={24} /> : <TbPlus size={24} />}
               </button>
             </div>
           )}
