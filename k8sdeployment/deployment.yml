@@ -7,11 +7,6 @@ metadata:
     app: synth-backend
 spec:
   replicas: 4
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxUnavailable: 1
-      maxSurge: 1
   selector:
     matchLabels:
       app: synth-backend
@@ -23,10 +18,12 @@ spec:
       serviceAccountName: ssm-reader
       containers:
         - name: backend
-          image: 175337843263.dkr.ecr.ap-south-1.amazonaws.com/synth-backend:latest
+          image: 175337843263.dkr.ecr.ap-south-1.amazonaws.com/synth-backend:v4
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
+
+          #  IMPORTANT: make FastAPI respect ALB https headers
           args:
             - uvicorn
             - app.main:app
@@ -36,6 +33,7 @@ spec:
             - "8000"
             - --proxy-headers
             - --forwarded-allow-ips=*
+
           env:
             - name: AWS_REGION
               value: ap-south-1
@@ -48,24 +46,12 @@ spec:
             httpGet:
               path: /health
               port: 8000
-            initialDelaySeconds: 90
-            timeoutSeconds: 5
-            periodSeconds: 15
-            failureThreshold: 10
+            initialDelaySeconds: 10
+            periodSeconds: 10
 
           livenessProbe:
             httpGet:
               path: /health
               port: 8000
-            initialDelaySeconds: 120
-            timeoutSeconds: 5
-            periodSeconds: 30
-            failureThreshold: 3
-
-          resources:
-            requests:
-              memory: "512Mi"
-              cpu: "250m"
-            limits:
-              memory: "1Gi"
-              cpu: "500m"
+            initialDelaySeconds: 30
+            periodSeconds: 20
