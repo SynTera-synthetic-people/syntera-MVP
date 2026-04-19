@@ -6,7 +6,7 @@ metadata:
   labels:
     app: synth-backend
 spec:
-  replicas: 2
+  replicas: 4
   selector:
     matchLabels:
       app: synth-backend
@@ -18,7 +18,7 @@ spec:
       serviceAccountName: ssm-reader
       containers:
         - name: backend
-          image: 175337843263.dkr.ecr.ap-south-1.amazonaws.com/synth-backend:v4
+          image: 175337843263.dkr.ecr.ap-south-1.amazonaws.com/synth-backend
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
