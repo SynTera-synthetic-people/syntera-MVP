@@ -1,6 +1,20 @@
 import React from 'react';
 import { TbCheck, TbEdit, TbLoader, TbPlus, TbTrash, TbX } from 'react-icons/tb';
 
+const optionToText = (option) => {
+  if (option === null || option === undefined) return '';
+  if (typeof option === 'string') return option;
+  if (typeof option === 'number' || typeof option === 'boolean') return String(option);
+  if (typeof option === 'object') {
+    if (typeof option.text === 'string') return option.text;
+    if (typeof option.label === 'string') return option.label;
+    if (typeof option.value === 'string' || typeof option.value === 'number' || typeof option.value === 'boolean') {
+      return String(option.value);
+    }
+  }
+  return '';
+};
+
 const QuestionItem = ({
   question,
   isEditing,
@@ -17,6 +31,9 @@ const QuestionItem = ({
   isSaving,
   isDeleting,
 }) => {
+  const safeQuestionText = optionToText(question?.text);
+  const safeQuestionOptions = Array.isArray(question?.options) ? question.options : [];
+
   if (isEditing) {
     return (
       <div className="bg-white/60 dark:bg-white/5 backdrop-blur-sm border border-gray-100 dark:border-white/5 rounded-2xl p-6 shadow-sm">
@@ -50,7 +67,7 @@ const QuestionItem = ({
                 <div key={`${question.id}-option-${index}`} className="flex items-center gap-2">
                   <input
                     type="text"
-                    value={option}
+                    value={optionToText(option)}
                     onChange={(event) => onEditingOptionChange(index, event.target.value)}
                     className="flex-1 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-2.5 text-sm text-gray-800 dark:text-gray-200 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                     placeholder={`Option ${index + 1}`}
@@ -99,11 +116,11 @@ const QuestionItem = ({
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1">
             <p className="text-gray-900 dark:text-gray-100 font-bold text-lg leading-relaxed mb-2">
-              {question.text}
+              {safeQuestionText}
             </p>
             <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
               <span className="text-[10px] uppercase tracking-wider font-bold">Simulated Responses</span>
-              <span className="text-xs">({question.options.length} options)</span>
+              <span className="text-xs">({safeQuestionOptions.length} options)</span>
             </div>
           </div>
 
@@ -128,14 +145,14 @@ const QuestionItem = ({
           </div>
         </div>
 
-        {question.options && question.options.length > 0 ? (
+        {safeQuestionOptions.length > 0 ? (
           <div className="flex flex-wrap gap-2">
-            {question.options.map((option, index) => (
+            {safeQuestionOptions.map((option, index) => (
               <div
                 key={`${question.id}-read-option-${index}`}
                 className="px-3 py-1.5 border border-gray-300 dark:border-white/20 rounded-lg text-gray-700 dark:text-gray-300 font-medium text-sm bg-gray-50/50 dark:bg-white/5"
               >
-                {option}
+                {optionToText(option)}
               </div>
             ))}
           </div>

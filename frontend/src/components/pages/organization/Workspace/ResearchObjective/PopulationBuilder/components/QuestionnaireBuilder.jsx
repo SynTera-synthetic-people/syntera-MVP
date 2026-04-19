@@ -14,28 +14,45 @@ import {
 
 const DEFAULT_OPTION_DRAFTS = ['', ''];
 
+const optionToText = (option) => {
+  if (option === null || option === undefined) return '';
+  if (typeof option === 'string') return option;
+  if (typeof option === 'number' || typeof option === 'boolean') return String(option);
+  if (typeof option === 'object') {
+    if (typeof option.text === 'string') return option.text;
+    if (typeof option.label === 'string') return option.label;
+    if (typeof option.value === 'string' || typeof option.value === 'number' || typeof option.value === 'boolean') {
+      return String(option.value);
+    }
+  }
+  return '';
+};
+
 const normalizeQuestionnaireData = (apiData) => {
   if (!Array.isArray(apiData)) return [];
 
   return apiData.map((section) => ({
     section_id: section.section_id || section.id,
     simulation_id: section.simulation_id || null,
-    title: section.title || 'Untitled Section',
+    title: optionToText(section.title).trim() || 'Untitled Section',
     questions: Array.isArray(section.questions)
       ? section.questions.map((question) => ({
         id: question.id,
-        text: question.text || '',
-        options: Array.isArray(question.options) ? question.options : [],
+        text: optionToText(question.text),
+        options: Array.isArray(question.options)
+          ? question.options.map(optionToText).map((option) => option.trim()).filter(Boolean)
+          : [],
       }))
       : [],
   }));
 };
 
-const sanitizeOptions = (options = []) => options.map((option) => option.trim()).filter(Boolean);
+const sanitizeOptions = (options = []) =>
+  options.map(optionToText).map((option) => option.trim()).filter(Boolean);
 
 const createOptionDrafts = (options = []) =>
   Array.isArray(options) && options.length > 0
-    ? options.map((option) => option ?? '')
+    ? options.map(optionToText)
     : [...DEFAULT_OPTION_DRAFTS];
 
 const QuestionnaireBuilder = ({
@@ -159,7 +176,7 @@ const QuestionnaireBuilder = ({
 
   const handleStartEditSection = (section) => {
     setEditingSectionId(section.section_id);
-    setEditingSectionTitle(section.title);
+    setEditingSectionTitle(optionToText(section.title));
   };
 
   const handleCancelEditSection = () => {
