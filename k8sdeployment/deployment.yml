@@ -23,7 +23,7 @@ spec:
       serviceAccountName: ssm-reader
       containers:
         - name: backend
-          image: 175337843263.dkr.ecr.ap-south-1.amazonaws.com/synth-backend:${GITHUB_SHA}
+          image: 175337843263.dkr.ecr.ap-south-1.amazonaws.com/synth-backend:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
