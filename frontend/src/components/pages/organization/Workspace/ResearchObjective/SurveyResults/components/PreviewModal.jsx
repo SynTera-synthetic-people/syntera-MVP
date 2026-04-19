@@ -2,6 +2,20 @@ import { motion } from "framer-motion";
 import { TbDownload, TbLoader, TbX, TbChevronRight } from "react-icons/tb";
 import ReactDOM from 'react-dom';
 
+const toText = (value) => {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (typeof value === 'object') {
+    if (typeof value.text === 'string') return value.text;
+    if (typeof value.label === 'string') return value.label;
+    if (typeof value.value === 'string' || typeof value.value === 'number' || typeof value.value === 'boolean') {
+      return String(value.value);
+    }
+  }
+  return '';
+};
+
 const PreviewModal = ({
   isOpen,
   onClose,
@@ -127,22 +141,22 @@ const PreviewModal = ({
               {/* Preview of sections with data */}
               {previewData.sections?.slice(0, 3).map((section, index) => (
                 <div key={index} className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl p-6">
-                  <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                    {section.title}
-                  </h4>
-                  <div className="space-y-4">
-                    {section.questions?.slice(0, 2).map((question, qIndex) => (
-                      <div key={qIndex} className="space-y-3">
-                        <p className="font-medium text-gray-900 dark:text-white">
-                          {question.question}
-                        </p>
-                        {question.results?.length > 0 && (
-                          <div className="space-y-2">
-                            {question.results.slice(0, 3).map((result, rIndex) => (
-                              <div key={rIndex} className="flex justify-between items-center">
-                                <span className="text-sm text-gray-600 dark:text-gray-300">
-                                  {result.option}
-                                </span>
+	                  <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+	                    {toText(section.title).trim() || 'Untitled Section'}
+	                  </h4>
+	                  <div className="space-y-4">
+	                    {section.questions?.slice(0, 2).map((question, qIndex) => (
+	                      <div key={qIndex} className="space-y-3">
+	                        <p className="font-medium text-gray-900 dark:text-white">
+	                          {toText(question.question)}
+	                        </p>
+	                        {question.results?.length > 0 && (
+	                          <div className="space-y-2">
+	                            {question.results.slice(0, 3).map((result, rIndex) => (
+	                              <div key={rIndex} className="flex justify-between items-center">
+	                                <span className="text-sm text-gray-600 dark:text-gray-300">
+	                                  {toText(result.option)}
+	                                </span>
                                 <span className="font-medium text-blue-600 dark:text-blue-400">
                                   {result.percentage || `${result.pct}%`}
                                 </span>
