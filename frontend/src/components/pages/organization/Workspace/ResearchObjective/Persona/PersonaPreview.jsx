@@ -1,4 +1,13 @@
 import React, { useState, useEffect } from "react";
+
+// Safely convert any backend value (string, {option_id,text,tags} object, or array) to a renderable string.
+const extractStr = (val) => {
+  if (!val && val !== 0) return '';
+  if (typeof val === 'string') return val;
+  if (Array.isArray(val)) return val.map(extractStr).filter(Boolean).join(', ');
+  if (typeof val === 'object') return val.text ?? val.label ?? '';
+  return String(val);
+};
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { usePersonaPreview, useDeletePersona, usePersonas } from "../../../../../../hooks/usePersonaBuilder";
 import { useTheme } from "../../../../../../context/ThemeContext";
@@ -160,38 +169,39 @@ const PersonaPreview = () => {
     const mapApiTraitsToUi = (traits) => {
       if (!traits) return {};
 
+      const e = extractStr;
       const mapped = {
-        "Age": Array.isArray(traits.age_range || traits.Age) ? (traits.age_range || traits.Age).join(', ') : (traits.age_range || traits.Age),
-        "Gender": Array.isArray(traits.gender || traits.Gender) ? (traits.gender || traits.Gender).join(', ') : (traits.gender || traits.Gender),
-        "Income Level": Array.isArray(traits.income_range || traits.income || traits["Income Level"]) ? (traits.income_range || traits.income || traits["Income Level"]).join(', ') : (traits.income_range || traits.income || traits["Income Level"]),
-        "Education Level": Array.isArray(traits.education_level || traits.education || traits["Education Level"]) ? (traits.education_level || traits.education || traits["Education Level"]).join(', ') : (traits.education_level || traits.education || traits["Education Level"]),
-        "Occupation / Employment Type": Array.isArray(traits.occupation || traits["Occupation / Employment Type"]) ? (traits.occupation || traits["Occupation / Employment Type"]).join(', ') : (traits.occupation || traits["Occupation / Employment Type"]),
-        "Family Structure": Array.isArray(traits.family_size || traits.family_structure || traits["Family Structure"]) ? (traits.family_size || traits.family_structure || traits["Family Structure"]).join(', ') : (traits.family_size || traits.family_structure || traits["Family Structure"]),
-        "Geography": Array.isArray(traits.geography || traits.location_country || traits.Geography) ? (traits.geography || traits.location_country || traits.Geography).join(', ') : (traits.geography || traits.location_country || traits.Geography),
-        "Lifestyle": Array.isArray(traits.lifestyle || traits.lifestyle_type || traits.Lifestyle) ? (traits.lifestyle || traits.lifestyle_type || traits.Lifestyle).join(', ') : (traits.lifestyle || traits.lifestyle_type || traits.Lifestyle),
-        "Values": Array.isArray(traits.values || traits.Values) ? (traits.values || traits.Values).join(', ') : (traits.values || traits.Values),
-        "Personality": Array.isArray(traits.personality || traits.personality_type || traits.personality_traits || traits.Personality) ? (traits.personality || traits.personality_type || traits.personality_traits || traits.Personality).join(', ') : (traits.personality || traits.personality_type || traits.personality_traits || traits.Personality),
-        "Interests": Array.isArray(traits.interests || traits.Interests) ? (traits.interests || traits.Interests).join(', ') : (traits.interests || traits.Interests),
-        "Motivations": Array.isArray(traits.motivations || traits.Motivations) ? (traits.motivations || traits.Motivations).join(', ') : (traits.motivations || traits.Motivations),
-        "Brand Sensitivity": Array.isArray(traits.brand_sensitivity_detailed || traits.brand_sensitivity || traits["Brand Sensitivity"]) ? (traits.brand_sensitivity_detailed || traits.brand_sensitivity || traits["Brand Sensitivity"]).join(', ') : (traits.brand_sensitivity_detailed || traits.brand_sensitivity || traits["Brand Sensitivity"]),
-        "Price Sensitivity": Array.isArray(traits.price_sensitivity_general || traits.price_sensitivity || traits["Price Sensitivity"]) ? (traits.price_sensitivity_general || traits.price_sensitivity || traits["Price Sensitivity"]).join(', ') : (traits.price_sensitivity_general || traits.price_sensitivity || traits["Price Sensitivity"]),
-        "Mobility": Array.isArray(traits.mobility || traits.Mobility) ? (traits.mobility || traits.Mobility).join(', ') : (traits.mobility || traits.Mobility),
-        "Home Ownership": Array.isArray(traits.accommodation || traits.home_ownership || traits["Home Ownership"]) ? (traits.accommodation || traits.home_ownership || traits["Home Ownership"]).join(', ') : (traits.accommodation || traits.home_ownership || traits["Home Ownership"]),
-        "Marital Status": Array.isArray(traits.marital_status || traits["Marital Status"]) ? (traits.marital_status || traits["Marital Status"]).join(', ') : (traits.marital_status || traits["Marital Status"]),
-        "Daily Rhythm": Array.isArray(traits.daily_rhythm || traits["Daily Rhythm"]) ? (traits.daily_rhythm || traits["Daily Rhythm"]).join(', ') : (traits.daily_rhythm || traits["Daily Rhythm"]),
-        "Hobbies & Interests": Array.isArray(traits.hobbies || traits["Hobbies & Interests"]) ? (traits.hobbies || traits["Hobbies & Interests"]).join(', ') : (traits.hobbies || traits["Hobbies & Interests"]),
-        "Decision Making Style": Array.isArray(traits.decision_making_style_1 || traits["Decision Making Style"]) ? (traits.decision_making_style_1 || traits["Decision Making Style"]).join(', ') : (traits.decision_making_style_1 || traits["Decision Making Style"]),
-        "Purchase Frequency": Array.isArray(traits.purchase_frequency || traits["Purchase Frequency"]) ? (traits.purchase_frequency || traits["Purchase Frequency"]).join(', ') : (traits.purchase_frequency || traits["Purchase Frequency"]),
-        "Purchase Channel": Array.isArray(traits.purchase_channel_detailed || traits.purchase_channel || traits["Purchase Channel"]) ? (traits.purchase_channel_detailed || traits.purchase_channel || traits["Purchase Channel"]).join(', ') : (traits.purchase_channel_detailed || traits.purchase_channel || traits["Purchase Channel"]),
-        "Price Sensitivity Profile": Array.isArray(traits.price_sensitivity_profile || traits["Price Sensitivity Profile"]) ? (traits.price_sensitivity_profile || traits["Price Sensitivity Profile"]).join(', ') : (traits.price_sensitivity_profile || traits["Price Sensitivity Profile"]),
-        "Loyalty / Switching Behavior": Array.isArray(traits.loyalty_behavior || traits["Loyalty / Switching Behavior"]) ? (traits.loyalty_behavior || traits["Loyalty / Switching Behavior"]).join(', ') : (traits.loyalty_behavior || traits["Loyalty / Switching Behavior"]),
-        "Purchase Triggers & Occasions": Array.isArray(traits.purchase_triggers || traits["Purchase Triggers & Occasions"]) ? (traits.purchase_triggers || traits["Purchase Triggers & Occasions"]).join(', ') : (traits.purchase_triggers || traits["Purchase Triggers & Occasions"]),
-        "Purchase Barriers": Array.isArray(traits.purchase_barriers || traits["Purchase Barriers"]) ? (traits.purchase_barriers || traits["Purchase Barriers"]).join(', ') : (traits.purchase_barriers || traits["Purchase Barriers"]),
-        "Decision-Making Style": Array.isArray(traits.decision_making_style_2 || traits["Decision-Making Style"]) ? (traits.decision_making_style_2 || traits["Decision-Making Style"]).join(', ') : (traits.decision_making_style_2 || traits["Decision-Making Style"]),
-        "Media Consumption Patterns": Array.isArray(traits.media_consumption || traits["Media Consumption Patterns"]) ? (traits.media_consumption || traits["Media Consumption Patterns"]).join(', ') : (traits.media_consumption || traits["Media Consumption Patterns"]),
-        "Digital Behavior": Array.isArray(traits.digital_behavior_detailed || traits["Digital Behavior"]) ? (traits.digital_behavior_detailed || traits["Digital Behavior"]).join(', ') : (traits.digital_behavior_detailed || traits["Digital Behavior"]),
-        "Purchase patterns": Array.isArray(traits.purchase_patterns || traits["Purchase patterns"]) ? (traits.purchase_patterns || traits["Purchase patterns"]).join(', ') : (traits.purchase_patterns || traits["Purchase patterns"]),
-        "Purchase channel": Array.isArray(traits.purchase_channel || traits["Purchase channel"]) ? (traits.purchase_channel || traits["Purchase channel"]).join(', ') : (traits.purchase_channel || traits["Purchase channel"]),
+        "Age": e(traits.age_range || traits.Age),
+        "Gender": e(traits.gender || traits.Gender),
+        "Income Level": e(traits.income_range || traits.income || traits["Income Level"]),
+        "Education Level": e(traits.education_level || traits.education || traits["Education Level"]),
+        "Occupation / Employment Type": e(traits.occupation || traits["Occupation / Employment Type"]),
+        "Family Structure": e(traits.family_size || traits.family_structure || traits["Family Structure"]),
+        "Geography": e(traits.geography || traits.location_country || traits.Geography),
+        "Lifestyle": e(traits.lifestyle || traits.lifestyle_type || traits.Lifestyle),
+        "Values": e(traits.values || traits.Values),
+        "Personality": e(traits.personality || traits.personality_type || traits.personality_traits || traits.Personality),
+        "Interests": e(traits.interests || traits.Interests),
+        "Motivations": e(traits.motivations || traits.Motivations),
+        "Brand Sensitivity": e(traits.brand_sensitivity_detailed || traits.brand_sensitivity || traits["Brand Sensitivity"]),
+        "Price Sensitivity": e(traits.price_sensitivity_general || traits.price_sensitivity || traits["Price Sensitivity"]),
+        "Mobility": e(traits.mobility || traits.Mobility),
+        "Home Ownership": e(traits.accommodation || traits.home_ownership || traits["Home Ownership"]),
+        "Marital Status": e(traits.marital_status || traits["Marital Status"]),
+        "Daily Rhythm": e(traits.daily_rhythm || traits["Daily Rhythm"]),
+        "Hobbies & Interests": e(traits.hobbies || traits["Hobbies & Interests"]),
+        "Decision Making Style": e(traits.decision_making_style_1 || traits["Decision Making Style"]),
+        "Purchase Frequency": e(traits.purchase_frequency || traits["Purchase Frequency"]),
+        "Purchase Channel": e(traits.purchase_channel_detailed || traits.purchase_channel || traits["Purchase Channel"]),
+        "Price Sensitivity Profile": e(traits.price_sensitivity_profile || traits["Price Sensitivity Profile"]),
+        "Loyalty / Switching Behavior": e(traits.loyalty_behavior || traits["Loyalty / Switching Behavior"]),
+        "Purchase Triggers & Occasions": e(traits.purchase_triggers || traits["Purchase Triggers & Occasions"]),
+        "Purchase Barriers": e(traits.purchase_barriers || traits["Purchase Barriers"]),
+        "Decision-Making Style": e(traits.decision_making_style_2 || traits["Decision-Making Style"]),
+        "Media Consumption Patterns": e(traits.media_consumption || traits["Media Consumption Patterns"]),
+        "Digital Behavior": e(traits.digital_behavior_detailed || traits["Digital Behavior"]),
+        "Purchase patterns": e(traits.purchase_patterns || traits["Purchase patterns"]),
+        "Purchase channel": e(traits.purchase_channel || traits["Purchase channel"]),
         "backstory": traits.backstory || "",
         "isAI": !!(traits.isAI || traits.auto_generated_persona || personaId?.toString().toLowerCase().includes('ai') || false)
       };
@@ -708,7 +718,7 @@ const PersonaPreview = () => {
                 </div>
                 <h2 className="mt-6 text-2xl font-bold text-gray-900 dark:text-white">{personaName}</h2>
                 <p className="text-blue-600 dark:text-blue-400 font-bold text-sm tracking-wide uppercase mt-1">
-                  {currentPersonaData["Occupation"] || "Target Persona"}
+                  {extractStr(currentPersonaData["Occupation"]) || "Target Persona"}
                 </p>
 
                 {/* Confidence Score */}
@@ -812,7 +822,7 @@ const PersonaPreview = () => {
                                         {firstHalf.map(trait => (
                                           <div key={trait} className="grid grid-cols-[160px_1fr] gap-4 items-start text-sm border-b border-gray-50 dark:border-white/5 pb-2 last:border-0 last:pb-0">
                                             <span className="font-semibold text-gray-500 dark:text-gray-400 break-words">{trait}</span>
-                                            <span className="font-bold text-gray-900 dark:text-white leading-tight">{currentPersonaData[trait]}</span>
+                                            <span className="font-bold text-gray-900 dark:text-white leading-tight">{extractStr(currentPersonaData[trait])}</span>
                                           </div>
                                         ))}
                                       </div>
@@ -833,7 +843,7 @@ const PersonaPreview = () => {
                                           {secondHalf.map(trait => (
                                             <div key={trait} className="grid grid-cols-[160px_1fr] gap-4 items-start text-sm border-b border-gray-50 dark:border-white/5 pb-2 last:border-0 last:pb-0">
                                               <span className="font-semibold text-gray-500 dark:text-gray-400 break-words">{trait}</span>
-                                              <span className="font-bold text-gray-900 dark:text-white leading-tight">{currentPersonaData[trait]}</span>
+                                              <span className="font-bold text-gray-900 dark:text-white leading-tight">{extractStr(currentPersonaData[trait])}</span>
                                             </div>
                                           ))}
                                         </div>
@@ -858,7 +868,7 @@ const PersonaPreview = () => {
                                     {categoryTraits.map(trait => (
                                       <div key={trait} className="grid grid-cols-[160px_1fr] gap-4 items-start text-sm border-b border-gray-50 dark:border-white/5 pb-2 last:border-0 last:pb-0">
                                         <span className="font-semibold text-gray-500 dark:text-gray-400 break-words">{trait}</span>
-                                        <span className="font-bold text-gray-900 dark:text-white leading-tight">{currentPersonaData[trait]}</span>
+                                        <span className="font-bold text-gray-900 dark:text-white leading-tight">{extractStr(currentPersonaData[trait])}</span>
                                       </div>
                                     ))}
                                   </div>
@@ -935,7 +945,7 @@ const PersonaPreview = () => {
                                 <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed">
                                   This radar chart visualizes the persona's Big Five personality traits based on the OCEAN model.
                                   <span className="font-bold text-blue-600 dark:text-blue-400"> {personaName}</span> shows a personality profile with
-                                  <span className="font-bold"> {currentPersonaData["Personality"] || "balanced"}</span> traits across all dimensions.
+                                  <span className="font-bold"> {extractStr(currentPersonaData["Personality"]) || "balanced"}</span> traits across all dimensions.
                                   Each axis represents one of the five personality dimensions, with 0 being the minimum and 1 being the maximum.
                                 </p>
 
@@ -1214,7 +1224,7 @@ const PersonaPreview = () => {
                               <span className="text-xs font-extrabold text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-1">{item}</span>
                               <div className="flex items-center justify-between">
                                 <span className={`text-lg font-bold ${currentPersonaData[item] ? "text-gray-900 dark:text-white" : "text-gray-400 dark:text-gray-600"}`}>
-                                  {currentPersonaData[item] || "Not Defined"}
+                                  {extractStr(currentPersonaData[item]) || "Not Defined"}
                                 </span>
                                 {currentPersonaData[item] && (
                                   <div className="bg-blue-500/10 text-blue-600 dark:text-blue-400 p-1.5 rounded-full">
