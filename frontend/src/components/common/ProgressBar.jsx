@@ -201,8 +201,8 @@ const ProgressBar = () => {
                   className="group relative flex flex-col items-center gap-3 z-10"
                 >
                   <motion.div
-                    animate={{ scale: active ? 1.2 : 1, backgroundColor: active || done ? '#2563EB' : 'transparent', borderColor: active || done ? '#2563EB' : 'currentColor' }}
-                    className={`w-3 h-3 rounded-full border-2 bg-white dark:bg-[#0A0E1A] transition-colors duration-300 ${active ? 'shadow-[0_0_15px_rgba(37,99,235,0.6)]' : ''} ${!active && !done ? 'text-gray-300' : 'text-blue-600'}`}
+                    animate={{ scale: active ? 1.2 : 1 }}
+                    className={`w-3 h-3 rounded-full border-2 transition-colors duration-300 ${active ? 'shadow-[0_0_15px_rgba(37,99,235,0.6)]' : ''} ${active || done ? 'bg-blue-600 border-blue-600' : 'bg-white dark:bg-[#0A0E1A] border-gray-300 dark:border-gray-600'}`}
                   />
                   <span className={`text-[10px] sm:text-xs font-bold uppercase transition-all duration-300 ${active ? 'text-blue-600 transform scale-105' : 'text-gray-400'}`}>
                     {sub.label}

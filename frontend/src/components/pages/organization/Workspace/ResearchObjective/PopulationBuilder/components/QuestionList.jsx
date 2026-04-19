@@ -2,6 +2,20 @@ import React from 'react';
 import { TbCheck, TbEdit, TbLoader, TbPlus, TbTrash, TbX } from 'react-icons/tb';
 import QuestionItem from './QuestionItem';
 
+const toText = (value) => {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (typeof value === 'object') {
+    if (typeof value.text === 'string') return value.text;
+    if (typeof value.label === 'string') return value.label;
+    if (typeof value.value === 'string' || typeof value.value === 'number' || typeof value.value === 'boolean') {
+      return String(value.value);
+    }
+  }
+  return '';
+};
+
 const QuestionList = ({
   section,
   editingSectionId,
@@ -42,6 +56,8 @@ const QuestionList = ({
     return null;
   }
 
+  const sectionTitle = toText(section.title).trim() || 'Untitled Section';
+  const sectionQuestions = Array.isArray(section.questions) ? section.questions : [];
   const isEditingSection = editingSectionId === section.section_id;
   const isAddingQuestion = addingQuestionToSection === section.section_id;
 
@@ -79,9 +95,9 @@ const QuestionList = ({
         ) : (
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <span>{section.title}</span>
+              <span>{sectionTitle}</span>
               <span className="text-[10px] bg-blue-100 dark:bg-blue-500/10 text-blue-600 px-2 py-0.5 rounded-full">
-                {section.questions.length} Questions
+                {sectionQuestions.length} Questions
               </span>
             </div>
 
@@ -109,8 +125,8 @@ const QuestionList = ({
       </div>
 
       <div className="grid grid-cols-1 gap-6">
-        {section.questions.length > 0 ? (
-          section.questions.map((question) => (
+        {sectionQuestions.length > 0 ? (
+          sectionQuestions.map((question) => (
             <QuestionItem
               key={question.id}
               question={question}
@@ -167,7 +183,7 @@ const QuestionList = ({
                     <div key={`${section.section_id}-new-option-${index}`} className="flex items-center gap-2">
                       <input
                         type="text"
-                        value={option}
+                        value={toText(option)}
                         onChange={(event) => onNewQuestionOptionChange(index, event.target.value)}
                         className="flex-1 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-2.5 text-sm text-gray-800 dark:text-gray-200 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                         placeholder={`Option ${index + 1}`}
