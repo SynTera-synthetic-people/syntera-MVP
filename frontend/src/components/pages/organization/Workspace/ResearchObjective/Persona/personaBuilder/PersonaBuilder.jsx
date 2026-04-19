@@ -26,7 +26,7 @@ const extractOptionText = (val) => {
   if (!val && val !== 0) return '';
   if (typeof val === 'string') return val;
   if (Array.isArray(val)) return val.map(extractOptionText).filter(Boolean).join(', ');
-  if (typeof val === 'object') return val.text ?? val.label ?? JSON.stringify(val);
+  if (typeof val === 'object') return val.text ?? val.label ?? '';
   return String(val);
 };
 
