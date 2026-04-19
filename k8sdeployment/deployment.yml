@@ -7,6 +7,11 @@ metadata:
     app: synth-backend
 spec:
   replicas: 4
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
   selector:
     matchLabels:
       app: synth-backend
@@ -22,8 +27,6 @@ spec:
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
-
-          #  IMPORTANT: make FastAPI respect ALB https headers
           args:
             - uvicorn
             - app.main:app
@@ -33,7 +36,6 @@ spec:
             - "8000"
             - --proxy-headers
             - --forwarded-allow-ips=*
-
           env:
             - name: AWS_REGION
               value: ap-south-1
@@ -46,12 +48,24 @@ spec:
             httpGet:
               path: /health
               port: 8000
-            initialDelaySeconds: 10
+            initialDelaySeconds: 30
+            timeoutSeconds: 3
             periodSeconds: 10
+            failureThreshold: 5
 
           livenessProbe:
             httpGet:
               path: /health
               port: 8000
-            initialDelaySeconds: 30
+            initialDelaySeconds: 60
+            timeoutSeconds: 3
             periodSeconds: 20
+            failureThreshold: 5
+
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
