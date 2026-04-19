@@ -20,6 +20,16 @@ import ApproachSelectionModal from './components/ApproachSelectionModal';
 import AttributeItem from './components/AttributeItem';
 import SelectionPanel from './components/SelectionPanel';
 
+// Backend sometimes returns attribute values as {option_id, text, tags} objects.
+// Always extract the plain text so React never tries to render a raw object.
+const extractOptionText = (val) => {
+  if (!val && val !== 0) return '';
+  if (typeof val === 'string') return val;
+  if (Array.isArray(val)) return val.map(extractOptionText).filter(Boolean).join(', ');
+  if (typeof val === 'object') return val.text ?? val.label ?? JSON.stringify(val);
+  return String(val);
+};
+
 const PersonaBuilder = () => {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -119,55 +129,46 @@ const PersonaBuilder = () => {
   const formatPersonaData = useCallback((persona) => {
     const details = persona.persona_details || {};
 
-    console.log("DEBUG formatPersonaData - Received from backend:", {
-      personaId: persona.id,
-      decision_making_style: persona.decision_making_style,
-      decision_making_style_1: persona.decision_making_style_1,
-      purchase_frequency: persona.purchase_frequency,
-      purchase_channel: persona.purchase_channel,
-      hasPersonaDetails: !!persona.persona_details,
-      fullPersona: persona
-    });
-
+    const e = extractOptionText;
     return {
       name: persona.name || details.name || "Unnamed Persona",
-      "Age": persona.age_range || details.age_range || "",
-      "Gender": persona.gender || details.gender || "",
-      "Geography": persona.geography || persona.location_country || persona.location_state || details.geography || details.location_country || "",
-      "Education Level": persona.education_level || details.education_level || "",
-      "Occupation / Employment Type": persona.occupation || details.occupation || "",
-      "Income Level": persona.income_range || details.income_range || "",
+      "Age": e(persona.age_range || details.age_range),
+      "Gender": e(persona.gender || details.gender),
+      "Geography": e(persona.geography || persona.location_country || persona.location_state || details.geography || details.location_country),
+      "Education Level": e(persona.education_level || details.education_level),
+      "Occupation / Employment Type": e(persona.occupation || details.occupation),
+      "Income Level": e(persona.income_range || details.income_range),
       "backstory": persona.backstory || details.backstory || "",
       "id": persona.id,
-      "Family Structure": persona.family_size || details.family_size || "",
-      "Lifestyle": persona.lifestyle || details.lifestyle || "",
-      "Hobbies": persona.hobbies || details.hobbies || "",
-      "Marital Status": persona.marital_status || details.marital_status || "",
-      "Daily Rhythm": persona.daily_rhythm || details.daily_rhythm || "",
-      "Values": persona.values || details.values || "",
-      "Personality": persona.personality || details.personality || "",
-      "Interests": persona.interests || details.interests || "",
-      "Motivations": persona.motivations || details.motivations || "",
-      "Brand Sensitivity": persona.brand_sensitivity || persona.brand_sensitivity_detailed || details.brand_sensitivity || details.brand_sensitivity_detailed || "",
-      "Price Sensitivity": persona.price_sensitivity || persona.price_sensitivity_general || details.price_sensitivity || details.price_sensitivity_general || "",
-      "Preferences": persona.preferences || details.preferences || "",
-      "Digital Activity": persona.digital_activity || details.digital_activity || "",
-      "Professional Traits": persona.professional_traits || details.professional_traits || "",
-      "Mobility": persona.mobility || details.mobility || "",
-      "Home Ownership": persona.accommodation || details.accommodation || "",
+      "Family Structure": e(persona.family_size || details.family_size),
+      "Lifestyle": e(persona.lifestyle || details.lifestyle),
+      "Hobbies": e(persona.hobbies || details.hobbies),
+      "Marital Status": e(persona.marital_status || details.marital_status),
+      "Daily Rhythm": e(persona.daily_rhythm || details.daily_rhythm),
+      "Values": e(persona.values || details.values),
+      "Personality": e(persona.personality || details.personality),
+      "Interests": e(persona.interests || details.interests),
+      "Motivations": e(persona.motivations || details.motivations),
+      "Brand Sensitivity": e(persona.brand_sensitivity || persona.brand_sensitivity_detailed || details.brand_sensitivity || details.brand_sensitivity_detailed),
+      "Price Sensitivity": e(persona.price_sensitivity || persona.price_sensitivity_general || details.price_sensitivity || details.price_sensitivity_general),
+      "Preferences": e(persona.preferences || details.preferences),
+      "Digital Activity": e(persona.digital_activity || details.digital_activity),
+      "Professional Traits": e(persona.professional_traits || details.professional_traits),
+      "Mobility": e(persona.mobility || details.mobility),
+      "Home Ownership": e(persona.accommodation || details.accommodation),
       // Behavioral Traits
-      "Decision Making Style": persona.decision_making_style || persona.decision_making_style_1 || details.decision_making_style || details.decision_making_style_1 || "",
-      "Purchase Frequency": persona.purchase_frequency || details.purchase_frequency || "",
-      "Purchase Channel": persona.purchase_channel || persona.purchase_channel_detailed || details.purchase_channel || details.purchase_channel_detailed || "",
-      "Price Sensitivity Profile": persona.price_sensitivity_profile || details.price_sensitivity_profile || "",
-      "Loyalty / Switching Behavior": persona.loyalty_behavior || details.loyalty_behavior || "",
-      "Purchase Triggers & Occasions": persona.purchase_triggers || details.purchase_triggers || "",
-      "Purchase Barriers": persona.purchase_barriers || details.purchase_barriers || "",
-      "Decision-Making Style": persona.decision_making_style_2 || details.decision_making_style_2 || "",
-      "Media Consumption Patterns": persona.media_consumption || details.media_consumption || "",
-      "Digital Behavior": persona.digital_behavior || persona.digital_behavior_detailed || details.digital_behavior || details.digital_behavior_detailed || "",
-      "Purchase patterns": persona.purchase_patterns || details.purchase_patterns || "",
-      "Purchase channel": persona.purchase_channel || details.purchase_channel || "",
+      "Decision Making Style": e(persona.decision_making_style || persona.decision_making_style_1 || details.decision_making_style || details.decision_making_style_1),
+      "Purchase Frequency": e(persona.purchase_frequency || details.purchase_frequency),
+      "Purchase Channel": e(persona.purchase_channel || persona.purchase_channel_detailed || details.purchase_channel || details.purchase_channel_detailed),
+      "Price Sensitivity Profile": e(persona.price_sensitivity_profile || details.price_sensitivity_profile),
+      "Loyalty / Switching Behavior": e(persona.loyalty_behavior || details.loyalty_behavior),
+      "Purchase Triggers & Occasions": e(persona.purchase_triggers || details.purchase_triggers),
+      "Purchase Barriers": e(persona.purchase_barriers || details.purchase_barriers),
+      "Decision-Making Style": e(persona.decision_making_style_2 || details.decision_making_style_2),
+      "Media Consumption Patterns": e(persona.media_consumption || details.media_consumption),
+      "Digital Behavior": e(persona.digital_behavior || persona.digital_behavior_detailed || details.digital_behavior || details.digital_behavior_detailed),
+      "Purchase patterns": e(persona.purchase_patterns || details.purchase_patterns),
+      "Purchase channel": e(persona.purchase_channel || details.purchase_channel),
       "isAI": persona.auto_generated_persona || false,
       "isAIGenerated": persona.auto_generated_persona || false,
       "isSaved": true
@@ -177,8 +178,6 @@ const PersonaBuilder = () => {
   // Initialize from saved personas - run only once when savedPersonasFromAPI changes
   useEffect(() => {
     if (savedPersonasFromAPI?.length > 0 && !hasInitializedRef.current) {
-      console.log("Initializing from saved personas:", savedPersonasFromAPI.length);
-
       const ids = savedPersonasFromAPI.map(p => p.id).filter(id => id);
 
       // Initialize persona data

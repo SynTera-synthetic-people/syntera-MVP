@@ -36,7 +36,9 @@ const AttributeItem = ({ item, currentValue, isEditing, onClick, disabled = fals
             <div className="min-w-0">
               {currentValue ? (
                 <span className={`block text-sm font-bold truncate ${disabled ? 'text-gray-900 dark:text-white' : 'text-blue-600 dark:text-blue-400'}`}>
-                  {Array.isArray(currentValue) ? currentValue.join(', ') : currentValue}
+                  {Array.isArray(currentValue)
+                    ? currentValue.map(v => (v && typeof v === 'object' ? v.text ?? '' : v)).join(', ')
+                    : (currentValue && typeof currentValue === 'object' ? currentValue.text ?? '' : currentValue)}
                 </span>
               ) : (
                 <span className="block text-sm text-gray-400 dark:text-gray-600 italic truncate">
