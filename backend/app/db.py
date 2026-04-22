@@ -191,8 +191,6 @@ async def create_sync_schemas():
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS sync_action.dataset (
                 id          VARCHAR PRIMARY KEY,
-                name        VARCHAR NOT NULL,
-                domain      VARCHAR,
                 source_file VARCHAR,
                 row_count   INTEGER NOT NULL DEFAULT 0,
                 columns     JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -225,8 +223,6 @@ async def create_sync_schemas():
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS sync_survey.dataset (
                 id               VARCHAR PRIMARY KEY,
-                name             VARCHAR NOT NULL,
-                domain           VARCHAR,
                 source_file      VARCHAR,
                 respondent_count INTEGER NOT NULL DEFAULT 0,
                 question_schema  JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -268,7 +264,6 @@ async def create_sync_schemas():
                 source_type  VARCHAR NOT NULL,
                 source_url   VARCHAR,
                 file_path    VARCHAR,
-                domain       VARCHAR,
                 is_processed BOOLEAN NOT NULL DEFAULT FALSE,
                 exploration_id VARCHAR,
                 uploaded_by  VARCHAR,
