@@ -135,7 +135,6 @@ async def upload_source_document(
     file_bytes: bytes,
     filename: str,
     title: str,
-    domain: Optional[str],
     source_type: str,
     exploration_id: Optional[str],
     user_id: str,
@@ -151,10 +150,10 @@ async def upload_source_document(
     await db.execute(
         text("""
             INSERT INTO sync_source.document
-                (id, title, source_type, source_url, file_path, domain,
+                (id, title, source_type, source_url, file_path,
                  exploration_id, uploaded_by)
             VALUES
-                (:id, :title, :source_type, NULL, :file_path, :domain,
+                (:id, :title, :source_type, NULL, :file_path,
                  :exploration_id, :uploaded_by)
         """),
         {
@@ -162,7 +161,6 @@ async def upload_source_document(
             "title": title,
             "source_type": ext,
             "file_path": file_path,
-            "domain": domain,
             "exploration_id": exploration_id,
             "uploaded_by": user_id,
         },
@@ -175,7 +173,6 @@ async def register_url_document(
     db: AsyncSession,
     url: str,
     title: str,
-    domain: Optional[str],
     exploration_id: Optional[str],
     user_id: str,
 ) -> dict:
@@ -184,17 +181,16 @@ async def register_url_document(
     await db.execute(
         text("""
             INSERT INTO sync_source.document
-                (id, title, source_type, source_url, file_path, domain,
+                (id, title, source_type, source_url, file_path,
                  exploration_id, uploaded_by)
             VALUES
-                (:id, :title, 'url', :url, NULL, :domain,
+                (:id, :title, 'url', :url, NULL,
                  :exploration_id, :uploaded_by)
         """),
         {
             "id": doc_id,
             "title": title,
             "url": url,
-            "domain": domain,
             "exploration_id": exploration_id,
             "uploaded_by": user_id,
         },
@@ -280,24 +276,17 @@ async def get_source_document(db: AsyncSession, document_id: str) -> Optional[di
 
 async def list_source_documents(
     db: AsyncSession,
-    domain: Optional[str] = None,
     exploration_id: Optional[str] = None,
 ) -> list[dict]:
-    conditions = []
-    params: dict = {}
-
-    if domain:
-        conditions.append("domain = :domain")
-        params["domain"] = domain
     if exploration_id:
-        conditions.append("exploration_id = :eid")
-        params["eid"] = exploration_id
-
-    where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
-    rows = await db.execute(
-        text(f"SELECT * FROM sync_source.document {where} ORDER BY uploaded_at DESC"),
-        params,
-    )
+        rows = await db.execute(
+            text("SELECT * FROM sync_source.document WHERE exploration_id = :eid ORDER BY uploaded_at DESC"),
+            {"eid": exploration_id},
+        )
+    else:
+        rows = await db.execute(
+            text("SELECT * FROM sync_source.document ORDER BY uploaded_at DESC")
+        )
     return [dict(r) for r in rows.mappings().all()]
 
 
@@ -334,37 +323,25 @@ async def get_document_chunks(
 async def search_source_chunks(
     db: AsyncSession,
     query: str,
-    domain: Optional[str] = None,
     limit: int = 20,
 ) -> list[dict]:
-    """
-    Full-text search across content chunks using PostgreSQL text search.
-    Returns chunks with parent document title and domain, ranked by relevance.
-    """
+    """Full-text search across content chunks using PostgreSQL text search, ranked by relevance."""
     query_text = query.strip()
     if not query_text:
         return []
 
-    params: dict = {"query_text": query_text, "limit": limit}
-    domain_filter = ""
-    if domain:
-        domain_filter = "AND d.domain = :domain"
-        params["domain"] = domain
-
     rows = await db.execute(
-        text(f"""
+        text("""
             SELECT
                 c.id        AS chunk_id,
                 c.document_id,
                 d.title     AS document_title,
-                d.domain,
                 c.chunk_index,
                 c.content   AS snippet
             FROM sync_source.content_chunk c
             JOIN sync_source.document d ON d.id = c.document_id
             WHERE to_tsvector('simple', COALESCE(c.content, ''))
                   @@ websearch_to_tsquery('simple', :query_text)
-            {domain_filter}
             ORDER BY ts_rank_cd(
                 to_tsvector('simple', COALESCE(c.content, '')),
                 websearch_to_tsquery('simple', :query_text)
@@ -373,6 +350,6 @@ async def search_source_chunks(
             c.chunk_index
             LIMIT :limit
         """),
-        params,
+        {"query_text": query_text, "limit": limit},
     )
     return [dict(r) for r in rows.mappings().all()]

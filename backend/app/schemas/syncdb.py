@@ -8,7 +8,6 @@ from datetime import datetime
 class RecordEnvelope(BaseModel):
     """Standard envelope stored in every record's JSONB data field."""
     source_type: str
-    domain: str
     workspace_id: Optional[str]
     region: Optional[str]
     year: Optional[int]
@@ -23,8 +22,6 @@ class RecordEnvelope(BaseModel):
 
 class ActionDatasetOut(BaseModel):
     id: str
-    name: str
-    domain: Optional[str]
     source_file: Optional[str]
     row_count: int
     columns: list
@@ -66,8 +63,6 @@ class SurveyQuestionSchema(BaseModel):
 
 class SurveyDatasetOut(BaseModel):
     id: str
-    name: str
-    domain: Optional[str]
     source_file: Optional[str]
     respondent_count: int
     question_schema: list[SurveyQuestionSchema]
@@ -95,7 +90,6 @@ class SourceDocumentOut(BaseModel):
     source_type: str
     source_url: Optional[str]
     file_path: Optional[str]
-    domain: Optional[str]
     is_processed: bool
     exploration_id: Optional[str]
     uploaded_by: Optional[str]
@@ -116,6 +110,5 @@ class SourceSearchResult(BaseModel):
     chunk_id: str
     document_id: str
     document_title: str
-    domain: Optional[str]
     chunk_index: int
     snippet: str

@@ -79,8 +79,6 @@ def _workspace_id(user: User) -> Optional[str]:
 @router.post("/action/upload", response_model=ActionDatasetOut)
 async def upload_action_csv(
     file: UploadFile = File(...),
-    name: str = Form(...),
-    domain: str = Form(...),
     region: Optional[str] = Form(None),
     year: Optional[int] = Form(None),
     exploration_id: Optional[str] = Form(None),
@@ -106,15 +104,12 @@ async def upload_action_csv(
     all detected data sheets into one dataset.
     """
     _require_tabular(file)
-    _validate_domain(domain)
     file_bytes = await file.read()
     try:
         dataset = await syncdb_action.ingest_action_csv(
             db=db,
             file_bytes=file_bytes,
             filename=file.filename,
-            name=name,
-            domain=domain.strip(),
             exploration_id=exploration_id,
             user_id=current_user.id,
             workspace_id=_workspace_id(current_user),
@@ -157,8 +152,6 @@ async def get_action_records(
 @router.post("/survey/upload", response_model=SurveyDatasetOut)
 async def upload_survey_csv(
     file: UploadFile = File(...),
-    name: str = Form(...),
-    domain: str = Form(...),
     region: Optional[str] = Form(None),
     year: Optional[int] = Form(None),
     exploration_id: Optional[str] = Form(None),
@@ -184,15 +177,12 @@ async def upload_survey_csv(
     datamap/metadata sheets inside dataset metadata.
     """
     _require_tabular(file)
-    _validate_domain(domain)
     file_bytes = await file.read()
     try:
         dataset = await syncdb_survey.ingest_survey_csv(
             db=db,
             file_bytes=file_bytes,
             filename=file.filename,
-            name=name,
-            domain=domain.strip(),
             exploration_id=exploration_id,
             user_id=current_user.id,
             workspace_id=_workspace_id(current_user),
@@ -260,7 +250,6 @@ async def link_survey_to_exploration(
 async def upload_source_document(
     file: UploadFile = File(...),
     title: str = Form(...),
-    domain: Optional[str] = Form(None),
     exploration_id: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_active_user),
@@ -281,7 +270,6 @@ async def upload_source_document(
             file_bytes=file_bytes,
             filename=file.filename,
             title=title,
-            domain=domain,
             source_type=ext.lstrip("."),
             exploration_id=exploration_id,
             user_id=current_user.id,
@@ -296,7 +284,6 @@ async def upload_source_document(
 async def register_source_url(
     url: str = Form(...),
     title: str = Form(...),
-    domain: Optional[str] = Form(None),
     exploration_id: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_active_user),
@@ -306,7 +293,6 @@ async def register_source_url(
         db=db,
         url=url,
         title=title,
-        domain=domain,
         exploration_id=exploration_id,
         user_id=current_user.id,
     )
@@ -335,24 +321,22 @@ async def process_source_document(
 
 @router.get("/source/documents", response_model=list[SourceDocumentOut])
 async def list_source_documents(
-    domain: Optional[str] = Query(None),
     exploration_id: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_active_user),
 ):
-    return await syncdb_source.list_source_documents(db, domain=domain, exploration_id=exploration_id)
+    return await syncdb_source.list_source_documents(db, exploration_id=exploration_id)
 
 
 @router.get("/source/search", response_model=list[SourceSearchResult])
 async def search_source_bank(
     q: str = Query(..., min_length=2),
-    domain: Optional[str] = Query(None),
     limit: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_active_user),
 ):
     """Full-text search across all processed source bank chunks."""
-    return await syncdb_source.search_source_chunks(db, query=q, domain=domain, limit=limit)
+    return await syncdb_source.search_source_chunks(db, query=q, limit=limit)
 
 
 @router.get("/source/{document_id}/chunks")
