@@ -179,6 +179,176 @@ async def add_exploration_audience_type_column():
         """))
 
 
+async def create_sync_schemas():
+    """Create the 3 SyncDB PostgreSQL schemas and their tables (idempotent)."""
+    async with async_engine.begin() as conn:
+        # ── schemas ──────────────────────────────────────────────────────────
+        await conn.execute(text("CREATE SCHEMA IF NOT EXISTS sync_action"))
+        await conn.execute(text("CREATE SCHEMA IF NOT EXISTS sync_survey"))
+        await conn.execute(text("CREATE SCHEMA IF NOT EXISTS sync_source"))
+
+        # ── sync_action ───────────────────────────────────────────────────────
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS sync_action.dataset (
+                id          VARCHAR PRIMARY KEY,
+                name        VARCHAR NOT NULL,
+                domain      VARCHAR,
+                source_file VARCHAR,
+                row_count   INTEGER NOT NULL DEFAULT 0,
+                columns     JSONB NOT NULL DEFAULT '[]'::jsonb,
+                exploration_id VARCHAR,
+                uploaded_by VARCHAR,
+                uploaded_at TIMESTAMP NOT NULL DEFAULT now(),
+                metadata    JSONB NOT NULL DEFAULT '{}'::jsonb
+            )
+        """))
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS sync_action.record (
+                id          VARCHAR PRIMARY KEY,
+                dataset_id  VARCHAR NOT NULL
+                            REFERENCES sync_action.dataset(id) ON DELETE CASCADE,
+                row_index   INTEGER NOT NULL,
+                data        JSONB NOT NULL,
+                created_at  TIMESTAMP NOT NULL DEFAULT now()
+            )
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_sync_action_record_dataset
+            ON sync_action.record (dataset_id)
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_sync_action_record_data
+            ON sync_action.record USING GIN (data)
+        """))
+
+        # ── sync_survey ───────────────────────────────────────────────────────
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS sync_survey.dataset (
+                id               VARCHAR PRIMARY KEY,
+                name             VARCHAR NOT NULL,
+                domain           VARCHAR,
+                source_file      VARCHAR,
+                respondent_count INTEGER NOT NULL DEFAULT 0,
+                question_schema  JSONB NOT NULL DEFAULT '[]'::jsonb,
+                exploration_id   VARCHAR,
+                uploaded_by      VARCHAR,
+                uploaded_at      TIMESTAMP NOT NULL DEFAULT now(),
+                metadata         JSONB NOT NULL DEFAULT '{}'::jsonb
+            )
+        """))
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS sync_survey.response (
+                id            VARCHAR PRIMARY KEY,
+                dataset_id    VARCHAR NOT NULL
+                              REFERENCES sync_survey.dataset(id) ON DELETE CASCADE,
+                respondent_id VARCHAR,
+                answers       JSONB NOT NULL,
+                created_at    TIMESTAMP NOT NULL DEFAULT now()
+            )
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_sync_survey_response_dataset
+            ON sync_survey.response (dataset_id)
+        """))
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS sync_survey.aggregation (
+                id          VARCHAR PRIMARY KEY,
+                dataset_id  VARCHAR NOT NULL UNIQUE
+                            REFERENCES sync_survey.dataset(id) ON DELETE CASCADE,
+                results     JSONB NOT NULL,
+                computed_at TIMESTAMP NOT NULL DEFAULT now()
+            )
+        """))
+
+        # ── sync_source ───────────────────────────────────────────────────────
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS sync_source.document (
+                id           VARCHAR PRIMARY KEY,
+                title        VARCHAR NOT NULL,
+                source_type  VARCHAR NOT NULL,
+                source_url   VARCHAR,
+                file_path    VARCHAR,
+                domain       VARCHAR,
+                is_processed BOOLEAN NOT NULL DEFAULT FALSE,
+                exploration_id VARCHAR,
+                uploaded_by  VARCHAR,
+                uploaded_at  TIMESTAMP NOT NULL DEFAULT now(),
+                metadata     JSONB NOT NULL DEFAULT '{}'::jsonb
+            )
+        """))
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS sync_source.content_chunk (
+                id           VARCHAR PRIMARY KEY,
+                document_id  VARCHAR NOT NULL
+                             REFERENCES sync_source.document(id) ON DELETE CASCADE,
+                chunk_index  INTEGER NOT NULL,
+                content      TEXT NOT NULL,
+                content_json JSONB,
+                created_at   TIMESTAMP NOT NULL DEFAULT now()
+            )
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_sync_source_chunk_document
+            ON sync_source.content_chunk (document_id)
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_sync_source_chunk_fts
+            ON sync_source.content_chunk
+            USING GIN (to_tsvector('simple', COALESCE(content, '')))
+        """))
+
+
+async def add_syncdb_envelope_columns():
+    """
+    Safe migration: add envelope columns (status, workspace_id, region, year,
+    source_format, subject_key) to sync_action.record and sync_survey.response.
+    Idempotent — uses ADD COLUMN IF NOT EXISTS.
+    """
+    async with async_engine.begin() as conn:
+        for table in ("sync_action.record", "sync_survey.response"):
+            await conn.execute(text(f"""
+                ALTER TABLE {table}
+                ADD COLUMN IF NOT EXISTS status VARCHAR NOT NULL DEFAULT 'pending'
+            """))
+            await conn.execute(text(f"""
+                ALTER TABLE {table}
+                ADD COLUMN IF NOT EXISTS workspace_id VARCHAR
+            """))
+            await conn.execute(text(f"""
+                ALTER TABLE {table}
+                ADD COLUMN IF NOT EXISTS region VARCHAR
+            """))
+            await conn.execute(text(f"""
+                ALTER TABLE {table}
+                ADD COLUMN IF NOT EXISTS year INTEGER
+            """))
+            await conn.execute(text(f"""
+                ALTER TABLE {table}
+                ADD COLUMN IF NOT EXISTS source_format VARCHAR
+            """))
+            await conn.execute(text(f"""
+                ALTER TABLE {table}
+                ADD COLUMN IF NOT EXISTS subject_key VARCHAR
+            """))
+
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_sync_action_record_status
+            ON sync_action.record (status)
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_sync_survey_response_status
+            ON sync_survey.response (status)
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_sync_action_record_workspace
+            ON sync_action.record (workspace_id)
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_sync_survey_response_workspace
+            ON sync_survey.response (workspace_id)
+        """))
+
+
 async def create_report_cache_table():
     """Create report_cache table and enforce one cache row per logical report."""
     async with async_engine.begin() as conn:
