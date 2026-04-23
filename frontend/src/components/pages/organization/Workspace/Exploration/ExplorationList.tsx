@@ -16,6 +16,7 @@ import {
 } from "../../../../../hooks/useExplorations";
 import { useWorkspace } from "../../../../../hooks/useWorkspaces";
 import { formatDateToDDMMYYYY } from "../../../../../utils/formatDate";
+import { getExplorationResumeRoute } from '../../../../../utils/getExplorationResumeRoute';
 import {
   downloadLatestQuestionnaireCsvForExploration,
   alertQuestionnaireExportError,
@@ -528,8 +529,13 @@ const ExplorationList: React.FC = () => {
                     <div className="row-cell cell-audience">{exploration.audience_type || "B2C"}</div>
                     <div className="row-cell cell-actions">
                       <button
-                        className="continue-exp-btn"
-                        onClick={() => navigate(`/main/organization/workspace/research-objectives/${workspaceId}/${exploration.id}/research-mode`)}
+                        className={`continue-exp-btn ${exploration.is_end ? "disabled" : ""}`}
+                        disabled={exploration.is_end}
+                        onClick={() => {
+                          if (exploration.is_end) return; // extra safety
+                          const path = getExplorationResumeRoute(exploration, workspaceId ?? '');
+                          navigate(path);
+                        }}
                       >
                         Continue <SpIcon name="sp-Arrow-Arrow_Right_SM" />
                       </button>
@@ -543,9 +549,12 @@ const ExplorationList: React.FC = () => {
                             <div className="menu-item" onClick={() => { navigate(`/main/organization/workspace/explorations/${workspaceId}/${exploration.id}/edit`); setOpenMenuId(null); }}>
                               <SpIcon name="sp-Edit-Edit_Pencil_01" />Edit
                             </div>
-                            <div className="menu-item" onClick={() => { handleDownloadQuestionnaireCsv(exploration); setOpenMenuId(null); }}>
-                              <SpIcon name="sp-File-File_Blank" />Report
-                            </div>
+                            {exploration.is_end && (
+                              <div className="menu-item" onClick={() => { handleDownloadQuestionnaireCsv(exploration); setOpenMenuId(null); }}>
+                                <SpIcon name="sp-File-File_Blank" />Report
+                              </div>
+                            )}
+
                             {exploration.is_end && (
                               <div className="menu-item" onClick={() => { navigate(`/main/traceability/${workspaceId}/${exploration.id}`); setOpenMenuId(null); }}>
                                 <SpIcon name="sp-File-File_Document" />Traceability

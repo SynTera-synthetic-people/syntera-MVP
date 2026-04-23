@@ -1,0 +1,283 @@
+/* ════════════════════════════════════════════════════════════════════════════
+   InsightGeneration
+   Prefix: ig-
+   Figma: images 3, 5, 6
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Page ─────────────────────────────────────────────────────────────────── */
+
+.ig-page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 32px 40px 48px;
+  background: #0E0F12;
+  min-height: 100%;
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+
+.ig-title {
+  font-size: 1.375rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0 0 8px;
+  line-height: 1.25;
+}
+
+.ig-subtitle {
+  font-size: 0.875rem;
+  color: rgba(255, 255, 255, 0.45);
+  margin: 0 0 36px;
+  line-height: 1.6;
+}
+
+.ig-header {
+  width: 100%;
+}
+
+/* ── 3-card grid ─────────────────────────────────────────────────────────── */
+
+.ig-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  margin-bottom: auto;
+  padding-bottom: 40px;
+}
+
+/* ── Single card ─────────────────────────────────────────────────────────── */
+
+.ig-card {
+  background: #16181C;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 32px 28px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+  transition: border-color 0.2s;
+}
+
+.ig-card:hover {
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+/* Icon */
+.ig-card__icon {
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 4px;
+}
+
+/* Time badge */
+.ig-card__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.55);
+  font-weight: 500;
+}
+
+.ig-card__badge-icon {
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+/* Title */
+.ig-card__title {
+  font-size: 1.0625rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+  line-height: 1.3;
+}
+
+/* Description */
+.ig-card__desc {
+  font-size: 0.875rem;
+  color: rgba(255, 255, 255, 0.45);
+  margin: 0;
+  line-height: 1.6;
+  flex: 1;
+}
+
+/* CTA button */
+.ig-card__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 28px;
+  background: var(--T-Base-B3, #16181C);
+  border: 1px solid var(--T-GreyScale-Grey-800, #393C45);
+  border-radius: 16px;
+  color: white;
+  font-size: 16px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  min-width: 120px;
+  margin-top: 6px;
+}
+
+.ig-card__btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.35);
+  color: #ffffff;
+}
+
+.ig-card__btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* View state — filled */
+.ig-card__btn--view {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+}
+
+.ig-card__btn--view:hover {
+  background: rgba(255, 255, 255, 0.13);
+}
+
+.ig-card__btn-spinner {
+  animation: ig-spin 1s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes ig-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ── Footer action bar ───────────────────────────────────────────────────── */
+
+.ig-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 80px;
+  gap: 12px;
+}
+
+.ig-footer__left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Shared footer button base */
+.ig-footer__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 22px;
+  border-radius: 10px;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+/* Ghost (outlined) — Conversation Studio + Begin Quant */
+.ig-footer__btn--ghost {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.ig-footer__btn--ghost:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.35);
+  color: #ffffff;
+}
+
+/* Arrow variant */
+.ig-footer__btn--arrow {
+  gap: 6px;
+}
+
+/* End Exploration — teal outlined matching Figma */
+.ig-footer__btn--end {
+  background: transparent;
+  border: 1px solid #24E5B6;
+  color: #24E5B6;
+}
+
+.ig-footer__btn--end:hover {
+  background: transparent;
+  border: 1px solid #E52728;
+  color: #E52728;
+}
+
+/* ── Conversation Studio tooltip wrapper ─────────────────────────────────── */
+
+.ig-studio-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+/* Disabled footer button state */
+.ig-footer__btn--disabled {
+  opacity: 0.4;
+  cursor: not-allowed !important;
+  pointer-events: auto;
+}
+
+/* Tooltip — matches Figma image 1 exactly */
+.ig-studio-tooltip {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1E2126;
+  padding: 14px 16px;
+  width: 260px;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: #ffffff;
+  line-height: 1.5;
+  white-space: normal;
+  text-align: left;
+  pointer-events: none;
+  z-index: 50;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+/* Downward arrow pointing at the button */
+.ig-studio-tooltip__arrow {
+  position: absolute;
+  bottom: -7px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 12px;
+  height: 7px;
+  overflow: hidden;
+}
+
+.ig-studio-tooltip__arrow::before {
+  content: '';
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: #1E2126;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  bottom: 3px;
+  left: 0;
+  transform: rotate(45deg);
+  transform-origin: bottom left;
+}

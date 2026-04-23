@@ -1,0 +1,290 @@
+/* ════════════════════════════════════════════════════════════════════════════
+   InsightViewerModal
+   Prefix: ivm-
+   Figma: image 4 — full-screen insight document viewer
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Overlay ─────────────────────────────────────────────────────────────── */
+
+.ivm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  z-index: 100;
+  padding: 24px;
+  overflow-y: auto;
+}
+
+/* ── Panel ───────────────────────────────────────────────────────────────── */
+
+.ivm-panel {
+  background: var(--T-Base-B3, #16181C);
+  border-radius: 18px;
+  width: 100%;
+  max-width: 1080px;
+  min-height: 600px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+
+.ivm-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 24px 28px 20px;
+  background: var(--T-Base-B4, #1E2126); 
+}
+
+.ivm-header__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.ivm-header__title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0 0 4px;
+  line-height: 1.25;
+}
+
+.ivm-header__subtitle {
+  font-size: 0.875rem;
+  color: rgba(255, 255, 255, 0.4);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.ivm-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-left: 16px;
+}
+
+/* ── Icon buttons ────────────────────────────────────────────────────────── */
+
+.ivm-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.ivm-icon-btn--circle {
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.02);
+  color: #ffffff;
+}
+
+.ivm-icon-btn--circle:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+.ivm-icon-btn--ghost {
+  border-radius: 8px; /* optional, just for hover area */
+}
+
+.ivm-icon-btn--ghost:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+.ivm-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: #ffffff;
+}
+
+/* ── Body (scrollable content) ───────────────────────────────────────────── */
+
+.ivm-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 28px 28px;
+}
+
+/* Loading */
+.ivm-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  min-height: 300px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.ivm-loading__spinner {
+  color: #06A17B;
+  animation: ivm-spin 1s linear infinite;
+}
+
+.ivm-loading__text {
+  font-size: 0.9375rem;
+  margin: 0;
+}
+
+/* Empty */
+.ivm-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 0.9375rem;
+}
+
+/* Placeholder for cards without backend yet */
+.ivm-placeholder {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 0;
+}
+
+.ivm-placeholder__label {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+  margin: 0;
+}
+
+.ivm-placeholder__sub {
+  font-size: 0.9375rem;
+  color: rgba(255, 255, 255, 0.5);
+  margin: 0;
+}
+
+.ivm-placeholder__note {
+  font-size: 0.875rem;
+  color: rgba(255, 255, 255, 0.28);
+  margin: 8px 0 0;
+  font-style: italic;
+}
+
+/* ── Verbatim content ────────────────────────────────────────────────────── */
+
+.ivm-verbatim {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.ivm-verbatim__section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.ivm-verbatim__section-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.ivm-verbatim__question {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ivm-verbatim__question-text {
+  font-size: 0.9375rem;
+  color: rgba(255, 255, 255, 0.75);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.ivm-verbatim__q-label {
+  color: #06A17B;
+  font-weight: 600;
+}
+
+.ivm-verbatim__answers {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-left: 16px;
+  border-left: 2px solid rgba(6, 161, 123, 0.3);
+}
+
+.ivm-verbatim__answer {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ivm-verbatim__persona-name {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.ivm-verbatim__answer-text {
+  font-size: 0.9375rem;
+  color: rgba(255, 255, 255, 0.8);
+  margin: 0;
+  line-height: 1.55;
+  font-style: italic;
+}
+
+/* ── Footer ──────────────────────────────────────────────────────────────── */
+
+.ivm-footer {
+  padding: 16px 28px 24px;
+  display: flex;
+  justify-content: flex-end;
+  background: var(--T-Base-B4, #1E2126); 
+}
+
+/* Download PDF button */
+.ivm-download-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 22px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  color: #ffffff;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.ivm-download-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+.ivm-download-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ivm-download-btn__spinner {
+  animation: ivm-spin 1s linear infinite;
+}
+
+/* ── Spin ────────────────────────────────────────────────────────────────── */
+
+@keyframes ivm-spin {
+  to { transform: rotate(360deg); }
+}

@@ -36,7 +36,7 @@
 }
 
 .category-card__attribute {
-  display: contents; 
+  display: contents;
   align-items: flex-start;
   gap: 6px;
   flex-wrap: wrap;
@@ -55,13 +55,54 @@
   gap: 4px;
 }
 
+/* ── Pill with removable × ───────────────────────────────────────────────── */
+
 .category-card__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: 12px;
   color: #FFFFFF;
   background: #393C45;
   border-radius: 100px;
-  padding: var(--xs-4-px, 4px) var(--m-12-px, 12px);
+  padding: 4px 8px 4px 12px; /* less right padding to make room for × */
 }
+
+/* If no remove button is rendered (no onRemoveAttribute), keep original padding */
+.category-card__pill:not(:has(.category-card__pill-remove)) {
+  padding: 4px 12px;
+}
+
+/* ── Pill remove button ── */
+
+.category-card__pill-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: none;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+  line-height: 1;
+}
+
+.category-card__pill-remove:hover {
+  color: #ef4444;
+}
+
+/* ── Formative Experience text block ─────────────────────────────────────── */
+
+.category-card__formative-wrap {
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
+}
+
 .category-card__formative-text {
   font-size: 12px;
   color: #FFFFFF;
@@ -70,9 +111,7 @@
   white-space: pre-wrap;
   background: #393C45;
   border-radius: 8px;
-  padding: 8px 12px;
-
-  /* ── Key fix: hug text, expand up to full width ── */
+  padding: 8px 32px 8px 12px; /* right padding for remove button */
   width: fit-content;
   max-width: 100%;
   box-sizing: border-box;
@@ -82,4 +121,28 @@
   -webkit-line-clamp: 8;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+/* ── Formative remove button — top-right of the text block ── */
+
+.category-card__formative-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: none;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+
+.category-card__formative-remove:hover {
+  color: #ef4444;
 }

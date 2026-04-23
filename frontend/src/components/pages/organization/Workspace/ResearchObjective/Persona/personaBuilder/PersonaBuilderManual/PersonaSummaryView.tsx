@@ -15,6 +15,10 @@ interface PersonaSummaryViewProps {
   formativeExperience: string;
   onFormativeExperienceChange: (value: string) => void;
   onEditName?: () => void;
+  /** Called when user removes a pill — parent updates formData */
+  onRemoveAttribute?: (key: keyof PersonaFormData, valueToRemove: string) => void;
+  /** Called when user clears formative experience */
+  onRemoveFormativeExperience?: () => void;
 }
 
 const PersonaSummaryView: React.FC<PersonaSummaryViewProps> = ({
@@ -22,6 +26,8 @@ const PersonaSummaryView: React.FC<PersonaSummaryViewProps> = ({
   formData,
   formativeExperience,
   onEditName,
+  onRemoveAttribute,
+  onRemoveFormativeExperience,
 }) => {
   const coreIdentityAttributes = [
     { key: 'age' as keyof PersonaFormData, displayName: 'Age' },
@@ -81,41 +87,63 @@ const PersonaSummaryView: React.FC<PersonaSummaryViewProps> = ({
         )}
       </motion.div>
 
-      {/* 2×2 cards */}
+      {/*
+        ── Masonry column order fix ──────────────────────────────────────────
+        CSS column-count flows cards top→bottom per column.
+        With 2 columns and 5 cards the natural fill is:
+          Col 1: card 1, card 3, card 5
+          Col 2: card 2, card 4
+        To get the Figma layout:
+          Col 1: Core Identity, Behavioural Traits, Additional Traits
+          Col 2: Phycological Traits, Formative Experience
+        …we must order the cards as:
+          1. Core Identity        → col 1 top
+          2. Phycological Traits  → col 2 top
+          3. Behavioural Traits   → col 1 middle
+          4. Formative Experience → col 2 middle
+          5. Additional Traits    → col 1 bottom
+      */}
       <div className="persona-summary__cards">
+        {/* 1 — col 1 top */}
         <CategorySummaryCard
           title="Core Identity"
           description="Traits that define this persona's identity."
           attributes={coreIdentityAttributes}
           formData={formData}
+          {...(onRemoveAttribute && { onRemoveAttribute })}
         />
+        {/* 2 — col 2 top */}
         <CategorySummaryCard
           title="Phycological Traits"
           description="What drives their thinking and decisions"
           attributes={phycologicalAttributes}
           formData={formData}
+          {...(onRemoveAttribute && { onRemoveAttribute })}
         />
+        {/* 3 — col 1 middle */}
         <CategorySummaryCard
           title="Behavioural Traits"
           description="How they act and operate"
           attributes={behaviouralAttributes}
           formData={formData}
+          {...(onRemoveAttribute && { onRemoveAttribute })}
         />
-
-        {/* ── Formative Experience — rendered separately since it's a plain string, not formData ── */}
+        {/* 4 — col 2 middle */}
         <CategorySummaryCard
           title="Formative Experience"
           description="Backstories and scenarios - moments that shape how this persona thinks, decides, and behaves"
           attributes={[]}
           formData={formData}
-          formativeExperience={formativeExperience}
+          {...(formativeExperience && { formativeExperience })}
+          {...(onRemoveFormativeExperience && { onRemoveFormativeExperience })}
         />
-
+        {/* 5 — col 1 bottom */}
         <CategorySummaryCard
           title="Additional Traits"
           description="Additional Traits"
           attributes={additionalAttributes}
           formData={formData}
+          {...(onRemoveAttribute && { onRemoveAttribute })}
         />
       </div>
     </div>

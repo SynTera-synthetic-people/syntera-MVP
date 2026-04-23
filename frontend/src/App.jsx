@@ -22,6 +22,7 @@ import ManageUsers from "./components/pages/organization/Workspace/ManageUsers";
 import WorkspaceForm from "./components/pages/organization/Workspace/WorkspaceForm"
 
 import PersonaBuilder from "./components/pages/organization/Workspace/ResearchObjective/Persona/personaBuilder/PersonaBuilder";
+import ApproachSelectionPage from "./components/pages/organization/Workspace/ResearchObjective/Persona/personaBuilder/components/ApproachSelectionPage";
 import PersonaBuilderManual from "./components/pages/organization/Workspace/ResearchObjective/Persona/personaBuilder/PersonaBuilderManual/PersonaBuilderManual";
 import PersonaGenerationLoader from "./components/pages/organization/Workspace/ResearchObjective/PersonaGenerationLoader";
 import AddPersona from "./components/pages/organization/Workspace/ResearchObjective/Persona/AddPersona";
@@ -30,6 +31,7 @@ import { ThemeProvider } from "./context/ThemeContext";
 import ResearchObjectiveLayout from "./components/pages/organization/Workspace/ResearchObjective/ResearchObjectiveLayout";
 import DepthInterview from "./components/pages/organization/Workspace/ResearchObjective/DepthInterview/DepthInterview";
 import ChatView from "./components/pages/organization/Workspace/ResearchObjective/DepthInterview/ChatView";
+import InsightGeneration from './components/pages/organization/Workspace/ResearchObjective/DepthInterview/components/InsightGeneration';
 import PopulationBuilder from "./components/pages/organization/Workspace/ResearchObjective/PopulationBuilder/PopulationBuilder";
 import Questionnaire from "./components/pages/organization/Workspace/ResearchObjective/Questionnaire/Questionnaire"
 import SurveyResults from "./components/pages/organization/Workspace/ResearchObjective/SurveyResults/SurveyResults"
@@ -55,6 +57,7 @@ import EnterpriseOrgsPage from "./components/pages/Admin/EnterpriseOrgsPage";
 import EnterpriseOrgDetail from "./components/pages/Admin/EnterpriseOrgDetail";
 import AcceptInvitation from "./components/pages/Invitation/AcceptInvitation";
 import SpIconProvider from './components/SPIconProvider';
+import ApproachSelectionModal from "./components/pages/organization/Workspace/ResearchObjective/Persona/personaBuilder/components/ApproachSelectionPage";
 
 const queryClient = new QueryClient();
 
@@ -262,6 +265,11 @@ function App() {
                   element={<PersonaBuilder />}
                 />
                 <Route
+                  path=":objectiveId/approach-selection"
+                  element={<ApproachSelectionPage />}
+                />
+
+                <Route
                   path=":objectiveId/persona-builder/manual"
                   element={<PersonaBuilderManual />}
                 />
@@ -281,6 +289,9 @@ function App() {
                   path=":objectiveId/population-builder"
                   element={<PopulationBuilder />}
                 />
+                 <Route 
+                  path=":objectiveId/insights"
+                  element={<InsightGeneration />} />
                 <Route
                   path=":objectiveId/questionnaire"
                   element={<Questionnaire />}

@@ -49,11 +49,11 @@
   background: #0E0F12;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 1rem;
-  overflow: visible; /* allow avatar ring to breathe */
+  overflow: visible;
   min-height: 200px;
 }
 
-/* ── Left panel — character + progress ring ── */
+/* ── Left panel ── */
 .pgl-card-left {
   width: 200px;
   min-width: 200px;
@@ -101,7 +101,7 @@
   transition: stroke-dashoffset 0.8s ease;
 }
 
-/* ── Character ── */
+/* ── Character (shared base) ── */
 .pgl-character {
   width: 96px;
   height: 96px;
@@ -115,6 +115,7 @@
   z-index: 1;
 }
 
+/* Omi video — existing style unchanged */
 .pgl-character-video {
   width: 100%;
   height: 100%;
@@ -122,6 +123,65 @@
   object-position: center 30%;
 }
 
+/* ── Progressive avatar (manual flow) ────────────────────────────────────── */
+
+.pgl-character--avatar {
+  /* Same size/shape as pgl-character, but uses img instead of video */
+  background: #1a1d2e;
+  position: relative;
+}
+
+.pgl-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
+  display: block;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  border-radius: 50%;
+  /* Extra: CSS filter blur that diminishes as frame index grows —
+     controlled by the JS-applied data attribute below via inline style */
+}
+
+.pgl-avatar-img--visible {
+  opacity: 1;
+}
+
+/* Shimmer overlay while avatar isn't fully clear */
+.pgl-avatar-shimmer {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.04) 0%,
+    rgba(255, 255, 255, 0.0) 50%,
+    rgba(255, 255, 255, 0.06) 100%
+  );
+  animation: pgl-shimmer 2s ease-in-out infinite alternate;
+  pointer-events: none;
+  z-index: 2;
+}
+
+@keyframes pgl-shimmer {
+  from { opacity: 0.4; }
+  to   { opacity: 1; }
+}
+
+/* Progress label under avatar (manual only) */
+.pgl-avatar-progress-label {
+  font-size: 0.75rem;
+  color: #6b7280;
+  font-style: italic;
+  margin: -0.5rem 0 0;
+  text-align: center;
+  line-height: 1.4;
+  min-height: 1.4em;
+  transition: opacity 0.4s ease;
+}
+
+/* ── Step label ── */
 .pgl-step-label {
   font-size: 0.9375rem;
   font-weight: 500;
@@ -130,7 +190,7 @@
   letter-spacing: 0.01em;
 }
 
-/* ── Right panel — step content ── */
+/* ── Right panel ── */
 .pgl-card-right {
   flex: 1;
   padding: 2rem 2rem 1.75rem;
@@ -174,7 +234,6 @@
   animation: pgl-fade-in-up 0.35s ease;
 }
 
-/* ── Check circle — matches Figma green outline style ── */
 .pgl-check-circle {
   flex-shrink: 0;
   width: 1.125rem;
@@ -187,38 +246,30 @@
   transition: background 0.3s ease, border-color 0.3s ease;
 }
 
-/* Figma uses a green circle (stroke) with white tick — not solid fill */
 .pgl-check-circle--done {
   background: transparent;
   border-color: #22c55e;
 }
 
-.pgl-check-circle--done svg {
-  display: block;
-}
-
+.pgl-check-circle--done svg { display: block; }
 .pgl-check-circle--done svg path {
-  stroke: #22c55e;
+  stroke: white; 
+  animation: tickPop 0.2s ease;
 }
-
 .pgl-check-circle svg {
-  display: none;
+  transition: all 0.2s ease;
 }
 
-/* ── Check text states ── */
-.pgl-check-text {
-  transition: color 0.3s ease;
+.pgl-icon-done {
+  transform: scale(1.05);
+  color: #1AAB18;
 }
 
-.pgl-check-item--active .pgl-check-text {
-  color: #9ca3af;
-}
+.pgl-check-text { transition: color 0.3s ease; }
+.pgl-check-item--active .pgl-check-text { color: #9ca3af; }
+.pgl-check-item--done .pgl-check-text   { color: #e5e7eb; }
 
-.pgl-check-item--done .pgl-check-text {
-  color: #e5e7eb;
-}
-
-/* ── Outcome message ── */
+/* ── Outcome ── */
 .pgl-outcome {
   margin-top: 0.875rem;
   padding-top: 0.875rem;
@@ -229,7 +280,7 @@
   line-height: 1.55;
 }
 
-/* ── Step counter dots ── */
+/* ── Step dots ── */
 .pgl-dots {
   display: flex;
   gap: 0.5rem;
@@ -244,14 +295,8 @@
   transition: background 0.3s ease, transform 0.3s ease;
 }
 
-.pgl-dot--active {
-  background: #2563eb;
-  transform: scale(1.25);
-}
-
-.pgl-dot--done {
-  background: #22c55e;
-}
+.pgl-dot--active { background: #2563eb; transform: scale(1.25); }
+.pgl-dot--done   { background: #22c55e; }
 
 /* ── Final message ── */
 .pgl-final {
@@ -265,6 +310,30 @@
   line-height: 1.75;
   text-align: center;
   animation: pgl-fade-in 0.5s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+}
+
+/* ── Final avatar (manual flow — fully clear, larger) ── */
+.pgl-final-avatar {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  overflow: hidden;
+  margin-bottom: 1.25rem;
+  border: 2px solid rgba(34, 197, 94, 0.4);
+  box-shadow: 0 0 20px rgba(34, 197, 94, 0.15);
+  animation: pgl-fade-in 0.6s ease;
+}
+
+.pgl-final-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
+  display: block;
 }
 
 .pgl-final-line2 {
@@ -274,7 +343,7 @@
   font-size: 0.875rem;
 }
 
-/* ── Final redirect row — spinner + label ── */
+/* ── Final redirect ── */
 .pgl-final-redirect {
   display: flex;
   align-items: center;
@@ -307,4 +376,8 @@
 
 @keyframes pgl-spin {
   to { transform: rotate(360deg); }
+}
+@keyframes tickPop {
+  0% { transform: scale(0.6); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
 }

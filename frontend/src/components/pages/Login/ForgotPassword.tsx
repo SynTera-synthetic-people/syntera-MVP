@@ -5,6 +5,7 @@ import { validateForgotPassword } from "../../../utils/validation";
 import { motion } from "framer-motion";
 import HalfGlobe from "./HalfGlobe";
 import Logo from "../../common/Logo";
+import SpIcon from '../../SPIcon'
 import "./ForgotPassword.css";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -16,11 +17,11 @@ interface ForgotPasswordErrors {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 const ForgotPassword: React.FC = () => {
-  const [email, setEmail]       = useState<string>("");
-  const [message, setMessage]   = useState<string>("");
-  const [errors, setErrors]     = useState<ForgotPasswordErrors>({});
-  const [error, setError]       = useState<string>("");
-  const [loading, setLoading]   = useState<boolean>(false);
+  const [email, setEmail] = useState<string>("");
+  const [message, setMessage] = useState<string>("");
+  const [errors, setErrors] = useState<ForgotPasswordErrors>({});
+  const [error, setError] = useState<string>("");
+  const [loading, setLoading] = useState<boolean>(false);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -144,7 +145,9 @@ const ForgotPassword: React.FC = () => {
                   <span>Sending...</span>
                 </div>
               ) : (
-                "Send Reset Link →"
+                <>
+                  Send Reset Link <SpIcon name="sp-Arrow-Arrow_Right_SM" />
+                </>
               )}
             </button>
 

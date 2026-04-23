@@ -813,7 +813,12 @@
 .continue-exp-btn:hover {
   color: #37FFCE;
 }
-
+.continue-exp-btn.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+  color: transparent;
+}
 /* Kebab Menu */
 .kebab-menu-container {
   position: relative;

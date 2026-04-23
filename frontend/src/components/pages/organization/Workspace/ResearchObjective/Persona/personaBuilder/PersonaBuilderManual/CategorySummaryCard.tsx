@@ -5,6 +5,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import type { PersonaFormData } from '../PersonaBuilderType';
+import SpIcon from '../../../../../../../SPIcon';
 import './CategorySummaryCard.css';
 
 interface CategorySummaryCardProps {
@@ -17,6 +18,10 @@ interface CategorySummaryCardProps {
   formData: PersonaFormData;
   /** Only used by the Formative Experience card — plain string, not part of formData */
   formativeExperience?: string;
+  /** Called when user clicks × on a pill to remove that value */
+  onRemoveAttribute?: (key: keyof PersonaFormData, valueToRemove: string) => void;
+  /** Called when user clicks × on the formative experience block */
+  onRemoveFormativeExperience?: () => void;
 }
 
 const CategorySummaryCard: React.FC<CategorySummaryCardProps> = ({
@@ -25,6 +30,8 @@ const CategorySummaryCard: React.FC<CategorySummaryCardProps> = ({
   attributes,
   formData,
   formativeExperience,
+  onRemoveAttribute,
+  onRemoveFormativeExperience,
 }) => {
   const filledAttributes = attributes.filter((attr) => {
     const value = formData[attr.key];
@@ -32,26 +39,37 @@ const CategorySummaryCard: React.FC<CategorySummaryCardProps> = ({
     return value && value.toString().trim() !== '';
   });
 
-  const renderAttributeValue = (value: string | string[] | undefined): React.ReactNode => {
+  const renderAttributeValue = (
+    key: keyof PersonaFormData,
+    value: string | string[] | undefined,
+  ): React.ReactNode => {
     if (!value) return null;
-    if (Array.isArray(value)) {
-      return (
-        <div className="category-card__pills">
-          {value.map((item, index) => (
-            <span key={index} className="category-card__pill">{item}</span>
-          ))}
-        </div>
-      );
-    }
+
+    const pills = Array.isArray(value) ? value : [value];
+
     return (
       <div className="category-card__pills">
-        <span className="category-card__pill">{value}</span>
+        {pills.map((item, index) => (
+          <span key={index} className="category-card__pill">
+            {item}
+            {onRemoveAttribute && (
+              <button
+                className="category-card__pill-remove"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRemoveAttribute(key, item);
+                }}
+                aria-label={`Remove ${item}`}
+                title={`Remove ${item}`}
+              >
+                <SpIcon name="sp-Menu-Close_SM" size={10} />
+              </button>
+            )}
+          </span>
+        ))}
       </div>
     );
   };
-
-  // Whether this card has anything to show
-  const hasContent = filledAttributes.length > 0 || (formativeExperience && formativeExperience.trim() !== '');
 
   return (
     <motion.div
@@ -74,18 +92,30 @@ const CategorySummaryCard: React.FC<CategorySummaryCardProps> = ({
             const value = formData[attr.key];
             return (
               <div key={attr.key} className="category-card__attribute">
-                {renderAttributeValue(value)}
+                {renderAttributeValue(attr.key, value)}
               </div>
             );
           })}
         </div>
       )}
 
-      {/* Formative Experience — plain text block */}
+      {/* Formative Experience — plain text block with optional remove */}
       {formativeExperience && formativeExperience.trim() !== '' && (
-        <p className="category-card__formative-text">
-          {formativeExperience}
-        </p>
+        <div className="category-card__formative-wrap">
+          <p className="category-card__formative-text">
+            {formativeExperience}
+          </p>
+          {onRemoveFormativeExperience && (
+            <button
+              className="category-card__formative-remove"
+              onClick={onRemoveFormativeExperience}
+              aria-label="Remove formative experience"
+              title="Remove formative experience"
+            >
+              <SpIcon name="sp-Menu-Close_SM" size={10} />
+            </button>
+          )}
+        </div>
       )}
     </motion.div>
   );

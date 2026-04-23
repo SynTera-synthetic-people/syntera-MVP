@@ -34,7 +34,7 @@ import EmptyState from './components/EmptyState';
 import PersonaListItem from './components/PersonaListItem';
 import BackstoryModal from './components/BackstoryModal';
 import ValidationModal from './components/ValidationModal';
-import ApproachSelectionModal from './components/ApproachSelectionModal';
+import ApproachSelectionModal from './components/ApproachSelectionPage';
 import AttributeItem from './components/AttributeItem';
 import SelectionPanel from './components/SelectionPanel';
 
@@ -407,7 +407,6 @@ const PersonaBuilder: React.FC = () => {
   const [editingItem, setEditingItem] = useState<EditingItem | null>(null);
   const [validationError, setValidationError] = useState<ValidationError | null>(null);
   const [showValidationModal, setShowValidationModal] = useState(false);
-  const [showApproachModal, setShowApproachModal] = useState(false);
   const [isNavigatingToPreview, setIsNavigatingToPreview] = useState(false);
   const [isMockGenerating, setIsMockGenerating] = useState(false);
 
@@ -797,29 +796,44 @@ const PersonaBuilder: React.FC = () => {
 
   // ── Navigation to next step (migrated from old PersonaBuilder) ──────────────
 
-  const handleDiscussionGuidelines = () => {
-    if (isApproachLocked) {
-      if ((exploration as Record<string, unknown> | undefined)?.is_quantitative && !(exploration as Record<string, unknown> | undefined)?.is_qualitative) {
-        navigate(
-          `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/population-builder`,
-          { state: { researchApproach: 'quantitative' } }
-        );
-      } else {
-        navigate(
-          `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/depth-interview`,
-          {
-            state: {
-              researchApproach: (exploration as Record<string, unknown> | undefined)?.is_qualitative && (exploration as Record<string, unknown> | undefined)?.is_quantitative
+const handleDiscussionGuidelines = () => {
+  // If approach already locked, go directly to the right destination
+  if (isApproachLocked) {
+    if (
+      (exploration as Record<string, unknown> | undefined)?.is_quantitative &&
+      !(exploration as Record<string, unknown> | undefined)?.is_qualitative
+    ) {
+      navigate(
+        `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/population-builder`,
+        { state: { researchApproach: 'quantitative' } }
+      );
+    } else {
+      navigate(
+        `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/depth-interview`,
+        {
+          state: {
+            researchApproach:
+              (exploration as Record<string, unknown> | undefined)?.is_qualitative &&
+              (exploration as Record<string, unknown> | undefined)?.is_quantitative
                 ? 'both'
                 : 'qualitative',
-            },
-          }
-        );
-      }
-      return;
+          },
+        }
+      );
     }
-    setShowApproachModal(true);
-  };
+    return;
+  }
+
+  // Not locked — navigate to the approach selection page
+  navigate(
+    `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/approach-selection`,
+    {
+      state: {
+        backPath: `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-builder`,
+      },
+    }
+  );
+};
 
   const handleApproachSelect = async (approach: string) => {
     try {
@@ -1018,14 +1032,6 @@ const PersonaBuilder: React.FC = () => {
           onDownload={() => { /* TODO: implement download */ }}
           isLoadingMethod={updateExplorationMethodMutation.isPending}
         />
-        <ApproachSelectionModal
-          isOpen={showApproachModal}
-          onClose={() => setShowApproachModal(false)}
-          onSelect={handleApproachSelect}
-          isLoading={updateExplorationMethodMutation.isPending}
-          currentApproach={currentApproach}
-          isLocked={isApproachLocked}
-        />
       </>
     );
   }
@@ -1220,14 +1226,14 @@ const PersonaBuilder: React.FC = () => {
         onClose={handleValidationModalClose}
       />
 
-      <ApproachSelectionModal
+      {/* <ApproachSelectionModal
         isOpen={showApproachModal}
         onClose={() => setShowApproachModal(false)}
         onSelect={handleApproachSelect}
         isLoading={updateExplorationMethodMutation.isPending}
-        currentApproach={currentApproach}
+        {...(currentApproach !== undefined && { currentApproach })}
         isLocked={isApproachLocked}
-      />
+      /> */}
     </div>
   );
 };

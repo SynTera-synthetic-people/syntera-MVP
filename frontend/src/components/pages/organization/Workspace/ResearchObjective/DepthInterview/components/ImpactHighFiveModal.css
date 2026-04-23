@@ -1,0 +1,193 @@
+/* ════════════════════════════════════════════════════════════════════════════
+   ImpactHighFiveModal
+   Prefix: ihf-
+   Figma: image 8 — 2-question feedback modal
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Overlay ─────────────────────────────────────────────────────────────── */
+
+.ihf-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 110;
+  padding: 1rem;
+}
+
+/* ── Modal ───────────────────────────────────────────────────────────────── */
+
+.ihf-modal {
+  position: relative;
+  background: #111214;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 18px;
+  padding: 2rem 2rem 1.75rem;
+  width: 100%;
+  max-width: 500px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* ── Close ───────────────────────────────────────────────────────────────── */
+
+.ihf-close {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.45);
+  cursor: pointer;
+  border-radius: 6px;
+  transition: color 0.15s, background 0.15s;
+}
+.ihf-close:hover { color: #fff; background: rgba(255,255,255,0.07); }
+
+/* ── Title / subtitle ────────────────────────────────────────────────────── */
+
+.ihf-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+  text-align: center;
+  padding-right: 20px; /* avoid overlap with close btn */
+}
+
+.ihf-subtitle {
+  font-size: 0.875rem;
+  color: rgba(255, 255, 255, 0.45);
+  margin: -12px 0 0;
+  text-align: center;
+  line-height: 1.5;
+}
+
+/* ── Question block ──────────────────────────────────────────────────────── */
+
+.ihf-question {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ihf-question__label {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #ffffff;
+  margin: 0;
+  line-height: 1.4;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+}
+
+.ihf-question__num {
+  color: #06A17B;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+/* ── Options ─────────────────────────────────────────────────────────────── */
+
+.ihf-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ihf-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 0.9375rem;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.ihf-option:hover {
+  border-color: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.04);
+  color: #ffffff;
+}
+
+.ihf-option--selected {
+  border-color: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.06);
+  color: #ffffff;
+}
+
+/* Radio dot */
+.ihf-option__radio {
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.15s;
+}
+
+.ihf-option__radio--selected {
+  border-color: #06A17B;
+  background: radial-gradient(circle, #06A17B 5px, transparent 5px);
+}
+
+/* ── Submit button ───────────────────────────────────────────────────────── */
+
+.ihf-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 13px 0;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: not-allowed;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  width: 100%;
+  margin-top: 4px;
+}
+
+/* Enabled state — both questions answered */
+.ihf-submit:not(:disabled) {
+  background: #2563eb;
+  border-color: transparent;
+  color: #ffffff;
+  cursor: pointer;
+}
+.ihf-submit:not(:disabled):hover {
+  background: #1d4ed8;
+}
+
+.ihf-submit__spinner {
+  animation: ihf-spin 1s linear infinite;
+}
+
+@keyframes ihf-spin {
+  to { transform: rotate(360deg); }
+}

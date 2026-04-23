@@ -11,40 +11,72 @@ const ResearchObjectiveLayout: React.FC = () => {
     objectiveId: string;
   }>();
 
-  // All child routes now use :objectiveId consistently (see App.tsx).
-  // explorationId has been removed — objectiveId is always defined.
-  const { completedSteps, isStepUnlocked, isLoading } = useStepProgress(
+  const { completedSteps: rawCompletedSteps, isStepUnlocked } = useStepProgress(
     workspaceId,
     objectiveId
   );
 
-  // ── Temporary debug log ───────────────────────────────────────────────────
-  // Remove this once sidebar steps are confirmed working correctly.
-  // Check the browser console: if completedSteps is always [] even after
-  // completing Step 1, the backend is not returning exploration.research_objective
-  // and that field needs to be checked with the backend team.
+  // Strip step 3 from the hook's completedSteps — the backend marks step 3 as
+  // "started" (not truly done) the moment an approach is selected, which caused
+  // the Qualitative Exploration circle to show a premature green check.
+  // Step 3 completion is determined exclusively by the three sub-step localStorage
+  // keys (qualitative_sub1/2/3) inside StepSidebar's isStepCompleted().
+  const completedSteps = (rawCompletedSteps ?? []).filter((n: number) => n !== 3);
+
+  // ── One-time migration: clear stale sub-step keys ───────────────────────
+  //
+  // A previous version of this layout set qualitative_sub1/sub2 just by
+  // visiting the route (not on completion).  Those stale keys make the
+  // sidebar show a green check for steps the user never finished.
+  //
+  // On first mount for each exploration we check a version sentinel.
+  // If it's absent, we clear ALL three sub-step keys so they can only be
+  // re-written by the components that own each completion action.
+  // This runs once per exploration per browser and is a no-op thereafter.
   useEffect(() => {
-    console.log('[StepProgress] workspaceId:', workspaceId);
-    console.log('[StepProgress] objectiveId:', objectiveId);
-    console.log('[StepProgress] isLoading:', isLoading);
-    console.log('[StepProgress] completedSteps:', completedSteps);
-  }, [workspaceId, objectiveId, isLoading, completedSteps]);
+    if (!objectiveId) return;
+    const versionKey = `sub_steps_v2_${objectiveId}`;
+    if (!localStorage.getItem(versionKey)) {
+      localStorage.removeItem(`qualitative_sub1_${objectiveId}`);
+      localStorage.removeItem(`qualitative_sub2_${objectiveId}`);
+      localStorage.removeItem(`qualitative_sub3_${objectiveId}`);
+      localStorage.setItem(versionKey, '1');
+    }
+  }, [objectiveId]);
+
+  // ── Read completed sub-steps from localStorage ────────────────────────────
+  //
+  // Sub-step milestones are written ONLY by the components that own the
+  // "completion" action for that sub-step — never inferred from the current
+  // URL.  This prevents all sub-steps from lighting up green just because
+  // the user navigated to a later page.
+  //
+  //   qualitative_sub1_{id}  → written by DepthInterview when the user
+  //                             clicks "Proceed to Interviews"
+  //   qualitative_sub2_{id}  → written by ChatView when all interviews are done
+  //   qualitative_sub3_{id}  → written by ChatView when user clicks "Next"
+  //                             after Insights Generation
+  //
+  const completedSubSteps: number[] = [];
+  if (objectiveId) {
+    if (localStorage.getItem(`qualitative_sub1_${objectiveId}`)) completedSubSteps.push(1);
+    if (localStorage.getItem(`qualitative_sub2_${objectiveId}`)) completedSubSteps.push(2);
+    if (localStorage.getItem(`qualitative_sub3_${objectiveId}`)) completedSubSteps.push(3);
+  }
 
   return (
     <div className="rol-root">
 
-      {/* ── Background ── */}
       <div className="rol-background">
         <div className="rol-bg-base" />
       </div>
 
-      {/* ── Left: Step Sidebar ── */}
       <StepSidebar
         completedSteps={completedSteps}
         isStepUnlocked={isStepUnlocked}
+        completedSubSteps={completedSubSteps}
       />
 
-      {/* ── Right: Active step content ── */}
       <div className="rol-content">
         <Outlet />
       </div>

@@ -43,15 +43,19 @@
   color: #FFFFFF;
 }
 
-/* 2×2 summary cards grid */
+
 .persona-summary__cards {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  column-count: 2;
+  column-gap: 12px;
 }
 
+/* Each card must break-inside: avoid so it doesn't split across columns */
+.persona-summary__cards > * {
+  break-inside: avoid;
+  margin-bottom: 12px;
+}
 @media (max-width: 700px) {
   .persona-summary__cards {
-    grid-template-columns: 1fr;
+    column-count: 1;
   }
 }

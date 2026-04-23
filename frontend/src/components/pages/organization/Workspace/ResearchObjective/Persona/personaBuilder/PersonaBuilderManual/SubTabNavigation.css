@@ -3,10 +3,37 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 
 .subtab-nav {
-  overflow-x: auto;
-  scrollbar-width: none;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  margin-bottom: 20px;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.subtab-nav__arrow {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  z-index: 2;
+}
+
+.subtab-nav__arrow:hover {
+  color: #37FFCE;
+  border-color: #37FFCE;
+}
+
+.subtab-nav__arrow--left {
+  margin-right: 6px;
+}
+
+.subtab-nav__arrow--right {
+  margin-left: 6px;
 }
 
 .subtab-nav::-webkit-scrollbar {
@@ -15,8 +42,15 @@
 
 .subtab-nav__container {
   display: flex;
+  flex: 1;
+  overflow-x: auto;
+  scrollbar-width: none;
   padding: 0 20px;
-  min-width: min-content;
+  min-width: 0;        /* ← was min-content, that was the key bug */
+}
+
+.subtab-nav__container::-webkit-scrollbar {
+  display: none;          /* ← hides scrollbar on Chrome/Safari */
 }
 
 .subtab-nav__item {
@@ -24,9 +58,9 @@
   padding: 12px 14px;
   background: transparent;
   border: none;
-  color: rgba(255, 255, 255, 0.4);
-  font-size: 13px;
-  font-weight: 400;
+  color: #9A9EAB;
+  font-size: 14px;
+  font-weight: 500;
   cursor: pointer;
   transition: color 0.15s;
   white-space: nowrap;
@@ -38,17 +72,13 @@
 }
 
 .subtab-nav__item:hover {
-  color: rgba(255, 255, 255, 0.75);
+  color: #37FFCE;
 }
 
 .subtab-nav__item--active {
-  color: #00D4A8;
-  border-bottom-color: #00D4A8;
+  color: #37FFCE;
+  border-bottom-color: #37FFCE;
   font-weight: 500;
-}
-
-.subtab-nav__item--completed {
-  color: rgba(255, 255, 255, 0.65);
 }
 
 .subtab-nav__label {
@@ -57,7 +87,7 @@
 }
 
 /* Completed checkmark */
-.subtab-nav__item--completed:not(.subtab-nav__item--active) .subtab-nav__label::after {
+/* .subtab-nav__item--completed:not(.subtab-nav__item--active) .subtab-nav__label::after {
   content: '';
   display: inline-block;
   width: 6px;
@@ -68,7 +98,7 @@
   vertical-align: middle;
   position: relative;
   top: -1px;
-}
+} */
 
 @media (max-width: 768px) {
   .subtab-nav__item {

@@ -1,6 +1,18 @@
 import React, { useState, useEffect } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import OmiKeyboard from '../../../../../assets/Omi Animations/OmiKeyboard.mp4';
+
+import avatar1 from '../../../../../assets/Avatar/Avatar1.png';
+import avatar2 from '../../../../../assets/Avatar/Avatar2.png';
+import avatar3 from '../../../../../assets/Avatar/Avatar3.png';
+import avatar4 from '../../../../../assets/Avatar/Avatar4.png';
+import avatar5 from '../../../../../assets/Avatar/Avatar5.png';
+import avatar6 from '../../../../../assets/Avatar/Avatar6.png';
+import avatar7 from '../../../../../assets/Avatar/Avatar7.png';
+import avatar8 from '../../../../../assets/Avatar/Avatar8.png';
+import avatar9 from '../../../../../assets/Avatar/Avatar9.png';
+import SpIcon from '../../../../SPIcon';
+
 import "./PersonaGenerationLoader.css";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -33,6 +45,16 @@ const TICK_MS = 27_000;
 const RING_RADIUS = 54;
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 
+// ── Avatar frames array (index 0 = most blurry, index 8 = clear) ─────────────
+const AVATAR_FRAMES = [
+    avatar1, avatar2, avatar3, avatar4, avatar5,
+    avatar6, avatar7, avatar8, avatar9,
+];
+
+const TOTAL_AVATAR_FRAMES = AVATAR_FRAMES.length; // 9
+
+// ── Sub-components ────────────────────────────────────────────────────────────
+
 const RingProgress: React.FC<{ progress: number }> = ({ progress }) => {
     const offset = RING_CIRCUMFERENCE - (progress / 100) * RING_CIRCUMFERENCE;
     return (
@@ -61,6 +83,50 @@ const CheckIcon: React.FC = () => (
         />
     </svg>
 );
+
+// ── Avatar with progressive reveal (manual flow) ──────────────────────────────
+// Crossfades between frames as items complete.
+
+interface ProgressiveAvatarProps {
+    frameIndex: number; // 0–8
+}
+
+const ProgressiveAvatar: React.FC<ProgressiveAvatarProps> = ({ frameIndex }) => {
+    const [displayedFrame, setDisplayedFrame] = useState(frameIndex);
+    const [fadingIn, setFadingIn] = useState(false);
+
+    useEffect(() => {
+        if (frameIndex === displayedFrame) return;
+        // Brief fade transition when frame changes
+        setFadingIn(false);
+        const t = setTimeout(() => {
+            setDisplayedFrame(frameIndex);
+            setFadingIn(true);
+        }, 80);
+        return () => clearTimeout(t);
+    }, [frameIndex]);
+
+    useEffect(() => {
+        // Trigger fade-in after mount
+        const t = setTimeout(() => setFadingIn(true), 50);
+        return () => clearTimeout(t);
+    }, []);
+
+    return (
+        <div className="pgl-character pgl-character--avatar">
+            <img
+                key={displayedFrame}
+                src={AVATAR_FRAMES[displayedFrame]}
+                alt={`Persona generating — frame ${displayedFrame + 1}`}
+                className={`pgl-avatar-img ${fadingIn ? 'pgl-avatar-img--visible' : ''}`}
+            />
+            {/* Subtle shimmer overlay while not yet fully clear */}
+            {displayedFrame < TOTAL_AVATAR_FRAMES - 1 && (
+                <div className="pgl-avatar-shimmer" />
+            )}
+        </div>
+    );
+};
 
 // ── Component ────────────────────────────────────────────────────────────────
 
@@ -188,6 +254,15 @@ const PersonaGenerationLoader: React.FC<Props> = ({
 
     const steps = flow === "omi" ? omiSteps : manualSteps;
 
+    // ── Total items (used to map checkedItems count → avatar frame) ───────────
+    const totalItems = steps.reduce((acc, s) => acc + s.items.length, 0);
+
+    // Avatar frame = floor(completedItemsCount * 9 / totalItems), clamped 0–8
+    const avatarFrameIndex = Math.min(
+        Math.floor((checkedItems.length * TOTAL_AVATAR_FRAMES) / totalItems),
+        TOTAL_AVATAR_FRAMES - 1
+    );
+
     // ── Auto-tick ─────────────────────────────────────────────────────────────
 
     useEffect(() => {
@@ -218,15 +293,15 @@ const PersonaGenerationLoader: React.FC<Props> = ({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // ── Navigate to persona-builder once loader completes ─────────────────────
-    // The backend has been building personas in the background (fire-and-forget
-    // from AddResearchObjective). By the time this fires, personas should be ready.
-    // PersonaBuilder will detect fromLoader:true and show the grid view.
+    // ── Navigate when complete ────────────────────────────────────────────────
 
     useEffect(() => {
         if (!isComplete || !workspaceId || !objectiveId) return;
 
         const timer = setTimeout(() => {
+            // Mark Step 2 (Persona Creation) as complete
+            localStorage.setItem(`step2_done_${objectiveId}`, '1');
+
             navigate(
                 `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-builder`,
                 { state: { fromLoader: true, flow } }
@@ -281,11 +356,38 @@ const PersonaGenerationLoader: React.FC<Props> = ({
                     <div className="pgl-card-left">
                         <div className="pgl-ring-wrapper">
                             <RingProgress progress={ringProgress} />
-                            <div className="pgl-character">
-                                <video className="pgl-character-video" src={OmiKeyboard} autoPlay loop muted playsInline />
-                            </div>
+
+                            {/* ── Avatar: Omi video for omi flow, progressive images for manual ── */}
+                            {flow === "manual" ? (
+                                <ProgressiveAvatar frameIndex={avatarFrameIndex} />
+                            ) : (
+                                <div className="pgl-character">
+                                    <video
+                                        className="pgl-character-video"
+                                        src={OmiKeyboard}
+                                        autoPlay
+                                        loop
+                                        muted
+                                        playsInline
+                                    />
+                                </div>
+                            )}
                         </div>
+
                         <p className="pgl-step-label">Step {currentStep + 1}/{steps.length}</p>
+
+                        {/* Progress label only for manual — tells user what's happening
+                        {flow === "manual" && (
+                            <p className="pgl-avatar-progress-label">
+                                {avatarFrameIndex < 3
+                                    ? "Identifying patterns…"
+                                    : avatarFrameIndex < 6
+                                    ? "Calibrating profile…"
+                                    : avatarFrameIndex < 8
+                                    ? "Almost ready…"
+                                    : "Persona complete"}
+                            </p>
+                        )} */}
                     </div>
 
                     <div className="pgl-card-right">
@@ -306,8 +408,10 @@ const PersonaGenerationLoader: React.FC<Props> = ({
                                         key={globalIndex}
                                         className={`pgl-check-item ${isDone ? "pgl-check-item--done" : ""} ${isActive ? "pgl-check-item--active" : ""}`}
                                     >
-                                        <div className={`pgl-check-circle ${isDone ? "pgl-check-circle--done" : ""}`}>
-                                            <CheckIcon />
+                                        <div className="pgl-check-circle">
+                                            <SpIcon name={isDone ? "sp-Warning-Circle_Check" : "sp-Interface-Radio_Unchecked"}
+                                                className={isDone ? "pgl-icon-done" : "pgl-icon-default"}
+                                            />
                                         </div>
                                         <span className="pgl-check-text">{item}</span>
                                     </li>
@@ -322,27 +426,19 @@ const PersonaGenerationLoader: React.FC<Props> = ({
                 </div>
             )}
 
-            {/* Step dots */}
-            {!isComplete && (
-                <div className="pgl-dots">
-                    {steps.map((step, i) => {
-                        const stepStart = steps.slice(0, i).reduce((acc, s) => acc + s.items.length, 0);
-                        const stepEnd = stepStart + step.items.length;
-                        const isDone = checkedItems.filter((c) => c >= stepStart && c < stepEnd).length === step.items.length;
-
-                        return (
-                            <div
-                                key={i}
-                                className={`pgl-dot ${isDone ? "pgl-dot--done" : i === currentStep ? "pgl-dot--active" : ""}`}
-                            />
-                        );
-                    })}
-                </div>
-            )}
-
-            {/* Final message — shown briefly before navigation triggers */}
+            {/* Final message */}
             {isComplete && (
                 <div className="pgl-final">
+                    {/* Show fully-clear avatar in final state for manual flow */}
+                    {flow === "manual" && (
+                        <div className="pgl-final-avatar">
+                            <img
+                                src={AVATAR_FRAMES[TOTAL_AVATAR_FRAMES - 1]}
+                                alt="Persona ready"
+                                className="pgl-final-avatar-img"
+                            />
+                        </div>
+                    )}
                     <p>
                         This persona was inferred through behavioural signals, emotional calibration, and contextual grounding.
                     </p>

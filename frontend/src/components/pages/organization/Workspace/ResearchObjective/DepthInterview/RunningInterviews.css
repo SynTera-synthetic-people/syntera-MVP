@@ -1,0 +1,283 @@
+/* ════════════════════════════════════════════════════════════════════════════
+   RunningInterviews
+   Prefix: ri-
+   Figma: "Running Interviews" screen — image 1
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Page wrapper ─────────────────────────────────────────────────────────── */
+
+.ri-page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;   /* ✅ center all children horizontally */
+  padding: 32px 40px 48px;
+  background: #0E0F12;
+  min-height: 100%;
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+
+.ri-title {
+  font-size: 1.375rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0 0 10px;
+  line-height: 1.25;
+}
+
+.ri-subtitle {
+  font-size: 0.875rem;
+  color: rgba(255, 255, 255, 0.45);
+  margin: 0 0 36px;
+  line-height: 1.6;
+  max-width: 780px;
+}
+
+/* ── Persona grid ─────────────────────────────────────────────────────────── */
+
+.ri-persona-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 120px);
+  gap: 24px;
+  margin-bottom: 40px;
+}
+
+/* ── Single persona avatar ───────────────────────────────────────────────── */
+
+.ri-persona-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+/* Skeleton while loading */
+.ri-persona-avatar--skeleton .ri-persona-ring {
+  background: rgba(255, 255, 255, 0.06);
+  border: 2.5px solid rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  width: 100px;
+  height: 100px;
+  animation: ri-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes ri-pulse {
+  0%, 100% { opacity: 0.4; }
+  50%       { opacity: 0.75; }
+}
+
+/* ── Ring ────────────────────────────────────────────────────────────────── */
+
+.ri-persona-ring {
+  position: relative;
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  /* Static green ring by default */
+  border: 3px solid #06A17B;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* Active persona gets a brighter border + animated pulses */
+.ri-persona-avatar--active .ri-persona-ring {
+  border-color: #06A17B;
+  box-shadow: 0 0 0 2px rgba(6, 161, 123, 0.4);
+}
+
+/* Pulse rings radiate outward on the active persona */
+.ri-persona-ring__pulse {
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 2px solid rgba(6, 161, 123, 0.5);
+  animation: ri-ring-pulse 2s ease-out infinite;
+  pointer-events: none;
+}
+
+.ri-persona-ring__pulse--inner {
+  inset: -8px;
+  border-color: rgba(6, 161, 123, 0.3);
+  animation-delay: 0.5s;
+}
+
+.ri-persona-ring__pulse--outer {
+  inset: -14px;
+  border-color: rgba(6, 161, 123, 0.15);
+  animation-delay: 1s;
+}
+
+@keyframes ri-ring-pulse {
+  0%   { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.18); }
+}
+
+/* ── Avatar circle (inside ring) ─────────────────────────────────────────── */
+
+.ri-persona-circle {
+  width: 86px;
+  height: 86px;
+  border-radius: 50%;
+  background: #1a1d2a;
+  border: 2px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.ri-persona-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.ri-persona-initial {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.75);
+  line-height: 1;
+  user-select: none;
+}
+
+/* ── Statement text ──────────────────────────────────────────────────────── */
+
+.ri-statement {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #ffffff;
+  text-align: center;
+  max-width: 620px;
+  line-height: 1.5;
+  margin: 0 auto 32px;
+  align-self: center;
+}
+
+/* ── Loader card ─────────────────────────────────────────────────────────── */
+
+.ri-loader-card {
+  display: flex;
+  width: 100%;
+  max-width: 680px;
+  align-self: center;
+  background: #0E0F12;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  overflow: hidden;
+  min-height: 190px;
+}
+
+/* Left panel: Omi + ring + step label */
+.ri-loader-card__left {
+  width: 210px;
+  min-width: 210px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 2.25rem 1.5rem;
+}
+
+/* Vertical divider */
+.ri-loader-card__divider {
+  width: 1px;
+  background: rgba(255, 255, 255, 0.07);
+  flex-shrink: 0;
+}
+
+/* Right panel: step label text */
+.ri-loader-card__right {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  padding: 2.25rem 2.5rem;
+}
+
+.ri-step-text {
+  font-size: 1.25rem;
+  font-weight: 500;
+  color: #ffffff;
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* ── Ring SVG (reuse DiscussionGuideLoader pattern) ─────────────────────── */
+
+.ri-ring-wrapper {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ri-ring-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.ri-ring-track {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.07);
+  stroke-width: 3;
+}
+
+.ri-ring-progress {
+  fill: none;
+  stroke: #06A17B;
+  stroke-width: 3.5;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.7s ease;
+}
+
+/* ── Omi character ───────────────────────────────────────────────────────── */
+
+.ri-omi {
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: #1a1d2e;
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+}
+
+.ri-omi__video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 30%;
+  display: block;
+}
+
+/* ── Step label ──────────────────────────────────────────────────────────── */
+
+.ri-step-label {
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: #e5e7eb;
+  margin: 0;
+  letter-spacing: 0.01em;
+}
+
+/* ── Header section wrapper ──────────────────────────────────────────────── */
+
+.ri-header {
+  width: 100%;
+  margin-bottom: 0;
+}

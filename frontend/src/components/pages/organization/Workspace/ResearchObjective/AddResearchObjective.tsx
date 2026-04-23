@@ -294,6 +294,9 @@ const AddResearchObjective: React.FC = () => {
       payload: {},
     });
 
+    // Mark Step 1 (Research Objective) as complete
+    if (objectiveId) localStorage.setItem(`step1_done_${objectiveId}`, '1');
+
     // Fire-and-forget: kick off backend generation now, don't await.
     // PersonaBuilder will fetch the completed result when the loader finishes.
     try {
@@ -312,6 +315,10 @@ const AddResearchObjective: React.FC = () => {
     event: 'PERSONA_WORKFLOW_LOADED',
     payload: {},
   });
+
+  // Mark Step 1 (Research Objective) as complete
+  if (objectiveId) localStorage.setItem(`step1_done_${objectiveId}`, '1');
+
   const targetUrl = `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-builder/manual`;
   navigate(targetUrl, { state: { flow: "manual" } });
 };

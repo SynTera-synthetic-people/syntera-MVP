@@ -1,0 +1,160 @@
+/* ════════════════════════════════════════════════════════════════════════════
+   DiscussionGuideLoader — Figma Accurate
+   Prefix: dgl-
+   ════════════════════════════════════════════════════════════════════════════ */
+
+.dgl-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  width: 100%;
+  padding: 3rem 2rem;
+  box-sizing: border-box;
+  background: #0E0F12;
+  color: #ffffff;
+}
+
+.dgl-header {
+  text-align: center;
+  margin-bottom: 2.5rem;
+  max-width: 640px;
+}
+
+.dgl-heading {
+  font-size: 1.625rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0 0 0.625rem;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+}
+
+.dgl-subtitle {
+  font-size: 0.9375rem;
+  color: rgba(255, 255, 255, 0.45);
+  margin: 0;
+  line-height: 1.55;
+}
+
+.dgl-card {
+  display: flex;
+  width: 100%;
+  max-width: 680px;
+  background: #0E0F12;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  overflow: hidden;
+  min-height: 200px;
+}
+
+.dgl-card-left {
+  width: 210px;
+  min-width: 210px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 2.25rem 1.5rem;
+  background: #0E0F12;
+}
+
+.dgl-card-divider {
+  width: 1px;
+  background: rgba(255, 255, 255, 0.07);
+  flex-shrink: 0;
+}
+
+.dgl-card-right {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  padding: 2.25rem 2.5rem;
+}
+
+.dgl-statement {
+  font-size: 1.25rem;
+  font-weight: 500;
+  color: #ffffff;
+  line-height: 1.5;
+  margin: 0;
+  animation: dgl-fade-in 0.4s ease;
+}
+
+.dgl-ring-wrapper {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dgl-ring-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.dgl-ring-track {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.07);
+  stroke-width: 3;
+}
+
+.dgl-ring-progress {
+  fill: none;
+  stroke: var(--Color-Primary-P-500, #0E63EC);
+  stroke-width: 3.5;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.7s ease;
+}
+
+.dgl-character {
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #1a1d2e;
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+}
+
+.dgl-character-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 30%;
+  display: block;
+}
+
+.dgl-step-label {
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: #e5e7eb;
+  margin: 0;
+  letter-spacing: 0.01em;
+}
+
+@keyframes dgl-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+/* Waiting label — shown on last step while backend catches up */
+.dgl-waiting-label {
+  font-size: 0.8125rem;
+  color: rgba(255, 255, 255, 0.35);
+  margin: 0.75rem 0 0;
+  font-style: italic;
+  animation: dgl-fade-in 0.4s ease;
+}
