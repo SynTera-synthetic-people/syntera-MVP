@@ -1,0 +1,180 @@
+@page {
+    size: A4;
+    margin: 18mm 14mm 16mm 14mm;
+}
+
+html, body {
+    font-family: Calibri, Arial, sans-serif;
+    font-size: 11px;
+    color: #132033;
+    line-height: 1.38;
+    background: #FFFFFF;
+}
+
+.quant-report-root {
+    font-family: Calibri, Arial, sans-serif;
+    font-size: 11px;
+    color: #132033;
+}
+
+h1, h2, h3, h4 {
+    page-break-after: avoid;
+    page-break-inside: avoid;
+    color: #1F4788;
+    margin: 0 0 10px 0;
+}
+
+h1 {
+    font-size: 26px;
+    line-height: 1.2;
+    margin-bottom: 12px;
+}
+
+h2 {
+    font-size: 18px;
+    line-height: 1.25;
+    margin-top: 18px;
+}
+
+h3 {
+    font-size: 14px;
+    line-height: 1.25;
+    margin-top: 14px;
+}
+
+h4 {
+    font-size: 12px;
+    line-height: 1.25;
+    margin-top: 10px;
+}
+
+p, li {
+    font-size: 10.5px;
+    line-height: 1.4;
+}
+
+p {
+    margin: 0 0 8px 0;
+    page-break-inside: avoid;
+}
+
+ul, ol {
+    margin: 0 0 10px 16px;
+    padding: 0;
+}
+
+li {
+    margin-bottom: 4px;
+}
+
+strong {
+    font-weight: 700;
+}
+
+em {
+    font-style: italic;
+}
+
+blockquote {
+    margin: 10px 0;
+    padding: 8px 10px;
+    border-left: 3px solid #40B5AD;
+    background: #F5F8FC;
+    color: #2C3E50;
+    font-size: 10px;
+}
+
+.quant-table-wrap {
+    margin: 10px 0 14px 0;
+    page-break-inside: avoid;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    margin: 0;
+    page-break-inside: avoid;
+}
+
+thead {
+    display: table-header-group;
+}
+
+tr {
+    page-break-inside: avoid;
+}
+
+th, td {
+    border: 1px solid #D7E3F4;
+    padding: 6px 7px;
+    vertical-align: top;
+    word-wrap: break-word;
+    overflow-wrap: anywhere;
+    white-space: normal;
+}
+
+th {
+    background: #1F4788;
+    color: #FFFFFF;
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 1.25;
+    text-align: left;
+}
+
+td {
+    background: #FFFFFF;
+    color: #132033;
+    font-size: 8.8px;
+    line-height: 1.32;
+}
+
+tbody tr:nth-child(even) td {
+    background: #F7FAFD;
+}
+
+.quant-record-list {
+    margin: 10px 0 14px 0;
+}
+
+.quant-record {
+    border: 1px solid #D7E3F4;
+    background: #FBFCFE;
+    padding: 10px 12px;
+    margin: 0 0 10px 0;
+    page-break-inside: avoid;
+}
+
+.quant-record-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: #1F4788;
+    margin: 0 0 8px 0;
+}
+
+.quant-record-item {
+    margin: 0 0 6px 0;
+}
+
+.quant-record-label {
+    font-size: 8.5px;
+    font-weight: 700;
+    color: #5A6B7F;
+    text-transform: uppercase;
+    letter-spacing: 0.2px;
+    margin: 0 0 2px 0;
+}
+
+.quant-record-value {
+    font-size: 10px;
+    color: #132033;
+    line-height: 1.35;
+}
+
+code, pre {
+    font-family: Consolas, monospace;
+    font-size: 8.5px;
+    background: #F4F6F8;
+    padding: 3px 4px;
+}

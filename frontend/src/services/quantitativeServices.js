@@ -75,15 +75,31 @@ export const getPersonas = async ({ workspaceId, explorationId }) => {
   return response.data;
 };
 
-export const simulateSurvey = async ({ workspaceId, explorationId, personaId, simulationId, sampleSize, questions }) => {
+/**
+ * Fetch an already-completed survey simulation for a given population simulation ID.
+ * Returns null (not throws) when no result exists yet, so callers can branch on it.
+ */
+export const getSurveySimulationBySource = async ({ workspaceId, explorationId, simulationSourceId }) => {
+  try {
+    const response = await axiosInstance.get(
+      `/workspaces/${workspaceId}/explorations/${explorationId}/questionnaire/simulation/by-source/${simulationSourceId}`
+    );
+    return response.data;
+  } catch (err) {
+    if (err?.response?.status === 404) return null;
+    throw err;
+  }
+};
+
+export const simulateSurvey = async ({ workspaceId, explorationId, personaId, simulationId, forceRerun = false }) => {
   const response = await axiosInstance.post(
     `/workspaces/${workspaceId}/explorations/${explorationId}/questionnaire/simulate`,
     {
       exploration_id: explorationId,
       persona_id: personaId,
       simulation_id: simulationId,
-      // questions: questions || []
-      questions: []
+      questions: [],
+      force_rerun: forceRerun,
     }
   );
   return response.data;
@@ -116,9 +132,86 @@ export const uploadQuestionnaire = async ({ workspaceId, explorationId, simulati
   return response.data;
 };
 
+export const createQuestionnaireSection = async ({ workspaceId, explorationId, title, simulationId }) => {
+  const response = await axiosInstance.post(
+    `/workspaces/${workspaceId}/explorations/${explorationId}/questionnaire/sections`,
+    {
+      title,
+      simulation_id: simulationId,
+    }
+  );
+  return response.data;
+};
+
+export const updateQuestionnaireSection = async ({ workspaceId, explorationId, sectionId, title }) => {
+  const response = await axiosInstance.put(
+    `/workspaces/${workspaceId}/explorations/${explorationId}/questionnaire/sections/${sectionId}`,
+    { title }
+  );
+  return response.data;
+};
+
+export const deleteQuestionnaireSection = async ({ workspaceId, explorationId, sectionId }) => {
+  const response = await axiosInstance.delete(
+    `/workspaces/${workspaceId}/explorations/${explorationId}/questionnaire/sections/${sectionId}`
+  );
+  return response.data;
+};
+
+export const createQuestionnaireQuestion = async ({ workspaceId, explorationId, sectionId, text, options }) => {
+  const response = await axiosInstance.post(
+    `/workspaces/${workspaceId}/explorations/${explorationId}/questionnaire/sections/${sectionId}/questions`,
+    { text, options }
+  );
+  return response.data;
+};
+
+export const updateQuestionnaireQuestion = async ({ workspaceId, explorationId, questionId, text, options }) => {
+  const response = await axiosInstance.put(
+    `/workspaces/${workspaceId}/explorations/${explorationId}/questionnaire/questions/${questionId}`,
+    { text, options }
+  );
+  return response.data;
+};
+
+export const deleteQuestionnaireQuestion = async ({ workspaceId, explorationId, questionId }) => {
+  const response = await axiosInstance.delete(
+    `/workspaces/${workspaceId}/explorations/${explorationId}/questionnaire/questions/${questionId}`
+  );
+  return response.data;
+};
+
 export const previewSurvey = async ({ workspaceId, explorationId, simulationId }) => {
   const response = await axiosInstance.get(
     `/workspaces/${workspaceId}/explorations/${explorationId}/questionnaire/simulation/${simulationId}/preview`
+  );
+  return response.data;
+};
+
+// ── New 3-CTA report downloads ──────────────────────────────────────────────
+// These functions only fetch and return the blob.
+// Download triggering is handled by the useMutation onSuccess in useQuantitativeQueries.js.
+
+export const downloadQuantTranscripts = async ({ workspaceId, explorationId, simulationId }) => {
+  const response = await axiosInstance.get(
+    `/workspaces/${workspaceId}/explorations/${explorationId}/reports/quant/${simulationId}/transcripts`,
+    { responseType: 'blob' }
+  );
+  return response.data;
+};
+
+export const downloadQuantDecisionIntelligence = async ({ workspaceId, explorationId, simulationId }) => {
+  const response = await axiosInstance.get(
+    `/workspaces/${workspaceId}/explorations/${explorationId}/reports/quant/${simulationId}/decision-intelligence`,
+    { responseType: 'blob' }
+  );
+  return response.data;
+};
+
+export const downloadQuantBehaviorArchaeology = async ({ workspaceId, explorationId, simulationId }) => {
+  const response = await axiosInstance.get(
+    `/workspaces/${workspaceId}/explorations/${explorationId}/reports/quant/${simulationId}/behavior-archaeology`,
+    { responseType: 'blob' }
   );
   return response.data;
 };

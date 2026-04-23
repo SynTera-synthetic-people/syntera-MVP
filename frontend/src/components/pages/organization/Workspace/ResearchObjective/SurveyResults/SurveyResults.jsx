@@ -1,11 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { motion } from "framer-motion";
 import { TbArrowLeft, TbChevronRight, TbDownload, TbChartBar, TbUser, TbUsers, TbLoader, TbExternalLink } from "react-icons/tb";
 import { useTheme } from "../../../../../../context/ThemeContext";
 import logoForDark from "../../../../../../assets/Logo_Dark_bg.png";
 import logoForLight from "../../../../../../assets/Logo_Light_bg.png";
-import { useDownloadSurveyPdf, useSimulateSurvey, usePreviewSurvey } from '../../../../../../hooks/useQuantitativeQueries';
+import {
+  useDownloadSurveyPdf,
+  useSimulateSurvey,
+  useGetSurveySimulationBySource,
+  usePreviewSurvey,
+  useDownloadQuantTranscripts,
+  useDownloadQuantDecisionIntelligence,
+  useDownloadQuantBehaviorArchaeology,
+} from '../../../../../../hooks/useQuantitativeQueries';
 import { downloadQuestionnaireCsvExport } from '../../../../../../services/quantitativeServices';
 import { getAxiosErrorMessage } from '../../../../../../utils/axiosBlobError';
 import PreviewModal from './components/PreviewModal'; // Import the separate modal
@@ -109,6 +118,10 @@ const SurveyResults = () => {
   const [showPreview, setShowPreview] = useState(false);
   const [previewData, setPreviewData] = useState(null);
   const [questionnaireCsvDownloading, setQuestionnaireCsvDownloading] = useState(false);
+  // Track whether we've already attempted to load/run the simulation for the
+  // current simulationId so we never fire it twice in the same mount cycle.
+  const simulationAttemptedRef = useRef(null);
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { workspaceId, objectiveId } = useParams();
   const location = useLocation();
@@ -117,9 +130,32 @@ const SurveyResults = () => {
 
   const explorationId = objectiveId;
 
+  // The population simulation ID coming from navigation state
+  const populationSimulationId = location.state?.surveyConfig?.simulationId ?? null;
+  // True when the user edited the questionnaire — bypass cached results and force a fresh run.
+  // Reads from both navigation state (normal flow) and sessionStorage (survives page refresh).
+  const forceRerun =
+    location.state?.forceRerun === true ||
+    sessionStorage.getItem(`forceRerun_${explorationId}`) === 'true';
+
+  // Try to load an already-completed survey simulation from the server first.
+  // Disabled when forceRerun=true so we skip the cache check and go straight to simulation.
+  const {
+    data: existingSimData,
+    isLoading: existingSimLoading,
+    isFetched: existingSimFetched,
+  } = useGetSurveySimulationBySource(
+    forceRerun ? null : workspaceId,
+    forceRerun ? null : explorationId,
+    forceRerun ? null : populationSimulationId,
+  );
+
   const simulateSurveyMutation = useSimulateSurvey();
   const downloadSurveyPdfMutation = useDownloadSurveyPdf();
   const previewSurveyMutation = usePreviewSurvey();
+  const downloadTranscriptsMutation = useDownloadQuantTranscripts();
+  const downloadDIMutation = useDownloadQuantDecisionIntelligence();
+  const downloadBAMutation = useDownloadQuantBehaviorArchaeology();
 
   // Handle preview with TanStack Query
   const handlePreview = async () => {
@@ -201,36 +237,116 @@ const SurveyResults = () => {
     }
   };
 
-  // Get survey config from navigation state
+  const handleDownloadTranscripts = async () => {
+    if (!surveyConfig || !surveyResults) return;
+    try {
+      await downloadTranscriptsMutation.mutateAsync({
+        workspaceId,
+        explorationId: surveyConfig.explorationId,
+        simulationId: surveyResults.id,
+      });
+    } catch (error) {
+      console.error('Failed to download transcripts CSV:', error);
+      const detail = await getAxiosErrorMessage(error, 'Could not download transcripts.');
+      alert(detail);
+    }
+  };
+
+  const handleDownloadDI = async () => {
+    if (!surveyConfig || !surveyResults) return;
+    try {
+      await downloadDIMutation.mutateAsync({
+        workspaceId,
+        explorationId: surveyConfig.explorationId,
+        simulationId: surveyResults.id,
+      });
+    } catch (error) {
+      console.error('Failed to download Decision Intelligence:', error);
+      const detail = await getAxiosErrorMessage(error, 'Could not download Decision Intelligence.');
+      alert(detail);
+    }
+  };
+
+  const handleDownloadBA = async () => {
+    if (!surveyConfig || !surveyResults) return;
+    try {
+      await downloadBAMutation.mutateAsync({
+        workspaceId,
+        explorationId: surveyConfig.explorationId,
+        simulationId: surveyResults.id,
+      });
+    } catch (error) {
+      console.error('Failed to download Behavior Archaeology:', error);
+      const detail = await getAxiosErrorMessage(error, 'Could not download Behavior Archaeology.');
+      alert(detail);
+    }
+  };
+
+  // Step 1: Extract surveyConfig from navigation state and guard against missing config.
   useEffect(() => {
     if (location.state?.surveyConfig) {
       setSurveyConfig(location.state.surveyConfig);
-      triggerSurveySimulation(location.state.surveyConfig);
     } else {
-      // If no config, redirect back
-      navigate(`/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/population-builder`, {
-        replace: true
-      });
+      navigate(
+        `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/population-builder`,
+        { replace: true }
+      );
     }
   }, [location.state]);
 
-  // Trigger survey simulation
-  const triggerSurveySimulation = async (config) => {
-    try {
-      // Extract questions from questionnaire data
-      const questions = extractQuestionsFromQuestionnaire(config.questionnaireData);
+  // Step 2: Once we know whether an existing simulation result is available,
+  // either load it directly or run the simulation for the first time.
+  // When forceRerun=true we skip the cache check entirely and run fresh.
+  useEffect(() => {
+    if (!surveyConfig) return;
 
+    // Deduplicate: only act once per populationSimulationId per mount.
+    if (simulationAttemptedRef.current === surveyConfig.simulationId) return;
+
+    if (forceRerun) {
+      // User edited the questionnaire — purge stale cache then run fresh.
+      queryClient.removeQueries({
+        queryKey: ['surveySimulationBySource', workspaceId, explorationId, surveyConfig.simulationId],
+      });
+      simulationAttemptedRef.current = surveyConfig.simulationId;
+      triggerSurveySimulation(surveyConfig, true);
+      return;
+    }
+
+    // Normal path: wait for the server cache check before deciding.
+    if (!existingSimFetched) return;
+    simulationAttemptedRef.current = surveyConfig.simulationId;
+
+    if (existingSimData?.data) {
+      // Restore from server — no AI call needed.
+      setSurveyResults(existingSimData.data);
+      processSurveyResults(existingSimData.data);
+    } else {
+      // No existing result — run simulation for the first time.
+      triggerSurveySimulation(surveyConfig, false);
+    }
+  }, [surveyConfig, existingSimFetched, existingSimData, forceRerun]);
+
+  // Run the actual AI simulation (only called when no existing result exists, or forceRerun=true).
+  const triggerSurveySimulation = async (config, shouldForceRerun = false) => {
+    try {
       const result = await simulateSurveyMutation.mutateAsync({
         workspaceId,
         explorationId: config.explorationId,
         personaId: config.personaIds,
         simulationId: config.simulationId,
-        sampleSize: config.totalSampleSize,
-        questions
+        forceRerun: shouldForceRerun,
       });
 
       if (result.status === 'success') {
         setSurveyResults(result.data);
+        sessionStorage.removeItem(`forceRerun_${explorationId}`);
+        // Seed the cache so re-navigations find this result immediately
+        // without making a redundant POST (backend guard is still a safety net).
+        queryClient.setQueryData(
+          ['surveySimulationBySource', workspaceId, explorationId, config.simulationId],
+          result
+        );
         trigger({
           stage: 'survey-success',
           event: 'SURVEY_SUCCESS',
@@ -241,25 +357,6 @@ const SurveyResults = () => {
     } catch (error) {
       console.error('Error simulating survey:', error);
     }
-  };
-
-  // Extract questions from questionnaire data
-  const extractQuestionsFromQuestionnaire = (questionnaire) => {
-    if (!questionnaire || !Array.isArray(questionnaire)) return [];
-
-    const questions = [];
-    questionnaire.forEach(section => {
-      if (section.questions && Array.isArray(section.questions)) {
-        section.questions.forEach(question => {
-          questions.push({
-            id: question.id,
-            text: question.text,
-            options: question.options || []
-          });
-        });
-      }
-    });
-    return questions;
   };
 
   // Process survey results into sections
@@ -355,7 +452,7 @@ const SurveyResults = () => {
     if (!content) {
       return (
         <div className="flex flex-col items-center justify-center min-h-[400px] text-center space-y-6">
-          {simulateSurveyMutation.isPending ? (
+          {(existingSimLoading || simulateSurveyMutation.isPending) ? (
             <div className="flex flex-col items-center animate-in fade-in zoom-in duration-500">
               <div className="relative mb-6">
                 <div className="absolute inset-0 bg-blue-500/20 blur-2xl rounded-full animate-pulse" />
@@ -377,14 +474,14 @@ const SurveyResults = () => {
     }
 
     if (activeItem === 'Summary') {
-      return <InsightCard {...content} loading={simulateSurveyMutation.isPending} />;
+      return <InsightCard {...content} loading={existingSimLoading || simulateSurveyMutation.isPending} />;
     }
 
     if (Array.isArray(content)) {
       return (
         <div className="space-y-4">
           {content.map((item, index) => (
-            <InsightCard key={index} {...item} loading={simulateSurveyMutation.isPending} />
+            <InsightCard key={index} {...item} loading={existingSimLoading || simulateSurveyMutation.isPending} />
           ))}
         </div>
       );
@@ -402,6 +499,12 @@ const SurveyResults = () => {
         onDownload={handleDownloadFromPreview}
         isLoading={previewSurveyMutation.isPending}
         isDownloading={downloadSurveyPdfMutation.isPending}
+        onDownloadTranscripts={handleDownloadTranscripts}
+        onDownloadDI={handleDownloadDI}
+        onDownloadBA={handleDownloadBA}
+        isDownloadingTranscripts={downloadTranscriptsMutation.isPending}
+        isDownloadingDI={downloadDIMutation.isPending}
+        isDownloadingBA={downloadBAMutation.isPending}
       />
 
 
@@ -530,7 +633,7 @@ const SurveyResults = () => {
                       title={item}
                       isActive={activeItem === item}
                       onClick={() => setActiveItem(item)}
-                      hasData={!simulateSurveyMutation.isPending}
+                      hasData={!existingSimLoading && !simulateSurveyMutation.isPending}
                     />
                   ))
                 ) : (

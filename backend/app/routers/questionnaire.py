@@ -33,11 +33,12 @@ from app.services.survey_simulation import simulate_and_store
 from app.services.persona import get_persona
 from app.services.population import get_simulation
 from app.services.exploration import get_exploration
-from app.services.questionnaire import get_full_questionnaire
+from app.services.questionnaire import get_full_questionnaire, get_questionnaire_by_simulation as get_questionnaire_by_sim
 from fastapi.responses import StreamingResponse, Response
 from app.utils.pdf_generator import generate_survey_pdf
 from app.services.survey_simulation import (
     get_survey_simulation_by_id,
+    get_survey_simulation_by_source_id,
     get_latest_survey_results_map,
     parse_survey_results_field,
     _to_percent_string,
@@ -56,6 +57,14 @@ router = APIRouter(
 )
 
 
+async def _ensure_workspace_member(workspace_id: str, current_user: User):
+    members = await ws_service.list_workspace_members(workspace_id)
+    if not any(m.get("user_id") == current_user.id for m in members):
+        raise HTTPException(
+            403, ErrorResponse(status="error", message="Not a workspace member").dict()
+        )
+
+
 @router.post("/upload", response_model=SuccessResponse)
 async def upload_questionnaire_file(
     workspace_id: str,
@@ -64,11 +73,7 @@ async def upload_questionnaire_file(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_active_user)
 ):
-    members = await ws_service.list_workspace_members(workspace_id)
-    if not any(m.get("user_id") == current_user.id for m in members):
-        raise HTTPException(
-            403, ErrorResponse(status="error", message="Not a workspace member").dict()
-        )
+    await _ensure_workspace_member(workspace_id, current_user)
 
     try:
         saved_path, stored_name, _ = await save_upload_file(file)
@@ -204,11 +209,7 @@ async def export_questionnaire_csv(
     current_user: User = Depends(get_current_active_user),
 ):
     """Download questionnaire as CSV: Q No., Question Description, Options, Count (from survey simulation if available)."""
-    members = await ws_service.list_workspace_members(workspace_id)
-    if not any(m.get("user_id") == current_user.id for m in members):
-        raise HTTPException(
-            403, ErrorResponse(status="error", message="Not a workspace member").dict()
-        )
+    await _ensure_workspace_member(workspace_id, current_user)
 
     questionnaires = await service.get_questionnaire_by_simulation(workspace_id, exploration_id, simulation_id)
     if not questionnaires:
@@ -238,39 +239,92 @@ async def export_questionnaire_csv(
 @router.post("/sections", response_model=SuccessResponse)
 async def create_section(workspace_id: str, exploration_id: str, payload: SectionCreate,
                          current_user: User = Depends(get_current_active_user)):
-    sec = await service.create_section(workspace_id, exploration_id, payload.title, current_user.id)
+    await _ensure_workspace_member(workspace_id, current_user)
+
+    if payload.simulation_id:
+        simulation = await get_simulation(payload.simulation_id)
+        if not simulation:
+            raise HTTPException(404, "Population simulation not found")
+        if simulation.workspace_id != workspace_id or simulation.exploration_id != exploration_id:
+            raise HTTPException(400, "Population simulation does not match workspace or exploration")
+
+    sec = await service.create_section(
+        workspace_id,
+        exploration_id,
+        payload.title,
+        current_user.id,
+        payload.simulation_id,
+    )
     return SuccessResponse(message="Section created", data=sec)
 
 @router.put("/sections/{section_id}", response_model=SuccessResponse)
-async def update_section(section_id: str, payload: SectionUpdate):
-    sec = await service.update_section(section_id, payload.title)
+async def update_section(
+    workspace_id: str,
+    exploration_id: str,
+    section_id: str,
+    payload: SectionUpdate,
+    current_user: User = Depends(get_current_active_user)
+):
+    await _ensure_workspace_member(workspace_id, current_user)
+    sec = await service.update_section(section_id, workspace_id, exploration_id, payload.title)
     if not sec:
         raise HTTPException(404, "Section not found")
     return SuccessResponse(message="Section updated", data=sec)
 
 @router.delete("/sections/{section_id}", response_model=SuccessResponse)
-async def delete_section(section_id: str):
-    ok = await service.delete_section(section_id)
+async def delete_section(
+    workspace_id: str,
+    exploration_id: str,
+    section_id: str,
+    current_user: User = Depends(get_current_active_user)
+):
+    await _ensure_workspace_member(workspace_id, current_user)
+    ok = await service.delete_section(section_id, workspace_id, exploration_id)
     if not ok:
         raise HTTPException(404, "Section not found")
     return SuccessResponse(message="Section deleted", data=True)
 
 @router.post("/sections/{section_id}/questions", response_model=SuccessResponse)
 async def create_question(section_id: str, payload: QuestionCreate,
+                          workspace_id: str,
+                          exploration_id: str,
                           current_user: User = Depends(get_current_active_user)):
-    q = await service.create_question(section_id, payload.text, payload.options, current_user.id)
+    await _ensure_workspace_member(workspace_id, current_user)
+    q = await service.create_question(
+        section_id,
+        workspace_id,
+        exploration_id,
+        payload.text,
+        payload.options,
+        current_user.id
+    )
+    if not q:
+        raise HTTPException(404, "Section not found")
     return SuccessResponse(message="Question created", data=q)
 
 @router.put("/questions/{question_id}", response_model=SuccessResponse)
-async def update_question(question_id: str, payload: QuestionUpdate):
-    q = await service.update_question(question_id, payload.text, payload.options)
+async def update_question(
+    workspace_id: str,
+    exploration_id: str,
+    question_id: str,
+    payload: QuestionUpdate,
+    current_user: User = Depends(get_current_active_user)
+):
+    await _ensure_workspace_member(workspace_id, current_user)
+    q = await service.update_question(question_id, workspace_id, exploration_id, payload.text, payload.options)
     if not q:
         raise HTTPException(404, "Question not found")
     return SuccessResponse(message="Question updated", data=q)
 
 @router.delete("/questions/{question_id}", response_model=SuccessResponse)
-async def delete_question(question_id: str):
-    ok = await service.delete_question(question_id)
+async def delete_question(
+    workspace_id: str,
+    exploration_id: str,
+    question_id: str,
+    current_user: User = Depends(get_current_active_user)
+):
+    await _ensure_workspace_member(workspace_id, current_user)
+    ok = await service.delete_question(question_id, workspace_id, exploration_id)
     if not ok:
         raise HTTPException(404, "Question not found")
     return SuccessResponse(message="Question deleted", data=True)
@@ -294,6 +348,28 @@ async def simulate_survey(
 
     if not payload.persona_id:
         raise HTTPException(status_code=400, detail="persona_id must be provided")
+
+    # Idempotency guard: if a survey simulation already exists for this population
+    # simulation, return the stored result instead of re-running the AI simulation.
+    # Skipped when force_rerun=True (user edited the questionnaire and wants a fresh run).
+    if payload.simulation_id and not payload.force_rerun:
+        existing = await get_survey_simulation_by_source_id(payload.simulation_id)
+        if existing:
+            sections = await build_survey_report_sections(existing)
+            return SuccessResponse(
+                message="Survey simulation already exists for this population run",
+                data={
+                    "id": existing.id,
+                    "workspace_id": existing.workspace_id,
+                    "exploration_id": existing.exploration_id,
+                    "total_sample_size": existing.total_sample_size,
+                    "personas": (existing.narrative or {}).get("personas", []),
+                    "sections": sections,
+                    "results": existing.results,
+                    "narrative": existing.narrative,
+                    "created_at": existing.created_at.isoformat(),
+                },
+            )
 
     questions = payload.questions
     if not questions:
@@ -369,8 +445,13 @@ async def build_survey_report_sections(sim) -> list:
     """
     Section/question/results structure used by survey preview and PDF download.
     Parses `sim.results` when stored as JSON string so keys match question text.
+    Filters by the population simulation that produced this survey run so only
+    the correct questionnaire is included (not all sections for the exploration).
     """
-    sections = await get_full_questionnaire(sim.workspace_id, sim.exploration_id)
+    if sim.simulation_source_id:
+        sections = await get_questionnaire_by_sim(sim.workspace_id, sim.exploration_id, sim.simulation_source_id)
+    else:
+        sections = await get_full_questionnaire(sim.workspace_id, sim.exploration_id)
     results_raw = parse_survey_results_field(sim.results)
     if results_raw is None and isinstance(sim.results, dict):
         results_raw = sim.results
@@ -393,6 +474,41 @@ async def build_survey_report_sections(sim) -> list:
             qs.append({"question": qtext, "results": formatted_results})
         grouped.append({"title": sec["title"], "questions": qs})
     return grouped
+
+
+@router.get("/simulation/by-source/{simulation_source_id}", response_model=SuccessResponse)
+async def get_survey_simulation_by_source(
+    workspace_id: str,
+    exploration_id: str,
+    simulation_source_id: str,
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Return the most recent completed survey simulation for a given population
+    simulation ID (simulation_source_id).  Used by the frontend to avoid
+    re-running the AI simulation when the user navigates away and back.
+    Returns the same payload shape as POST /simulate so the frontend can
+    treat both responses identically.
+    """
+    existing = await get_survey_simulation_by_source_id(simulation_source_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="No survey simulation found for this population run")
+
+    sections = await build_survey_report_sections(existing)
+    return SuccessResponse(
+        message="Survey simulation fetched successfully",
+        data={
+            "id": existing.id,
+            "workspace_id": existing.workspace_id,
+            "exploration_id": existing.exploration_id,
+            "total_sample_size": existing.total_sample_size,
+            "personas": (existing.narrative or {}).get("personas", []),
+            "sections": sections,
+            "results": existing.results,
+            "narrative": existing.narrative,
+            "created_at": existing.created_at.isoformat(),
+        },
+    )
 
 
 @router.get("/simulation/{simulation_id}/preview", response_model=SuccessResponse)

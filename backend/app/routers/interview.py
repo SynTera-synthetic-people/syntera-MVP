@@ -152,10 +152,34 @@ async def get_all(
 
 
 
+@router.get("/interviews/by-persona/{persona_id}", response_model=SuccessResponse)
+async def get_interview_by_persona(
+    workspace_id: str,
+    exploration_id: str,
+    persona_id: str,
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Return the most recent interview for a specific persona in this exploration.
+    Returns 404 when none exists so the frontend can branch cleanly.
+    """
+    iv = await interview_service.get_interview_by_persona(workspace_id, exploration_id, persona_id)
+    if not iv:
+        raise HTTPException(status_code=404, detail="No interview found for this persona")
+    return SuccessResponse(message="Interview fetched", data=iv)
+
+
 @router.post("/interviews", response_model=SuccessResponse, status_code=201)
 async def start_interview(workspace_id: str, exploration_id: str, payload: InterviewCreate, current_user: User = Depends(get_current_active_user)):
     if not await ws_service.is_workspace_admin(workspace_id, current_user.id):
         raise HTTPException(status_code=403, detail=ErrorResponse(status="error", message="Only workspace admins can start interviews").dict())
+
+    # Idempotency guard: if an interview already exists for this persona, return it
+    # instead of re-running the expensive LLM generation step.
+    if payload.persona_id:
+        existing = await interview_service.get_interview_by_persona(workspace_id, exploration_id, payload.persona_id)
+        if existing:
+            return SuccessResponse(message="Interview already exists for this persona", data=existing)
 
     guide_data = await interview_service.get_full_interview_guide(workspace_id, exploration_id)
 
@@ -169,7 +193,7 @@ async def start_interview(workspace_id: str, exploration_id: str, payload: Inter
             "title": section["title"],
             "questions": questions
         })
-    
+
     iv = await interview_service.start_interview(workspace_id, exploration_id, payload.persona_id, current_user.id, sections)
     return SuccessResponse(message="Interview started", data=iv)
 
@@ -278,7 +302,7 @@ async def export_all_interviews_pdf(workspace_id: str, exploration_id: str, curr
 
         # pdf_path = await interview_service.export_all_interviews_pdf(workspace_id, exploration_id, db)
         bulk_path = generate_pdf_path(prefix="all_interviews")
-        pdf_path  = await generate_combined_interviews_pdf(objective_id=exploration_id, out_path=bulk_path)
+        pdf_path  = await generate_combined_interviews_pdf(objective_id=exploration_id, out_path=bulk_path, cta="BEHAVIORAL_ARCHAEOLOGY")
         print(pdf_path)
         if not pdf_path:
             raise HTTPException(status_code=404, detail=ErrorResponse(status="error", message="No interviews found").dict())
@@ -392,7 +416,7 @@ async def export_interview_report(workspace_id: str, exploration_id: str, interv
     # path = await interview_service.export_insights_pdf(interview_id)
     try:
         single_path = generate_pdf_path(prefix="single_interview")
-        path = await generate_combined_interviews_pdf(objective_id=exploration_id, interview_id=interview_id, out_path=single_path)
+        path = await generate_combined_interviews_pdf(objective_id=exploration_id, interview_id=interview_id, out_path=single_path, cta="BEHAVIORAL_ARCHAEOLOGY")
         print(path)
 
         if not path:

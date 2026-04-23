@@ -11,6 +11,19 @@ export const interviewService = {
     return response.data;
   },
 
+  // Get the most recent interview for a specific persona (null on 404)
+  getInterviewByPersona: async (workspaceId, explorationId, personaId) => {
+    try {
+      const response = await axiosInstance.get(
+        `/workspaces/${workspaceId}/explorations/${explorationId}/in-depth/interviews/by-persona/${personaId}`
+      );
+      return response.data;
+    } catch (err) {
+      if (err?.response?.status === 404) return null;
+      throw err;
+    }
+  },
+
   // Get interview by ID
   getInterview: async (workspaceId, explorationId, interviewId) => {
     const response = await axiosInstance.get(
@@ -98,6 +111,54 @@ export const interviewService = {
       {
         responseType: 'blob', // Important for file downloads
       }
+    );
+    return response.data;
+  },
+
+  // ── New 3-CTA report downloads ──────────────────────────────────────────────
+
+  downloadQualTranscripts: async (workspaceId, explorationId) => {
+    const response = await axiosInstance.get(
+      `/workspaces/${workspaceId}/explorations/${explorationId}/reports/qual/transcripts`,
+      { responseType: 'blob' }
+    );
+    return response.data;
+  },
+
+  downloadQualDecisionIntelligence: async (workspaceId, explorationId) => {
+    const response = await axiosInstance.get(
+      `/workspaces/${workspaceId}/explorations/${explorationId}/reports/qual/decision-intelligence`,
+      { responseType: 'blob' }
+    );
+    return response.data;
+  },
+
+  downloadQualBehaviorArchaeology: async (workspaceId, explorationId) => {
+    const response = await axiosInstance.get(
+      `/workspaces/${workspaceId}/explorations/${explorationId}/reports/qual/behavior-archaeology`,
+      { responseType: 'blob' }
+    );
+    return response.data;
+  },
+
+  downloadQualAllCombined: async (workspaceId, explorationId) => {
+    const response = await axiosInstance.get(
+      `/workspaces/${workspaceId}/explorations/${explorationId}/reports/qual/all-combined`,
+      { responseType: 'blob' }
+    );
+    return response.data;
+  },
+
+  getQualReportStatus: async (workspaceId, explorationId) => {
+    const response = await axiosInstance.get(
+      `/workspaces/${workspaceId}/explorations/${explorationId}/reports/status`
+    );
+    return response.data;
+  },
+
+  prepareQualReport: async (workspaceId, explorationId, reportSlug) => {
+    const response = await axiosInstance.post(
+      `/workspaces/${workspaceId}/explorations/${explorationId}/reports/qual/${reportSlug}/prepare`
     );
     return response.data;
   },

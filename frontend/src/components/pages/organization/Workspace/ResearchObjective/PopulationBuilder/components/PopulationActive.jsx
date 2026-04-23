@@ -13,10 +13,15 @@ const PopulationActive = ({
   questionnairesLoading,
   onEditConfiguration,
   onLaunchSurvey,
+  onModified,
   workspaceId,
   explorationId
 }) => {
   const uploadQuestionnaireMutation = useUploadQuestionnaire();
+  const hasQuestionnaireQuestions = Array.isArray(questionnaireData)
+    && questionnaireData.some(
+      (section) => Array.isArray(section?.questions) && section.questions.length > 0
+    );
 
   return (
     <motion.div
@@ -39,12 +44,14 @@ const PopulationActive = ({
         workspaceId={workspaceId}
         explorationId={explorationId}
         uploadQuestionnaireMutation={uploadQuestionnaireMutation}
+        onModified={onModified}
       />
 
       <div className="flex justify-center pt-10 pb-4">
         <button
           onClick={onLaunchSurvey}
-          className="px-12 py-5 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-3xl font-black text-xl shadow-2xl shadow-blue-500/40 hover:shadow-blue-500/60 hover:scale-105 hover:-translate-y-1 transition-all active:scale-95 flex items-center gap-4"
+          disabled={!hasQuestionnaireQuestions || questionnairesLoading}
+          className="px-12 py-5 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-3xl font-black text-xl shadow-2xl shadow-blue-500/40 hover:shadow-blue-500/60 hover:scale-105 hover:-translate-y-1 transition-all active:scale-95 flex items-center gap-4 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:translate-y-0 disabled:hover:shadow-blue-500/40"
         >
           <span>Launch Survey</span>
           <TbSend size={24} />

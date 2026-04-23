@@ -14,10 +14,14 @@ from app.db import (
     add_enterprise_columns,
     add_workspace_visibility_columns,
     add_exploration_audience_type_column,
+    create_report_cache_table,
+    create_sync_schemas,
+    add_syncdb_envelope_columns,
 )
 from app.routers import (auth, orgs, workspace, research_objectives, personas, interview,
                          population, questionnaire, rebuttal, traceability, omi, exploration,
-                         omi_workflow, admin, enterprise)
+                         omi_workflow, admin, enterprise, syncdb)
+from app.routers import reports as reports_router_module
 from app.schemas.response import ErrorResponse
 import json
 import os
@@ -75,6 +79,9 @@ async def startup():
     await add_enterprise_columns()
     await add_workspace_visibility_columns()
     await add_exploration_audience_type_column()
+    await create_report_cache_table()
+    await create_sync_schemas()
+    await add_syncdb_envelope_columns()
     await ensure_superadmin_exists()
 
 
@@ -93,6 +100,8 @@ app.include_router(exploration.router)
 app.include_router(omi_workflow.router)
 app.include_router(admin.router)
 app.include_router(enterprise.router)
+app.include_router(reports_router_module.router)
+app.include_router(syncdb.router)
 
 # default_cors_origins = [
 #     "http://localhost:5173",
