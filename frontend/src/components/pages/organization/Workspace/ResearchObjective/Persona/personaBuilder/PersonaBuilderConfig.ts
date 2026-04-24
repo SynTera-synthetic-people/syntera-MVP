@@ -18,7 +18,7 @@ export const multiSelectAttributes = [
 
 export const mainCategories: MainCategory[] = [
   'Demographics',
-  'Phycological',
+  'Psychological',
   'Behavioural',
   'Additional Information',
   'Formative Experience',
@@ -37,7 +37,7 @@ export const subTabsByCategory: Record<MainCategory, SubTab[]> = {
     { id: 'familyStructure', label: 'Family Structure', attributeName: 'familyStructure' },
     { id: 'geography', label: 'Geography', attributeName: 'geography' },
   ],
-  'Phycological': [
+  'Psychological': [
     { id: 'lifestyle', label: 'Lifestyle', attributeName: 'lifestyle' },
     { id: 'values', label: 'Values', attributeName: 'values' },
     { id: 'personality', label: 'Personality', attributeName: 'personality' },
@@ -156,7 +156,7 @@ export const attributeOptions: Record<string, AttributeOption[]> = {
     { label: 'Expert', value: 'Expert' },
   ],
   
-  // Phycological
+  // Psychological
   lifestyle: [
     { label: 'Health-Focused (Fitness, Wellness)', value: 'Health-Focused (Fitness, Wellness)' },
     { label: 'Family-Oriented (Home, Relationships)', value: 'Family-Oriented (Home, Relationships)' },
@@ -308,7 +308,7 @@ export const categoryAttributeMapping: Record<MainCategory, string[]> = {
     'familyStructure', 
     'geography'
   ],
-  'Phycological': [
+  'Psychological': [
     'lifestyle', 
     'values', 
     'personality', 

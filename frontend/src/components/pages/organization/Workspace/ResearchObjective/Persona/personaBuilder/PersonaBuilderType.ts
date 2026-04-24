@@ -76,7 +76,7 @@ export interface SubTab {
 
 export type MainCategory = 
   | 'Demographics'
-  | 'Phycological'
+  | 'Psychological'
   | 'Behavioural'
   | 'Additional Information'
   | 'Formative Experience';
@@ -97,7 +97,7 @@ export interface PersonaFormData {
   industry?: string;
   categoryAwareness?: string;
   
-  // Phycological
+  // Psychological
   lifestyle?: string[];
   values?: string[];
   personality?: string[];

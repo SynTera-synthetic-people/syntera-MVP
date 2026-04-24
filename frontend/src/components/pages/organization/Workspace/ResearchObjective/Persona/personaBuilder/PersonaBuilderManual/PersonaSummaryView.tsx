@@ -40,7 +40,7 @@ const PersonaSummaryView: React.FC<PersonaSummaryViewProps> = ({
     { key: 'geography' as keyof PersonaFormData, displayName: 'Geography' },
   ];
 
-  const phycologicalAttributes = [
+  const psychologicalAttributes = [
     { key: 'lifestyle' as keyof PersonaFormData, displayName: 'Lifestyle' },
     { key: 'values' as keyof PersonaFormData, displayName: 'Values' },
     { key: 'personality' as keyof PersonaFormData, displayName: 'Personality' },
@@ -95,10 +95,10 @@ const PersonaSummaryView: React.FC<PersonaSummaryViewProps> = ({
           Col 2: card 2, card 4
         To get the Figma layout:
           Col 1: Core Identity, Behavioural Traits, Additional Traits
-          Col 2: Phycological Traits, Formative Experience
+          Col 2: Psychological Traits, Formative Experience
         …we must order the cards as:
           1. Core Identity        → col 1 top
-          2. Phycological Traits  → col 2 top
+          2. Psychological Traits  → col 2 top
           3. Behavioural Traits   → col 1 middle
           4. Formative Experience → col 2 middle
           5. Additional Traits    → col 1 bottom
@@ -114,9 +114,9 @@ const PersonaSummaryView: React.FC<PersonaSummaryViewProps> = ({
         />
         {/* 2 — col 2 top */}
         <CategorySummaryCard
-          title="Phycological Traits"
+          title="Psychological Traits"
           description="What drives their thinking and decisions"
-          attributes={phycologicalAttributes}
+          attributes={psychologicalAttributes}
           formData={formData}
           {...(onRemoveAttribute && { onRemoveAttribute })}
         />

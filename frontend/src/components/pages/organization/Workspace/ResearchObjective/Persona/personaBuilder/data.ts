@@ -93,7 +93,7 @@ export const optionData: Record<string, string[]> = {
     "Expert"
   ],
 
-  // ═══ Phycological (note: spelling from Figma) ═══
+  // ═══ Psychological (note: spelling from Figma) ═══
   "Lifestyle": [
     "Health-Focused (Fitness, Wellness)",
     "Family-Oriented (Home, Relationships)",
@@ -265,7 +265,7 @@ export const contentData: Record<string, CategoryContent> = {
     tooltip: "Traits that define this persona's identity"
   },
   
-  "Phycological": {
+  "Psychological": {
     items: [
       "Lifestyle",
       "Values",
@@ -325,7 +325,7 @@ export const attributeTooltips: Record<string, string> = {
   "Industry": "Industry sector they work in",
   "Category Awareness": "Level of knowledge about the product category",
   
-  // Phycological
+  // Psychological
   "Lifestyle": "Overall way of living and daily habits",
   "Values": "Core beliefs and principles guiding decisions",
   "Personality": "Character traits and behavioral tendencies",
@@ -350,7 +350,7 @@ export const attributeTooltips: Record<string, string> = {
 
 export const traitGroupMapping: Record<string, string> = {
   "Demographics": "demographics",
-  "Phycological": "psychographic",
+  "Psychological": "psychographic",
   "Behavioural": "behavioral",
   "Additional Information": "additional_information"
 };
@@ -374,7 +374,7 @@ export const traitNameMapping: Record<string, string> = {
   "Industry": "industry",
   "Category Awareness": "category_awareness",
   
-  // Phycological
+  // Psychological
   "Lifestyle": "lifestyle",
   "Values": "values",
   "Personality": "personality",
@@ -499,7 +499,7 @@ export const isMultiSelectAttribute = (attributeName: string): boolean => {
 
 export const mainCategories: MainCategory[] = [
   'Demographics',
-  'Phycological',
+  'Psychological',
   'Behavioural',
   'Additional Information',
   'Formative Experience'
