@@ -3,8 +3,10 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import {
   TbEdit, TbPlus, TbLoader, TbUsers, TbDownload,
-  TbChevronRight,
+  TbChevronRight, TbEye, TbCopy, TbTrash, TbDotsVertical,
+  TbMinus, TbInfoCircle, TbCheck, TbX,
 } from 'react-icons/tb';
+import SpIcon from '../../../../../../SPIcon';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   usePersonaBuilder,
@@ -90,6 +92,8 @@ interface ValidationError {
   toTab?: string;
 }
 
+const PERSONA_LIMIT = 4;
+
 // ── Confidence helpers ────────────────────────────────────────────────────────
 
 const getConfidenceScore = (persona: SavedPersona): number | null => {
@@ -100,16 +104,9 @@ const getConfidenceScore = (persona: SavedPersona): number | null => {
     persona.calibration_confidence ??
     (persona as any).confidence ??
     null;
-
-  // ✅ Only check null/undefined here
   if (raw === null || raw === undefined) return null;
-
-  // Convert safely
   const num = Number(raw);
-
-  // Handle invalid numbers
   if (isNaN(num)) return null;
-
   return Math.round(num <= 1 ? num * 100 : num);
 };
 
@@ -125,6 +122,356 @@ const getConfidenceTextColor = (score: number): string => {
   return '#ef4444';
 };
 
+// ── KebabMenu ────────────────────────────────────────────────────────────────
+
+interface KebabMenuProps {
+  items: { label: string; icon: React.ReactNode; onClick: () => void; danger?: boolean }[];
+}
+
+const KebabMenu: React.FC<KebabMenuProps> = ({ items }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  return (
+    <div ref={ref} className="pb-kebab-wrap" onClick={e => e.stopPropagation()}>
+      <button
+        className="pb-kebab-btn"
+        onClick={() => setOpen(o => !o)}
+      >
+        <TbDotsVertical size={16} />
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            className="pb-kebab-menu"
+            initial={{ opacity: 0, scale: 0.92, y: -4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.92, y: -4 }}
+            transition={{ duration: 0.12 }}
+          >
+            {items.map((item, i) => (
+              <button
+                key={i}
+                className={`pb-kebab-item${item.danger ? ' pb-kebab-item--danger' : ''}`}
+                onClick={() => { item.onClick(); setOpen(false); }}
+              >
+                <span className="pb-kebab-icon">{item.icon}</span>
+                {item.label}
+              </button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
+// ── AddNewPersonaModal ────────────────────────────────────────────────────────
+
+interface AddNewPersonaModalProps {
+  show: boolean;
+  onClose: () => void;
+  onConfirm: (count: number) => void;
+}
+
+const AddNewPersonaModal: React.FC<AddNewPersonaModalProps> = ({ show, onClose, onConfirm }) => {
+  const [count, setCount] = useState(1);
+  const pricePerPersona = 199;
+  const total = 99; // as shown in figma (discounted total)
+
+  if (!show) return null;
+
+  return (
+    <AnimatePresence>
+      {show && (
+        <motion.div
+          className="pb-modal-overlay"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          onClick={onClose}
+        >
+          <motion.div
+            className="pb-modal-box"
+            initial={{ opacity: 0, scale: 0.93, y: 16 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.93, y: 16 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <button className="pb-modal-close" onClick={onClose}><TbX size={18} /></button>
+            <h2 className="pb-modal-title">Add New Persona</h2>
+
+            <div className="pb-modal-field">
+              <label className="pb-modal-label">
+                Number of personas
+                <span className="pb-modal-info-icon"><TbInfoCircle size={14} /></span>
+              </label>
+              <div className="pb-counter-row">
+                <button
+                  className="pb-counter-btn"
+                  onClick={() => setCount(c => Math.max(1, c - 1))}
+                  disabled={count <= 1}
+                >
+                  <TbMinus size={16} />
+                </button>
+                <div className="pb-counter-value">{count}</div>
+                <button
+                  className="pb-counter-btn"
+                  onClick={() => setCount(c => c + 1)}
+                >
+                  <TbPlus size={16} />
+                </button>
+              </div>
+            </div>
+
+            <div className="pb-pricing-box">
+              <div className="pb-pricing-row">
+                <span>Persona  x  {count}</span>
+                <span>${pricePerPersona} each</span>
+              </div>
+              <div className="pb-pricing-divider" />
+              <div className="pb-pricing-row pb-pricing-row--total">
+                <span>Total</span>
+                <span>${total}</span>
+              </div>
+            </div>
+
+            <button
+              className="pb-modal-confirm-btn"
+              onClick={() => onConfirm(count)}
+            >
+              Add Persona and Continue
+            </button>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+};
+
+// ── ReplicatePersonaModal ─────────────────────────────────────────────────────
+
+interface ReplicatePersonaModalProps {
+  show: boolean;
+  personas: SavedPersona[];
+  onClose: () => void;
+  onConfirm: (selectedPersonaIds: string[], country: string) => void;
+  isLoading?: boolean;
+  preSelectedPersona?: SavedPersona | null;
+}
+
+const COUNTRIES = [
+  { code: 'US', name: 'USA', flag: '🇺🇸' },
+  { code: 'IN', name: 'India', flag: '🇮🇳' },
+  { code: 'GB', name: 'UK', flag: '🇬🇧' },
+  { code: 'AU', name: 'Australia', flag: '🇦🇺' },
+  { code: 'CA', name: 'Canada', flag: '🇨🇦' },
+  { code: 'DE', name: 'Germany', flag: '🇩🇪' },
+  { code: 'FR', name: 'France', flag: '🇫🇷' },
+  { code: 'JP', name: 'Japan', flag: '🇯🇵' },
+  { code: 'SG', name: 'Singapore', flag: '🇸🇬' },
+  { code: 'AE', name: 'UAE', flag: '🇦🇪' },
+];
+
+const ReplicatePersonaModal: React.FC<ReplicatePersonaModalProps> = ({
+  show, personas, onClose, onConfirm, isLoading, preSelectedPersona
+}) => {
+  const [selectedPersonaIds, setSelectedPersonaIds] = useState<string[]>(
+    preSelectedPersona ? [preSelectedPersona.id] : []
+  );
+  const [selectedCountry, setSelectedCountry] = useState('');
+  const [agreed, setAgreed] = useState(false);
+  const [personaDropdownOpen, setPersonaDropdownOpen] = useState(false);
+  const [countryDropdownOpen, setCountryDropdownOpen] = useState(false);
+
+  useEffect(() => {
+    if (preSelectedPersona) setSelectedPersonaIds([preSelectedPersona.id]);
+  }, [preSelectedPersona]);
+
+  const togglePersona = (id: string) => {
+    setSelectedPersonaIds(prev =>
+      prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]
+    );
+  };
+
+  const removePersona = (id: string) => {
+    setSelectedPersonaIds(prev => prev.filter(p => p !== id));
+  };
+
+  const selectedCountryObj = COUNTRIES.find(c => c.code === selectedCountry);
+  const additionalCount = selectedPersonaIds.length || 3;
+  const priceEach = 49;
+
+  const canConfirm = selectedPersonaIds.length > 0 && selectedCountry && agreed;
+
+  if (!show) return null;
+
+  return (
+    <AnimatePresence>
+      {show && (
+        <motion.div
+          className="pb-modal-overlay"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          onClick={onClose}
+        >
+          <motion.div
+            className="pb-modal-box"
+            initial={{ opacity: 0, scale: 0.93, y: 16 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.93, y: 16 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <button className="pb-modal-close" onClick={onClose}><TbX size={18} /></button>
+            <h2 className="pb-modal-title">Replicate Persona</h2>
+            <p className="pb-modal-subtitle">
+              Test the same audience in multiple countries to uncover how behavior, preferences, and decisions shift by market.
+            </p>
+
+            {/* Persona selector */}
+            <div className="pb-dropdown-wrap">
+              <button
+                className="pb-dropdown-btn"
+                onClick={() => { setPersonaDropdownOpen(o => !o); setCountryDropdownOpen(false); }}
+              >
+                <span className="pb-dropdown-placeholder">Choose Personas</span>
+                <TbChevronRight size={16} className={`pb-dropdown-chevron${personaDropdownOpen ? ' pb-dropdown-chevron--open' : ''}`} />
+              </button>
+              <AnimatePresence>
+                {personaDropdownOpen && (
+                  <motion.div
+                    className="pb-dropdown-list"
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                  >
+                    {personas.map(p => (
+                      <label key={p.id} className="pb-dropdown-option">
+                        <input
+                          type="checkbox"
+                          checked={selectedPersonaIds.includes(p.id)}
+                          onChange={() => togglePersona(p.id)}
+                          className="pb-dropdown-checkbox"
+                        />
+                        <span>{p.name ?? 'Unnamed'}</span>
+                      </label>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+              {/* Tags */}
+              {selectedPersonaIds.length > 0 && (
+                <div className="pb-tag-row">
+                  {selectedPersonaIds.map(id => {
+                    const p = personas.find(p => p.id === id);
+                    return (
+                      <span key={id} className="pb-tag">
+                        {p?.name ?? 'Persona'}
+                        <button className="pb-tag-remove" onClick={() => removePersona(id)}><TbX size={10} /></button>
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Country selector */}
+            <div className="pb-dropdown-wrap" style={{ marginTop: 12 }}>
+              <button
+                className="pb-dropdown-btn"
+                onClick={() => { setCountryDropdownOpen(o => !o); setPersonaDropdownOpen(false); }}
+              >
+                <span className="pb-dropdown-placeholder">
+                  {selectedCountryObj
+                    ? <>{selectedCountryObj.name} {selectedCountryObj.flag}</>
+                    : 'Select Country'}
+                </span>
+                <TbChevronRight size={16} className={`pb-dropdown-chevron${countryDropdownOpen ? ' pb-dropdown-chevron--open' : ''}`} />
+              </button>
+              <AnimatePresence>
+                {countryDropdownOpen && (
+                  <motion.div
+                    className="pb-dropdown-list"
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                  >
+                    {COUNTRIES.map(c => (
+                      <button
+                        key={c.code}
+                        className={`pb-dropdown-option pb-dropdown-option--btn${selectedCountry === c.code ? ' pb-dropdown-option--selected' : ''}`}
+                        onClick={() => { setSelectedCountry(c.code); setCountryDropdownOpen(false); }}
+                      >
+                        {c.flag} {c.name}
+                      </button>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            {/* Pricing */}
+            <div className="pb-pricing-box" style={{ marginTop: 16 }}>
+              <div className="pb-pricing-row">
+                <span>Additional Personas  x  {additionalCount}</span>
+                <span>${priceEach} each</span>
+              </div>
+              <div className="pb-pricing-divider" />
+              <div className="pb-pricing-row pb-pricing-row--total">
+                <span>Total</span>
+                <span>${priceEach}</span>
+              </div>
+            </div>
+
+            {/* Warning */}
+            <div className="pb-warning-box">
+              <SpIcon name="sp-Warning-Octagon_Warning" size={16} className="pb-warning-icon" />
+              <p className="pb-warning-text">
+                Additional personas will be added to this exploration. The corresponding cost will be included in your next billing cycle.
+              </p>
+            </div>
+
+            {/* Agreement */}
+            <label className="pb-agree-row">
+              <div
+                className={`pb-checkbox${agreed ? ' pb-checkbox--checked' : ''}`}
+                onClick={() => setAgreed(a => !a)}
+              >
+                {agreed && <TbCheck size={12} />}
+              </div>
+              <span className="pb-agree-text">I understand and agree to the additional cost.</span>
+            </label>
+
+            {/* Actions */}
+            <div className="pb-modal-actions">
+              <button className="pb-modal-cancel-btn" onClick={onClose}>Cancel</button>
+              <button
+                className={`pb-modal-primary-btn${!canConfirm ? ' pb-modal-primary-btn--disabled' : ''}`}
+                disabled={!canConfirm || isLoading}
+                onClick={() => canConfirm && onConfirm(selectedPersonaIds, selectedCountry)}
+              >
+                {isLoading ? <TbLoader size={14} className="pb-btn-spinner" /> : null}
+                Add & Calibrate
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+};
+
 // ── PersonaGridCard ───────────────────────────────────────────────────────────
 
 interface PersonaGridCardProps {
@@ -132,15 +479,20 @@ interface PersonaGridCardProps {
   onCardClick?: (persona: SavedPersona) => void;
   isCreateNew?: boolean;
   onCreateNew?: () => void;
+  onViewPersona?: (persona: SavedPersona) => void;
+  onReplicatePersona?: (persona: SavedPersona) => void;
+  onDeletePersona?: (persona: SavedPersona) => void;
 }
-const PersonaGridCard: React.FC<PersonaGridCardProps> = ({
 
+const PersonaGridCard: React.FC<PersonaGridCardProps> = ({
   persona,
   onCardClick,
   isCreateNew = false,
   onCreateNew,
+  onViewPersona,
+  onReplicatePersona,
+  onDeletePersona,
 }) => {
-  console.log("FULL PERSONA:", persona);
   if (isCreateNew) {
     return (
       <motion.div
@@ -177,6 +529,25 @@ const PersonaGridCard: React.FC<PersonaGridCardProps> = ({
   const isAI = persona.auto_generated_persona;
   const createdBy = persona.created_by_name ?? persona.created_by ?? 'You';
 
+  const kebabItems = [
+    {
+      label: 'View Persona',
+      icon: <TbEye size={14} />,
+      onClick: () => onViewPersona?.(persona),
+    },
+    {
+      label: 'Replicate Personas',
+      icon: <TbCopy size={14} />,
+      onClick: () => onReplicatePersona?.(persona),
+    },
+    {
+      label: 'Delete Persona',
+      icon: <TbTrash size={14} />,
+      onClick: () => onDeletePersona?.(persona),
+      danger: true,
+    },
+  ];
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
@@ -185,19 +556,17 @@ const PersonaGridCard: React.FC<PersonaGridCardProps> = ({
       onClick={() => onCardClick?.(persona)}
       className="pb-card"
     >
-      {/* Name */}
-      <p className="pb-card-name">{persona.name ?? 'Unnamed Persona'}</p>
+      {/* Card top row: name + kebab */}
+      <div className="pb-card-top-row">
+        <p className="pb-card-name">{persona.name ?? 'Unnamed Persona'}</p>
+        <KebabMenu items={kebabItems} />
+      </div>
 
       {/* Location */}
       <p className="pb-card-location">{locationStr}</p>
 
-      {/* Pushes bottom block to the bottom of the card */}
       <div className="pb-card-spacer" />
 
-      {/* ── Bottom block ──────────────────────────────────────────────────────
-          Row 1: [Confidence label + %] on left | [Created By (stacked)] on right
-          Row 2: Full-width progress bar
-      ─────────────────────────────────────────────────────────────────────── */}
       <div className="pb-card-bottom">
         <div className="pb-bottom-top-row">
           <span className="pb-confidence-label">Calibration Confidence:</span>
@@ -234,6 +603,83 @@ const PersonaGridCard: React.FC<PersonaGridCardProps> = ({
   );
 };
 
+// ── CountryGroup ──────────────────────────────────────────────────────────────
+
+interface CountryGroupProps {
+  country: string;
+  personas: SavedPersona[];
+  onPersonaClick: (persona: SavedPersona) => void;
+  onCreateNew: () => void;
+  onViewPersona: (persona: SavedPersona) => void;
+  onReplicatePersona: (persona: SavedPersona) => void;
+  onReplicateGroup: (country: string) => void;
+  onDeletePersona: (persona: SavedPersona) => void;
+  showCreateNew: boolean;
+  totalPersonaCount: number;
+}
+
+const CountryGroup: React.FC<CountryGroupProps> = ({
+  country,
+  personas,
+  onPersonaClick,
+  onCreateNew,
+  onViewPersona,
+  onReplicatePersona,
+  onReplicateGroup,
+  onDeletePersona,
+  showCreateNew,
+  totalPersonaCount,
+}) => {
+  const countryKebabItems = [
+    {
+      label: 'Replicate Personas',
+      icon: <TbCopy size={14} />,
+      onClick: () => onReplicateGroup(country),
+    },
+  ];
+
+  return (
+    <div className="pb-country-group">
+      {/* Country header */}
+      <div className="pb-country-header">
+        <span className="pb-country-name">{country}</span>
+        <KebabMenu items={countryKebabItems} />
+      </div>
+
+      {/* Cards grid */}
+      <div className="pb-personas-grid">
+        {personas.map((persona, idx) => (
+          <motion.div
+            key={persona.id ?? idx}
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.05 + idx * 0.055 }}
+          >
+            <PersonaGridCard
+              persona={persona}
+              onCardClick={onPersonaClick}
+              onViewPersona={onViewPersona}
+              onReplicatePersona={onReplicatePersona}
+              onDeletePersona={onDeletePersona}
+            />
+          </motion.div>
+        ))}
+
+        {/* "Create New Persona" tile — only in last group or if showCreateNew */}
+        {showCreateNew && (
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.05 + personas.length * 0.055 }}
+          >
+            <PersonaGridCard isCreateNew onCreateNew={onCreateNew} />
+          </motion.div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // ── PersonasReadyGrid ─────────────────────────────────────────────────────────
 
 interface PersonasReadyGridProps {
@@ -243,6 +689,10 @@ interface PersonasReadyGridProps {
   onExplorationMethod: () => void;
   onDownload: () => void;
   isLoadingMethod: boolean;
+  onViewPersona: (persona: SavedPersona) => void;
+  onReplicatePersona: (persona: SavedPersona) => void;
+  onReplicateGroup: (country: string) => void;
+  onDeletePersona: (persona: SavedPersona) => void;
 }
 
 const PersonasReadyGrid: React.FC<PersonasReadyGridProps> = ({
@@ -252,11 +702,26 @@ const PersonasReadyGrid: React.FC<PersonasReadyGridProps> = ({
   onExplorationMethod,
   onDownload,
   isLoadingMethod,
+  onViewPersona,
+  onReplicatePersona,
+  onReplicateGroup,
+  onDeletePersona,
 }) => {
+  // Group personas by country — prefer location_country (clean country name),
+  // fall back to geography only if location_country is absent.
+  const grouped = savedPersonas.reduce<Record<string, SavedPersona[]>>((acc, persona) => {
+    const country = persona.location_country ?? persona.geography ?? 'Other';
+    if (!acc[country]) acc[country] = [];
+    acc[country].push(persona);
+    return acc;
+  }, {});
+
+  const countryKeys = Object.keys(grouped);
+  const totalCount = savedPersonas.length;
+
   return (
     <div className="pb-grid-page">
-
-      {/* Hero Omi avatar — circular video, face cropped to top */}
+      {/* Hero Omi avatar */}
       <motion.div
         initial={{ scale: 0.8, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
@@ -283,27 +748,39 @@ const PersonasReadyGrid: React.FC<PersonasReadyGridProps> = ({
         Your Personas are ready
       </motion.h2>
 
-      {/* Card grid */}
-      <div className="pb-personas-grid">
-        {savedPersonas.map((persona, idx) => (
-          <motion.div
-            key={persona.id ?? idx}
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 + idx * 0.055 }}
-          >
-            <PersonaGridCard persona={persona} onCardClick={onPersonaClick} />
-          </motion.div>
-        ))}
+      {/* Country groups */}
+      <div className="pb-groups-container">
+        {countryKeys.map((country, groupIdx) => {
+          const isLast = groupIdx === countryKeys.length - 1;
+          return (
+            <motion.div
+              key={country}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 + groupIdx * 0.08 }}
+            >
+              <CountryGroup
+                country={country}
+                personas={grouped[country]!}
+                onPersonaClick={onPersonaClick}
+                onCreateNew={onCreateNew}
+                onViewPersona={onViewPersona}
+                onReplicatePersona={onReplicatePersona}
+                onReplicateGroup={onReplicateGroup}
+                onDeletePersona={onDeletePersona}
+                showCreateNew={isLast}
+                totalPersonaCount={totalCount}
+              />
+            </motion.div>
+          );
+        })}
 
-        {/* "Create New Persona" tile */}
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 + savedPersonas.length * 0.055 }}
-        >
-          <PersonaGridCard isCreateNew onCreateNew={onCreateNew} />
-        </motion.div>
+        {/* If no personas yet, just show create tile */}
+        {countryKeys.length === 0 && (
+          <div className="pb-personas-grid">
+            <PersonaGridCard isCreateNew onCreateNew={onCreateNew} />
+          </div>
+        )}
       </div>
 
       {/* Bottom action bar */}
@@ -314,8 +791,7 @@ const PersonasReadyGrid: React.FC<PersonasReadyGridProps> = ({
         className="pb-action-bar"
       >
         <button className="pb-download-btn" onClick={onDownload}>
-          <TbDownload size={16} />
-          Download Persona Card
+          Download Persona Card <SpIcon name="sp-File-Cloud_Download" />
         </button>
 
         <button
@@ -409,6 +885,12 @@ const PersonaBuilder: React.FC = () => {
   const [showValidationModal, setShowValidationModal] = useState(false);
   const [isNavigatingToPreview, setIsNavigatingToPreview] = useState(false);
   const [isMockGenerating, setIsMockGenerating] = useState(false);
+
+  // New modal states
+  const [showAddNewPersonaModal, setShowAddNewPersonaModal] = useState(false);
+  const [showReplicateModal, setShowReplicateModal] = useState(false);
+  const [replicatePreSelectedPersona, setReplicatePreSelectedPersona] = useState<SavedPersona | null>(null);
+  const [isReplicating, setIsReplicating] = useState(false);
 
   const processedPersonaRef = useRef(new Set<string>());
   const hasInitializedRef = useRef(false);
@@ -548,7 +1030,6 @@ const PersonaBuilder: React.FC = () => {
     }
   }, [autoGeneratedData, savedPersonasFromAPI, isNavigatingToPreview, workspaceId, objectiveId, navigate]);
 
-  // Cleanup on unmount
   useEffect(() => () => {
     processedPersonaRef.current.clear();
     hasInitializedRef.current = false;
@@ -567,11 +1048,74 @@ const PersonaBuilder: React.FC = () => {
     }
   }, [navigate, workspaceId, objectiveId]);
 
+  // When "Create New Persona" tile clicked: check limit
   const handleGridCreateNew = useCallback(() => {
+    if (savedPersonasFromAPI.length >= PERSONA_LIMIT) {
+      setShowAddNewPersonaModal(true);
+    } else {
+      setShowGrid(false);
+      handleAddPersona();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedPersonasFromAPI.length]);
+
+  const handleAddNewPersonaConfirm = (count: number) => {
+    setShowAddNewPersonaModal(false);
+    // Navigate to persona builder or handle paid persona creation
     setShowGrid(false);
     handleAddPersona();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  };
+
+  // ── Replicate handlers ──────────────────────────────────────────────────────
+
+  const handleViewPersona = useCallback((persona: SavedPersona) => {
+    handleGridPersonaClick(persona);
+  }, [handleGridPersonaClick]);
+
+  const handleReplicatePersona = useCallback((persona: SavedPersona) => {
+    setReplicatePreSelectedPersona(persona);
+    setShowReplicateModal(true);
   }, []);
+
+  const handleReplicateGroup = useCallback((_country: string) => {
+    setReplicatePreSelectedPersona(null);
+    setShowReplicateModal(true);
+  }, []);
+
+  const handleDeletePersona = useCallback((persona: SavedPersona) => {
+    // TODO: implement delete API call
+    console.log('Delete persona:', persona.id);
+  }, []);
+
+  const handleReplicateConfirm = async (selectedPersonaIds: string[], country: string) => {
+    setIsReplicating(true);
+    try {
+      trigger({
+        stage: 'persona_builder',
+        event: 'PERSONA_WORKFLOW_LOADED',
+        payload: {},
+      });
+
+      // Fire persona generation (same as "Create with Omi" in AddResearchObjective)
+      try {
+        await generatePersonas();
+      } catch (err) {
+        console.error('Failed to kick off persona generation:', err);
+      }
+
+      setShowReplicateModal(false);
+
+      // Navigate to persona generation loader
+      navigate(
+        `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-generating`,
+        { state: { flow: 'replicate', personaIds: selectedPersonaIds, country } }
+      );
+    } catch (error) {
+      console.error('Failed to replicate personas:', error);
+    } finally {
+      setIsReplicating(false);
+    }
+  };
 
   // ── Persona builder handlers ────────────────────────────────────────────────
 
@@ -794,46 +1338,42 @@ const PersonaBuilder: React.FC = () => {
     }
   };
 
-  // ── Navigation to next step (migrated from old PersonaBuilder) ──────────────
-
-const handleDiscussionGuidelines = () => {
-  // If approach already locked, go directly to the right destination
-  if (isApproachLocked) {
-    if (
-      (exploration as Record<string, unknown> | undefined)?.is_quantitative &&
-      !(exploration as Record<string, unknown> | undefined)?.is_qualitative
-    ) {
-      navigate(
-        `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/population-builder`,
-        { state: { researchApproach: 'quantitative' } }
-      );
-    } else {
-      navigate(
-        `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/depth-interview`,
-        {
-          state: {
-            researchApproach:
-              (exploration as Record<string, unknown> | undefined)?.is_qualitative &&
-              (exploration as Record<string, unknown> | undefined)?.is_quantitative
-                ? 'both'
-                : 'qualitative',
-          },
-        }
-      );
+  const handleDiscussionGuidelines = () => {
+    if (isApproachLocked) {
+      if (
+        (exploration as Record<string, unknown> | undefined)?.is_quantitative &&
+        !(exploration as Record<string, unknown> | undefined)?.is_qualitative
+      ) {
+        navigate(
+          `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/population-builder`,
+          { state: { researchApproach: 'quantitative' } }
+        );
+      } else {
+        navigate(
+          `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/depth-interview`,
+          {
+            state: {
+              researchApproach:
+                (exploration as Record<string, unknown> | undefined)?.is_qualitative &&
+                  (exploration as Record<string, unknown> | undefined)?.is_quantitative
+                  ? 'both'
+                  : 'qualitative',
+            },
+          }
+        );
+      }
+      return;
     }
-    return;
-  }
 
-  // Not locked — navigate to the approach selection page
-  navigate(
-    `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/approach-selection`,
-    {
-      state: {
-        backPath: `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-builder`,
-      },
-    }
-  );
-};
+    navigate(
+      `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/approach-selection`,
+      {
+        state: {
+          backPath: `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-builder`,
+        },
+      }
+    );
+  };
 
   const handleApproachSelect = async (approach: string) => {
     try {
@@ -861,8 +1401,6 @@ const handleDiscussionGuidelines = () => {
       console.error('Failed to update research approach:', error);
     }
   };
-
-  // ── handleBackstorySubmit ───────────────────────────────────────────────────
 
   const handleBackstorySubmit = async () => {
     const data: PersonaData = personaDataById[selectedPersonaId ?? ''] ?? { name: selectedPersonaId ?? '' };
@@ -989,8 +1527,6 @@ const handleDiscussionGuidelines = () => {
     }
   };
 
-  // ── handlePreviewPersona ────────────────────────────────────────────────────
-
   const handlePreviewPersona = (id: string) => {
     const savedPersona = savedPersonasFromAPI?.find(p => p.id?.toString() === id?.toString());
     const personaData = personaDataById[id];
@@ -1031,6 +1567,27 @@ const handleDiscussionGuidelines = () => {
           onExplorationMethod={handleDiscussionGuidelines}
           onDownload={() => { /* TODO: implement download */ }}
           isLoadingMethod={updateExplorationMethodMutation.isPending}
+          onViewPersona={handleViewPersona}
+          onReplicatePersona={handleReplicatePersona}
+          onReplicateGroup={handleReplicateGroup}
+          onDeletePersona={handleDeletePersona}
+        />
+
+        {/* Add New Persona Modal */}
+        <AddNewPersonaModal
+          show={showAddNewPersonaModal}
+          onClose={() => setShowAddNewPersonaModal(false)}
+          onConfirm={handleAddNewPersonaConfirm}
+        />
+
+        {/* Replicate Persona Modal */}
+        <ReplicatePersonaModal
+          show={showReplicateModal}
+          personas={savedPersonasFromAPI}
+          onClose={() => { setShowReplicateModal(false); setReplicatePreSelectedPersona(null); }}
+          onConfirm={handleReplicateConfirm}
+          isLoading={isReplicating}
+          preSelectedPersona={replicatePreSelectedPersona}
         />
       </>
     );
@@ -1050,7 +1607,6 @@ const handleDiscussionGuidelines = () => {
           showAIGenerate={personaIds.length > 0}
         />
 
-        {/* "View ready personas" pill */}
         {savedPersonasFromAPI.length > 0 && (
           <button className="pb-view-all-btn" onClick={() => setShowGrid(true)}>
             <TbUsers size={14} />
@@ -1076,8 +1632,6 @@ const handleDiscussionGuidelines = () => {
             />
           ) : (
             <div className="flex flex-col lg:flex-row gap-8">
-
-              {/* Sidebar */}
               <div className="w-full lg:w-64 flex-shrink-0 space-y-4 bg-gray-50/50 dark:bg-black/10 p-4 rounded-2xl border border-gray-100 dark:border-white/5">
                 <div className="space-y-2">
                   {personaIds.map(id => {
@@ -1119,7 +1673,6 @@ const handleDiscussionGuidelines = () => {
                 </button>
               </div>
 
-              {/* Content Wrapper */}
               <div className="flex-grow flex flex-col gap-6">
                 <div className="flex-grow flex flex-col md:flex-row gap-8 bg-gray-50/80 dark:bg-black/10 p-6 rounded-2xl border border-gray-100 dark:border-white/5 h-full relative min-h-[500px]">
                   {isTraitLoading ? (
@@ -1182,7 +1735,6 @@ const handleDiscussionGuidelines = () => {
                   )}
                 </div>
 
-                {/* Action buttons */}
                 <div className="flex gap-2 justify-end">
                   {!currentPersonaData?.isAI && !currentPersonaData?.isAIGenerated && (
                     <button
@@ -1225,15 +1777,6 @@ const handleDiscussionGuidelines = () => {
         onContinue={handleValidationModalContinue}
         onClose={handleValidationModalClose}
       />
-
-      {/* <ApproachSelectionModal
-        isOpen={showApproachModal}
-        onClose={() => setShowApproachModal(false)}
-        onSelect={handleApproachSelect}
-        isLoading={updateExplorationMethodMutation.isPending}
-        {...(currentApproach !== undefined && { currentApproach })}
-        isLocked={isApproachLocked}
-      /> */}
     </div>
   );
 };

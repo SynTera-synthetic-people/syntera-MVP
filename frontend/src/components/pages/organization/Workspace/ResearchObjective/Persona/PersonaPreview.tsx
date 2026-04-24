@@ -7,8 +7,8 @@ import {
   TbTrash,
   TbLoader,
   TbAlertCircle,
-  TbChevronRight,
 } from 'react-icons/tb';
+import SpIcon from '../../../../../SPIcon';
 import {
   Radar,
   RadarChart,
@@ -115,39 +115,39 @@ const mapApiTraitsToUi = (
     coerce(keys.map(k => traits[k]).find(v => v !== '' && v !== null && v !== undefined));
 
   const mapped: TraitMap = {
-    Age:                          c(['age_range', 'Age']),
-    Gender:                       c(['gender', 'Gender']),
-    'Income Level':               c(['income_range', 'income', 'Income Level']),
-    'Education Level':            c(['education_level', 'education', 'Education Level']),
+    Age: c(['age_range', 'Age']),
+    Gender: c(['gender', 'Gender']),
+    'Income Level': c(['income_range', 'income', 'Income Level']),
+    'Education Level': c(['education_level', 'education', 'Education Level']),
     'Occupation / Employment Type': c(['occupation', 'Occupation / Employment Type']),
-    'Family Structure':           c(['family_size', 'family_structure', 'Family Structure']),
-    Geography:                    c(['geography', 'location_country', 'Geography']),
-    Lifestyle:                    c(['lifestyle', 'lifestyle_type', 'Lifestyle']),
-    Values:                       c(['values', 'Values']),
-    Personality:                  c(['personality', 'personality_type', 'personality_traits', 'Personality']),
-    Interests:                    c(['interests', 'Interests']),
-    Motivations:                  c(['motivations', 'Motivations']),
-    'Brand Sensitivity':          c(['brand_sensitivity_detailed', 'brand_sensitivity', 'Brand Sensitivity']),
-    'Price Sensitivity':          c(['price_sensitivity_general', 'price_sensitivity', 'Price Sensitivity']),
-    Mobility:                     c(['mobility', 'Mobility']),
-    'Home Ownership':             c(['accommodation', 'home_ownership', 'Home Ownership']),
-    'Marital Status':             c(['marital_status', 'Marital Status']),
-    'Daily Rhythm':               c(['daily_rhythm', 'Daily Rhythm']),
-    'Hobbies & Interests':        c(['hobbies', 'Hobbies & Interests']),
-    'Decision Making Style':      c(['decision_making_style_1', 'Decision Making Style']),
-    'Purchase Frequency':         c(['purchase_frequency', 'Purchase Frequency']),
-    'Purchase Channel':           c(['purchase_channel_detailed', 'purchase_channel', 'Purchase Channel']),
-    'Price Sensitivity Profile':  c(['price_sensitivity_profile', 'Price Sensitivity Profile']),
+    'Family Structure': c(['family_size', 'family_structure', 'Family Structure']),
+    Geography: c(['geography', 'location_country', 'Geography']),
+    Lifestyle: c(['lifestyle', 'lifestyle_type', 'Lifestyle']),
+    Values: c(['values', 'Values']),
+    Personality: c(['personality', 'personality_type', 'personality_traits', 'Personality']),
+    Interests: c(['interests', 'Interests']),
+    Motivations: c(['motivations', 'Motivations']),
+    'Brand Sensitivity': c(['brand_sensitivity_detailed', 'brand_sensitivity', 'Brand Sensitivity']),
+    'Price Sensitivity': c(['price_sensitivity_general', 'price_sensitivity', 'Price Sensitivity']),
+    Mobility: c(['mobility', 'Mobility']),
+    'Home Ownership': c(['accommodation', 'home_ownership', 'Home Ownership']),
+    'Marital Status': c(['marital_status', 'Marital Status']),
+    'Daily Rhythm': c(['daily_rhythm', 'Daily Rhythm']),
+    'Hobbies & Interests': c(['hobbies', 'Hobbies & Interests']),
+    'Decision Making Style': c(['decision_making_style_1', 'Decision Making Style']),
+    'Purchase Frequency': c(['purchase_frequency', 'Purchase Frequency']),
+    'Purchase Channel': c(['purchase_channel_detailed', 'purchase_channel', 'Purchase Channel']),
+    'Price Sensitivity Profile': c(['price_sensitivity_profile', 'Price Sensitivity Profile']),
     'Loyalty / Switching Behavior': c(['loyalty_behavior', 'Loyalty / Switching Behavior']),
     'Purchase Triggers & Occasions': c(['purchase_triggers', 'Purchase Triggers & Occasions']),
-    'Purchase Barriers':          c(['purchase_barriers', 'Purchase Barriers']),
-    'Decision-Making Style':      c(['decision_making_style_2', 'Decision-Making Style']),
+    'Purchase Barriers': c(['purchase_barriers', 'Purchase Barriers']),
+    'Decision-Making Style': c(['decision_making_style_2', 'Decision-Making Style']),
     'Media Consumption Patterns': c(['media_consumption', 'Media Consumption Patterns']),
-    'Digital Behavior':           c(['digital_behavior_detailed', 'Digital Behavior']),
-    'Digital Activity':           c(['digital_activity', 'Digital Activity']),
-    Preferences:                  c(['preferences', 'Preferences']),
-    'Professional Traits':        c(['professional_traits', 'Professional Traits']),
-    backstory:                    coerce(traits.backstory),
+    'Digital Behavior': c(['digital_behavior_detailed', 'Digital Behavior']),
+    'Digital Activity': c(['digital_activity', 'Digital Activity']),
+    Preferences: c(['preferences', 'Preferences']),
+    'Professional Traits': c(['professional_traits', 'Professional Traits']),
+    backstory: coerce(traits.backstory),
     isAI: !!(
       traits.isAI ||
       traits.auto_generated_persona ||
@@ -328,23 +328,23 @@ const PersonaPreview: React.FC = () => {
   const breakdownComponents = confidenceDetail?.components as Record<string, number> | undefined;
   const breakdownEntries: Array<{ label: string; score: number }> = breakdownComponents
     ? Object.entries(breakdownComponents).map(([key, score]) => ({
-        label: key
+      label: key
+        .replace(/_score$/, '')
+        .split('_')
+        .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(' '),
+      score,
+    }))
+    : Object.entries(confidenceDetail ?? {})
+      .filter(([k, v]) => k.endsWith('_score') && typeof v === 'number')
+      .map(([k, v]) => ({
+        label: k
           .replace(/_score$/, '')
           .split('_')
           .map(w => w.charAt(0).toUpperCase() + w.slice(1))
           .join(' '),
-        score,
-      }))
-    : Object.entries(confidenceDetail ?? {})
-        .filter(([k, v]) => k.endsWith('_score') && typeof v === 'number')
-        .map(([k, v]) => ({
-          label: k
-            .replace(/_score$/, '')
-            .split('_')
-            .map(w => w.charAt(0).toUpperCase() + w.slice(1))
-            .join(' '),
-          score: v as number,
-        }));
+        score: v as number,
+      }));
 
   // Evidence sites (unchanged from JSX)
   const evidenceSitesRaw = (
@@ -418,17 +418,17 @@ const PersonaPreview: React.FC = () => {
   const oceanScores = (oceanProfile?.scores ?? {}) as Record<string, number>;
 
   const radarData = [
-    { subject: 'Openness',          A: oceanScores.openness          ?? 0, fullMark: 1 },
+    { subject: 'Openness', A: oceanScores.openness ?? 0, fullMark: 1 },
     { subject: 'Conscientiousness', A: oceanScores.conscientiousness ?? 0, fullMark: 1 },
-    { subject: 'Extraversion',      A: oceanScores.extraversion      ?? 0, fullMark: 1 },
-    { subject: 'Agreeableness',     A: oceanScores.agreeableness     ?? 0, fullMark: 1 },
-    { subject: 'Neuroticism',       A: oceanScores.neuroticism       ?? 0, fullMark: 1 },
+    { subject: 'Extraversion', A: oceanScores.extraversion ?? 0, fullMark: 1 },
+    { subject: 'Agreeableness', A: oceanScores.agreeableness ?? 0, fullMark: 1 },
+    { subject: 'Neuroticism', A: oceanScores.neuroticism ?? 0, fullMark: 1 },
   ];
 
   // ── Barriers / triggers ────────────────────────────────────────────────────
 
-  const barriersList  = flatten(mergedTraits.barriers_pain_points);
-  const triggersList  = flatten(mergedTraits.triggers_opportunities);
+  const barriersList = flatten(mergedTraits.barriers_pain_points);
+  const triggersList = flatten(mergedTraits.triggers_opportunities);
 
   // ── Persona meta ───────────────────────────────────────────────────────────
 
@@ -449,8 +449,8 @@ const PersonaPreview: React.FC = () => {
   // ── Persona list for ← → navigation ───────────────────────────────────────
 
   const currentIndex = personasList.findIndex(p => (p as Record<string, unknown>).id === personaId);
-  const prevPersona  = currentIndex > 0 ? personasList[currentIndex - 1] as Record<string, unknown> : null;
-  const nextPersona  = currentIndex >= 0 && currentIndex < personasList.length - 1
+  const prevPersona = currentIndex > 0 ? personasList[currentIndex - 1] as Record<string, unknown> : null;
+  const nextPersona = currentIndex >= 0 && currentIndex < personasList.length - 1
     ? personasList[currentIndex + 1] as Record<string, unknown>
     : null;
 
@@ -519,19 +519,19 @@ const PersonaPreview: React.FC = () => {
             )
           }
         >
-          <TbArrowLeft size={15} />
+          <SpIcon name="sp-Arrow-Arrow_Left_SM" size={15} />
           Back to List of the personas
         </button>
 
         {/* Delete button — right side */}
-        <button
+        {/* <button
           className="pp-delete-btn"
           onClick={handleDelete}
           disabled={isDeleting}
         >
           {isDeleting ? <TbLoader size={14} className="pp-spin" /> : <TbTrash size={14} />}
           {isDeleting ? 'Deleting…' : 'Delete'}
-        </button>
+        </button> */}
       </div>
 
       {/* ── Hero section ── */}
@@ -627,8 +627,7 @@ const PersonaPreview: React.FC = () => {
             className="pp-calib-link"
             onClick={() => setActiveTab('calibration')}
           >
-            Calibration Breakdown
-            <TbChevronRight size={14} />
+            Calibration Breakdown <SpIcon name="sp-Arrow-Arrow_Right_SM" />
           </button>
         </div>
       </div>
@@ -671,20 +670,20 @@ const PersonaPreview: React.FC = () => {
             {(activeTab === 'demographics' ||
               activeTab === 'psychographic' ||
               activeTab === 'behavioral') && ((): React.ReactElement => {
-              const tab = TABS.find(t => t.key === activeTab) ?? TABS[0];
-              const rows = (tab.fields as readonly string[])
-                .map(f => ({ label: f, value: String(uiTraits[f] ?? '') }))
-                .filter(r => r.value);
-              return rows.length > 0 ? (
-                <div className="pp-trait-table">
-                  {rows.map(r => (
-                    <TraitRow key={r.label} label={r.label} value={r.value} />
-                  ))}
-                </div>
-              ) : (
-                <p className="pp-empty">No traits available for this category.</p>
-              );
-            })()}
+                const tab = TABS.find(t => t.key === activeTab) ?? TABS[0];
+                const rows = (tab.fields as readonly string[])
+                  .map(f => ({ label: f, value: String(uiTraits[f] ?? '') }))
+                  .filter(r => r.value);
+                return rows.length > 0 ? (
+                  <div className="pp-trait-table">
+                    {rows.map(r => (
+                      <TraitRow key={r.label} label={r.label} value={r.value} />
+                    ))}
+                  </div>
+                ) : (
+                  <p className="pp-empty">No traits available for this category.</p>
+                );
+              })()}
 
             {/* ── Ocean Personality Profile ── */}
             {activeTab === 'ocean' && (

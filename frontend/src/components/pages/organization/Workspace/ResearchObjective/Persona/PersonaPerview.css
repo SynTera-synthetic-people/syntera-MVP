@@ -45,8 +45,6 @@
   align-items: center;
   justify-content: space-between;
   padding: 14px 32px;
-  border-bottom: 1px solid rgba(255,255,255,0.07);
-  /* Ensure both children are on opposite ends */
   gap: 16px;
 }
 
@@ -56,7 +54,7 @@
   gap: 6px;
   background: none;
   border: none;
-  color: #94a3b8;
+  color: #37FFCE;
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
@@ -126,21 +124,20 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: rgba(59,130,246,0.12);
-  border: 1px solid rgba(59,130,246,0.25);
-  color: #60a5fa;
+  background: transparent;
+  color: white;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 400;
   padding: 4px 10px 4px 6px;
   border-radius: 20px;
 }
 .pp-omi-pill-img {
-  width: 18px;
-  height: 18px;
-  object-fit: contain;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
-  filter: brightness(0) invert(1);
-  opacity: 0.85;
+  object-fit: cover;            
+  object-position: center 25%;  
+  transform: scale(1.4);        
 }
 .pp-created-by-text {
   font-size: 12px;
@@ -234,14 +231,14 @@
   gap: 4px;
   background: none;
   border: none;
-  color: #60a5fa;
-  font-size: 12px;
-  font-weight: 600;
+  color: var(--T-Secondary-s-500, #37FFCE);;
+  font-size: 14px;
+  font-weight: 500;
   cursor: pointer;
   padding: 0;
   transition: color 0.15s;
 }
-.pp-calib-link:hover { color: #93c5fd; }
+.pp-calib-link:hover { color: var(--T-Secondary-s-500, #37FFCE); }
 
 /* ── Attributes Showcase ──────────────────────────────────────── */
 .pp-showcase {
@@ -258,10 +255,13 @@
 /* Tab bar */
 .pp-tab-bar {
   display: flex;
-  border-bottom: 1px solid rgba(255,255,255,0.07);
+  gap: 6px;
+  padding: 6px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  width: fit-content;
   margin-bottom: 24px;
-  overflow-x: auto;
-  scrollbar-width: none;
 }
 .pp-tab-bar::-webkit-scrollbar { display: none; }
 
@@ -279,16 +279,17 @@
   flex-shrink: 0;
 }
 .pp-tab:hover { color: #94a3b8; }
-.pp-tab--active { color: #60a5fa; }
+.pp-tab--active { color: #37FFCE; }
 
 .pp-tab-underline {
   position: absolute;
   bottom: 0;
-  left: 0;
-  right: 0;
+  left: 35%;
+  transform: translateX(-50%);
+  width: 48px;       
   height: 2px;
-  background: #3b82f6;
-  border-radius: 2px 2px 0 0;
+  background: #37FFCE;
+  border-radius: 2px;
 }
 
 .pp-tab-content { min-height: 280px; }
@@ -431,7 +432,7 @@
 @media (prefers-color-scheme: light) {
   .pp-root { background: #f8fafc; color: #0f172a; }
   .pp-topbar { border-bottom-color: rgba(0,0,0,0.07); }
-  .pp-back-link { color: #475569; }
+  .pp-back-link { color: #37FFCE; }
   .pp-back-link:hover { color: #1e293b; background: rgba(0,0,0,0.04); }
   .pp-hero { border-bottom-color: rgba(0,0,0,0.07); }
   .pp-persona-name { color: #0f172a; }

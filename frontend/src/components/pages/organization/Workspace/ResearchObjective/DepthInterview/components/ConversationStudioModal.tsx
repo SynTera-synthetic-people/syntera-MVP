@@ -7,6 +7,7 @@ import {
   useStartInterview,
   useSendMessage,
   useInterview,
+  useInterviewByPersona,
 } from '../../../../../../../hooks/useInterview';
 import './ConversationStudioModal.css';
 
@@ -16,6 +17,11 @@ interface ConversationStudioModalProps {
   workspaceId: string;
   objectiveId: string;
   onClose: () => void;
+}
+interface Interview {
+  id: string;
+  messages?: any[];
+  // add more fields if needed
 }
 
 interface Persona {
@@ -63,6 +69,17 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
   const startInterviewMutation = useStartInterview(workspaceId, objectiveId);
   const sendMessageMutation    = useSendMessage(workspaceId, objectiveId, interviewId ?? '');
 
+  // Check if an interview already exists for the selected persona before
+  // starting a new one — prevents unnecessary LLM re-runs on re-visit.
+  const {
+    data: existingInterviewData,
+    isLoading: isCheckingExisting,
+    isFetched: existingInterviewFetched,
+  } = useInterviewByPersona(workspaceId, objectiveId, selectedPersona);
+
+  // Fetch messages for an active interview. When restoring an existing interview
+  // we do NOT poll (refetchInterval: false) — we only need a one-time load.
+  // When the user is actively chatting we poll every 5 s to pick up new replies.
   const { data: interviewData, isLoading: isInterviewLoading } = useInterview(
     workspaceId,
     objectiveId,
@@ -75,7 +92,7 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
 
   // ── Effects ───────────────────────────────────────────────────────────────
 
-  // Sync messages from polling
+  // Sync messages from polling / one-time restore fetch
   useEffect(() => {
     const apiMessages = (interviewData as any)?.data?.messages;
     if (!apiMessages) return;
@@ -109,6 +126,7 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
     setSelectedPersona(id);
     setSelectedPersonaName(name);
     setIsDropdownOpen(false);
+    // Reset chat state so the restore / start logic runs fresh for this persona
     setIsChatActive(false);
     setMessages([]);
     setInputValue('');
@@ -117,9 +135,24 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
 
   const handleStartConversation = async () => {
     if (!selectedPersona) return;
+
     try {
+      // If an existing interview is found for this persona, restore it directly
+      // without re-running the LLM. Messages are populated automatically by the
+      // useInterview hook once interviewId is set (one-time fetch, no polling).
+     const existingInterview = existingInterviewData?.data as Interview | null;
+
+      if (existingInterview?.id) {
+        setInterviewId(existingInterview.id);
+        setIsChatActive(true);
+        // Messages will be populated by the useInterview useEffect above.
+        return;
+      }
+
+      // No existing interview — start a fresh one (LLM call).
       const result = await startInterviewMutation.mutateAsync(selectedPersona);
       const id = (result as any)?.data?.id;
+
       if (id) {
         setInterviewId(id);
         setIsChatActive(true);
@@ -180,12 +213,13 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
   };
 
   const handleDownloadConversation = () => {
-    // Download conversation logic
-    const content = messages.map(m => `${m.sender === 'user' ? 'You' : selectedPersonaName}: ${m.text}`).join('\n\n');
+    const content = messages
+      .map((m) => `${m.sender === 'user' ? 'You' : selectedPersonaName}: ${m.text}`)
+      .join('\n\n');
     const blob = new Blob([content], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
     a.download = `conversation-${selectedPersonaName}.txt`;
     a.click();
     URL.revokeObjectURL(url);
@@ -200,7 +234,13 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
   const activePersona = personas.find((p) => p.id === selectedPersona);
   const hasSelection  = !!selectedPersona;
 
+  // The "Start Interview" button should be disabled while:
+  //   1. We're still checking whether an existing interview exists, or
+  //   2. A new interview is being created.
+  const isStarting = isCheckingExisting || startInterviewMutation.isPending;
+
   // ── Format timestamp ──────────────────────────────────────────────────────
+
   const formatTime = (ts: string) => {
     try {
       const d = new Date(ts);
@@ -355,7 +395,7 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
               {/* Messages */}
               <div className="cs-messages">
                 {!isChatActive ? (
-                  /* Ready to start */
+                  /* Ready to start — show spinner if still checking for existing interview */
                   <div className="cs-messages__empty">
                     <TbMessageCircle size={40} className="cs-messages__empty-icon" />
                     <h4 className="cs-messages__empty-title">Ready to deep dive?</h4>
@@ -365,9 +405,9 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
                     <button
                       className="cs-start-btn"
                       onClick={handleStartConversation}
-                      disabled={startInterviewMutation.isPending}
+                      disabled={isStarting}
                     >
-                      {startInterviewMutation.isPending ? (
+                      {isStarting ? (
                         <>
                           <TbLoader className="cs-start-btn__spinner" size={15} />
                           Starting…
@@ -377,7 +417,8 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
                       )}
                     </button>
                   </div>
-                ) : messages.length === 0 && isInterviewLoading ? (
+                ) : messages.length === 0 && (isInterviewLoading || isCheckingExisting) ? (
+                  /* Loading state: restoring existing interview messages */
                   <div className="cs-messages__loading">
                     <TbLoader size={28} className="cs-messages__loading-spinner" />
                     <span>Setting up the interview…</span>
