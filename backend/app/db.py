@@ -51,11 +51,6 @@ async def add_is_active_column():
             ADD COLUMN IF NOT EXISTS is_qualitative BOOLEAN NOT NULL DEFAULT FALSE,
             ADD COLUMN IF NOT EXISTS is_end BOOLEAN NOT NULL DEFAULT FALSE;
         """))
-        # await conn.execute(text("""
-        # ALTER TABLE persona
-        # ADD COLUMN IF NOT EXISTS persona_details JSONB;
-        # """))
-        #
 
         await conn.execute(text("""
         DO $$
@@ -267,7 +262,8 @@ async def create_sync_schemas():
                 title        VARCHAR NOT NULL,
                 source_type  VARCHAR NOT NULL,
                 source_url   VARCHAR,
-                file_path    VARCHAR,
+                file_data    BYTEA,
+                file_name    VARCHAR,
                 domain       VARCHAR,
                 is_processed BOOLEAN NOT NULL DEFAULT FALSE,
                 exploration_id VARCHAR,
@@ -284,17 +280,58 @@ async def create_sync_schemas():
                 chunk_index  INTEGER NOT NULL,
                 content      TEXT NOT NULL,
                 content_json JSONB,
+                data_type    VARCHAR NOT NULL DEFAULT 'document',
                 created_at   TIMESTAMP NOT NULL DEFAULT now()
             )
         """))
+
+        # ── FIX: ensure data_type + content_json exist on already-created tables ──
+        # If content_chunk was created by an older migration (without these columns),
+        # ADD COLUMN IF NOT EXISTS safely backfills them — no-op if already present.
+        await conn.execute(text("""
+            ALTER TABLE sync_source.content_chunk
+            ADD COLUMN IF NOT EXISTS content_json JSONB;
+        """))
+        await conn.execute(text("""
+            ALTER TABLE sync_source.content_chunk
+            ADD COLUMN IF NOT EXISTS data_type VARCHAR NOT NULL DEFAULT 'document';
+        """))
+        # Backfill any NULL data_type values left by the old schema
+        await conn.execute(text("""
+            UPDATE sync_source.content_chunk AS c
+            SET data_type = CASE
+                WHEN c.content_json IS NOT NULL
+                     OR d.source_type IN ('csv', 'xlsx', 'xls') THEN 'tabular'
+                WHEN d.source_type = 'url' THEN 'scraped'
+                ELSE 'document'
+            END
+            FROM sync_source.document AS d
+            WHERE d.id = c.document_id
+              AND (c.data_type IS NULL OR BTRIM(c.data_type) = '');
+        """))
+        # ── end fix ───────────────────────────────────────────────────────────
+
         await conn.execute(text("""
             CREATE INDEX IF NOT EXISTS idx_sync_source_chunk_document
             ON sync_source.content_chunk (document_id)
         """))
         await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_sync_source_chunk_data_type
+            ON sync_source.content_chunk (data_type)
+        """))
+        await conn.execute(text("""
             CREATE INDEX IF NOT EXISTS idx_sync_source_chunk_fts
             ON sync_source.content_chunk
             USING GIN (to_tsvector('simple', COALESCE(content, '')))
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_sync_source_chunk_content_json
+            ON sync_source.content_chunk
+            USING GIN (content_json);
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_sync_source_chunk_doc_type_order
+            ON sync_source.content_chunk (document_id, data_type, chunk_index, created_at);
         """))
 
 
@@ -412,4 +449,66 @@ async def create_report_cache_table():
             CREATE UNIQUE INDEX IF NOT EXISTS uq_report_cache_quant
             ON report_cache (exploration_id, simulation_id, cta_type)
             WHERE simulation_id IS NOT NULL
+        """))
+
+
+async def migrate_source_document_file_storage():
+    async with async_engine.begin() as conn:
+        await conn.execute(text("""
+            ALTER TABLE sync_source.document
+            ADD COLUMN IF NOT EXISTS file_data BYTEA;
+        """))
+
+        await conn.execute(text("""
+            ALTER TABLE sync_source.document
+            ADD COLUMN IF NOT EXISTS file_name VARCHAR;
+        """))
+
+
+async def migrate_source_content_json():
+    """
+    Ensure content_json/data_type columns + supporting indexes exist on
+    content_chunk, and metadata JSONB column exists on document.
+    Idempotent — all operations use IF NOT EXISTS.
+    """
+    async with async_engine.begin() as conn:
+        await conn.execute(text("""
+            ALTER TABLE sync_source.content_chunk
+            ADD COLUMN IF NOT EXISTS content_json JSONB;
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_sync_source_chunk_content_json
+            ON sync_source.content_chunk
+            USING GIN (content_json);
+        """))
+        await conn.execute(text("""
+            ALTER TABLE sync_source.content_chunk
+            ADD COLUMN IF NOT EXISTS data_type VARCHAR;
+        """))
+        await conn.execute(text("""
+            UPDATE sync_source.content_chunk AS c
+            SET data_type = CASE
+                WHEN c.content_json IS NOT NULL OR d.source_type IN ('csv', 'xlsx', 'xls') THEN 'tabular'
+                WHEN d.source_type = 'url' THEN 'scraped'
+                ELSE 'document'
+            END
+            FROM sync_source.document AS d
+            WHERE d.id = c.document_id
+              AND (c.data_type IS NULL OR BTRIM(c.data_type) = '');
+        """))
+        await conn.execute(text("""
+            ALTER TABLE sync_source.content_chunk
+            ALTER COLUMN data_type SET DEFAULT 'document';
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_sync_source_chunk_data_type
+            ON sync_source.content_chunk (data_type);
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_sync_source_chunk_doc_type_order
+            ON sync_source.content_chunk (document_id, data_type, chunk_index, created_at);
+        """))
+        await conn.execute(text("""
+            ALTER TABLE sync_source.document
+            ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
         """))

@@ -14,7 +14,7 @@ Endpoints:
     GET    /syncdb/survey/{dataset_id}/aggregation
     POST   /syncdb/survey/{dataset_id}/link-exploration
 
-  Source bank (PDF/DOCX/TXT/XLSX → text chunks):
+  Source bank (PDF/DOCX/TXT → text chunks; CSV/XLSX → per-row JSONB; URL → scraped):
     POST   /syncdb/source/upload
     POST   /syncdb/source/url
     POST   /syncdb/source/{document_id}/process
@@ -23,9 +23,9 @@ Endpoints:
     GET    /syncdb/source/{document_id}/chunks
 """
 import logging
-from typing import Optional
+from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
@@ -37,18 +37,68 @@ from app.schemas.syncdb import (
     ActionRecordsPage,
     LinkExplorationIn,
     SourceDocumentOut,
+    SourceScrapeReportOut,
     SourceSearchResult,
     SurveyAggregationOut,
     SurveyDatasetOut,
 )
-from app.services import syncdb_action, syncdb_source, syncdb_survey
+from app.services import syncdb_action, syncdb_source, syncdb_survey, syncdb_scraper
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/syncdb", tags=["SyncDB"])
 
 _ALLOWED_TABULAR_EXTENSIONS = {".csv", ".xlsx", ".xls"}
-_ALLOWED_SOURCE_EXTENSIONS = {".pdf", ".docx", ".doc", ".txt", ".xlsx"}
+_ALLOWED_SOURCE_EXTENSIONS = {".pdf", ".docx", ".doc", ".txt", ".xlsx", ".xls", ".csv"}
+
+
+def _parse_form_bool(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+
+    normalized = str(value).strip().lower()
+    if not normalized:
+        return default
+    if normalized in {"1", "true", "t", "yes", "y", "on"}:
+        return True
+    if normalized in {"0", "false", "f", "no", "n", "off"}:
+        return False
+
+    logger.warning("Unrecognized boolean form value | raw=%r | default=%s", value, default)
+    return default
+
+
+async def _background_scrape_urls(
+    document_id: str,
+    domain: Optional[str],
+    exploration_id: Optional[str],
+    user_id: str,
+) -> None:
+    """Background task: scrape Source Link URLs found in a tabular source document."""
+    from app.db import async_session
+    logger.info(
+        "Background URL scrape started | doc_id=%s | domain=%s | exploration_id=%s | user_id=%s",
+        document_id, domain, exploration_id, user_id,
+    )
+    async with async_session() as db:
+        try:
+            report = await syncdb_scraper.scrape_urls_from_document(
+                db=db,
+                document_id=document_id,
+                domain=domain,
+                exploration_id=exploration_id,
+                user_id=user_id,
+            )
+            logger.info(
+                "Background URL scrape done | doc_id=%s | succeeded=%d | failed=%d",
+                document_id, report.total_succeeded, report.total_failed,
+            )
+        except Exception:
+            logger.exception("Background URL scrape error | doc_id=%s", document_id)
+        finally:
+            logger.info("Background URL scrape exited | doc_id=%s", document_id)
 
 
 def _require_tabular(file: UploadFile):
@@ -258,17 +308,42 @@ async def link_survey_to_exploration(
 
 @router.post("/source/upload", response_model=SourceDocumentOut)
 async def upload_source_document(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     title: str = Form(...),
     domain: Optional[str] = Form(None),
     exploration_id: Optional[str] = Form(None),
+    scrape_urls: Optional[str] = Form(None),
+    scrape_sync: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Upload a PDF, DOCX, or TXT document to the source bank."""
+    """
+    Upload a document to the source bank.
+
+    - PDF / DOCX / TXT: stored as bytea; call POST /source/{id}/process to extract text.
+    - CSV / XLSX / XLS: each row saved as individual JSON record immediately.
+      Pass scrape_urls=true to auto-scrape any 'Source Link' URLs found in the file
+      (runs in the background after the response is returned).
+    """
     import os
 
     ext = os.path.splitext(file.filename or "")[1].lower()
+    scrape_run_sync = _parse_form_bool(scrape_sync, default=False)
+    scrape_requested = _parse_form_bool(scrape_urls, default=False) or scrape_run_sync
+
+    logger.info(
+        "Source upload request | file=%s | ext=%s | scrape_urls_raw=%r | scrape_urls=%s | scrape_sync_raw=%r | scrape_sync=%s | exploration_id=%s | user=%s",
+        file.filename,
+        ext,
+        scrape_urls,
+        scrape_requested,
+        scrape_sync,
+        scrape_run_sync,
+        exploration_id,
+        current_user.id,
+    )
+
     if ext not in _ALLOWED_SOURCE_EXTENSIONS:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -289,6 +364,45 @@ async def upload_source_document(
     except Exception as exc:
         logger.exception("Source document upload failed")
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+
+    # Auto-scrape Source Link URLs from tabular files if requested
+    should_scrape = bool(doc) and scrape_requested and ext in (".xlsx", ".xls", ".csv")
+    if should_scrape and scrape_run_sync:
+        logger.info("Running URL scrape synchronously | doc_id=%s", doc["id"])
+        report = await syncdb_scraper.scrape_urls_from_document(
+            db=db,
+            document_id=doc["id"],
+            domain=domain,
+            exploration_id=exploration_id,
+            user_id=current_user.id,
+        )
+        logger.info(
+            "Synchronous URL scrape done | doc_id=%s | succeeded=%d | failed=%d",
+            doc["id"],
+            report.total_succeeded,
+            report.total_failed,
+        )
+    elif should_scrape:
+        background_tasks.add_task(
+            _background_scrape_urls,
+            document_id=doc["id"],
+            domain=domain,
+            exploration_id=exploration_id,
+            user_id=current_user.id,
+        )
+        logger.info(
+            "URL scrape background task queued | doc_id=%s | mode=background",
+            doc["id"],
+        )
+    else:
+        logger.info(
+            "URL scrape not queued | doc_id=%s | scrape_requested=%s | scrape_sync=%s | file_type_supported=%s",
+            (doc or {}).get("id"),
+            scrape_requested,
+            scrape_run_sync,
+            ext in (".xlsx", ".xls", ".csv"),
+        )
+
     return doc
 
 
@@ -333,6 +447,52 @@ async def process_source_document(
     return result
 
 
+@router.post("/source/{document_id}/scrape", response_model=SourceScrapeReportOut)
+async def scrape_source_document_urls(
+    document_id: str,
+    domain: Optional[str] = Form(None),
+    exploration_id: Optional[str] = Form(None),
+    db: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Trigger Source Link scraping for an already-uploaded CSV/XLSX document.
+
+    Runs synchronously and returns the scrape summary, which makes it useful
+    for debugging the scraping flow without relying on BackgroundTasks.
+    """
+    doc = await syncdb_source.get_source_document(db, document_id)
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if doc["source_type"].lower() not in {"csv", "xlsx", "xls"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Scraping is only supported for CSV/XLSX/XLS source documents",
+        )
+
+    logger.info(
+        "Manual scrape request | doc_id=%s | domain=%s | exploration_id=%s | user=%s",
+        document_id,
+        domain,
+        exploration_id,
+        current_user.id,
+    )
+
+    report = await syncdb_scraper.scrape_urls_from_document(
+        db=db,
+        document_id=document_id,
+        domain=domain or doc.get("domain"),
+        exploration_id=exploration_id or doc.get("exploration_id"),
+        user_id=current_user.id,
+    )
+    logger.info(
+        "Manual scrape finished | doc_id=%s | succeeded=%d | failed=%d",
+        document_id, report.total_succeeded, report.total_failed,
+    )
+    return report.to_dict()
+
+
 @router.get("/source/documents", response_model=list[SourceDocumentOut])
 async def list_source_documents(
     domain: Optional[str] = Query(None),
@@ -347,12 +507,22 @@ async def list_source_documents(
 async def search_source_bank(
     q: str = Query(..., min_length=2),
     domain: Optional[str] = Query(None),
+    data_type: Optional[str] = Query(None, description="Filter by chunk data type: tabular, scraped, or document"),
     limit: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_active_user),
 ):
     """Full-text search across all processed source bank chunks."""
-    return await syncdb_source.search_source_chunks(db, query=q, domain=domain, limit=limit)
+    try:
+        return await syncdb_source.search_source_chunks(
+            db,
+            query=q,
+            domain=domain,
+            limit=limit,
+            data_type=data_type,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
 
 @router.get("/source/{document_id}/chunks")
@@ -360,6 +530,8 @@ async def get_source_chunks(
     document_id: str,
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
+    data_type: Optional[str] = Query(None, description="Filter by chunk data type: tabular, scraped, or document"),
+    order_by: str = Query("chunk_index", description="Order chunks by chunk_index or created_at"),
     db: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -367,4 +539,15 @@ async def get_source_chunks(
     doc = await syncdb_source.get_source_document(db, document_id)
     if doc is None:
         raise HTTPException(status_code=404, detail="Document not found")
-    return await syncdb_source.get_document_chunks(db, document_id, source_type=doc["source_type"], limit=limit, offset=offset)
+    try:
+        return await syncdb_source.get_document_chunks(
+            db,
+            document_id,
+            source_type=doc["source_type"],
+            limit=limit,
+            offset=offset,
+            data_type=data_type,
+            order_by=order_by,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
