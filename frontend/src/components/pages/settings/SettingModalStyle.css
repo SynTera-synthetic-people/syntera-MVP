@@ -52,6 +52,10 @@
   gap: 12px;
 }
 
+.sm-modal-header--left {
+  align-items: flex-start;
+}
+
 .sm-modal-titles {
   display: flex;
   flex-direction: column;
@@ -59,6 +63,11 @@
   flex: 1;
   text-align: center;
   align-items: center;
+}
+
+.sm-modal-titles--left {
+  text-align: left;
+  align-items: flex-start;
 }
 
 .sm-modal-title {
@@ -90,7 +99,6 @@
   flex-shrink: 0;
   transition: background 0.15s, color 0.15s;
 }
-
 .sm-close-btn:hover {
   background: rgba(255, 255, 255, 0.07);
   color: #e5e7eb;
@@ -131,7 +139,6 @@
   border-radius: 50%;
   animation: sm-spin 0.8s linear infinite;
 }
-
 @keyframes sm-spin { to { transform: rotate(360deg); } }
 
 /* ── Empty ── */
@@ -164,12 +171,10 @@
   align-self: center;
   min-width: 120px;
 }
-
 .sm-save-btn:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.12);
   color: #e5e7eb;
 }
-
 .sm-save-btn--full {
   width: 100%;
   align-self: stretch;
@@ -177,16 +182,8 @@
   border-color: #2563eb;
   color: #fff;
 }
-
-.sm-save-btn--full:hover:not(:disabled) {
-  background: #1d4ed8;
-  color: #fff;
-}
-
-.sm-save-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+.sm-save-btn--full:hover:not(:disabled) { background: #1d4ed8; color: #fff; }
+.sm-save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .sm-send-btn {
   width: 100%;
@@ -201,7 +198,6 @@
   transition: background 0.15s;
   letter-spacing: 0.1px;
 }
-
 .sm-send-btn:hover:not(:disabled) { background: #1d4ed8; }
 .sm-send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
@@ -218,7 +214,6 @@
   scrollbar-width: thin;
   scrollbar-color: #2a2d35 transparent;
 }
-
 .sm-member-list::-webkit-scrollbar { width: 4px; }
 .sm-member-list::-webkit-scrollbar-thumb { background: #2a2d35; border-radius: 4px; }
 
@@ -230,7 +225,6 @@
   border-radius: 8px;
   transition: background 0.12s;
 }
-
 .sm-member-row:hover { background: rgba(255, 255, 255, 0.04); }
 
 .sm-member-avatar {
@@ -274,7 +268,6 @@
   font-weight: 600;
   flex-shrink: 0;
 }
-
 .sm-member-badge--admin {
   background: rgba(255, 255, 255, 0.1);
   color: #d1d5db;
@@ -295,12 +288,10 @@
   flex-shrink: 0;
   transition: background 0.12s, color 0.12s;
 }
-
 .sm-member-remove-btn:hover:not(:disabled) {
   background: rgba(239, 68, 68, 0.1);
   color: #f87171;
 }
-
 .sm-member-remove-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* ════════════════════════════════════════════════════════════════
@@ -312,25 +303,12 @@
   grid-template-columns: 1fr 1fr;
   gap: 12px;
 }
+@media (max-width: 420px) { .sm-form-row { grid-template-columns: 1fr; } }
 
-@media (max-width: 420px) {
-  .sm-form-row { grid-template-columns: 1fr; }
-}
-
-.sm-field {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-
+.sm-field { display: flex; flex-direction: column; gap: 5px; }
 .sm-field--full { grid-column: 1 / -1; }
 
-.sm-label {
-  font-size: 12.5px;
-  font-weight: 500;
-  color: #d1d5db;
-}
-
+.sm-label { font-size: 12.5px; font-weight: 500; color: #d1d5db; }
 .sm-required { color: #f87171; }
 
 .sm-input {
@@ -345,33 +323,17 @@
   box-sizing: border-box;
   width: 100%;
 }
-
 .sm-input::placeholder { color: #4b5563; }
 .sm-input:focus         { border-color: #374151; }
 .sm-input--error        { border-color: #f87171 !important; }
-
-.sm-input--disabled {
-  background: #0a0c10;
-  color: #6b7280;
-  cursor: default;
-}
-
-.sm-field-error {
-  font-size: 11.5px;
-  color: #f87171;
-  margin: 0;
-}
+.sm-input--disabled     { background: #0a0c10; color: #6b7280; cursor: default; }
+.sm-field-error         { font-size: 11.5px; color: #f87171; margin: 0; }
 
 /* ════════════════════════════════════════════════════════════════
    3. SHARE INVOICE MODAL
 ════════════════════════════════════════════════════════════════ */
 
-.sm-email-input-row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
+.sm-email-input-row { display: flex; gap: 8px; align-items: center; }
 .sm-input--chip-input { flex: 1; }
 
 .sm-add-email-btn {
@@ -388,20 +350,10 @@
   flex-shrink: 0;
   transition: background 0.15s, color 0.15s;
 }
-
-.sm-add-email-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.1);
-  color: #e5e7eb;
-}
-
+.sm-add-email-btn:hover:not(:disabled) { background: rgba(255,255,255,0.1); color: #e5e7eb; }
 .sm-add-email-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-.sm-chips-wrap {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 8px;
-}
+.sm-chips-wrap { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 
 .sm-chip {
   display: inline-flex;
@@ -437,21 +389,14 @@
   flex-shrink: 0;
   transition: color 0.12s;
 }
-
 .sm-chip-remove:hover { color: #f87171; }
 
-.sm-hint {
-  font-size: 12px;
-  color: #6b7280;
-  margin: 4px 0 0;
-}
+.sm-hint { font-size: 12px; color: #6b7280; margin: 4px 0 0; }
 
 /* ════════════════════════════════════════════════════════════════
    4–7. CONFIRM SHELL
-        Used by: DeleteWorkspace, RemoveUser, DeleteAccount, Logout
 ════════════════════════════════════════════════════════════════ */
 
-/* Card */
 .sm-confirm-card {
   position: relative;
   width: 100%;
@@ -468,7 +413,6 @@
   animation: sm-modal-in 0.18s ease;
 }
 
-/* Close button — top-right corner of card */
 .sm-confirm-close {
   position: absolute;
   top: 14px;
@@ -485,15 +429,8 @@
   justify-content: center;
   transition: background 0.15s, color 0.15s;
 }
+.sm-confirm-close:hover { background: rgba(255,255,255,0.07); color: #e5e7eb; }
 
-.sm-confirm-close:hover {
-  background: rgba(255, 255, 255, 0.07);
-  color: #e5e7eb;
-}
-
-/* ── Icon box ─────────────────────────────────────────────────────────────────
-   Rounded square with coloured background. No badge/overlay — removed ::after.
-─────────────────────────────────────────────────────────────────────────────── */
 .sm-confirm-icon-wrap {
   width: 68px;
   height: 68px;
@@ -504,56 +441,15 @@
   margin-bottom: 4px;
   flex-shrink: 0;
 }
+.sm-confirm-icon-wrap--danger  { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.25); color: #ef4444; }
+.sm-confirm-icon-wrap--primary { background: rgba(37,99,235,0.15); border: 1px solid rgba(37,99,235,0.25); color: #3b82f6; }
 
-/* Danger variant — red (Delete workspace / Remove user / Delete account) */
-.sm-confirm-icon-wrap--danger {
-  background: rgba(239, 68, 68, 0.15);
-  border: 1px solid rgba(239, 68, 68, 0.25);
-  color: #ef4444;
-}
+.sm-confirm-title   { font-size: 18px; font-weight: 700; color: #f3f4f6; margin: 0; letter-spacing: -0.2px; }
+.sm-confirm-subtitle { font-size: 13px; color: #9ca3af; margin: 0; line-height: 1.6; max-width: 260px; }
+.sm-confirm-inline-error { display: block; margin-top: 8px; font-size: 12px; color: #f87171; }
 
-/* Primary variant — blue (Logout) */
-.sm-confirm-icon-wrap--primary {
-  background: rgba(37, 99, 235, 0.15);
-  border: 1px solid rgba(37, 99, 235, 0.25);
-  color: #3b82f6;
-}
+.sm-confirm-actions { display: flex; gap: 10px; width: 100%; margin-top: 4px; }
 
-/* ── Title ── */
-.sm-confirm-title {
-  font-size: 18px;
-  font-weight: 700;
-  color: #f3f4f6;
-  margin: 0;
-  letter-spacing: -0.2px;
-}
-
-/* ── Subtitle ── */
-.sm-confirm-subtitle {
-  font-size: 13px;
-  color: #9ca3af;
-  margin: 0;
-  line-height: 1.6;
-  max-width: 260px;
-}
-
-/* Inline error inside subtitle */
-.sm-confirm-inline-error {
-  display: block;
-  margin-top: 8px;
-  font-size: 12px;
-  color: #f87171;
-}
-
-/* ── Action buttons row ── */
-.sm-confirm-actions {
-  display: flex;
-  gap: 10px;
-  width: 100%;
-  margin-top: 4px;
-}
-
-/* Action button (Delete / Remove / Logout) */
 .sm-confirm-action-btn {
   flex: 1;
   padding: 11px 0;
@@ -565,21 +461,17 @@
   transition: background 0.15s, opacity 0.15s;
   color: #fff;
 }
-
 .sm-confirm-action-btn--danger  { background: #ef4444; }
 .sm-confirm-action-btn--primary { background: #2563eb; }
-
 .sm-confirm-action-btn--danger:hover:not(:disabled)  { background: #dc2626; }
 .sm-confirm-action-btn--primary:hover:not(:disabled) { background: #1d4ed8; }
-
 .sm-confirm-action-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 
-/* Cancel button */
 .sm-confirm-cancel-btn {
   flex: 1;
   padding: 11px 0;
   border-radius: 10px;
-  border: 1.5px solid rgba(255, 255, 255, 0.12);
+  border: 1.5px solid rgba(255,255,255,0.12);
   background: transparent;
   color: #d1d5db;
   font-size: 14px;
@@ -587,10 +479,373 @@
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
 }
-
 .sm-confirm-cancel-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.22);
+}
+.sm-confirm-cancel-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* ════════════════════════════════════════════════════════════════
+   8. HOW BILLING WORKS MODAL
+════════════════════════════════════════════════════════════════ */
+
+
+.sm-modal--how-billing {
+  background: var(--T-Base-B1, #08090a);
+  border-color: var(--T-GreyScale-Grey-700, #4F535F);
 }
 
-.sm-confirm-cancel-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+/* Header: centered title, X absolutely top-right */
+.sm-hbw-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px 24px 16px;
+}
+
+.sm-hbw-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+  letter-spacing: -0.3px;
+  text-align: center;
+}
+
+.sm-hbw-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+}
+
+/* Body */
+.sm-hbw-body {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 0 24px 28px;
+}
+
+/* "1 Exploration includes" */
+.sm-hbw-includes-heading {
+  font-size: 14px;
+  font-weight: 600;
+  color: #f3f4f6;
+  margin: 0 0 10px;
+}
+
+.sm-hbw-includes-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sm-hbw-includes-list li {
+  font-size: 13px;
+  color: #9ca3af;
+  padding-left: 14px;
+  position: relative;
+  line-height: 1.5;
+}
+
+.sm-hbw-includes-list li::before {
+  content: '•';
+  position: absolute;
+  left: 0;
+  color: #6b7280;
+}
+
+/* Pricing columns */
+.sm-hbw-pricing-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.sm-hbw-pricing-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.sm-hbw-pricing-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e5e7eb;
+  margin: 0;
+}
+
+.sm-hbw-pricing-sub {
+  font-size: 12px;
+  color: #6b7280;
+  margin: 0 0 6px;
+}
+
+.sm-hbw-pricing-amount {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.sm-hbw-price {
+  font-size: 26px;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.5px;
+  line-height: 1;
+}
+
+.sm-hbw-price-unit {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+/* Summary table */
+.sm-hbw-summary {
+  background: var(--T-Base-B4, #1E2126);
+  border-radius: 16px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sm-hbw-summary-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e5e7eb;
+  margin: 0 0 4px;
+}
+
+.sm-hbw-summary-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sm-hbw-summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  color: #d1d5db;
+}
+
+.sm-hbw-summary-row--muted {
+  color: #9ca3af;
+}
+
+.sm-hbw-summary-total {
+  font-size: 15px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.sm-hbw-summary-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.07);
+  width: 100%;
+}
+
+/* CTA button */
+.sm-hbw-cta {
+  width: 100%;
+  padding: 13px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: transparent;
+  color: #e5e7eb;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  letter-spacing: 0.1px;
+}
+
+.sm-hbw-cta:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+/* ════════════════════════════════════════════════════════════════
+   9. SUBMIT QUERY MODAL
+════════════════════════════════════════════════════════════════ */
+
+.sm-modal--query {
+  background: #0d0f14;
+  border-color: #2a2d35;
+}
+
+/* Custom header for query modal — centered title, X top-right */
+.sm-query-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px 24px 8px;
+}
+
+.sm-query-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+  letter-spacing: -0.3px;
+  text-align: center;
+}
+
+.sm-close-btn--query {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+
+.sm-modal-body--query {
+  gap: 16px;
+  padding-top: 12px;
+}
+
+/* Subject custom select */
+.sm-query-select-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.sm-query-select-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: #111318;
+  border: 1px solid #2a2d35;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+  text-align: left;
+}
+.sm-query-select-btn:hover  { border-color: #374151; }
+.sm-query-select-btn--error { border-color: #f87171 !important; }
+
+.sm-query-select-placeholder { font-size: 13.5px; color: #4b5563; }
+.sm-query-select-value        { font-size: 13.5px; color: #e5e7eb; }
+
+.sm-query-chevron {
+  color: #6b7280;
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+.sm-query-chevron--open { transform: rotate(180deg); }
+
+.sm-query-dropdown {
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 0;
+  right: 0;
+  background: #0d0f14;
+  border: 1px solid #2a2d35;
+  border-radius: 8px;
+  padding: 4px;
+  z-index: 300;
+  box-shadow: 0 10px 28px rgba(0,0,0,0.6);
+}
+
+.sm-query-dropdown-item {
+  padding: 9px 12px;
+  border-radius: 6px;
+  font-size: 13.5px;
+  color: #d1d5db;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.sm-query-dropdown-item:hover           { background: rgba(255,255,255,0.06); }
+.sm-query-dropdown-item--active         { color: #60a5fa; background: rgba(59,130,246,0.08); }
+
+/* Character counter */
+.sm-query-counter {
+  font-size: 11.5px;
+  color: #6b7280;
+  text-align: right;
+  margin-top: 4px;
+}
+
+/* Textarea */
+.sm-query-textarea {
+  width: 100%;
+  padding: 10px 13px;
+  background: #111318;
+  border: 1px solid #2a2d35;
+  border-radius: 8px;
+  color: #e5e7eb;
+  font-size: 13.5px;
+  font-family: inherit;
+  line-height: 1.5;
+  resize: vertical;
+  min-height: 120px;
+  outline: none;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+}
+.sm-query-textarea::placeholder { color: #4b5563; }
+.sm-query-textarea:focus         { border-color: #374151; }
+.sm-query-textarea--error        { border-color: #f87171 !important; }
+
+/* Query actions row */
+.sm-query-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.sm-query-cancel-btn {
+  flex: 1;
+  padding: 11px 0;
+  border-radius: 10px;
+  border: 1.5px solid rgba(255,255,255,0.12);
+  background: transparent;
+  color: #d1d5db;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.sm-query-cancel-btn:hover:not(:disabled) {
+  background: rgba(255,255,255,0.05);
+  border-color: rgba(255,255,255,0.2);
+}
+.sm-query-cancel-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.sm-query-submit-btn {
+  flex: 1.5;
+  padding: 11px 0;
+  border-radius: 10px;
+  border: none;
+  background: #2563eb;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s;
+  letter-spacing: 0.1px;
+}
+.sm-query-submit-btn:hover:not(:disabled) { background: #1d4ed8; }
+.sm-query-submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.sm-modal-header--space-between {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 24px 24px 0;
+  gap: 12px;
+}
+ 
+/* Ensure left-aligned titles stack correctly */
+.sm-modal-titles--left {
+  text-align: left;
+  align-items: flex-start;
+  flex: 1;
+}

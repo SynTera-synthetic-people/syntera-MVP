@@ -190,30 +190,40 @@ const DepthInterview: React.FC = () => {
     refetch: refetchGuide, generateGuide, isGenerating, generationError, shouldAutoGenerate,
   } = useDiscussionGuideWithAutoGenerate(workspaceId, objectiveId);
 
-  const createSectionMutation = useCreateSection(workspaceId!, objectiveId!);
-  const updateSectionMutation = useUpdateSection(workspaceId!, objectiveId!);
-  const deleteSectionMutation = useDeleteSection(workspaceId!, objectiveId!);
-  const createQuestionMutation = useCreateQuestion(workspaceId!, objectiveId!);
-  const updateQuestionMutation = useUpdateQuestion(workspaceId!, objectiveId!);
-  const deleteQuestionMutation = useDeleteQuestion(workspaceId!, objectiveId!);
+  const createSectionMutation   = useCreateSection(workspaceId!, objectiveId!);
+  const updateSectionMutation   = useUpdateSection(workspaceId!, objectiveId!);
+  const deleteSectionMutation   = useDeleteSection(workspaceId!, objectiveId!);
+  const createQuestionMutation  = useCreateQuestion(workspaceId!, objectiveId!);
+  const updateQuestionMutation  = useUpdateQuestion(workspaceId!, objectiveId!);
+  const deleteQuestionMutation  = useDeleteQuestion(workspaceId!, objectiveId!);
 
   const { trigger } = useOmniWorkflow();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── UI state ──────────────────────────────────────────────────────────────
 
-  const [showChat, setShowChat] = useState(false);
-  const [showLoader, setShowLoader] = useState(false);
-  const [showReadyToast, setShowReadyToast] = useState(false);
-  // Tracks which question's kebab menu is open (by question id)
-  const [openKebabId, setOpenKebabId] = useState<string | null>(null);
+  const [showChat,        setShowChat]        = useState(false);
+  const [showLoader,      setShowLoader]      = useState(false);
+  const [showReadyToast,  setShowReadyToast]  = useState(false);
+  const [openKebabId,     setOpenKebabId]     = useState<string | null>(null);
+
+  /**
+   * 'generate' — normal AI generation flow (4 steps)
+   * 'upload'   — file upload processing flow (7 steps)
+   */
+  const [loaderMode, setLoaderMode] = useState<'generate' | 'upload'>('generate');
+
+  // Shown as an overlay inside the loader screen after a file is selected
+  const [showUploadToast,  setShowUploadToast]  = useState(false);
+  // Signals the upload-mode loader that the backend is done processing
+  const [uploadReady,      setUploadReady]      = useState(false);
 
   // Modal state — one active modal at a time
   type ModalState =
-    | { type: 'editSection'; sectionId: string; currentTitle: string }
+    | { type: 'editSection';   sectionId: string; currentTitle: string }
     | { type: 'addSection' }
-    | { type: 'editQuestion'; questionId: string; currentText: string }
-    | { type: 'addQuestion'; sectionId: string }
+    | { type: 'editQuestion';  questionId: string; currentText: string }
+    | { type: 'addQuestion';   sectionId: string }
     | { type: 'deleteSection'; sectionId: string }
     | { type: 'deleteQuestion'; questionId: string }
     | null;
@@ -221,8 +231,8 @@ const DepthInterview: React.FC = () => {
   const [modal, setModal] = useState<ModalState>(null);
 
   // Validation modal
-  const [showValidationModal, setShowValidationModal] = useState(false);
-  const [validationReason, setValidationReason] = useState('');
+  const [showValidationModal,  setShowValidationModal]  = useState(false);
+  const [validationReason,     setValidationReason]     = useState('');
   const [pendingValidationData, setPendingValidationData] = useState<PendingValidationType | null>(null);
 
   // ── Effects ───────────────────────────────────────────────────────────────
@@ -231,7 +241,7 @@ const DepthInterview: React.FC = () => {
     if (objectiveId) trigger({ stage: 'persona_builder', event: 'BUILD_DISCUSSION_GUIDE', payload: {} });
   }, [objectiveId]);
 
-  // Close kebab menu when clicking anywhere outside
+  // Close kebab on outside click
   useEffect(() => {
     const close = () => setOpenKebabId(null);
     document.addEventListener('click', close);
@@ -242,6 +252,7 @@ const DepthInterview: React.FC = () => {
     const run = async () => {
       if (shouldAutoGenerate && workspaceId && objectiveId) {
         try {
+          setLoaderMode('generate');
           setShowLoader(true);
           trigger({ stage: 'discussion_guide', event: 'BUILD_DISCUSSION_GUIDE_LOAD', payload: {} });
           await generateGuide();
@@ -257,6 +268,7 @@ const DepthInterview: React.FC = () => {
   // ── Guide handlers ────────────────────────────────────────────────────────
 
   const handleCreateGuide = () => {
+    setLoaderMode('generate');
     setShowLoader(true);
     try {
       trigger({ stage: 'discussion_guide', event: 'BUILD_DISCUSSION_GUIDE_LOAD', payload: {} });
@@ -266,16 +278,50 @@ const DepthInterview: React.FC = () => {
 
   const handleLoaderComplete = async () => {
     setShowLoader(false);
+    setUploadReady(false);
     await refetchGuide();
     setShowReadyToast(true);
     setTimeout(() => setShowReadyToast(false), 4000);
     trigger({ stage: 'discussion_guide', event: 'BUILD_DISCUSSION_GUIDE_CREATED', payload: {} });
   };
 
+  // ── Upload handlers ───────────────────────────────────────────────────────
+
   const handleUploadGuide = () => fileInputRef.current?.click();
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) console.log('Uploading:', file.name);
+    // Reset so the same file can be re-selected if needed
+    e.target.value = '';
+    if (!file) return;
+
+    // Switch to 7-step upload loader
+    setLoaderMode('upload');
+    setUploadReady(false);
+    setShowLoader(true);
+
+    // Show "File Uploaded Successfully" toast inside the loader screen
+    setShowUploadToast(true);
+    setTimeout(() => setShowUploadToast(false), 4000);
+
+    try {
+      trigger({ stage: 'discussion_guide', event: 'BUILD_DISCUSSION_GUIDE_UPLOAD', payload: {} });
+
+      // TODO: swap this for your real upload API call, e.g.:
+      // await uploadDiscussionGuideFile(workspaceId!, objectiveId!, file);
+      //
+      // For now we simulate the backend completing after a delay so the
+      // 7-step animation has time to play through before onComplete fires.
+      await new Promise<void>((resolve) => setTimeout(resolve, 26_000));
+
+      // Signal the loader that the backend is done — it will finish the
+      // last step and call onComplete (→ handleLoaderComplete) automatically.
+      setUploadReady(true);
+    } catch (err) {
+      console.error('Upload failed:', err);
+      setShowLoader(false);
+      setUploadReady(false);
+    }
   };
 
   // ── Validation modal ──────────────────────────────────────────────────────
@@ -287,12 +333,12 @@ const DepthInterview: React.FC = () => {
     setValidationReason('');
     setPendingValidationData(null);
     try {
-      if (data.type === 'updateQuestion') await saveQuestion(data.questionId, data.text, true);
+      if (data.type === 'updateQuestion')  await saveQuestion(data.questionId, data.text, true);
       else if (data.type === 'createQuestion') await addQuestion(data.sectionId, data.text, true);
-      else if (data.type === 'updateSection') await saveSection(data.sectionId, data.title, true);
-      else if (data.type === 'createSection') await addSection(data.title, true);
+      else if (data.type === 'updateSection')  await saveSection(data.sectionId, data.title, true);
+      else if (data.type === 'createSection')  await addSection(data.title, true);
       else if (data.type === 'deleteQuestion') await deleteQuestion(data.questionId, true);
-      else if (data.type === 'deleteSection') await deleteSection(data.sectionId, true);
+      else if (data.type === 'deleteSection')  await deleteSection(data.sectionId, true);
     } catch (e) { console.error(e); }
   };
 
@@ -390,12 +436,34 @@ const DepthInterview: React.FC = () => {
   // ── Render guards ─────────────────────────────────────────────────────────
 
   if (showChat) return <ChatView />;
-  // isReady = backend has finished generating (isGenerating flipped to false)
+
   if (showLoader) return (
-    <DiscussionGuideLoader
-      onComplete={handleLoaderComplete}
-      isReady={!isGenerating}
-    />
+    <>
+      {/* "File Uploaded Successfully" toast — rendered on top of the loader */}
+      <AnimatePresence>
+        {showUploadToast && (
+          <motion.div
+            className="di-upload-toast"
+            initial={{ opacity: 0, y: -12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.22 }}
+          >
+            <SpIcon name="sp-Warning-Circle_Check" size={18} className="di-upload-toast__icon" />
+            <span>File Uploaded Successfully</span>
+            <button className="di-upload-toast__close" onClick={() => setShowUploadToast(false)}>
+              <TbX size={14} />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <DiscussionGuideLoader
+        mode={loaderMode}
+        onComplete={handleLoaderComplete}
+        isReady={loaderMode === 'upload' ? uploadReady : !isGenerating}
+      />
+    </>
   );
 
   if (isGuideLoading) {
@@ -512,15 +580,12 @@ const DepthInterview: React.FC = () => {
                       <span className="di-question__label">Q{qIndex + 1}.</span>
                       <p className="di-question__text">{question.text}</p>
 
-                      {/* ── Three-dot kebab menu (Figma: ⋮ on the right) ── */}
                       <div className="di-question__menu-wrap">
                         <button
                           className="di-question__menu-btn"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setOpenKebabId(
-                              openKebabId === question.id ? null : question.id
-                            );
+                            setOpenKebabId(openKebabId === question.id ? null : question.id);
                           }}
                           aria-label="Question options"
                         >
@@ -566,6 +631,7 @@ const DepthInterview: React.FC = () => {
 
               </motion.div>
             ))}
+
             {/* Add New Section */}
             <div className="di-guide-footer">
               <button className="di-footer-add-section-btn" onClick={() => setModal({ type: 'addSection' })}>
@@ -574,8 +640,6 @@ const DepthInterview: React.FC = () => {
               </button>
             </div>
           </div>
-
-
 
           {/* Start Interview */}
           <div className="di-start-interview-bar">

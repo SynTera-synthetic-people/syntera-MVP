@@ -221,6 +221,41 @@
 }
 .di-ready-toast__close:hover { color: #06A17B; }
 
+.di-upload-toast {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 200;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: #0d2b1e;
+  border: 1px solid #06A17B;
+  border-radius: 10px;
+  color: #06A17B;
+  font-size: 0.875rem;
+  font-weight: 500;
+  white-space: nowrap;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  pointer-events: auto;
+}
+ 
+.di-upload-toast__icon { flex-shrink: 0; }
+ 
+.di-upload-toast__close {
+  display: flex;
+  align-items: center;
+  background: transparent;
+  border: none;
+  color: rgba(6, 161, 123, 0.6);
+  cursor: pointer;
+  padding: 0;
+  margin-left: 4px;
+  transition: color 0.15s;
+}
+
 /* ── Guide card wrapper ──────────────────────────────────────────────────── */
 
 .di-guide-card {

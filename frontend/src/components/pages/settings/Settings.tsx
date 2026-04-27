@@ -4,10 +4,11 @@ import { useSelector, useDispatch } from 'react-redux';
 import SpIcon from '../../SPIcon';
 
 import Billing from './billing/Billing';
+import type { BillingView } from './billing/Billing';
 import Notifications from './notifications/Notifications';
 import Account from './account/Account';
 import Privacy from './privacy/Privacy';
-import ChangePassword from './ChangePassword/ChangePassword';  // ← added
+import ChangePassword from './ChangePassword/ChangePassword';
 
 import { useWorkspace as useWorkspaceContext } from '../../../context/WorkspaceContext';
 import ManageUsers from '../organization/Workspace/ManageUsers';
@@ -16,18 +17,12 @@ import UpgradePlanPage from '../Upgrade/Upgrade';
 import HelpCentre from './help/HelpCenter';
 import UsageManual from './help/UsageManual';
 import TermsAndPolicies from './help/TermsAndPolicies';
-import { LogoutModal } from './SettingModal';
-// Import the logout action that clears your auth slice state.
-// Common names: logout, logoutUser, clearAuth, signOut — match yours exactly.
+import { LogoutModal, SubmitQueryModal } from './SettingModal';
 import { logout } from '../../../redux/slices/authSlice';
 
 import { useAutoSave } from '../../../hooks/useAutoSave';
 import type { SaveStatus } from '../../../hooks/useAutoSave';
 import './SettingStyles.css';
-
-// ══════════════════════════════════════════════════════════════════════════════
-// Auto-save context
-// ══════════════════════════════════════════════════════════════════════════════
 
 interface AutoSaveCtx {
   recordSave: () => void;
@@ -43,39 +38,24 @@ export const AutoSaveContext = createContext<AutoSaveCtx>({
 
 export const useAutoSaveContext = () => useContext(AutoSaveContext);
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-// Admin views
-type AdminView =
+type ActiveView =
   | 'org-workspace'
   | 'org-team'
   | 'billing'
+  | 'invoice'
   | 'settings-notification'
   | 'settings-profile'
   | 'settings-security'
   | 'settings-privacy'
-  | 'settings-change-password'     // ← added
+  | 'settings-change-password'
   | 'help-centre'
   | 'help-manual'
-  | 'help-terms';
-
-// Non-admin views (explorer / free trial)
-type NonAdminView =
-  | 'upgrade'
-  | 'billing'
-  | 'settings-notification'
-  | 'settings-profile'
-  | 'settings-security'
-  | 'settings-privacy'
-  | 'settings-change-password'     // ← added
-  | 'help-centre'
-  | 'help-manual'
-  | 'help-terms';
-
-type ActiveView = AdminView | NonAdminView;
+  | 'help-terms'
+  | 'upgrade';
 
 interface OpenGroups {
   org: boolean;
+  billing: boolean;
   settings: boolean;
   help: boolean;
 }
@@ -92,8 +72,6 @@ interface RootState {
   };
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
 const isAdminUser = (user: RootState['auth']['user']): boolean => {
   if (!user) return false;
   if (user.is_admin !== undefined) return Boolean(user.is_admin);
@@ -101,13 +79,6 @@ const isAdminUser = (user: RootState['auth']['user']): boolean => {
   return false;
 };
 
-/**
- * showUpgradeTab: visible ONLY for trial (free) or explorer users.
- * Hidden for: admins, enterprise users, and any other tier.
- *
- * Trial  → is_trial=true  AND account_tier='free'
- * Explorer → account_tier='tier1'  (exhausted or not — they can always renew)
- */
 const showUpgradeTab = (user: RootState['auth']['user'], isAdmin: boolean): boolean => {
   if (isAdmin) return false;
   if (!user) return false;
@@ -117,7 +88,6 @@ const showUpgradeTab = (user: RootState['auth']['user'], isAdmin: boolean): bool
   return isTrial || isExplorer;
 };
 
-// Views that show the auto-save badge
 const AUTOSAVE_VIEWS: ActiveView[] = [
   'settings-notification',
   'settings-profile',
@@ -125,28 +95,23 @@ const AUTOSAVE_VIEWS: ActiveView[] = [
   'settings-privacy',
 ];
 
-// Views where the component renders its own heading+button row
-const SELF_HEADING_VIEWS: ActiveView[] = ['org-workspace', 'org-team', 'upgrade'];
+const SELF_HEADING_VIEWS: ActiveView[] = ['org-workspace', 'org-team', 'upgrade', 'billing', 'invoice'];
 
-// Content headings for all other views
 const HEADING: Record<string, string> = {
-  'org-workspace':              'Workspace Management',
-  'org-team':                   'Team Management',
-  'upgrade':                    'Upgrade Plan to Continue Explorations',
-  'billing':                    'Billing',
-  'settings-notification':      'Settings > Notification',
-  'settings-profile':           'Settings > Profile',
-  'settings-security':          'Settings > Security',
-  'settings-privacy':           'Settings > Privacy',
-  'settings-change-password':   'Settings > Change Password',  // ← added
-  'help-centre':                'Settings > Help Centre',
-  'help-manual':                'Settings > Usage Manual',
-  'help-terms':                 'Settings > Terms & Policies',
+  'org-workspace':            'Workspace Management',
+  'org-team':                 'Team Management',
+  'upgrade':                  'Upgrade Plan to Continue Explorations',
+  'billing':                  'Billing',
+  'invoice':                  'Invoices',
+  'settings-notification':    'Settings > Notification',
+  'settings-profile':         'Settings > Profile',
+  'settings-security':        'Settings > Security',
+  'settings-privacy':         'Settings > Privacy',
+  'settings-change-password': 'Settings > Change Password',
+  'help-centre':              'Settings > Help Centre',
+  'help-manual':              'Settings > Usage Manual',
+  'help-terms':               'Settings > Terms & Policies',
 };
-
-// ══════════════════════════════════════════════════════════════════════════════
-// Main component
-// ══════════════════════════════════════════════════════════════════════════════
 
 const Settings: React.FC = () => {
   const navigate = useNavigate();
@@ -154,10 +119,9 @@ const Settings: React.FC = () => {
   const { selectedWorkspace } = useWorkspaceContext();
   const { user } = useSelector((state: RootState) => state.auth);
 
-  const isAdmin     = isAdminUser(user);
-  const canUpgrade  = showUpgradeTab(user, isAdmin);
+  const isAdmin    = isAdminUser(user);
+  const canUpgrade = showUpgradeTab(user, isAdmin);
 
-  // Default view: admin → workspace, trial/explorer → upgrade, others → billing
   const defaultView: ActiveView = isAdmin
     ? 'org-workspace'
     : canUpgrade
@@ -167,10 +131,12 @@ const Settings: React.FC = () => {
   const [activeView, setActiveView] = useState<ActiveView>(defaultView);
   const [open, setOpen] = useState<OpenGroups>({
     org: true,
+    billing: false,
     settings: false,
     help: false,
   });
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [showSubmitQuery, setShowSubmitQuery] = useState(false);
 
   const { lastSavedLabel, status, triggerSave, recordSave } = useAutoSave();
   const showAutosave = AUTOSAVE_VIEWS.includes(activeView);
@@ -180,11 +146,8 @@ const Settings: React.FC = () => {
 
   const goTo = (view: ActiveView) => setActiveView(view);
 
-  // ── Content renderer ──────────────────────────────────────────────────────
-
   const renderContent = (): React.ReactNode => {
     switch (activeView) {
-      // ── Admin-only views ─────────────────────────────────────────────────
       case 'org-workspace':
         return <Workspace embedded />;
       case 'org-team':
@@ -197,17 +160,16 @@ const Settings: React.FC = () => {
             mode="team"
           />
         );
-
-      // ── Trial / Explorer only ─────────────────────────────────────────────
       case 'upgrade':
         return canUpgrade ? <UpgradePlanPage /> : null;
-
-      // ── Shared views ──────────────────────────────────────────────────────
-      case 'billing':                    return <Billing />;
+      case 'billing':
+        return <Billing view="billing" />;
+      case 'invoice':
+        return <Billing view="invoice" />;
       case 'settings-notification':      return <Notifications />;
       case 'settings-profile':           return <Account />;
       case 'settings-privacy':           return <Privacy />;
-      case 'settings-change-password':   return <ChangePassword />;  // ← added
+      case 'settings-change-password':   return <ChangePassword />;
       case 'help-centre':                return <HelpCentre />;
       case 'help-manual':                return <UsageManual />;
       case 'help-terms':                 return <TermsAndPolicies />;
@@ -215,7 +177,7 @@ const Settings: React.FC = () => {
     }
   };
 
-  // ── Sidebar nav ───────────────────────────────────────────────────────────
+  const isBillingView = activeView === 'billing' || activeView === 'invoice';
 
   const renderNav = () => (
     <nav className="acc-nav">
@@ -253,11 +215,7 @@ const Settings: React.FC = () => {
         </div>
       )}
 
-      {/*
-        ── Upgrade Plan tab ──────────────────────────────────────────────────
-        Only rendered for trial (free) and explorer users.
-        Hidden for: admins, enterprise, and any other tier.
-      */}
+      {/* ── Upgrade Plan ── */}
       {canUpgrade && (
         <button
           className={`acc-nav-flat ${activeView === 'upgrade' ? 'acc-nav-flat--active' : ''}`}
@@ -267,15 +225,36 @@ const Settings: React.FC = () => {
         </button>
       )}
 
-      {/* ── Billing (both) ── */}
-      <button
-        className={`acc-nav-flat ${activeView === 'billing' ? 'acc-nav-flat--active' : ''}`}
-        onClick={() => goTo('billing')}
-      >
-        <SpIcon name="sp-Interface-Credit_Card_01" /> Billing
-      </button>
+      {/* ── Billing ── */}
+      <div className="acc-nav-group">
+        <button
+          className={`acc-nav-item ${isBillingView || open.billing ? 'acc-nav-item--open' : ''}`}
+          onClick={() => {
+            toggleGroup('billing');
+            goTo('billing');
+          }}
+        >
+          <span className="acc-nav-item-left">
+            <SpIcon name="sp-Interface-Credit_Card_01" /> Billing
+          </span>
+          <SpIcon
+            name="sp-Arrow-Chevron_Down"
+            className={`acc-nav-chevron ${open.billing ? 'acc-nav-chevron--open' : ''}`}
+          />
+        </button>
+        {open.billing && (
+          <div className="acc-nav-children">
+            <button
+              className={`acc-nav-child ${activeView === 'invoice' ? 'acc-nav-child--active' : ''}`}
+              onClick={() => goTo('invoice')}
+            >
+              <SpIcon name="sp-File-File_Document" /> Payment Log
+            </button>
+          </div>
+        )}
+      </div>
 
-      {/* ── Settings (both) ── */}
+      {/* ── Settings ── */}
       <div className="acc-nav-group">
         <button
           className={`acc-nav-item ${open.settings ? 'acc-nav-item--open' : ''}`}
@@ -302,7 +281,6 @@ const Settings: React.FC = () => {
             >
               <SpIcon name="sp-User-User_03" /> Profile
             </button>
-            {/* ── Change Password — added to Settings dropdown ── */}
             <button
               className={`acc-nav-child ${activeView === 'settings-change-password' ? 'acc-nav-child--active' : ''}`}
               onClick={() => goTo('settings-change-password')}
@@ -313,7 +291,7 @@ const Settings: React.FC = () => {
         )}
       </div>
 
-      {/* ── Help (both) ── */}
+      {/* ── Help ── */}
       <div className="acc-nav-group">
         <button
           className={`acc-nav-item ${open.help ? 'acc-nav-item--open' : ''}`}
@@ -350,25 +328,36 @@ const Settings: React.FC = () => {
         )}
       </div>
 
-      {/* ── Logout — opens confirmation modal ── */}
+      {/* ── Logout ── */}
       <button className="acc-nav-flat" onClick={() => setShowLogoutModal(true)}>
         <SpIcon name="sp-Other-Logout" /> Logout
       </button>
+
+      {/* ── Billing footer links — shown only on billing/invoice views ── */}
+      {isBillingView && (
+        <div className="acc-nav-billing-footer">
+          <button
+            className="acc-nav-billing-footer-link"
+            onClick={() => setShowSubmitQuery(true)}
+          >
+            Contact our billing team
+          </button>
+          <button className="acc-nav-billing-footer-link">
+            Learn more about usage &amp; billing
+          </button>
+        </div>
+      )}
     </nav>
   );
-
-  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <AutoSaveContext.Provider value={{ recordSave, triggerSave, status }}>
       <div className="acc-shell">
 
-        {/* Top bar */}
         <div className="acc-topbar">
           <button className="acc-back-btn" onClick={() => navigate(-1)}>
             <SpIcon name="sp-Arrow-Arrow_Left_SM" /> Back
           </button>
-
           {showAutosave && (
             <div className={`acc-autosave acc-autosave--${status}`}>
               <SpIcon name="sp-System-Save" />
@@ -383,35 +372,35 @@ const Settings: React.FC = () => {
           )}
         </div>
 
-        {/* Page title */}
         <h1 className="acc-page-title">Account</h1>
 
-        {/* Body */}
         <div className="acc-body">
-
           {renderNav()}
-
-          {/* Content area */}
           <div className="acc-content">
             {!SELF_HEADING_VIEWS.includes(activeView) && (
-              <h2 className="acc-content-heading">
-                {HEADING[activeView]}
-              </h2>
+              <h2 className="acc-content-heading">{HEADING[activeView]}</h2>
             )}
             {renderContent()}
           </div>
         </div>
       </div>
 
-      {/* Logout confirmation modal */}
       <LogoutModal
         isOpen={showLogoutModal}
         onClose={() => setShowLogoutModal(false)}
         appName="Synthetic People"
         {...(user?.email ? { userEmail: user.email } : {})}
         onConfirm={async () => {
-          dispatch(logout());       // clears Redux auth state
-          navigate('/login', { replace: true }); // replace so back-button doesn't return
+          dispatch(logout());
+          navigate('/login', { replace: true });
+        }}
+      />
+
+      <SubmitQueryModal
+        isOpen={showSubmitQuery}
+        onClose={() => setShowSubmitQuery(false)}
+        onSubmit={async () => {
+          await new Promise(r => setTimeout(r, 800));
         }}
       />
     </AutoSaveContext.Provider>

@@ -4,6 +4,7 @@ import {
   TbPlus,
   TbLogout,
   TbUserX,
+  TbChevronDown,
 } from 'react-icons/tb';
 import SpIcon from '../../SPIcon';
 import { workspaceService } from '../../../services/workspaceService';
@@ -61,22 +62,10 @@ const ModalShell: React.FC<ModalShellProps> = ({
   );
 };
 
-/**
- * ConfirmShell — shared layout used by all 4 new confirmation modals.
- *
- * Renders:
- *   - blurred backdrop
- *   - centered card with close ✕
- *   - icon box (variant: 'danger' | 'primary') with a small ✕ badge on the icon
- *   - bold title + muted subtitle
- *   - two-button row (action + Cancel)
- */
 interface ConfirmShellProps {
   isOpen: boolean;
   onClose: () => void;
-  /** Icon rendered inside the coloured box */
   icon: React.ReactNode;
-  /** 'danger' = red box, 'primary' = blue box */
   variant: 'danger' | 'primary';
   title: string;
   subtitle: string | React.ReactNode;
@@ -106,21 +95,17 @@ const ConfirmShell: React.FC<ConfirmShellProps> = ({
         style={{ maxWidth }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Close button — top-right of card */}
         <button className="sm-confirm-close" onClick={onClose} aria-label="Close">
           <TbX size={16} />
         </button>
 
-        {/* Icon box */}
         <div className={`sm-confirm-icon-wrap sm-confirm-icon-wrap--${variant}`}>
           {icon}
         </div>
 
-        {/* Title + subtitle */}
         <h2 className="sm-confirm-title">{title}</h2>
         <p className="sm-confirm-subtitle">{subtitle}</p>
 
-        {/* Buttons */}
         <div className="sm-confirm-actions">
           <button
             className={`sm-confirm-action-btn sm-confirm-action-btn--${variant}`}
@@ -143,7 +128,7 @@ const ConfirmShell: React.FC<ConfirmShellProps> = ({
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
-// 1.  MANAGE USERS MODAL  (existing — unchanged)
+// 1.  MANAGE USERS MODAL
 // ══════════════════════════════════════════════════════════════════════════════
 
 interface ModalMember {
@@ -164,11 +149,11 @@ interface ManageUsersModalProps {
 export const ManageUsersModal: React.FC<ManageUsersModalProps> = ({
   isOpen, onClose, workspaceId, workspaceName,
 }) => {
-  const [members, setMembers]     = useState<ModalMember[]>([]);
-  const [loading, setLoading]     = useState(false);
+  const [members, setMembers]       = useState<ModalMember[]>([]);
+  const [loading, setLoading]       = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
-  const [saving, setSaving]       = useState(false);
-  const [error, setError]         = useState('');
+  const [saving, setSaving]         = useState(false);
+  const [error, setError]           = useState('');
 
   useEffect(() => {
     if (!isOpen || !workspaceId) return;
@@ -256,7 +241,7 @@ export const ManageUsersModal: React.FC<ManageUsersModalProps> = ({
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
-// 2.  EDIT USER MODAL  (existing — unchanged)
+// 2.  EDIT USER MODAL
 // ══════════════════════════════════════════════════════════════════════════════
 
 export interface EditUserData {
@@ -353,7 +338,7 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
-// 3.  SHARE INVOICE MODAL  (existing — unchanged)
+// 3.  SHARE INVOICE MODAL
 // ══════════════════════════════════════════════════════════════════════════════
 
 export interface ShareInvoiceModalProps {
@@ -370,11 +355,11 @@ const isValidEmail = (val: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val.trim
 export const ShareInvoiceModal: React.FC<ShareInvoiceModalProps> = ({
   isOpen, onClose, invoiceId, invoiceTitle, onSend,
 }) => {
-  const [inputVal, setInputVal]   = useState('');
-  const [emails, setEmails]       = useState<string[]>([]);
+  const [inputVal, setInputVal]     = useState('');
+  const [emails, setEmails]         = useState<string[]>([]);
   const [inputError, setInputError] = useState('');
-  const [sending, setSending]     = useState(false);
-  const [sendError, setSendError] = useState('');
+  const [sending, setSending]       = useState(false);
+  const [sendError, setSendError]   = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -384,9 +369,9 @@ export const ShareInvoiceModal: React.FC<ShareInvoiceModalProps> = ({
   const addEmail = () => {
     const val = inputVal.trim();
     if (!val) return;
-    if (!isValidEmail(val))       { setInputError('Enter a valid email address.'); return; }
-    if (emails.includes(val))     { setInputError('This email is already added.'); return; }
-    if (emails.length >= MAX_RECIPIENTS) { setInputError(`Maximum ${MAX_RECIPIENTS} recipients allowed.`); return; }
+    if (!isValidEmail(val))               { setInputError('Enter a valid email address.'); return; }
+    if (emails.includes(val))             { setInputError('This email is already added.'); return; }
+    if (emails.length >= MAX_RECIPIENTS)  { setInputError(`Maximum ${MAX_RECIPIENTS} recipients allowed.`); return; }
     setEmails((prev) => [...prev, val]);
     setInputVal(''); setInputError('');
     inputRef.current?.focus();
@@ -457,16 +442,13 @@ export const ShareInvoiceModal: React.FC<ShareInvoiceModalProps> = ({
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
-// 4.  DELETE WORKSPACE MODAL  (new)
-//     Triggered from Workspace Management tab → delete workspace action.
-//     Calls onConfirm() which should invoke the workspace delete API.
+// 4.  DELETE WORKSPACE MODAL
 // ══════════════════════════════════════════════════════════════════════════════
 
 export interface DeleteWorkspaceModalProps {
   isOpen: boolean;
   onClose: () => void;
   workspaceName?: string;
-  /** Should call the workspace delete API and resolve on success */
   onConfirm: () => Promise<void>;
 }
 
@@ -477,22 +459,15 @@ export const DeleteWorkspaceModal: React.FC<DeleteWorkspaceModalProps> = ({
   const [error, setError]     = useState('');
 
   const handleDelete = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      await onConfirm();
-      onClose();
-    } catch (err: any) {
-      setError(err?.message || 'Failed to delete workspace. Please try again.');
-    } finally {
-      setLoading(false);
-    }
+    setLoading(true); setError('');
+    try { await onConfirm(); onClose(); }
+    catch (err: any) { setError(err?.message || 'Failed to delete workspace. Please try again.'); }
+    finally { setLoading(false); }
   };
 
   return (
     <ConfirmShell
-      isOpen={isOpen}
-      onClose={onClose}
+      isOpen={isOpen} onClose={onClose}
       variant="danger"
       icon={<SpIcon name="sp-Interface-Trash_Empty" />}
       title="Delete Workspace"
@@ -514,16 +489,13 @@ export const DeleteWorkspaceModal: React.FC<DeleteWorkspaceModalProps> = ({
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
-// 5.  REMOVE USER MODAL  (new)
-//     Triggered from Team Management tab → remove user action.
-//     Calls onConfirm() which should invoke the remove-member API.
+// 5.  REMOVE USER MODAL
 // ══════════════════════════════════════════════════════════════════════════════
 
 export interface RemoveUserModalProps {
   isOpen: boolean;
   onClose: () => void;
   userName?: string;
-  /** Should call the remove-member API and resolve on success */
   onConfirm: () => Promise<void>;
 }
 
@@ -534,24 +506,17 @@ export const RemoveUserModal: React.FC<RemoveUserModalProps> = ({
   const [error, setError]     = useState('');
 
   const handleRemove = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      await onConfirm();
-      onClose();
-    } catch (err: any) {
-      setError(err?.message || 'Failed to remove user. Please try again.');
-    } finally {
-      setLoading(false);
-    }
+    setLoading(true); setError('');
+    try { await onConfirm(); onClose(); }
+    catch (err: any) { setError(err?.message || 'Failed to remove user. Please try again.'); }
+    finally { setLoading(false); }
   };
 
   return (
     <ConfirmShell
-      isOpen={isOpen}
-      onClose={onClose}
+      isOpen={isOpen} onClose={onClose}
       variant="danger"
-      icon={<SpIcon name="sp-User-User_Remove"  size={30}/>}
+      icon={<SpIcon name="sp-User-User_Remove" size={30} />}
       title="Remove User"
       subtitle={
         <>
@@ -569,16 +534,12 @@ export const RemoveUserModal: React.FC<RemoveUserModalProps> = ({
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
-// 6.  DELETE ACCOUNT MODAL  (new)
-//     Triggered from Settings → Profile tab → "Delete Account" button.
-//     Calls onConfirm() which should invoke the delete-account API,
-//     then redirect to login.
+// 6.  DELETE ACCOUNT MODAL
 // ══════════════════════════════════════════════════════════════════════════════
 
 export interface DeleteAccountModalProps {
   isOpen: boolean;
   onClose: () => void;
-  /** Should call the delete-account API, clear auth, and navigate to /login */
   onConfirm: () => Promise<void>;
 }
 
@@ -589,22 +550,15 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
   const [error, setError]     = useState('');
 
   const handleDelete = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      await onConfirm();
-      onClose();
-    } catch (err: any) {
-      setError(err?.message || 'Failed to delete account. Please try again.');
-    } finally {
-      setLoading(false);
-    }
+    setLoading(true); setError('');
+    try { await onConfirm(); onClose(); }
+    catch (err: any) { setError(err?.message || 'Failed to delete account. Please try again.'); }
+    finally { setLoading(false); }
   };
 
   return (
     <ConfirmShell
-      isOpen={isOpen}
-      onClose={onClose}
+      isOpen={isOpen} onClose={onClose}
       variant="danger"
       icon={<TbUserX size={26} />}
       title="Delete Account"
@@ -623,10 +577,7 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
-// 7.  LOGOUT MODAL  (new)
-//     Triggered from Settings sidebar → Logout button.
-//     Shows the user's email. Calls onConfirm() which should clear auth
-//     state and navigate to /login.
+// 7.  LOGOUT MODAL
 // ══════════════════════════════════════════════════════════════════════════════
 
 export interface LogoutModalProps {
@@ -634,7 +585,6 @@ export interface LogoutModalProps {
   onClose: () => void;
   appName?: string;
   userEmail?: string;
-  /** Should clear auth state and navigate to /login */
   onConfirm: () => Promise<void>;
 }
 
@@ -645,22 +595,16 @@ export const LogoutModal: React.FC<LogoutModalProps> = ({
 
   const handleLogout = async () => {
     setLoading(true);
-    try {
-      await onConfirm();
-      // onConfirm is expected to navigate — no onClose() needed
-    } catch {
-      // Navigation already happened or will happen; swallow error
-    } finally {
-      setLoading(false);
-    }
+    try { await onConfirm(); }
+    catch { /* navigation already happened */ }
+    finally { setLoading(false); }
   };
 
   return (
     <ConfirmShell
-      isOpen={isOpen}
-      onClose={onClose}
+      isOpen={isOpen} onClose={onClose}
       variant="primary"
-      icon={<SpIcon name="sp-Other-Logout" size= {30} />}
+      icon={<SpIcon name="sp-Other-Logout" size={30} />}
       title="Logout"
       subtitle={
         userEmail
@@ -672,5 +616,300 @@ export const LogoutModal: React.FC<LogoutModalProps> = ({
       actionLoading={loading}
       maxWidth={300}
     />
+  );
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 8.  HOW BILLING WORKS MODAL  (new)
+//     Triggered by "How billing works?" link in the Billing tab header.
+// ══════════════════════════════════════════════════════════════════════════════
+
+export interface HowBillingWorksModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+export const HowBillingWorksModal: React.FC<HowBillingWorksModalProps> = ({
+  isOpen, onClose,
+}) => {
+  useEffect(() => {
+    if (!isOpen) return;
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="sm-overlay" onClick={onClose}>
+      <div
+        className="sm-modal sm-modal--how-billing"
+        style={{ maxWidth: 480 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header — centered title, X top-right */}
+        <div className="sm-hbw-header">
+          <button className="sm-close-btn sm-hbw-close" onClick={onClose} aria-label="Close">
+            <TbX size={18} />
+          </button>
+          <h2 className="sm-hbw-title">How Billing Works</h2>
+        </div>
+
+        {/* Body */}
+        <div className="sm-hbw-body">
+
+          {/* "1 Exploration includes" section */}
+          <div className="sm-hbw-includes">
+            <p className="sm-hbw-includes-heading">1 Exploration includes</p>
+            <ul className="sm-hbw-includes-list">
+              <li>4 manual/OMI generate personas</li>
+              <li>Unlimited sample size</li>
+              <li>Unlimited conversations</li>
+              <li>Decision intelligence reports</li>
+              <li>Data playground and more</li>
+            </ul>
+          </div>
+
+          {/* Pricing columns */}
+          <div className="sm-hbw-pricing-row">
+            <div className="sm-hbw-pricing-col">
+              <p className="sm-hbw-pricing-label">Explorations</p>
+              <p className="sm-hbw-pricing-sub">Add as many as you need</p>
+              <div className="sm-hbw-pricing-amount">
+                <span className="sm-hbw-price">$2499</span>
+                <span className="sm-hbw-price-unit">/ Exploration</span>
+              </div>
+            </div>
+            <div className="sm-hbw-pricing-col">
+              <p className="sm-hbw-pricing-label">Additional Personas</p>
+              <p className="sm-hbw-pricing-sub">Add as many as you need</p>
+              <div className="sm-hbw-pricing-amount">
+                <span className="sm-hbw-price">$49</span>
+                <span className="sm-hbw-price-unit">/ Additional Persona</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Summary table */}
+          <div className="sm-hbw-summary">
+            <p className="sm-hbw-summary-title">Summary (May 2026)</p>
+            <div className="sm-hbw-summary-rows">
+              <div className="sm-hbw-summary-row">
+                <span>Exploration (200 x #2,499)</span>
+                <span>$499,800</span>
+              </div>
+              <div className="sm-hbw-summary-row">
+                <span>Additional Personas (24 x $49)</span>
+                <span>$499,800</span>
+              </div>
+            </div>
+            <div className="sm-hbw-summary-divider" />
+            <div className="sm-hbw-summary-rows">
+              <div className="sm-hbw-summary-row sm-hbw-summary-row--muted">
+                <span>Subtotal</span>
+                <span>$6,176</span>
+              </div>
+              <div className="sm-hbw-summary-row sm-hbw-summary-row--muted">
+                <span>Tax (18%)</span>
+                <span>$1,111</span>
+              </div>
+            </div>
+            <div className="sm-hbw-summary-divider" />
+            <div className="sm-hbw-summary-row sm-hbw-summary-total">
+              <span>Total</span>
+              <span>$7,285</span>
+            </div>
+          </div>
+
+          {/* CTA */}
+          <button className="sm-hbw-cta" onClick={onClose}>
+            Ok, Got It
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 9.  SUBMIT QUERY MODAL  (new)
+//     Triggered by "Contact our billing team" link at the bottom of Billing tab.
+//     Renders the "Submit Your Query" modal as shown in Figma (Image 4).
+// ══════════════════════════════════════════════════════════════════════════════
+
+export interface SubmitQueryModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onSubmit: (subject: string, description: string) => Promise<void>;
+}
+
+const QUERY_SUBJECTS = [
+  'Payment issue',
+  'Invoice request',
+  'Billing discrepancy',
+  'Plan upgrade',
+  'Refund request',
+  'Other',
+];
+
+export const SubmitQueryModal: React.FC<SubmitQueryModalProps> = ({
+  isOpen, onClose, onSubmit,
+}) => {
+  const [subject, setSubject]         = useState('');
+  const [description, setDescription] = useState('');
+  const [subjectDropOpen, setSubjectDropOpen] = useState(false);
+  const [submitting, setSubmitting]   = useState(false);
+  const [errors, setErrors]           = useState<{ subject?: string; description?: string }>({});
+  const [submitError, setSubmitError] = useState('');
+  const dropRef = useRef<HTMLDivElement>(null);
+
+  const MAX_DESC = 1000;
+
+  useEffect(() => {
+    if (isOpen) {
+      setSubject(''); setDescription(''); setErrors({}); setSubmitError('');
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (!dropRef.current?.contains(e.target as Node)) setSubjectDropOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [isOpen, onClose]);
+
+  const validate = () => {
+    const next: typeof errors = {};
+    if (!subject)          next.subject     = 'Please select a subject.';
+    if (!description.trim()) next.description = 'Please enter a description.';
+    setErrors(next);
+    return Object.keys(next).length === 0;
+  };
+
+  const handleSubmit = async () => {
+    if (!validate()) return;
+    setSubmitting(true); setSubmitError('');
+    try {
+      await onSubmit(subject, description);
+      onClose();
+    } catch (err: any) {
+      setSubmitError(err?.message || 'Failed to submit query. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="sm-overlay" onClick={onClose}>
+      <div
+        className="sm-modal sm-modal--query"
+        style={{ maxWidth: 480 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="sm-query-header">
+          <button className="sm-close-btn sm-close-btn--query" onClick={onClose} aria-label="Close">
+            <TbX size={18} />
+          </button>
+          <h2 className="sm-query-title">Submit Your Query</h2>
+        </div>
+
+        {/* Body */}
+        <div className="sm-modal-body sm-modal-body--query">
+          {submitError && <p className="sm-error-msg">{submitError}</p>}
+
+          {/* Subject */}
+          <div className="sm-field sm-field--full">
+            <label className="sm-label">
+              Subject <span className="sm-required">*</span>
+            </label>
+            <div className="sm-query-select-wrap" ref={dropRef}>
+              <button
+                className={`sm-query-select-btn ${errors.subject ? 'sm-query-select-btn--error' : ''}`}
+                onClick={() => setSubjectDropOpen(v => !v)}
+                type="button"
+              >
+                <span className={subject ? 'sm-query-select-value' : 'sm-query-select-placeholder'}>
+                  {subject || 'Select subject'}
+                </span>
+                <TbChevronDown
+                  size={15}
+                  className={`sm-query-chevron ${subjectDropOpen ? 'sm-query-chevron--open' : ''}`}
+                />
+              </button>
+              {subjectDropOpen && (
+                <div className="sm-query-dropdown">
+                  {QUERY_SUBJECTS.map(s => (
+                    <div
+                      key={s}
+                      className={`sm-query-dropdown-item ${subject === s ? 'sm-query-dropdown-item--active' : ''}`}
+                      onClick={() => {
+                        setSubject(s);
+                        setSubjectDropOpen(false);
+                        setErrors(({ subject: _s, ...rest }) => rest);
+                      }}
+                    >
+                      {s}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="sm-query-counter">{subject.length}/100</div>
+            {errors.subject && <p className="sm-field-error">{errors.subject}</p>}
+          </div>
+
+          {/* Description */}
+          <div className="sm-field sm-field--full">
+            <label className="sm-label">
+              Description <span className="sm-required">*</span>
+            </label>
+            <textarea
+              className={`sm-query-textarea ${errors.description ? 'sm-query-textarea--error' : ''}`}
+              placeholder="Description"
+              value={description}
+              onChange={e => {
+                if (e.target.value.length <= MAX_DESC) setDescription(e.target.value);
+                setErrors(({ description: _d, ...rest }) => rest);
+              }}
+              rows={5}
+            />
+            <div className="sm-query-counter">{description.length}/{MAX_DESC}</div>
+            {errors.description && <p className="sm-field-error">{errors.description}</p>}
+          </div>
+
+          {/* Actions */}
+          <div className="sm-query-actions">
+            <button
+              className="sm-query-cancel-btn"
+              onClick={onClose}
+              disabled={submitting}
+              type="button"
+            >
+              Cancel
+            </button>
+            <button
+              className="sm-query-submit-btn"
+              onClick={handleSubmit}
+              disabled={submitting}
+              type="button"
+            >
+              {submitting ? 'Submitting…' : 'Submit →'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 };

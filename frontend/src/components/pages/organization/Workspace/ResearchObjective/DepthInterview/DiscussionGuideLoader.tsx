@@ -5,7 +5,7 @@ import './DiscussionGuideLoader.css';
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface DiscussionGuideLoaderProps {
-  /** Called once the 4-step animation completes AND backend is ready */
+  /** Called once the animation completes AND backend is ready */
   onComplete: () => void;
   /**
    * When true the loader knows the backend has finished generating.
@@ -13,6 +13,11 @@ interface DiscussionGuideLoaderProps {
    * Pass `isGenerating === false` from the hook.
    */
   isReady?: boolean;
+  /**
+   * 'generate' (default) — 4-step AI generation flow
+   * 'upload'             — 7-step file upload processing flow
+   */
+  mode?: 'generate' | 'upload';
 }
 
 interface LoaderStep {
@@ -21,18 +26,26 @@ interface LoaderStep {
 
 // ── Step definitions ──────────────────────────────────────────────────────────
 
-const LOADER_STEPS: LoaderStep[] = [
+const GENERATE_STEPS: LoaderStep[] = [
   { statement: 'Understanding your objective, context, and decision focus.' },
   { statement: 'Identifying key behaviours, motivations, and decision triggers to explore.' },
   { statement: 'Designing question sequences to uncover depth, not just responses.' },
   { statement: 'Structuring the guide for natural conversation flow and insight depth.' },
 ];
 
-const TOTAL_STEPS   = LOADER_STEPS.length;
-const LAST_STEP_IDX = TOTAL_STEPS - 1;
-const STEP_MS       = 3_500;
-const RING_RADIUS   = 54;
-const RING_CIRC     = 2 * Math.PI * RING_RADIUS;
+const UPLOAD_STEPS: LoaderStep[] = [
+  { statement: 'Extracting and analysing the content from your file…' },
+  { statement: 'Aligning with the research intent…' },
+  { statement: 'Identifying key themes and sections…' },
+  { statement: 'Structuring questions for behavioural depth…' },
+  { statement: 'Mapping probes and follow-ups…' },
+  { statement: 'Aligning for consistent conversation flow…' },
+  { statement: 'Preparing your discussion guide…' },
+];
+
+const STEP_MS     = 3_500;
+const RING_RADIUS = 54;
+const RING_CIRC   = 2 * Math.PI * RING_RADIUS;
 
 // ── Ring SVG ──────────────────────────────────────────────────────────────────
 
@@ -56,43 +69,46 @@ const RingProgress: React.FC<{ progress: number }> = ({ progress }) => {
 const DiscussionGuideLoader: React.FC<DiscussionGuideLoaderProps> = ({
   onComplete,
   isReady = false,
+  mode = 'generate',
 }) => {
-  const [currentStep, setCurrentStep] = useState(0);
-  // Whether the animation has reached the last step and is waiting for isReady
-  const [waitingForBackend, setWaitingForBackend] = useState(false);
-  const [done,              setDone]              = useState(false);
+  // ── Conditional step list based on mode ──────────────────────────────────
+  const LOADER_STEPS  = mode === 'upload' ? UPLOAD_STEPS : GENERATE_STEPS;
+  const TOTAL_STEPS   = LOADER_STEPS.length;
+  const LAST_STEP_IDX = TOTAL_STEPS - 1;
 
-  // Ring fills proportionally. When waiting at last step keep it at 75% until
-  // backend confirms, then jump to 100% right before completing.
+  const [currentStep,        setCurrentStep]        = useState(0);
+  const [waitingForBackend,  setWaitingForBackend]  = useState(false);
+  const [done,               setDone]               = useState(false);
+
+  // Ring fills proportionally. When waiting at last step keep it slightly past
+  // the penultimate mark until backend confirms, then jump to 100%.
   const ringProgress = done
     ? 100
     : waitingForBackend
-    ? 88  // slightly past 75% — shows "almost done"
+    ? 88
     : ((currentStep + 1) / TOTAL_STEPS) * 100;
 
-  // ── Advance steps 0 → 2 (first three steps) at fixed interval ──────────────
+  // ── Advance steps 0 → (LAST_STEP_IDX - 1) at fixed interval ─────────────
   useEffect(() => {
     if (done || waitingForBackend) return;
 
     const timer = setTimeout(() => {
       if (currentStep < LAST_STEP_IDX - 1) {
-        // Steps 0, 1 → advance normally
         setCurrentStep((s) => s + 1);
       } else if (currentStep === LAST_STEP_IDX - 1) {
-        // Reached step 3 (index 2) → move to last step and then wait
+        // Move to final step, then wait for backend
         setCurrentStep(LAST_STEP_IDX);
         setWaitingForBackend(true);
       }
     }, STEP_MS);
 
     return () => clearTimeout(timer);
-  }, [currentStep, done, waitingForBackend]);
+  }, [currentStep, done, waitingForBackend, LAST_STEP_IDX]);
 
-  // ── Once backend is ready and we're on the last step → complete ─────────────
+  // ── Once backend is ready and we're on the last step → complete ──────────
   useEffect(() => {
     if (!waitingForBackend || !isReady || done) return;
 
-    // Short pause so user sees the final step text before dismissing
     const timer = setTimeout(() => {
       setDone(true);
       setTimeout(onComplete, 600);
@@ -103,13 +119,19 @@ const DiscussionGuideLoader: React.FC<DiscussionGuideLoaderProps> = ({
 
   const step = LOADER_STEPS[currentStep];
 
+  // Heading/subtitle differ slightly by mode
+  const heading  = mode === 'upload'
+    ? 'Processing your Discussion Guide'
+    : 'Building the Discussion Guide';
+  const subtitle = mode === 'upload'
+    ? 'Extracting and structuring your file into a ready-to-use discussion guide'
+    : 'Interpreting your objective and shaping it into a structured discussion flow';
+
   return (
     <div className="dgl-container">
       <div className="dgl-header">
-        <h1 className="dgl-heading">Building the Discussion Guide</h1>
-        <p className="dgl-subtitle">
-          Interpreting your objective and shaping it into a structured discussion flow
-        </p>
+        <h1 className="dgl-heading">{heading}</h1>
+        <p className="dgl-subtitle">{subtitle}</p>
       </div>
 
       <div className="dgl-card">
@@ -136,7 +158,6 @@ const DiscussionGuideLoader: React.FC<DiscussionGuideLoaderProps> = ({
           <p key={currentStep} className="dgl-statement">
             {step?.statement}
           </p>
-          {/* Waiting indicator — shown on last step while backend catches up */}
           {waitingForBackend && !done && (
             <p className="dgl-waiting-label">Finalising your guide…</p>
           )}

@@ -1,7 +1,6 @@
 /* ═══════════════════════════════════════════════════════════════
    BillingStyle.css  — Settings › Billing
    Prefix: bl-
-   No inline styles — all layout & decoration lives here.
 ═══════════════════════════════════════════════════════════════ */
 
 /* ── Page shell ── */
@@ -10,15 +9,6 @@
   flex-direction: column;
   gap: 24px;
   position: relative;
-}
-
-/* Page heading */
-.bl-heading {
-  font-size: 20px;
-  font-weight: 700;
-  color: #f3f4f6;
-  margin: 0;
-  letter-spacing: -0.2px;
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -49,15 +39,12 @@
 }
 
 .bl-toast--success {
-  background:  var(--Color-Alert-Success-Success, #1AAB18);
+  background: var(--Color-Alert-Success-Success, #1AAB18);
   border: 1px solid #15803d;
   color: #bbf7d0;
 }
 
-.bl-toast-icon {
-  flex-shrink: 0;
-  color: #4ade80;
-}
+.bl-toast-icon { flex-shrink: 0; color: #4ade80; }
 
 .bl-toast-close {
   margin-left: 8px;
@@ -70,40 +57,227 @@
   padding: 0;
   transition: color 0.15s;
 }
-
 .bl-toast-close:hover { color: #fff; }
 
 /* ════════════════════════════════════════════════════════════════
-   PENDING INVOICE CARDS ROW
+   BILLING HEADER
 ════════════════════════════════════════════════════════════════ */
 
-.bl-pending-row {
-  display: flex;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-/* "No pending payment" state */
-.bl-no-pending {
+.bl-billing-title-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: #6b7280;
+  justify-content: space-between;
+  gap: 12px;
 }
 
-.bl-no-pending-icon {
-  flex-shrink: 0;
-  color: #6b7280;
+.bl-billing-title-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.bl-billing-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+  letter-spacing: -0.3px;
+}
+
+.bl-how-billing-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: #14b8a6;
+  text-decoration: none;
+  transition: color 0.15s, opacity 0.15s;
+}
+.bl-how-billing-btn:hover { color: #2dd4bf; opacity: 0.9; }
+
+.bl-billing-header-dropdowns {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 /* ════════════════════════════════════════════════════════════════
-   BAR CHART SECTION
+   STAT CARDS ROW
+════════════════════════════════════════════════════════════════ */
+
+.bl-stat-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: stretch;
+}
+
+/* Left card: Exploration + Personas side by side */
+.bl-stat-card--left {
+  background: var(--T-Base-B4, #1E2126);
+  border-radius: 16px;
+  display: grid;
+  grid-template-columns: 1fr 0px 1fr;
+  align-items: start;
+  padding: 0;
+  overflow: visible;
+  gap: 0;
+}
+
+.bl-stat-card-inner {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bl-stat-divider {
+  background: rgba(255, 255, 255, 0.07);
+  align-self: stretch;
+}
+
+/* Right card: Amount Payable — info left, buttons right */
+.bl-stat-card--payable {
+  background: var(--T-Base-B4, #1E2126);
+  border-radius: 16px;
+  padding: 24px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.bl-payable-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bl-stat-label-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+.bl-stat-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #9ca3af;
+  white-space: nowrap;
+}
+
+.bl-stat-info {
+  position: relative;
+  display: flex;
+  align-items: center;
+  color: #6b7280;
+  cursor: default;
+}
+
+.bl-stat-tooltip {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  background: #1E2126;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 400;
+  color: #d1d5db;
+  line-height: 1.5;
+  pointer-events: none;
+  z-index: 50;
+  max-width: 240px;
+  white-space: normal;
+  min-width: 160px;
+}
+
+.bl-stat-tooltip--chart {
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: normal;
+  min-width: 200px;
+}
+
+.bl-stat-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.5px;
+  line-height: 1.2;
+  margin-top: 4px;
+}
+
+.bl-stat-sub {
+  font-size: 12px;
+  color: #6b7280;
+  margin-top: 2px;
+}
+
+.bl-stat-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  flex-shrink: 0;
+  min-width: 180px;
+}
+
+.bl-download-invoice-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 16px;
+  border-radius: 8px;
+  border: 1px solid #2a2d35;
+  background: transparent;
+  color: #d1d5db;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+  width: 100%;
+  box-sizing: border-box;
+}
+.bl-download-invoice-btn:hover {
+  background: rgba(255,255,255,0.05);
+  border-color: #374151;
+}
+
+.bl-share-invoice-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 16px;
+  border-radius: 8px;
+  border: none;
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+  width: 100%;
+  box-sizing: border-box;
+}
+.bl-share-invoice-btn:hover { background: #1d4ed8; }
+
+/* ════════════════════════════════════════════════════════════════
+   STACKED BAR CHART SECTION
 ════════════════════════════════════════════════════════════════ */
 
 .bl-chart-section {
-  background: #0E0F12;
+  background:  var(--T-Base-B1, #0E0F12);
   border: 1px solid #1e2028;
+  height: 300px;
   border-radius: 14px;
   padding: 20px 24px 16px;
   display: flex;
@@ -111,12 +285,18 @@
   gap: 16px;
 }
 
-/* Header row */
 .bl-chart-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  flex-wrap: wrap;
+}
+
+.bl-chart-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .bl-chart-title {
@@ -125,10 +305,30 @@
   color: #f3f4f6;
 }
 
-/* ── Shared dropdown styles ── */
-.bl-dropdown-wrap {
-  position: relative;
+/* Legend */
+.bl-chart-legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
+
+.bl-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.bl-legend-dot--explore  { background: #3b82f6; }
+.bl-legend-dot--persona  { background: #ec4899; }
+
+.bl-legend-label {
+  font-size: 11.5px;
+  color: #9ca3af;
+  margin-right: 6px;
+}
+
+/* ── Shared dropdown styles ── */
+.bl-dropdown-wrap { position: relative; }
 
 .bl-dropdown-btn,
 .bl-filter-btn {
@@ -162,10 +362,7 @@
   transition: transform 0.2s ease;
   flex-shrink: 0;
 }
-
-.bl-dropdown-chevron--open {
-  transform: rotate(180deg);
-}
+.bl-dropdown-chevron--open { transform: rotate(180deg); }
 
 .bl-dropdown-menu {
   position: absolute;
@@ -179,11 +376,7 @@
   z-index: 200;
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.6);
 }
-
-.bl-dropdown-menu--right {
-  left: auto;
-  right: 0;
-}
+.bl-dropdown-menu--right { left: auto; right: 0; }
 
 .bl-dropdown-item {
   display: flex;
@@ -196,9 +389,8 @@
   cursor: pointer;
   transition: background 0.12s;
 }
-
-.bl-dropdown-item:hover { background: rgba(255, 255, 255, 0.07); }
-.bl-dropdown-item--active { color: #60a5fa; }
+.bl-dropdown-item:hover          { background: rgba(255,255,255,0.07); }
+.bl-dropdown-item--active        { color: #60a5fa; }
 
 /* ── Chart canvas ── */
 .bl-chart-area {
@@ -225,10 +417,9 @@
   height: 100%;
   position: relative;
   cursor: pointer;
-  gap: 5px;
+  gap: 0;
 }
 
-/* Tooltip */
 .bl-bar-tooltip {
   position: absolute;
   top: -26px;
@@ -246,21 +437,25 @@
   z-index: 10;
 }
 
-/* Bar itself */
-.bl-bar {
-  width: 40px;
+.bl-stacked-bar {
+  width: 36px;
+  display: flex;
+  flex-direction: column-reverse;
   border-radius: 4px 4px 0 0;
-  background: #393C45;
-  transition: background 0.15s, transform 0.1s;
+  overflow: hidden;
   min-height: 4px;
+  transition: opacity 0.15s;
 }
 
-/* Pink highlight on hover — matches Figma */
-.bl-bar--hovered {
-  background: #ec4899;
-}
+.bl-bar-col:hover .bl-stacked-bar { opacity: 0.9; }
 
-/* X-axis label */
+.bl-bar-segment {
+  width: 100%;
+  min-height: 2px;
+}
+.bl-bar-segment--explore { background: #3b82f6; }
+.bl-bar-segment--persona { background: #ec4899; }
+
 .bl-bar-label {
   position: absolute;
   bottom: -22px;
@@ -268,6 +463,31 @@
   color: #6b7280;
   white-space: nowrap;
 }
+
+/* ════════════════════════════════════════════════════════════════
+   FOOTER LINKS
+════════════════════════════════════════════════════════════════ */
+
+.bl-footer-links {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.bl-footer-link {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: #14b8a6;
+  text-align: left;
+  width: fit-content;
+  transition: color 0.15s, opacity 0.15s;
+}
+.bl-footer-link:hover { color: #2dd4bf; opacity: 0.9; }
 
 /* ════════════════════════════════════════════════════════════════
    INVOICES SECTION
@@ -279,14 +499,6 @@
   gap: 12px;
 }
 
-.bl-invoices-title {
-  font-size: 15px;
-  font-weight: 700;
-  color: #f3f4f6;
-  margin: 0;
-}
-
-/* Toolbar */
 .bl-invoice-toolbar {
   display: flex;
   align-items: center;
@@ -321,11 +533,9 @@
   transition: border-color 0.15s;
   box-sizing: border-box;
 }
-
 .bl-invoice-search-input::placeholder { color: #4b5563; }
 .bl-invoice-search-input:focus         { border-color: #374151; }
 
-/* Filter buttons */
 .bl-filter-wrap {
   position: relative;
   flex-shrink: 0;
@@ -339,7 +549,7 @@
   overflow: visible;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.35);
 }
 
 .bl-table-header {
@@ -364,7 +574,6 @@
   display: flex;
   align-items: center;
 }
-
 .bl-hcell--right { justify-content: flex-end; }
 
 .bl-table-body {
@@ -380,12 +589,11 @@
   gap: 0.75rem;
   padding: 11px 18px;
   align-items: center;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255,255,255,0.04);
   background: #000;
   transition: background 0.15s;
   overflow: visible;
 }
-
 .bl-table-row:hover { background: #0f1115; }
 .bl-table-row:last-child {
   border-bottom: none;
@@ -399,7 +607,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
 .bl-cell--mono  { font-family: 'Courier New', monospace; font-size: 12px; }
 .bl-cell--muted { color: #9ca3af; }
 
@@ -411,7 +618,6 @@
   overflow: visible;
 }
 
-/* ── Status badges ── */
 .bl-status-badge {
   display: inline-flex;
   align-items: center;
@@ -420,26 +626,10 @@
   font-size: 11.5px;
   font-weight: 600;
 }
+.bl-status-badge--paid    { background: rgba(34,197,94,0.12);  color: #22c55e; border: 1px solid rgba(34,197,94,0.2); }
+.bl-status-badge--pending { background: rgba(234,179,8,0.12);  color: #eab308; border: 1px solid rgba(234,179,8,0.2); }
+.bl-status-badge--overdue { background: rgba(239,68,68,0.12);  color: #ef4444; border: 1px solid rgba(239,68,68,0.2); }
 
-.bl-status-badge--paid {
-  background: rgba(34, 197, 94, 0.12);
-  color: #22c55e;
-  border: 1px solid rgba(34, 197, 94, 0.2);
-}
-
-.bl-status-badge--pending {
-  background: rgba(234, 179, 8, 0.12);
-  color: #eab308;
-  border: 1px solid rgba(234, 179, 8, 0.2);
-}
-
-.bl-status-badge--overdue {
-  background: rgba(239, 68, 68, 0.12);
-  color: #ef4444;
-  border: 1px solid rgba(239, 68, 68, 0.2);
-}
-
-/* Action buttons */
 .bl-action-btn {
   display: flex;
   align-items: center;
@@ -453,13 +643,11 @@
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
-
 .bl-action-btn:hover {
-  background: rgba(255, 255, 255, 0.07);
+  background: rgba(255,255,255,0.07);
   color: #e5e7eb;
 }
 
-/* Empty state */
 .bl-empty {
   padding: 40px 20px;
   text-align: center;
@@ -471,43 +659,37 @@
    RESPONSIVE
 ════════════════════════════════════════════════════════════════ */
 
+@media (max-width: 1100px) {
+  .bl-stat-cards { grid-template-columns: 1fr; }
+  .bl-billing-title-row { flex-wrap: wrap; }
+}
+
 @media (max-width: 900px) {
+  .bl-stat-card--left {
+    grid-template-columns: 1fr;
+  }
+  .bl-stat-divider { width: auto; height: 1px; }
+  .bl-stat-card--payable {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .bl-stat-actions { min-width: unset; }
   .bl-table-header,
   .bl-table-row {
     grid-template-columns: 1fr 1fr 0.8fr 80px;
   }
-
-  /* hide less critical columns */
   .bl-table-header .bl-hcell:nth-child(2),
   .bl-table-row    .bl-cell:nth-child(2),
   .bl-table-header .bl-hcell:nth-child(3),
   .bl-table-row    .bl-cell:nth-child(3),
   .bl-table-header .bl-hcell:nth-child(6),
-  .bl-table-row    .bl-cell:nth-child(6) {
-    display: none;
-  }
+  .bl-table-row    .bl-cell:nth-child(6) { display: none; }
 }
 
 @media (max-width: 600px) {
   .bl-bars { gap: 3px; }
   .bl-bar-label { font-size: 8px; }
   .bl-chart-area { height: 150px; }
-}
-.bl-receipt-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 12.5px;
-  font-weight: 500;
-  color: #3b82f6;
-  text-decoration: none;
-  transition: color 0.15s;
-}
- 
-.bl-receipt-link:hover {
-  color: #60a5fa;
-}
-.bl-table-header--simple,
-.bl-table-row--simple {
-  grid-template-columns: 1.4fr 1.6fr 1.2fr 1fr 120px;
+  .bl-chart-legend { display: none; }
+  .bl-billing-header-dropdowns { flex-wrap: wrap; }
 }
