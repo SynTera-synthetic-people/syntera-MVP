@@ -60,7 +60,7 @@ const StatusIcon: React.FC<{ status: string }> = ({ status }) => {
   switch (status?.toLowerCase()) {
     case 'clear':
       return (
-        <span className="trc-status-icon trc-status-icon--validated">
+        <span className="trc-status-icon trc-status-icon--validated" >
           <SpIcon name="sp-Warning-Circle_Check" size={14} />
         </span>
       );

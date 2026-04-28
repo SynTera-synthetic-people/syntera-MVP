@@ -372,7 +372,7 @@ const Settings: React.FC = () => {
                 className={`acc-nav-child ${activeView === 'invoice' ? 'acc-nav-child--active' : ''}`}
                 onClick={() => goTo('invoice')}
               >
-                <SpIcon name="sp-File-File_Document" /> Payment Log
+                <SpIcon name="sp-File-File_Document" /> Invoices
               </button>
             </div>
           )}

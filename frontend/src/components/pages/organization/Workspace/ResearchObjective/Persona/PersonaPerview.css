@@ -6,28 +6,25 @@
 
 @keyframes pp-spin { to { transform: rotate(360deg); } }
 
-/* ── Root — fills whatever space the shell gives it ─────────── */
+/* ── Root ─────────────────────────────────────────────────────── */
 .pp-root {
   display: flex;
   flex-direction: column;
   width: 100%;
-  /* No min-height:100vh — the shell manages height */
-  padding-bottom: 80px; /* clearance for fixed bottom nav */
+  padding-bottom: 80px;
   color: #f1f5f9;
   font-family: inherit;
   overflow-y: auto;
-  /* Solid background so no parent content bleeds through */
   background: #0a0b0f;
 }
 
-/* Light mode root */
 .light .pp-root,
 [data-theme="light"] .pp-root {
   background: #f8fafc;
   color: #0f172a;
 }
 
-/* ── Center pages (loading / error) ─────────────────────────── */
+/* ── Center pages ─────────────────────────────────────────────── */
 .pp-center-page {
   display: flex;
   flex-direction: column;
@@ -61,7 +58,6 @@
   padding: 6px 10px;
   border-radius: 8px;
   transition: color 0.15s, background 0.15s;
-  /* Prevent text from collapsing into the delete button */
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -85,7 +81,6 @@
   transition: background 0.15s;
   white-space: nowrap;
   flex-shrink: 0;
-  /* Push to the right */
   margin-left: auto;
 }
 .pp-delete-btn:hover:not(:disabled) { background: rgba(239,68,68,0.14); }
@@ -111,15 +106,9 @@
   align-items: flex-start;
 }
 
-.pp-hero-left {
-  flex: 1;
-  min-width: 0;
-}
+.pp-hero-left { flex: 1; min-width: 0; }
 
-/* "Created by Omi" pill */
-.pp-created-by-row {
-  margin-bottom: 10px;
-}
+.pp-created-by-row { margin-bottom: 10px; }
 .pp-created-omi-pill {
   display: inline-flex;
   align-items: center;
@@ -135,14 +124,11 @@
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  object-fit: cover;            
-  object-position: center 25%;  
-  transform: scale(1.4);        
+  object-fit: cover;
+  object-position: center 25%;
+  transform: scale(1.4);
 }
-.pp-created-by-text {
-  font-size: 12px;
-  color: #64748b;
-}
+.pp-created-by-text { font-size: 12px; color: #64748b; }
 
 .pp-persona-name {
   font-size: 28px;
@@ -152,27 +138,11 @@
   line-height: 1.2;
 }
 
-.pp-key-facts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  margin-bottom: 16px;
-}
-.pp-fact {
-  font-size: 13px;
-  color: #94a3b8;
-}
-.pp-fact-label {
-  font-weight: 600;
-  color: #64748b;
-  margin-right: 4px;
-}
+.pp-key-facts { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 16px; }
+.pp-fact { font-size: 13px; color: #94a3b8; }
+.pp-fact-label { font-weight: 600; color: #64748b; margin-right: 4px; }
 
-.pp-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
+.pp-tags { display: flex; flex-wrap: wrap; gap: 8px; }
 .pp-tag {
   background: rgba(255,255,255,0.07);
   border: 1px solid rgba(255,255,255,0.1);
@@ -183,7 +153,7 @@
   border-radius: 20px;
 }
 
-/* Right: confidence panel */
+/* Confidence panel */
 .pp-confidence-panel {
   width: 300px;
   flex-shrink: 0;
@@ -211,17 +181,8 @@
 }
 .pp-conf-bar-fill { height: 100%; border-radius: 99px; }
 
-.pp-breakdown-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 14px;
-}
-.pp-breakdown-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
+.pp-breakdown-rows { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.pp-breakdown-row { display: flex; justify-content: space-between; align-items: center; }
 .pp-breakdown-label { font-size: 12px; color: #64748b; }
 .pp-breakdown-score { font-size: 12px; font-weight: 700; color: #f1f5f9; }
 
@@ -231,19 +192,17 @@
   gap: 4px;
   background: none;
   border: none;
-  color: var(--T-Secondary-s-500, #37FFCE);;
+  color: var(--T-Secondary-s-500, #37FFCE);
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
   padding: 0;
   transition: color 0.15s;
 }
-.pp-calib-link:hover { color: var(--T-Secondary-s-500, #37FFCE); }
+.pp-calib-link:hover { color: var(--T-Secondary-s-500, #37FFCE); opacity: 0.8; }
 
 /* ── Attributes Showcase ──────────────────────────────────────── */
-.pp-showcase {
-  padding: 28px 32px 32px;
-}
+.pp-showcase { padding: 28px 32px 32px; }
 
 .pp-showcase-title {
   font-size: 20px;
@@ -286,7 +245,7 @@
   bottom: 0;
   left: 35%;
   transform: translateX(-50%);
-  width: 48px;       
+  width: 48px;
   height: 2px;
   background: #37FFCE;
   border-radius: 2px;
@@ -309,9 +268,7 @@
 
 /* ── OCEAN ─────────────────────────────────────────────────────── */
 .pp-ocean { display: flex; flex-direction: column; gap: 24px; }
-@media (min-width: 900px) {
-  .pp-ocean { flex-direction: row; align-items: flex-start; }
-}
+@media (min-width: 900px) { .pp-ocean { flex-direction: row; align-items: flex-start; } }
 .pp-radar-wrap { width: 280px; height: 280px; flex-shrink: 0; }
 .pp-ocean-scores { flex: 1; display: flex; flex-direction: column; gap: 12px; }
 .pp-ocean-row { display: flex; flex-direction: column; gap: 4px; }
@@ -320,14 +277,8 @@
   text-transform: uppercase; letter-spacing: 0.05em;
 }
 .pp-ocean-bar-wrap { display: flex; align-items: center; gap: 10px; }
-.pp-ocean-bar-track {
-  flex: 1; height: 6px; border-radius: 99px;
-  background: rgba(255,255,255,0.07); overflow: hidden;
-}
-.pp-ocean-bar-fill {
-  height: 100%; border-radius: 99px;
-  background: linear-gradient(90deg, #3b82f6, #6366f1);
-}
+.pp-ocean-bar-track { flex: 1; height: 6px; border-radius: 99px; background: rgba(255,255,255,0.07); overflow: hidden; }
+.pp-ocean-bar-fill { height: 100%; border-radius: 99px; background: linear-gradient(90deg, #3b82f6, #6366f1); }
 .pp-ocean-pct { font-size: 11px; font-weight: 700; color: #60a5fa; width: 34px; text-align: right; }
 
 /* ── Psychometric ─────────────────────────────────────────────── */
@@ -355,45 +306,175 @@
 .pp-evidence-item { display: flex; justify-content: space-between; font-size: 12px; color: #94a3b8; }
 .pp-evidence-count { font-weight: 700; color: #60a5fa; font-variant-numeric: tabular-nums; }
 
-/* ── Calibration breakdown ────────────────────────────────────── */
-.pp-calibration { display: flex; flex-direction: column; gap: 20px; }
-.pp-calib-summary {
-  background: rgba(59,130,246,0.05);
-  border: 1px solid rgba(59,130,246,0.15);
-  border-radius: 12px; padding: 16px 20px;
+/* ════════════════════════════════════════════════════════════════
+   CALIBRATION BREAKDOWN  —  NEW FIGMA-ACCURATE STYLES
+════════════════════════════════════════════════════════════════ */
+
+/* 2-column grid wrapper */
+.pp-calib-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  align-items: start;
 }
-.pp-calib-summary-text { font-size: 13px; font-style: italic; color: #94a3b8; line-height: 1.6; margin: 0; }
-.pp-calib-rows { display: flex; flex-direction: column; gap: 16px; }
-.pp-calib-row { display: flex; flex-direction: column; gap: 6px; }
-.pp-calib-row-header { display: flex; justify-content: space-between; align-items: center; }
-.pp-calib-row-label { font-size: 12px; font-weight: 600; color: #64748b; text-transform: capitalize; }
-.pp-calib-row-pct { font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums; }
-.pp-calib-bar-track {
-  height: 5px; border-radius: 99px;
-  background: rgba(255,255,255,0.07); overflow: hidden;
+
+@media (max-width: 860px) {
+  .pp-calib-grid { grid-template-columns: 1fr; }
 }
-.pp-calib-bar-fill { height: 100%; border-radius: 99px; }
-.pp-calib-total {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 16px 20px;
-  background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,255,255,0.09);
-  border-radius: 12px; margin-top: 8px;
+
+/* Each column stacks its cards */
+.pp-calib-col {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
-.pp-calib-total-label {
-  font-size: 13px; font-weight: 700; color: #94a3b8;
-  text-transform: uppercase; letter-spacing: 0.06em;
+
+/* ── Calibration card ─────────────────────────────────────────── */
+.pp-calib-card {
+  background: #111318;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 24px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  /* Shrink-wrap to content height — prevents empty space below card */
+  align-self: flex-start;
+  width: 100%;
+  box-sizing: border-box;
 }
-.pp-calib-total-score { font-size: 22px; font-weight: 900; }
+
+/* Card header: title + subtitle */
+.pp-calib-card-header {
+  margin-bottom: 16px;
+}
+
+.pp-calib-card-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #f1f5f9;
+  margin: 0 0 5px;
+  letter-spacing: -0.1px;
+  line-height: 1.3;
+}
+
+.pp-calib-card-subtitle {
+  font-size: 12.5px;
+  color: #64748b;
+  margin: 0;
+  line-height: 1.55;
+}
+
+/* Big count number */
+.pp-calib-card-count {
+  font-size: 26px;
+  font-weight: 800;
+  color: #f1f5f9;
+  letter-spacing: -0.5px;
+  line-height: 1.1;
+  margin-bottom: 3px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Count sub-label */
+.pp-calib-card-count-label {
+  font-size: 12px;
+  color: #64748b;
+  margin-bottom: 22px;
+}
+
+/* ── Internal section (Parameter Integrated / Technique Used / etc.) ── */
+.pp-calib-section {
+  margin-top: 18px;
+}
+
+.pp-calib-section-heading {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #e2e8f0;
+  margin: 0 0 12px;
+  letter-spacing: -0.05px;
+}
+
+/* List of param rows */
+.pp-calib-param-list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+/* Single param row: icon + label (+ optional dot) */
+.pp-calib-param-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.pp-calib-param-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+  flex-shrink: 0;
+}
+
+.pp-calib-param-label {
+  font-size: 13px;
+  color: #cbd5e1;
+  line-height: 1.4;
+  flex: 1;
+}
+
+/* Blue dot indicator used in Key Attributes */
+.pp-key-attr-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2.5px solid #3b82f6;
+  background: transparent;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+/* ── Platforms Covered row ─────────────────────────────────────── */
+.pp-calib-platforms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.pp-calib-platform-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+
+.pp-calib-platform-icon:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #e2e8f0;
+}
 
 /* ── Empty state ─────────────────────────────────────────────── */
 .pp-empty { color: #475569; font-size: 14px; padding: 32px 0; text-align: center; }
 
-/* ── Bottom navigation arrows — fixed to viewport bottom ──────── */
+/* ── Bottom navigation ────────────────────────────────────────── */
 .pp-bottom-nav {
   position: fixed;
   bottom: 0;
-  /* Left offset accounts for the sidebar width (260px typical) */
   left: 260px;
   right: 0;
   display: flex;
@@ -404,7 +485,6 @@
   backdrop-filter: blur(12px);
   border-top: 1px solid rgba(255,255,255,0.07);
   z-index: 40;
-  /* Fallback if sidebar width varies */
   pointer-events: auto;
 }
 
@@ -451,14 +531,18 @@
   .pp-ocean-bar-track { background: rgba(0,0,0,0.07); }
   .pp-calib-bar-track { background: rgba(0,0,0,0.07); }
   .pp-conf-bar-track { background: rgba(0,0,0,0.07); }
-  .pp-bottom-nav {
-    background: rgba(255,255,255,0.97);
-    border-top-color: rgba(0,0,0,0.08);
-  }
-  .pp-nav-arrow {
-    border-color: rgba(0,0,0,0.12);
-    background: rgba(0,0,0,0.03);
-    color: #475569;
-  }
+  .pp-bottom-nav { background: rgba(255,255,255,0.97); border-top-color: rgba(0,0,0,0.08); }
+  .pp-nav-arrow { border-color: rgba(0,0,0,0.12); background: rgba(0,0,0,0.03); color: #475569; }
   .pp-nav-arrow:hover:not(:disabled) { background: rgba(0,0,0,0.07); color: #0f172a; }
+
+  /* Calibration light mode */
+  .pp-calib-card { background: #ffffff; border-color: rgba(0,0,0,0.08); }
+  .pp-calib-card-title { color: #0f172a; }
+  .pp-calib-card-subtitle { color: #94a3b8; }
+  .pp-calib-card-count { color: #0f172a; }
+  .pp-calib-section-heading { color: #1e293b; }
+  .pp-calib-param-icon { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.08); color: #64748b; }
+  .pp-calib-param-label { color: #334155; }
+  .pp-calib-card-count-label { color: #94a3b8; }
+  .pp-calib-platform-icon { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.08); color: #64748b; }
 }

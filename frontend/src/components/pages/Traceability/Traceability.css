@@ -17,18 +17,19 @@
 /* ── Header ── */
 .trc-back-btn {
   display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.04);
-  color: #9ca3af;
-  font-size: 13px;
+  width: auto; 
+  align-items: flex-start;
+  align-self: flex-start;
+  gap: 0.375rem;
+  font-size: 0.8125rem;
   font-weight: 500;
+  color: #9ca3af;
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.5rem;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-  margin-bottom: 20px;
+  padding: 0.375rem 0.875rem;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
 }
 .trc-back-btn:hover {
   background: rgba(255, 255, 255, 0.08);
@@ -320,8 +321,8 @@
   justify-content: center;
   width: 24px;
   height: 24px;
-  border-radius: 50%;
-  border: 1.5px solid;
+
+
 }
 .trc-status-icon--validated  { border-color: rgba(255,255,255,0.3); color: rgba(255,255,255,0.6); }
 .trc-status-icon--partial    { border-color: rgba(234,179,8,0.5);   color: #eab308; }
@@ -558,4 +559,24 @@
   .trc-page {
     padding: 20px;
   }
+}
+.trc-creator-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  overflow: hidden;        /* 👈 ensures image stays inside circle */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.trc-creator-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 30%;
+  display: block;
 }

@@ -1,15 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import {
-  TbArrowLeft,
-  TbTrash,
-  TbSearch,
-  TbDotsVertical,
-  TbUserPlus,
-  TbEdit,
-} from "react-icons/tb";
-
+import SpIcon from "../../../SPIcon";
 import { workspaceService } from "../../../../services/workspaceService";
 import InviteTeamModal from "./InviteTeamModal";
 import { EditUserModal, RemoveUserModal } from "../../settings/SettingModal";  // ← added RemoveUserModal
@@ -204,27 +196,39 @@ const ManageUsers: React.FC<ManageUsersProps> = ({
 
   // ── Kebab dropdown ────────────────────────────────────────────────────────
 
-  const renderKebabMenu = (member: Member) => (
-    openMenuId === member.id && (
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 4 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="mu-kebab-menu"
-      >
-        <div className="mu-menu-item" onClick={() => handleEditUser(member)}>
-          <TbEdit size={14} /> Edit User
-        </div>
-        <div className="mu-menu-divider" />
+const renderKebabMenu = (member: Member) => (
+  openMenuId === member.id && (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.95, y: 4 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      className="mu-kebab-menu"
+    >
+      <div className="mu-menu-item" onClick={() => handleEditUser(member)}>
+        <SpIcon name="sp-Edit-Edit_Pencil_01" size={14} /> Edit User
+      </div>
+
+      {!member.accepted && (
         <div
-          className="mu-menu-item mu-menu-item--danger"
-          onClick={() => handleRemoveClick(member.id)}  // ← was handleRemoveUser(member.id)
+          className="mu-menu-item"
+          onClick={() => {
+            setOpenMenuId(null);
+            // TODO: wire to resend invitation API
+          }}
         >
-          <TbTrash size={14} />
-          {removingId === member.id ? "Removing..." : "Remove"}
+          <SpIcon name="sp-User-User_03" size={14} /> Resend Invitation
         </div>
-      </motion.div>
-    )
-  );
+      )}
+
+      <div
+        className="mu-menu-item mu-menu-item--danger"
+        onClick={() => handleRemoveClick(member.id)}
+      >
+        <SpIcon name="sp-User-User_Remove" size={14} />
+        {removingId === member.id ? "Removing..." : "Remove User"}
+      </div>
+    </motion.div>
+  )
+);
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -244,7 +248,7 @@ const ManageUsers: React.FC<ManageUsersProps> = ({
                 className="mu-back-btn"
                 onClick={handleBack}
               >
-                <TbArrowLeft size={14} />
+                <SpIcon name="sp-Arrow-Arrow_Left_SM" size={14} />
                 Back
               </motion.button>
             )}
@@ -259,7 +263,7 @@ const ManageUsers: React.FC<ManageUsersProps> = ({
             className="mu-add-btn"
             onClick={() => setShowInviteModal(true)}
           >
-            <TbUserPlus size={17} />
+            <SpIcon name="sp-User-User_Add" size={17} />
             Add User
           </motion.button>
         </div>
@@ -274,7 +278,7 @@ const ManageUsers: React.FC<ManageUsersProps> = ({
 
         {/* Search */}
         <div className="mu-search-wrapper">
-          <TbSearch size={15} className="mu-search-icon" />
+          <SpIcon name="sp-Interface-Search_Magnifying_Glass" size={15} className="mu-search-icon" />
           <input
             type="text"
             className="mu-search-input"
@@ -304,7 +308,7 @@ const ManageUsers: React.FC<ManageUsersProps> = ({
               <div className="mu-table-header mu-table-header--team">
                 <div className="mu-hcell">USER NAME</div>
                 <div className="mu-hcell">EMAIL ADDRESS</div>
-                <div className="mu-hcell">ACTIVE WORKSPACE</div>
+                {/* <div className="mu-hcell">ACTIVE WORKSPACE</div> */}
                 <div className="mu-hcell mu-hcell-actions">ACTIONS</div>
               </div>
 
@@ -323,9 +327,9 @@ const ManageUsers: React.FC<ManageUsersProps> = ({
                     <div className="mu-cell mu-cell-secondary">
                       {member.email}
                     </div>
-                    <div className="mu-cell mu-cell-secondary">
+                    {/* <div className="mu-cell mu-cell-secondary">
                       {member.workspace_name || propWorkspaceName || "—"}
-                    </div>
+                    </div> */}
                     <div className="mu-cell mu-cell-actions">
                       <div className="mu-kebab-wrap">
                         <button
@@ -333,7 +337,7 @@ const ManageUsers: React.FC<ManageUsersProps> = ({
                           onClick={() => toggleMenu(member.id)}
                           aria-label="Row actions"
                         >
-                          <TbDotsVertical size={17} />
+                          <SpIcon name="sp-Menu-More_Vertical" size={17} />
                         </button>
                         {renderKebabMenu(member)}
                       </div>
@@ -349,7 +353,7 @@ const ManageUsers: React.FC<ManageUsersProps> = ({
             <>
               <div className="mu-table-header">
                 <div className="mu-hcell">USER NAME</div>
-                <div className="mu-hcell">WORKSPACE NAME</div>
+                {/* <div className="mu-hcell">WORKSPACE NAME</div> */}
                 <div className="mu-hcell">EMAIL</div>
                 <div className="mu-hcell">INVITED ON</div>
                 <div className="mu-hcell">STATUS</div>
@@ -367,9 +371,9 @@ const ManageUsers: React.FC<ManageUsersProps> = ({
                     className="mu-table-row"
                   >
                     <div className="mu-cell mu-cell-name">{formatMemberName(member)}</div>
-                    <div className="mu-cell mu-cell-secondary">
+                    {/* <div className="mu-cell mu-cell-secondary">
                       {member.workspace_name || propWorkspaceName || "—"}
-                    </div>
+                    </div> */}
                     <div className="mu-cell mu-cell-secondary">{member.email}</div>
                     <div className="mu-cell mu-cell-secondary">{formatDate(member.invited_at)}</div>
                     <div className="mu-cell">
@@ -389,7 +393,7 @@ const ManageUsers: React.FC<ManageUsersProps> = ({
                           onClick={() => toggleMenu(member.id)}
                           aria-label="Row actions"
                         >
-                          <TbDotsVertical size={17} />
+                          <SpIcon name="sp-Menu-More_Vertical" size={17} />
                         </button>
                         {renderKebabMenu(member)}
                       </div>

@@ -417,7 +417,7 @@ const ExplorationList: React.FC = () => {
         {/* ── Search + Filters ── */}
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="search-filter-row">
           <div className="search-wrapper">
-            <TbSearch size={15} className="search-icon" />
+            <SpIcon name="sp-Interface-Search_Magnifying_Glass" size={15} className="search-icon" />
             <input type="text" className="search-input" placeholder="Search here..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
           </div>
 
@@ -580,7 +580,7 @@ const ExplorationList: React.FC = () => {
                 <h3 className="trial-overlay-title">Trial limit reached</h3>
                 <p className="trial-overlay-subtitle">Upgrade to continue exploring behavioural insights without limits</p>
                 <motion.button className="trial-overlay-btn" whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} onClick={() => setShowUpgrade(true)}>
-                  Upgrade Now
+                 <SpIcon name="sp-Arrow-Arrow_Circle_Up"/> Upgrade Now 
                 </motion.button>
               </div>
             </motion.div>

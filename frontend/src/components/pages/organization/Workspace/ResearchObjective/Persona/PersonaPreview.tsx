@@ -7,7 +7,37 @@ import {
   TbTrash,
   TbLoader,
   TbAlertCircle,
+  TbReceipt,
+  TbCursorText,
+  TbRoute,
+  TbLayoutGrid,
+  TbLink,
+  TbWorld,
+  TbBrain,
+  TbEye,
+  TbHeartbeat,
+  TbActivity,
+  TbMoodSmile,
+  TbAtom,
+  TbMicroscope,
+  TbBook,
+  TbSpeakerphone,
+  TbUsers,
+  TbSearch,
+  TbPencil,
+  TbBolt,
+  TbChartBar,
+  TbWifi,
 } from 'react-icons/tb';
+import {
+  SiLinkedin,
+  SiQuora,
+  SiYoutube,
+  SiX,
+  SiInstagram,
+  SiReddit,
+} from 'react-icons/si';
+import { MdStarRate, MdOutlinePublic } from 'react-icons/md';
 import SpIcon from '../../../../../SPIcon';
 import {
   Radar,
@@ -37,11 +67,6 @@ interface TraitMap {
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
-/**
- * Tab definitions matching the Figma tab bar exactly.
- * Each tab has a `key` (used for routing/state), a `label` (displayed),
- * and a `fields` array listing which mapped trait keys belong to it.
- */
 const TABS = [
   {
     key: 'demographics',
@@ -76,9 +101,78 @@ const TABS = [
 
 type TabKey = typeof TABS[number]['key'];
 
+// ── Calibration static data definitions ───────────────────────────────────────
+
+interface CalibParamItem {
+  icon: React.ReactNode;
+  label: string;
+}
+
+const REAL_ACTIONS_PARAMS: CalibParamItem[] = [
+  { icon: <TbReceipt size={14} />,     label: 'Purchase & Transaction Receipts' },
+  { icon: <TbCursorText size={14} />,  label: 'Click intent' },
+  { icon: <TbRoute size={14} />,       label: 'Interaction Trails' },
+  { icon: <TbLayoutGrid size={14} />,  label: 'Feature Usage' },
+  { icon: <TbLink size={14} />,        label: 'Engagement Channel' },
+  { icon: <TbWorld size={14} />,       label: 'Online Browsing Patterns' },
+];
+
+const REAL_ACTIONS_TECHNIQUES: CalibParamItem[] = [
+  { icon: <TbReceipt size={14} />,     label: 'Purchase & Transaction Receipts' },
+  { icon: <TbCursorText size={14} />,  label: 'Click intent' },
+  { icon: <TbRoute size={14} />,       label: 'Interaction Trails' },
+  { icon: <TbWorld size={14} />,       label: 'Online Browsing Patterns' },
+  { icon: <TbLayoutGrid size={14} />,  label: 'Feature Usage' },
+  { icon: <TbLink size={14} />,        label: 'Engagement Channel' },
+];
+
+const EMOTIONAL_PARAMS: CalibParamItem[] = [
+  { icon: <TbBrain size={14} />,       label: 'Cognitive Load and Decision Tension' },
+  { icon: <TbMoodSmile size={14} />,   label: 'Subconscious Bias and Emotional Friction' },
+  { icon: <TbAtom size={14} />,        label: 'Regret Anticipation & Risk Perception' },
+  { icon: <TbLayoutGrid size={14} />,  label: 'Affective Response Modelling' },
+];
+
+const EMOTIONAL_TECH: CalibParamItem[] = [
+  { icon: <TbEye size={14} />,         label: 'EOG (Eye Tracking)' },
+  { icon: <TbHeartbeat size={14} />,   label: 'ECG (Electrocardiogram)' },
+  { icon: <TbActivity size={14} />,    label: 'GSR (Galvanic Skin Response)' },
+  { icon: <TbBolt size={14} />,        label: 'EMG (Electromyography)' },
+  { icon: <TbMicroscope size={14} />,  label: 'PSG (Polysomnography)' },
+  { icon: <TbWorld size={14} />,       label: 'ERP (Event-Related Potential)' },
+];
+
+const VALIDATED_TECH: CalibParamItem[] = [
+  { icon: <TbUsers size={14} />,       label: 'FGDs' },
+  { icon: <TbSearch size={14} />,      label: 'Survey' },
+  { icon: <TbChartBar size={14} />,    label: 'Longitudinal Studies' },
+  { icon: <TbWorld size={14} />,       label: 'Academic behaviour science benchmark' },
+  { icon: <TbLink size={14} />,        label: 'CATI interviews and ethnographic research' },
+  { icon: <TbBook size={14} />,        label: 'Thought Leaderships, White papers, Articles' },
+];
+
+const MULTIPLATFORM_ATTRS: CalibParamItem[] = [
+  { icon: <TbSpeakerphone size={14} />, label: 'Volume' },
+  { icon: <TbActivity size={14} />,     label: 'Recency' },
+  { icon: <TbSearch size={14} />,       label: 'RO Alignment' },
+  { icon: <TbWifi size={14} />,         label: 'Source Diversity' },
+  { icon: <TbBolt size={14} />,         label: 'Signal Clarity' },
+];
+
+// Platform icons row
+const PLATFORM_ICONS = [
+  { icon: <SiLinkedin size={18} />,      key: 'linkedin' },
+  { icon: <SiQuora size={18} />,         key: 'quora' },
+  { icon: <MdOutlinePublic size={18} />, key: 'public' },
+  { icon: <SiX size={18} />,             key: 'x' },
+  { icon: <SiYoutube size={18} />,       key: 'youtube' },
+  { icon: <SiInstagram size={18} />,     key: 'instagram' },
+  { icon: <SiReddit size={18} />,        key: 'reddit' },
+  { icon: <MdStarRate size={18} />,      key: 'reviews' },
+];
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-/** Deep merge: later overlays win only when their value is non-empty. */
 const smartMerge = (
   base: Record<string, unknown>,
   ...overlays: (Record<string, unknown> | null | undefined)[]
@@ -96,17 +190,12 @@ const smartMerge = (
   return result;
 };
 
-/** Coerce a value that may be an array or string to a display string. */
 const coerce = (v: unknown): string => {
   if (v === null || v === undefined) return '';
   if (Array.isArray(v)) return v.join(', ');
   return String(v);
 };
 
-/**
- * Map raw API traits to a flat UI-friendly object.
- * Mirrors the mapApiTraitsToUi function from PersonaPreview.jsx exactly.
- */
 const mapApiTraitsToUi = (
   traits: Record<string, unknown>,
   personaId?: string
@@ -155,7 +244,6 @@ const mapApiTraitsToUi = (
     ),
   };
 
-  // ── Additional / dynamic traits ──
   const STANDARD_KEYS = new Set([
     'name', 'age_range', 'gender', 'income_range', 'education_level', 'occupation',
     'family_size', 'location_country', 'location_state', 'geography', 'lifestyle',
@@ -189,7 +277,6 @@ const mapApiTraitsToUi = (
   return mapped;
 };
 
-/** Flatten nested barrier/trigger object into a string array. */
 const flatten = (obj: unknown): string[] => {
   if (!obj) return [];
   if (Array.isArray(obj)) return obj.filter((v): v is string => typeof v === 'string');
@@ -199,14 +286,11 @@ const flatten = (obj: unknown): string[] => {
     .filter((v): v is string => typeof v === 'string' && v !== '');
 };
 
-// ── Confidence bar colour ──────────────────────────────────────────────────────
-
 const confColor = (score: number) =>
   score >= 80 ? '#22c55e' : score >= 60 ? '#f59e0b' : '#ef4444';
 
-// ── Subcomponents ─────────────────────────────────────────────────────────────
+// ── Sub-components ─────────────────────────────────────────────────────────────
 
-/** Two-column key-value row used inside the attributes table. */
 const TraitRow: React.FC<{ label: string; value: string }> = ({ label, value }) => (
   <div className="pp-trait-row">
     <span className="pp-trait-label">{label}</span>
@@ -214,19 +298,83 @@ const TraitRow: React.FC<{ label: string; value: string }> = ({ label, value }) 
   </div>
 );
 
-/** Inline loading spinner page. */
 const LoadingPage: React.FC = () => (
   <div className="pp-center-page">
     <TbLoader className="pp-spin" size={36} />
   </div>
 );
 
-/** Inline error page. */
 const ErrorPage: React.FC<{ onBack: () => void }> = ({ onBack }) => (
   <div className="pp-center-page">
     <TbAlertCircle size={48} style={{ color: '#ef4444', marginBottom: 12 }} />
     <p style={{ color: '#ef4444', marginBottom: 16 }}>Failed to load persona preview</p>
     <button className="pp-back-btn" onClick={onBack}>Go Back</button>
+  </div>
+);
+
+// ── Calibration param list item ────────────────────────────────────────────────
+
+const CalibParamRow: React.FC<{ item: CalibParamItem }> = ({ item }) => (
+  <div className="pp-calib-param-row">
+    <span className="pp-calib-param-icon">{item.icon}</span>
+    <span className="pp-calib-param-label">{item.label}</span>
+  </div>
+);
+
+// ── Key Attribute row (with blue dot indicator) ────────────────────────────────
+
+const KeyAttrRow: React.FC<{ item: CalibParamItem }> = ({ item }) => (
+  <div className="pp-calib-param-row">
+    <span className="pp-calib-param-icon">{item.icon}</span>
+    <span className="pp-calib-param-label">{item.label}</span>
+    <span className="pp-key-attr-dot" />
+  </div>
+);
+
+// ── Calibration card ───────────────────────────────────────────────────────────
+
+interface CalibCardProps {
+  title: string;
+  subtitle: string;
+  count: string;
+  countLabel: string;
+  sections: Array<{
+    heading: string;
+    items: CalibParamItem[];
+    variant?: 'default' | 'key-attr';
+  }>;
+  extraFooter?: React.ReactNode;
+}
+
+const CalibCard: React.FC<CalibCardProps> = ({
+  title, subtitle, count, countLabel, sections, extraFooter,
+}) => (
+  <div className="pp-calib-card">
+    {/* Card header */}
+    <div className="pp-calib-card-header">
+      <h3 className="pp-calib-card-title">{title}</h3>
+      <p className="pp-calib-card-subtitle">{subtitle}</p>
+    </div>
+
+    {/* Big number */}
+    <div className="pp-calib-card-count">{count}</div>
+    <div className="pp-calib-card-count-label">{countLabel}</div>
+
+    {/* Sections */}
+    {sections.map((section, si) => (
+      <div key={si} className="pp-calib-section">
+        <h4 className="pp-calib-section-heading">{section.heading}</h4>
+        <div className="pp-calib-param-list">
+          {section.items.map((item, ii) =>
+            section.variant === 'key-attr'
+              ? <KeyAttrRow key={ii} item={item} />
+              : <CalibParamRow key={ii} item={item} />
+          )}
+        </div>
+      </div>
+    ))}
+
+    {extraFooter}
   </div>
 );
 
@@ -240,8 +388,6 @@ const PersonaPreview: React.FC = () => {
     personaId: string;
   }>();
   const { theme } = useTheme();
-
-  // ── Data fetching (unchanged from JSX) ──────────────────────────────────────
 
   const {
     data: previewData,
@@ -258,12 +404,9 @@ const PersonaPreview: React.FC = () => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>('demographics');
 
-  // Refetch on ID change
   useEffect(() => {
     if (workspaceId && objectiveId && personaId) refetch();
   }, [workspaceId, objectiveId, personaId, refetch]);
-
-  // ── Derive merged traits (unchanged logic from JSX) ────────────────────────
 
   const personasList: Record<string, unknown>[] = Array.isArray(manualPersonasData)
     ? (manualPersonasData as Record<string, unknown>[])
@@ -288,7 +431,7 @@ const PersonaPreview: React.FC = () => {
 
   const uiTraits = mapApiTraitsToUi(mergedTraits, personaId);
 
-  // ── Confidence data (unchanged logic from JSX) ─────────────────────────────
+  // ── Confidence data ────────────────────────────────────────────────────────
 
   const evidenceSnapshot = (
     rawData?.evidence_snapshot ??
@@ -322,9 +465,6 @@ const PersonaPreview: React.FC = () => {
     weightedTotal ??
     parseInt(String(confidence.score ?? mergedTraits.confidence_score ?? 0), 10);
 
-  // ── Breakdown line items ───────────────────────────────────────────────────
-  // These are the "Real Actions Signal: 1,20,000" rows shown top-right in Figma
-
   const breakdownComponents = confidenceDetail?.components as Record<string, number> | undefined;
   const breakdownEntries: Array<{ label: string; score: number }> = breakdownComponents
     ? Object.entries(breakdownComponents).map(([key, score]) => ({
@@ -346,7 +486,8 @@ const PersonaPreview: React.FC = () => {
         score: v as number,
       }));
 
-  // Evidence sites (unchanged from JSX)
+  // ── Evidence sites ─────────────────────────────────────────────────────────
+
   const evidenceSitesRaw = (
     (evidenceSnapshot as Record<string, unknown>)?.sources ??
     mergedTraits.researched_sites ??
@@ -425,28 +566,18 @@ const PersonaPreview: React.FC = () => {
     { subject: 'Neuroticism', A: oceanScores.neuroticism ?? 0, fullMark: 1 },
   ];
 
-  // ── Barriers / triggers ────────────────────────────────────────────────────
-
   const barriersList = flatten(mergedTraits.barriers_pain_points);
   const triggersList = flatten(mergedTraits.triggers_opportunities);
 
-  // ── Persona meta ───────────────────────────────────────────────────────────
-
   const personaName = (mergedTraits.name as string) ?? 'Unnamed Persona';
-  const isAI = !!(
-    mergedTraits.auto_generated_persona ||
-    !!(uiTraits.isAI)
-  );
+  const isAI = !!(mergedTraits.auto_generated_persona || !!(uiTraits.isAI));
   const createdByLabel = isAI ? 'Omi' : String(mergedTraits.created_by_name ?? mergedTraits.created_by ?? 'You');
 
-  // Tag pills: interests + personality as individual tags
   const tagSource = [
     ...(Array.isArray(mergedTraits.interests) ? mergedTraits.interests as string[] : [String(mergedTraits.interests ?? '')].filter(Boolean)),
     ...(Array.isArray(mergedTraits.personality) ? mergedTraits.personality as string[] : [String(mergedTraits.personality ?? '')].filter(Boolean)),
     ...((mergedTraits.tags as string[]) ?? []),
   ].filter(Boolean).slice(0, 12);
-
-  // ── Persona list for ← → navigation ───────────────────────────────────────
 
   const currentIndex = personasList.findIndex(p => (p as Record<string, unknown>).id === personaId);
   const prevPersona = currentIndex > 0 ? personasList[currentIndex - 1] as Record<string, unknown> : null;
@@ -463,21 +594,15 @@ const PersonaPreview: React.FC = () => {
     [navigate, workspaceId, objectiveId]
   );
 
-  // ── Delete ─────────────────────────────────────────────────────────────────
-
   const handleDelete = async () => {
     if (!personaId || isDeleting) return;
-    const confirmed = window.confirm(
-      `Delete "${personaName}"? This cannot be undone.`
-    );
+    const confirmed = window.confirm(`Delete "${personaName}"? This cannot be undone.`);
     if (!confirmed) return;
     setIsDeleting(true);
     try {
       type DeleteFn = (id: string) => Promise<unknown>;
       await (deletePersonaMutation.mutateAsync as unknown as DeleteFn)(personaId);
-      navigate(
-        `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-builder`
-      );
+      navigate(`/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-builder`);
     } catch {
       alert('Failed to delete persona. Please try again.');
     } finally {
@@ -485,61 +610,48 @@ const PersonaPreview: React.FC = () => {
     }
   };
 
-  // ── Guards ─────────────────────────────────────────────────────────────────
+  // ── Derive display count for calibration cards from API data ──────────────
+  // Use first breakdown entry count if available, else finalScore formatted
+  const getCalibCount = (key: string): string => {
+    const entry = breakdownEntries.find(e =>
+      e.label.toLowerCase().includes(key.toLowerCase())
+    );
+    if (entry) {
+      return entry.score > 1
+        ? entry.score.toLocaleString('en-IN')
+        : `${Math.round(entry.score * 100)}%`;
+    }
+    // Default display number from Figma
+    return '1,23,456';
+  };
 
   if (isLoading && !previewData) {
-    return (
-      <div className="pp-root">
-        <LoadingPage />
-      </div>
-    );
+    return <div className="pp-root"><LoadingPage /></div>;
   }
 
   if (error) {
-    return (
-      <div className="pp-root">
-        <ErrorPage onBack={() => navigate(-1)} />
-      </div>
-    );
+    return <div className="pp-root"><ErrorPage onBack={() => navigate(-1)} /></div>;
   }
-
-  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <div className="pp-root">
 
       {/* ── Top bar ── */}
       <div className="pp-topbar">
-        {/* Back link */}
         <button
           className="pp-back-link"
           onClick={() =>
-            navigate(
-              `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-builder`
-            )
+            navigate(`/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-builder`)
           }
         >
           <SpIcon name="sp-Arrow-Arrow_Left_SM" size={15} />
           Back to List of the personas
         </button>
-
-        {/* Delete button — right side */}
-        {/* <button
-          className="pp-delete-btn"
-          onClick={handleDelete}
-          disabled={isDeleting}
-        >
-          {isDeleting ? <TbLoader size={14} className="pp-spin" /> : <TbTrash size={14} />}
-          {isDeleting ? 'Deleting…' : 'Delete'}
-        </button> */}
       </div>
 
-      {/* ── Hero section ── */}
+      {/* ── Hero ── */}
       <div className="pp-hero">
-
-        {/* Left: persona identity */}
         <div className="pp-hero-left">
-          {/* Created by row */}
           <div className="pp-created-by-row">
             {isAI ? (
               <span className="pp-created-omi-pill">
@@ -550,11 +662,7 @@ const PersonaPreview: React.FC = () => {
               <span className="pp-created-by-text">Created by {createdByLabel}</span>
             )}
           </div>
-
-          {/* Persona name */}
           <h1 className="pp-persona-name">{personaName}</h1>
-
-          {/* Key facts inline */}
           <div className="pp-key-facts">
             {!!uiTraits['Age'] && (
               <span className="pp-fact">
@@ -575,8 +683,6 @@ const PersonaPreview: React.FC = () => {
               </span>
             )}
           </div>
-
-          {/* Tag pills */}
           {tagSource.length > 0 && (
             <div className="pp-tags">
               {tagSource.map((tag, i) => (
@@ -586,7 +692,6 @@ const PersonaPreview: React.FC = () => {
           )}
         </div>
 
-        {/* Right: calibration confidence panel */}
         <div className="pp-confidence-panel">
           <div className="pp-conf-header">
             <span className="pp-conf-title">Calibration Confidence:</span>
@@ -594,8 +699,6 @@ const PersonaPreview: React.FC = () => {
               {finalScore}%
             </span>
           </div>
-
-          {/* Main bar */}
           <div className="pp-conf-bar-track">
             <motion.div
               className="pp-conf-bar-fill"
@@ -605,8 +708,6 @@ const PersonaPreview: React.FC = () => {
               style={{ background: confColor(finalScore) }}
             />
           </div>
-
-          {/* Breakdown rows (the "Real Actions Signal: 1,20,000" items) */}
           {breakdownEntries.length > 0 && (
             <div className="pp-breakdown-rows">
               {breakdownEntries.map(({ label, score }) => (
@@ -621,12 +722,7 @@ const PersonaPreview: React.FC = () => {
               ))}
             </div>
           )}
-
-          {/* Calibration Breakdown link */}
-          <button
-            className="pp-calib-link"
-            onClick={() => setActiveTab('calibration')}
-          >
+          <button className="pp-calib-link" onClick={() => setActiveTab('calibration')}>
             Calibration Breakdown <SpIcon name="sp-Arrow-Arrow_Right_SM" />
           </button>
         </div>
@@ -636,7 +732,6 @@ const PersonaPreview: React.FC = () => {
       <div className="pp-showcase">
         <h2 className="pp-showcase-title">Attributes Showcase</h2>
 
-        {/* Tab bar */}
         <div className="pp-tab-bar">
           {TABS.map(tab => (
             <button
@@ -646,16 +741,12 @@ const PersonaPreview: React.FC = () => {
             >
               {tab.label}
               {activeTab === tab.key && (
-                <motion.div
-                  layoutId="pp-active-tab"
-                  className="pp-tab-underline"
-                />
+                <motion.div layoutId="pp-active-tab" className="pp-tab-underline" />
               )}
             </button>
           ))}
         </div>
 
-        {/* Tab content */}
         <AnimatePresence mode="wait">
           <motion.div
             key={activeTab}
@@ -666,7 +757,7 @@ const PersonaPreview: React.FC = () => {
             className="pp-tab-content"
           >
 
-            {/* ── Demographics / Psychographic / Behavioral tabs ── */}
+            {/* ── Demographics / Psychographic / Behavioral ── */}
             {(activeTab === 'demographics' ||
               activeTab === 'psychographic' ||
               activeTab === 'behavioral') && ((): React.ReactElement => {
@@ -676,9 +767,7 @@ const PersonaPreview: React.FC = () => {
                   .filter(r => r.value);
                 return rows.length > 0 ? (
                   <div className="pp-trait-table">
-                    {rows.map(r => (
-                      <TraitRow key={r.label} label={r.label} value={r.value} />
-                    ))}
+                    {rows.map(r => <TraitRow key={r.label} label={r.label} value={r.value} />)}
                   </div>
                 ) : (
                   <p className="pp-empty">No traits available for this category.</p>
@@ -693,41 +782,23 @@ const PersonaPreview: React.FC = () => {
                     <div className="pp-radar-wrap">
                       <ResponsiveContainer width="100%" height={280}>
                         <RadarChart cx="50%" cy="50%" outerRadius="75%" data={radarData}>
-                          <PolarGrid
-                            stroke={theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}
-                          />
+                          <PolarGrid stroke={theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'} />
                           <PolarAngleAxis
                             dataKey="subject"
-                            tick={{
-                              fill: theme === 'dark' ? '#9ca3af' : '#6b7280',
-                              fontSize: 12,
-                              fontWeight: 600,
-                            }}
+                            tick={{ fill: theme === 'dark' ? '#9ca3af' : '#6b7280', fontSize: 12, fontWeight: 600 }}
                           />
                           <PolarRadiusAxis
-                            angle={30}
-                            domain={[0, 1]}
-                            tickCount={6}
+                            angle={30} domain={[0, 1]} tickCount={6}
                             tick={{ fill: theme === 'dark' ? '#6b7280' : '#9ca3af', fontSize: 10 }}
                           />
-                          <Radar
-                            name={personaName}
-                            dataKey="A"
-                            stroke="#3b82f6"
-                            fill="#3b82f6"
-                            fillOpacity={0.45}
-                            strokeWidth={2}
-                          />
+                          <Radar name={personaName} dataKey="A" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.45} strokeWidth={2} />
                         </RadarChart>
                       </ResponsiveContainer>
                     </div>
-
                     <div className="pp-ocean-scores">
                       {Object.entries(oceanScores).map(([trait, score]) => (
                         <div key={trait} className="pp-ocean-row">
-                          <span className="pp-ocean-label">
-                            {trait.charAt(0).toUpperCase() + trait.slice(1)}
-                          </span>
+                          <span className="pp-ocean-label">{trait.charAt(0).toUpperCase() + trait.slice(1)}</span>
                           <div className="pp-ocean-bar-wrap">
                             <div className="pp-ocean-bar-track">
                               <motion.div
@@ -778,8 +849,6 @@ const PersonaPreview: React.FC = () => {
                 ) : (
                   <p className="pp-empty">Psychometric data not available for this persona.</p>
                 )}
-
-                {/* Evidence base */}
                 {evidenceSites.length > 0 && (
                   <div className="pp-evidence">
                     <h4 className="pp-evidence-title">Evidence Base</h4>
@@ -796,59 +865,79 @@ const PersonaPreview: React.FC = () => {
               </div>
             )}
 
-            {/* ── Calibration Breakdown ── */}
+            {/* ══════════════════════════════════════════════════════════
+                ── Calibration Breakdown ── NEW FIGMA-ACCURATE DESIGN ──
+            ══════════════════════════════════════════════════════════ */}
             {activeTab === 'calibration' && (
-              <div className="pp-calibration">
-                {/* Summary */}
-                {!!(evidenceSnapshot as Record<string, unknown>)?.summary && (
-                  <div className="pp-calib-summary">
-                    <p className="pp-calib-summary-text">
-                      "{String((evidenceSnapshot as Record<string, unknown>).summary)}"
-                    </p>
-                  </div>
-                )}
+              <div className="pp-calib-grid">
 
-                {/* Score bars */}
-                {breakdownEntries.length > 0 ? (
-                  <div className="pp-calib-rows">
-                    {breakdownEntries.map(({ label, score }) => {
-                      const pct = score <= 1 ? Math.round(score * 100) : score;
-                      return (
-                        <div key={label} className="pp-calib-row">
-                          <div className="pp-calib-row-header">
-                            <span className="pp-calib-row-label">{label}</span>
-                            <span className="pp-calib-row-pct" style={{ color: confColor(pct) }}>
-                              {score <= 1 ? `${pct}%` : score.toLocaleString('en-IN')}
+                {/* ── LEFT COLUMN ── */}
+                <div className="pp-calib-col">
+
+                  {/* Card 1: Real Actions Signal */}
+                  <CalibCard
+                    title="Real Actions Signal"
+                    subtitle="Anchored in real people's action patterns, not self-reported opinions."
+                    count={getCalibCount('real')}
+                    countLabel="People analysed"
+                    sections={[
+                      { heading: 'Parameter Integrated', items: REAL_ACTIONS_PARAMS },
+                      { heading: 'Technique Used',       items: REAL_ACTIONS_TECHNIQUES },
+                    ]}
+                  />
+
+                  {/* Card 2: Validated Studies */}
+                  <CalibCard
+                    title="Validated Studies"
+                    subtitle="Calibrated against credible consumer and behavioural studies."
+                    count={getCalibCount('validated')}
+                    countLabel="Total studies inferred"
+                    sections={[
+                      { heading: 'Technology Used', items: VALIDATED_TECH },
+                    ]}
+                  />
+
+                </div>
+
+                {/* ── RIGHT COLUMN ── */}
+                <div className="pp-calib-col">
+
+                  {/* Card 3: Emotional & Neural Layers */}
+                  <CalibCard
+                    title="Emotional & Neural Layers"
+                    subtitle="Models emotional responses that shape decisions before rationalization appears."
+                    count={getCalibCount('emotional')}
+                    countLabel="Total Emotional & Neural Parameters Analysed:"
+                    sections={[
+                      { heading: 'Parameter Integrated', items: EMOTIONAL_PARAMS },
+                      { heading: 'Technology Used',      items: EMOTIONAL_TECH },
+                    ]}
+                  />
+
+                  {/* Card 4: Multiple-platform Conversation */}
+                  <CalibCard
+                    title="Multiple-platform Conversation"
+                    subtitle="Calibrated against credible consumer and behavioural studies."
+                    count={getCalibCount('multi')}
+                    countLabel="Total conversations inferred"
+                    sections={[
+                      { heading: 'Key Attributes', items: MULTIPLATFORM_ATTRS, variant: 'key-attr' },
+                    ]}
+                    extraFooter={
+                      <div className="pp-calib-section">
+                        <h4 className="pp-calib-section-heading">Platforms Covered</h4>
+                        <div className="pp-calib-platforms">
+                          {PLATFORM_ICONS.map(p => (
+                            <span key={p.key} className="pp-calib-platform-icon">
+                              {p.icon}
                             </span>
-                          </div>
-                          {score <= 1 && (
-                            <div className="pp-calib-bar-track">
-                              <motion.div
-                                className="pp-calib-bar-fill"
-                                initial={{ width: 0 }}
-                                animate={{ width: `${pct}%` }}
-                                transition={{ duration: 1, ease: 'easeOut' }}
-                                style={{ background: confColor(pct) }}
-                              />
-                            </div>
-                          )}
+                          ))}
                         </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p className="pp-empty">Calibration breakdown not available.</p>
-                )}
+                      </div>
+                    }
+                  />
 
-                {/* Weighted total */}
-                {weightedTotal !== null && (
-                  <div className="pp-calib-total">
-                    <span className="pp-calib-total-label">Weighted Total</span>
-                    <span className="pp-calib-total-score" style={{ color: confColor(weightedTotal) }}>
-                      {weightedTotal}%
-                    </span>
-                  </div>
-                )}
+                </div>
               </div>
             )}
 
@@ -856,7 +945,7 @@ const PersonaPreview: React.FC = () => {
         </AnimatePresence>
       </div>
 
-      {/* ── Bottom navigation arrows ── */}
+      {/* ── Bottom nav ── */}
       <div className="pp-bottom-nav">
         <button
           className="pp-nav-arrow"

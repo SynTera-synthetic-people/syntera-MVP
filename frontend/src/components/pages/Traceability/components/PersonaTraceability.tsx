@@ -1,5 +1,6 @@
 import React from 'react';
 import CenteredScoreCard from './CenteredScoreCard';
+import  omiDarkImg from "../../../../assets/OMI_Dark.png"
 import '../Traceability.css';
 
 // ── Types ─────────────────────────────────────────────────────
@@ -60,11 +61,23 @@ const parseConfidence = (p: PersonaItem): number => {
 
 const CreatorAvatar: React.FC<{ name: string }> = ({ name }) => {
   const isOmi = name?.toLowerCase() === 'omi';
+
   return (
     <div className="trc-creator">
       <div className={`trc-creator-avatar ${isOmi ? 'trc-creator-avatar--omi' : 'trc-creator-avatar--user'}`}>
-        {isOmi ? '🤖' : name?.slice(0, 2).toUpperCase() || 'US'}
+        
+        {isOmi ? (
+          <img
+            src={omiDarkImg}
+            alt="Omi"
+            className="trc-creator-avatar-img"
+          />
+        ) : (
+          name?.slice(0, 2).toUpperCase() || 'US'
+        )}
+
       </div>
+
       <span className="trc-creator-name">{name || '{user_name}'}</span>
     </div>
   );
