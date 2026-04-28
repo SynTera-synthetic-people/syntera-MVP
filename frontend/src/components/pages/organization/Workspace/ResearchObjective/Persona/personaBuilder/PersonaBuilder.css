@@ -757,3 +757,117 @@
 /* Scrollbar utility */
 .pb-scrollbar-none::-webkit-scrollbar { display: none; }
 .pb-scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
+/* ════════════════════════════════════════════════════════════════
+   DOWNLOAD PERSONA CARD MODAL
+════════════════════════════════════════════════════════════════ */
+.pb-download-modal-box {
+  max-width: 420px;
+  padding: 32px 28px 28px;
+}
+
+.pb-download-persona-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 24px;
+  max-height: 380px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.pb-download-persona-list::-webkit-scrollbar { display: none; }
+
+.pb-download-persona-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  color: #e2e8f0;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s;
+}
+.pb-download-persona-row:hover {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.03);
+}
+.pb-download-persona-row--selected {
+  border-color: #24E5B6;
+  background: rgba(36, 229, 182, 0.05);
+}
+
+.pb-download-persona-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pb-download-persona-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: transparent;
+  flex-shrink: 0;
+  margin-left: 12px;
+  transition: color 0.15s;
+}
+.pb-download-persona-check--visible {
+  color: #24E5B6;
+}
+
+.pb-download-actions {
+  gap: 10px;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   DOWNLOAD SUCCESS TOAST
+════════════════════════════════════════════════════════════════ */
+.pb-download-toast {
+  position: fixed;
+  bottom: 32px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 20px 14px 18px;
+  background: #16a34a;
+  border-radius: 99px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  white-space: nowrap;
+  min-width: 260px;
+}
+
+.pb-download-toast-icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.pb-download-toast-label {
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  flex: 1;
+}
+
+.pb-download-toast-close {
+  display: flex;
+  align-items: center;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.75);
+  cursor: pointer;
+  padding: 2px;
+  margin-left: 4px;
+  border-radius: 50%;
+  transition: color 0.12s;
+}
+.pb-download-toast-close:hover { color: #fff; }

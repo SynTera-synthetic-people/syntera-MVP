@@ -17,7 +17,7 @@ import UpgradePlanPage from '../Upgrade/Upgrade';
 import HelpCentre from './help/HelpCenter';
 import UsageManual from './help/UsageManual';
 import TermsAndPolicies from './help/TermsAndPolicies';
-import { LogoutModal, SubmitQueryModal } from './SettingModal';
+import { LogoutModal, SubmitQueryModal, QuerySuccessModal } from './SettingModal';
 import { logout } from '../../../redux/slices/authSlice';
 
 import { useAutoSave } from '../../../hooks/useAutoSave';
@@ -72,6 +72,8 @@ interface RootState {
   };
 }
 
+// ── User-type helpers ─────────────────────────────────────────────────────────
+
 const isAdminUser = (user: RootState['auth']['user']): boolean => {
   if (!user) return false;
   if (user.is_admin !== undefined) return Boolean(user.is_admin);
@@ -79,14 +81,18 @@ const isAdminUser = (user: RootState['auth']['user']): boolean => {
   return false;
 };
 
-const showUpgradeTab = (user: RootState['auth']['user'], isAdmin: boolean): boolean => {
-  if (isAdmin) return false;
+const isFreeUser = (user: RootState['auth']['user']): boolean => {
   if (!user) return false;
   const tier = user.account_tier ?? '';
-  const isTrial = user.is_trial === true && tier === 'free';
-  const isExplorer = tier === 'tier1';
-  return isTrial || isExplorer;
+  return user.is_trial === true && tier === 'free';
 };
+
+const isTier1User = (user: RootState['auth']['user']): boolean => {
+  if (!user) return false;
+  return user.account_tier === 'tier1';
+};
+
+// ── View metadata ─────────────────────────────────────────────────────────────
 
 const AUTOSAVE_VIEWS: ActiveView[] = [
   'settings-notification',
@@ -113,18 +119,24 @@ const HEADING: Record<string, string> = {
   'help-terms':               'Settings > Terms & Policies',
 };
 
+// ── Component ─────────────────────────────────────────────────────────────────
+
 const Settings: React.FC = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const { selectedWorkspace } = useWorkspaceContext();
   const { user } = useSelector((state: RootState) => state.auth);
 
-  const isAdmin    = isAdminUser(user);
-  const canUpgrade = showUpgradeTab(user, isAdmin);
+  const isAdmin = isAdminUser(user);
+  const isFree  = !isAdmin && isFreeUser(user);
+  const isTier1 = !isAdmin && isTier1User(user);
 
+  // Default landing view per role
   const defaultView: ActiveView = isAdmin
     ? 'org-workspace'
-    : canUpgrade
+    : isFree
+    ? 'upgrade'
+    : isTier1
     ? 'upgrade'
     : 'billing';
 
@@ -137,6 +149,8 @@ const Settings: React.FC = () => {
   });
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [showSubmitQuery, setShowSubmitQuery] = useState(false);
+  const [showQuerySuccess, setShowQuerySuccess] = useState(false);
+  const [queryNo, setQueryNo] = useState('XYZ');
 
   const { lastSavedLabel, status, triggerSave, recordSave } = useAutoSave();
   const showAutosave = AUTOSAVE_VIEWS.includes(activeView);
@@ -145,6 +159,8 @@ const Settings: React.FC = () => {
     setOpen((prev) => ({ ...prev, [g]: !prev[g] }));
 
   const goTo = (view: ActiveView) => setActiveView(view);
+
+  // ── Content renderer ────────────────────────────────────────────────────────
 
   const renderContent = (): React.ReactNode => {
     switch (activeView) {
@@ -161,9 +177,9 @@ const Settings: React.FC = () => {
           />
         );
       case 'upgrade':
-        return canUpgrade ? <UpgradePlanPage /> : null;
+        return <UpgradePlanPage />;
       case 'billing':
-        return <Billing view="billing" />;
+        return isAdmin ? <Billing view="billing" /> : null;
       case 'invoice':
         return <Billing view="invoice" />;
       case 'settings-notification':      return <Notifications />;
@@ -177,13 +193,131 @@ const Settings: React.FC = () => {
     }
   };
 
-  const isBillingView = activeView === 'billing' || activeView === 'invoice';
+  // ── Nav renderers per role ──────────────────────────────────────────────────
 
-  const renderNav = () => (
+  const renderSettingsGroup = () => (
+    <div className="acc-nav-group">
+      <button
+        className={`acc-nav-item ${open.settings ? 'acc-nav-item--open' : ''}`}
+        onClick={() => toggleGroup('settings')}
+      >
+        <span className="acc-nav-item-left">
+          <SpIcon name="sp-Interface-Settings" /> Settings
+        </span>
+        <SpIcon
+          name="sp-Arrow-Chevron_Down"
+          className={`acc-nav-chevron ${open.settings ? 'acc-nav-chevron--open' : ''}`}
+        />
+      </button>
+      {open.settings && (
+        <div className="acc-nav-children">
+          <button
+            className={`acc-nav-child ${activeView === 'settings-notification' ? 'acc-nav-child--active' : ''}`}
+            onClick={() => goTo('settings-notification')}
+          >
+            <SpIcon name="sp-Communication-Bell" /> Notification
+          </button>
+          <button
+            className={`acc-nav-child ${activeView === 'settings-profile' ? 'acc-nav-child--active' : ''}`}
+            onClick={() => goTo('settings-profile')}
+          >
+            <SpIcon name="sp-User-User_03" /> Profile
+          </button>
+          <button
+            className={`acc-nav-child ${activeView === 'settings-change-password' ? 'acc-nav-child--active' : ''}`}
+            onClick={() => goTo('settings-change-password')}
+          >
+            <SpIcon name="sp-Interface-Lock" /> Change Password
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
+  const renderHelpGroup = () => (
+    <div className="acc-nav-group">
+      <button
+        className={`acc-nav-item ${open.help ? 'acc-nav-item--open' : ''}`}
+        onClick={() => toggleGroup('help')}
+      >
+        <span className="acc-nav-item-left">
+          <SpIcon name="sp-Warning-Shield_Check" /> Help
+        </span>
+        <SpIcon
+          name="sp-Arrow-Chevron_Down"
+          className={`acc-nav-chevron ${open.help ? 'acc-nav-chevron--open' : ''}`}
+        />
+      </button>
+      {open.help && (
+        <div className="acc-nav-children">
+          <button
+            className={`acc-nav-child ${activeView === 'help-centre' ? 'acc-nav-child--active' : ''}`}
+            onClick={() => goTo('help-centre')}
+          >
+            <SpIcon name="sp-Environment-Sun" /> Help Centre
+          </button>
+          <button
+            className={`acc-nav-child ${activeView === 'help-manual' ? 'acc-nav-child--active' : ''}`}
+            onClick={() => goTo('help-manual')}
+          >
+            <SpIcon name="sp-Communication-Bell" /> Usage Manuel
+          </button>
+          <button
+            className={`acc-nav-child ${activeView === 'help-terms' ? 'acc-nav-child--active' : ''}`}
+            onClick={() => goTo('help-terms')}
+          >
+            <SpIcon name="sp-User-User_03" /> Terms &amp; Policies
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
+  const renderLogout = () => (
+    <button className="acc-nav-flat" onClick={() => setShowLogoutModal(true)}>
+      <SpIcon name="sp-Other-Logout" /> Logout
+    </button>
+  );
+
+  const renderFreeNav = () => (
     <nav className="acc-nav">
+      <button
+        className={`acc-nav-flat ${activeView === 'upgrade' ? 'acc-nav-flat--active' : ''}`}
+        onClick={() => goTo('upgrade')}
+      >
+        <SpIcon name="sp-Arrow-Arrow_Circle_Up" /> Upgrade Plan
+      </button>
+      {renderSettingsGroup()}
+      {renderHelpGroup()}
+      {renderLogout()}
+    </nav>
+  );
 
-      {/* ── ADMIN: Organisation Control ── */}
-      {isAdmin && (
+  const renderTier1Nav = () => (
+    <nav className="acc-nav">
+      <button
+        className={`acc-nav-flat ${activeView === 'upgrade' ? 'acc-nav-flat--active' : ''}`}
+        onClick={() => goTo('upgrade')}
+      >
+        <SpIcon name="sp-Arrow-Arrow_Circle_Up" /> Upgrade Plan
+      </button>
+      <button
+        className={`acc-nav-flat ${activeView === 'invoice' ? 'acc-nav-flat--active' : ''}`}
+        onClick={() => goTo('invoice')}
+      >
+        <SpIcon name="sp-File-File_Document" /> Invoices
+      </button>
+      {renderSettingsGroup()}
+      {renderHelpGroup()}
+      {renderLogout()}
+    </nav>
+  );
+
+  const renderAdminNav = () => {
+    const isBillingView = activeView === 'billing' || activeView === 'invoice';
+    return (
+      <nav className="acc-nav">
+        {/* Organisation Control */}
         <div className="acc-nav-group">
           <button
             className={`acc-nav-item ${open.org ? 'acc-nav-item--open' : ''}`}
@@ -192,7 +326,8 @@ const Settings: React.FC = () => {
             <span className="acc-nav-item-left">
               <SpIcon name="sp-Navigation-Building_04" /> Organisation Control
             </span>
-            <SpIcon name="sp-Arrow-Chevron_Down"
+            <SpIcon
+              name="sp-Arrow-Chevron_Down"
               className={`acc-nav-chevron ${open.org ? 'acc-nav-chevron--open' : ''}`}
             />
           </button>
@@ -213,142 +348,67 @@ const Settings: React.FC = () => {
             </div>
           )}
         </div>
-      )}
 
-      {/* ── Upgrade Plan ── */}
-      {canUpgrade && (
-        <button
-          className={`acc-nav-flat ${activeView === 'upgrade' ? 'acc-nav-flat--active' : ''}`}
-          onClick={() => goTo('upgrade')}
-        >
-          <SpIcon name="sp-Arrow-Arrow_Circle_Up" /> Upgrade Plan
-        </button>
-      )}
-
-      {/* ── Billing ── */}
-      <div className="acc-nav-group">
-        <button
-          className={`acc-nav-item ${isBillingView || open.billing ? 'acc-nav-item--open' : ''}`}
-          onClick={() => {
-            toggleGroup('billing');
-            goTo('billing');
-          }}
-        >
-          <span className="acc-nav-item-left">
-            <SpIcon name="sp-Interface-Credit_Card_01" /> Billing
-          </span>
-          <SpIcon
-            name="sp-Arrow-Chevron_Down"
-            className={`acc-nav-chevron ${open.billing ? 'acc-nav-chevron--open' : ''}`}
-          />
-        </button>
-        {open.billing && (
-          <div className="acc-nav-children">
-            <button
-              className={`acc-nav-child ${activeView === 'invoice' ? 'acc-nav-child--active' : ''}`}
-              onClick={() => goTo('invoice')}
-            >
-              <SpIcon name="sp-File-File_Document" /> Payment Log
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* ── Settings ── */}
-      <div className="acc-nav-group">
-        <button
-          className={`acc-nav-item ${open.settings ? 'acc-nav-item--open' : ''}`}
-          onClick={() => toggleGroup('settings')}
-        >
-          <span className="acc-nav-item-left">
-            <SpIcon name="sp-Interface-Settings" /> Settings
-          </span>
-          <SpIcon name="sp-Arrow-Chevron_Down"
-            className={`acc-nav-chevron ${open.settings ? 'acc-nav-chevron--open' : ''}`}
-          />
-        </button>
-        {open.settings && (
-          <div className="acc-nav-children">
-            <button
-              className={`acc-nav-child ${activeView === 'settings-notification' ? 'acc-nav-child--active' : ''}`}
-              onClick={() => goTo('settings-notification')}
-            >
-              <SpIcon name="sp-Communication-Bell" /> Notification
-            </button>
-            <button
-              className={`acc-nav-child ${activeView === 'settings-profile' ? 'acc-nav-child--active' : ''}`}
-              onClick={() => goTo('settings-profile')}
-            >
-              <SpIcon name="sp-User-User_03" /> Profile
-            </button>
-            <button
-              className={`acc-nav-child ${activeView === 'settings-change-password' ? 'acc-nav-child--active' : ''}`}
-              onClick={() => goTo('settings-change-password')}
-            >
-              <SpIcon name="sp-Interface-Lock" /> Change Password
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* ── Help ── */}
-      <div className="acc-nav-group">
-        <button
-          className={`acc-nav-item ${open.help ? 'acc-nav-item--open' : ''}`}
-          onClick={() => toggleGroup('help')}
-        >
-          <span className="acc-nav-item-left">
-            <SpIcon name="sp-Warning-Shield_Check" /> Help
-          </span>
-          <SpIcon name="sp-Arrow-Chevron_Down"
-            className={`acc-nav-chevron ${open.help ? 'acc-nav-chevron--open' : ''}`}
-          />
-        </button>
-        {open.help && (
-          <div className="acc-nav-children">
-            <button
-              className={`acc-nav-child ${activeView === 'help-centre' ? 'acc-nav-child--active' : ''}`}
-              onClick={() => goTo('help-centre')}
-            >
-              <SpIcon name="sp-Environment-Sun" /> Help Centre
-            </button>
-            <button
-              className={`acc-nav-child ${activeView === 'help-manual' ? 'acc-nav-child--active' : ''}`}
-              onClick={() => goTo('help-manual')}
-            >
-              <SpIcon name="sp-Communication-Bell" /> Usage Manuel
-            </button>
-            <button
-              className={`acc-nav-child ${activeView === 'help-terms' ? 'acc-nav-child--active' : ''}`}
-              onClick={() => goTo('help-terms')}
-            >
-              <SpIcon name="sp-User-User_03" /> Terms &amp; Policies
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* ── Logout ── */}
-      <button className="acc-nav-flat" onClick={() => setShowLogoutModal(true)}>
-        <SpIcon name="sp-Other-Logout" /> Logout
-      </button>
-
-      {/* ── Billing footer links — shown only on billing/invoice views ── */}
-      {isBillingView && (
-        <div className="acc-nav-billing-footer">
+        {/* Billing */}
+        <div className="acc-nav-group">
           <button
-            className="acc-nav-billing-footer-link"
-            onClick={() => setShowSubmitQuery(true)}
+            className={`acc-nav-item ${isBillingView || open.billing ? 'acc-nav-item--open' : ''}`}
+            onClick={() => {
+              toggleGroup('billing');
+              goTo('billing');
+            }}
           >
-            Contact our billing team
+            <span className="acc-nav-item-left">
+              <SpIcon name="sp-Interface-Credit_Card_01" /> Billing
+            </span>
+            <SpIcon
+              name="sp-Arrow-Chevron_Down"
+              className={`acc-nav-chevron ${open.billing ? 'acc-nav-chevron--open' : ''}`}
+            />
           </button>
-          <button className="acc-nav-billing-footer-link">
-            Learn more about usage &amp; billing
-          </button>
+          {open.billing && (
+            <div className="acc-nav-children">
+              <button
+                className={`acc-nav-child ${activeView === 'invoice' ? 'acc-nav-child--active' : ''}`}
+                onClick={() => goTo('invoice')}
+              >
+                <SpIcon name="sp-File-File_Document" /> Payment Log
+              </button>
+            </div>
+          )}
         </div>
-      )}
-    </nav>
-  );
+
+        {renderSettingsGroup()}
+        {renderHelpGroup()}
+        {renderLogout()}
+
+        {/* Billing footer — shown only on billing/invoice views */}
+        {isBillingView && (
+          <div className="acc-nav-billing-footer">
+            <button
+              className="acc-nav-billing-footer-link"
+              onClick={() => setShowSubmitQuery(true)}
+            >
+              Contact our billing team
+            </button>
+            <button className="acc-nav-billing-footer-link">
+              Learn more about usage &amp; billing
+            </button>
+          </div>
+        )}
+      </nav>
+    );
+  };
+
+  // ── Pick nav by role ────────────────────────────────────────────────────────
+
+  const renderNav = () => {
+    if (isAdmin) return renderAdminNav();
+    if (isTier1) return renderTier1Nav();
+    return renderFreeNav();
+  };
+
+  // ── Shell ───────────────────────────────────────────────────────────────────
 
   return (
     <AutoSaveContext.Provider value={{ recordSave, triggerSave, status }}>
@@ -399,9 +459,18 @@ const Settings: React.FC = () => {
       <SubmitQueryModal
         isOpen={showSubmitQuery}
         onClose={() => setShowSubmitQuery(false)}
-        onSubmit={async () => {
+        onSubmit={async (subject, description) => {
           await new Promise(r => setTimeout(r, 800));
+          setQueryNo(`Q-${Date.now().toString().slice(-6)}`);
+          setShowSubmitQuery(false);
+          setShowQuerySuccess(true);
         }}
+      />
+
+      <QuerySuccessModal
+        isOpen={showQuerySuccess}
+        onClose={() => setShowQuerySuccess(false)}
+        queryNo={queryNo}
       />
     </AutoSaveContext.Provider>
   );

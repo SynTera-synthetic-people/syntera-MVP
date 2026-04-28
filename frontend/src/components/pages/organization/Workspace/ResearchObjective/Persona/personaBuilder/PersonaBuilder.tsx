@@ -91,11 +91,134 @@ interface ValidationError {
   fromTab?: string;
   toTab?: string;
 }
-
+interface DownloadPersonaCardModalProps {
+  show: boolean;
+  personas: SavedPersona[];
+  onClose: () => void;
+  onDownload: (selectedIds: string[]) => Promise<void>;
+}
 const PERSONA_LIMIT = 4;
 
 // ── Confidence helpers ────────────────────────────────────────────────────────
+const DownloadPersonaCardModal: React.FC<DownloadPersonaCardModalProps> = ({
+  show, personas, onClose, onDownload,
+}) => {
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [isDownloading, setIsDownloading] = useState(false);
 
+  useEffect(() => {
+    if (show) setSelectedIds([]);
+  }, [show]);
+
+  const togglePersona = (id: string) => {
+    setSelectedIds(prev =>
+      prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]
+    );
+  };
+
+  const handleDownload = async () => {
+    if (selectedIds.length === 0) return;
+    setIsDownloading(true);
+    try {
+      await onDownload(selectedIds);
+    } finally {
+      setIsDownloading(false);
+      onClose();
+    }
+  };
+
+  if (!show) return null;
+
+  return (
+    <AnimatePresence>
+      {show && (
+        <motion.div
+          className="pb-modal-overlay"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          onClick={onClose}
+        >
+          <motion.div
+            className="pb-modal-box pb-download-modal-box"
+            initial={{ opacity: 0, scale: 0.93, y: 16 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.93, y: 16 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <button className="pb-modal-close" onClick={onClose}><TbX size={18} /></button>
+
+            <h2 className="pb-modal-title">Download Persona Cards</h2>
+            <p className="pb-modal-subtitle">
+              Select the personas you'd like to download and generate shareable profiles
+            </p>
+
+            <div className="pb-download-persona-list">
+              {personas.map(persona => {
+                const isSelected = selectedIds.includes(persona.id);
+                return (
+                  <button
+                    key={persona.id}
+                    className={`pb-download-persona-row${isSelected ? ' pb-download-persona-row--selected' : ''}`}
+                    onClick={() => togglePersona(persona.id)}
+                  >
+                    <span className="pb-download-persona-name">
+                      {persona.name ?? 'Unnamed Persona'}
+                    </span>
+                    <span className={`pb-download-persona-check${isSelected ? ' pb-download-persona-check--visible' : ''}`}>
+                      <TbCheck size={16} />
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="pb-modal-actions pb-download-actions">
+              <button className="pb-modal-cancel-btn" onClick={onClose}>
+                Cancel
+              </button>
+              <button
+                className={`pb-modal-primary-btn${selectedIds.length === 0 ? ' pb-modal-primary-btn--disabled' : ''}`}
+                disabled={selectedIds.length === 0 || isDownloading}
+                onClick={handleDownload}
+              >
+                {isDownloading
+                  ? <TbLoader size={14} className="pb-btn-spinner" />
+                  : null}
+                Download Persona Card
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+};
+// ── DownloadSuccessToast ──────────────────────────────────────────────────────
+
+const DownloadSuccessToast: React.FC<{ onClose: () => void }> = ({ onClose }) => (
+  <AnimatePresence>
+    <motion.div
+      className="pb-download-toast"
+      initial={{ opacity: 0, y: 40, scale: 0.95 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 40, scale: 0.95 }}
+      transition={{ duration: 0.22, ease: 'easeOut' }}
+    >
+      <span className="pb-download-toast-icon">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <circle cx="10" cy="10" r="9" stroke="white" strokeWidth="1.8" />
+          <path d="M6 10.5l2.8 2.8 5-5.6" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </span>
+      <span className="pb-download-toast-label">Download Successful</span>
+      <button className="pb-download-toast-close" onClick={onClose} aria-label="Dismiss">
+        <TbX size={16} />
+      </button>
+    </motion.div>
+  </AnimatePresence>
+);
 const getConfidenceScore = (persona: SavedPersona): number | null => {
   const raw =
     persona.confidence_scoring?.confidence_calculation_detail?.weighted_total ??
@@ -903,6 +1026,15 @@ const PersonaBuilder: React.FC = () => {
   const exploration = (explorationData as Record<string, unknown>)?.data ?? explorationData as Record<string, unknown> | undefined;
   const currentApproach = (exploration as Record<string, unknown> | undefined)?.research_approach as string | undefined;
   const isApproachLocked = !!((exploration as Record<string, unknown> | undefined)?.is_qualitative || (exploration as Record<string, unknown> | undefined)?.is_quantitative);
+  const [showDownloadModal, setShowDownloadModal] = useState(false);
+  const [showDownloadToast, setShowDownloadToast] = useState(false);
+
+  const handleDownloadPersonaCards = async (selectedIds: string[]) => {
+    // TODO: trigger actual download/export logic here
+    // e.g. await downloadPersonaCards(selectedIds);
+    setShowDownloadToast(true);
+    setTimeout(() => setShowDownloadToast(false), 3500);
+  };
 
   // ── formatPersonaData ───────────────────────────────────────────────────────
 
@@ -1557,41 +1689,52 @@ const PersonaBuilder: React.FC = () => {
 
   // ── Grid view ───────────────────────────────────────────────────────────────
 
-  if (showGrid) {
-    return (
-      <>
-        <PersonasReadyGrid
-          savedPersonas={savedPersonasFromAPI}
-          onPersonaClick={handleGridPersonaClick}
-          onCreateNew={handleGridCreateNew}
-          onExplorationMethod={handleDiscussionGuidelines}
-          onDownload={() => { /* TODO: implement download */ }}
-          isLoadingMethod={updateExplorationMethodMutation.isPending}
-          onViewPersona={handleViewPersona}
-          onReplicatePersona={handleReplicatePersona}
-          onReplicateGroup={handleReplicateGroup}
-          onDeletePersona={handleDeletePersona}
-        />
+if (showGrid) {
+  return (
+    <>
+      <PersonasReadyGrid
+        savedPersonas={savedPersonasFromAPI}
+        onPersonaClick={handleGridPersonaClick}
+        onCreateNew={handleGridCreateNew}
+        onExplorationMethod={handleDiscussionGuidelines}
+        onDownload={() => setShowDownloadModal(true)}   // ← changed
+        isLoadingMethod={updateExplorationMethodMutation.isPending}
+        onViewPersona={handleViewPersona}
+        onReplicatePersona={handleReplicatePersona}
+        onReplicateGroup={handleReplicateGroup}
+        onDeletePersona={handleDeletePersona}
+      />
 
-        {/* Add New Persona Modal */}
-        <AddNewPersonaModal
-          show={showAddNewPersonaModal}
-          onClose={() => setShowAddNewPersonaModal(false)}
-          onConfirm={handleAddNewPersonaConfirm}
-        />
+      <AddNewPersonaModal
+        show={showAddNewPersonaModal}
+        onClose={() => setShowAddNewPersonaModal(false)}
+        onConfirm={handleAddNewPersonaConfirm}
+      />
 
-        {/* Replicate Persona Modal */}
-        <ReplicatePersonaModal
-          show={showReplicateModal}
-          personas={savedPersonasFromAPI}
-          onClose={() => { setShowReplicateModal(false); setReplicatePreSelectedPersona(null); }}
-          onConfirm={handleReplicateConfirm}
-          isLoading={isReplicating}
-          preSelectedPersona={replicatePreSelectedPersona}
-        />
-      </>
-    );
-  }
+      <ReplicatePersonaModal
+        show={showReplicateModal}
+        personas={savedPersonasFromAPI}
+        onClose={() => { setShowReplicateModal(false); setReplicatePreSelectedPersona(null); }}
+        onConfirm={handleReplicateConfirm}
+        isLoading={isReplicating}
+        preSelectedPersona={replicatePreSelectedPersona}
+      />
+
+      {/* ── Download modal ── */}
+      <DownloadPersonaCardModal
+        show={showDownloadModal}
+        personas={savedPersonasFromAPI}
+        onClose={() => setShowDownloadModal(false)}
+        onDownload={handleDownloadPersonaCards}
+      />
+
+      {/* ── Download success toast ── */}
+      {showDownloadToast && (
+        <DownloadSuccessToast onClose={() => setShowDownloadToast(false)} />
+      )}
+    </>
+  );
+}
 
   // ── Trait builder view ──────────────────────────────────────────────────────
 

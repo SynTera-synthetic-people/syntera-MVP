@@ -849,3 +849,66 @@
   align-items: flex-start;
   flex: 1;
 }
+/* ════════════════════════════════════════════════════════════════
+   10. QUERY SUCCESS MODAL  (sm-qs-*)
+   Add to SettingModalStyle.css
+════════════════════════════════════════════════════════════════ */
+
+.sm-qs-modal {
+  background: var(--T-Base-B1, #08090a);
+  border-color: var(--T-GreyScale-Grey-700, #4F535F);
+  position: relative;
+}
+
+.sm-qs-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 1;
+}
+
+.sm-qs-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 48px 32px 40px;
+  gap: 0;
+}
+
+/* Green rounded-square icon */
+.sm-qs-icon-wrap {
+  width: 68px;
+  height: 68px;
+  border-radius: 18px;
+  background: rgba(34, 197, 94, 0.15);
+  border: 1px solid rgba(34, 197, 94, 0.25);
+  color: #22c55e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 24px;
+  flex-shrink: 0;
+}
+
+.sm-qs-title {
+  font-size: 26px;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0 0 14px;
+  letter-spacing: -0.4px;
+}
+
+.sm-qs-desc {
+  font-size: 14px;
+  color: #9ca3af;
+  line-height: 1.65;
+  margin: 0 0 12px;
+  max-width: 320px;
+}
+
+.sm-qs-query-no {
+  font-size: 13.5px;
+  color: #6b7280;
+  margin: 0;
+}

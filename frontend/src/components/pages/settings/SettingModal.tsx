@@ -800,7 +800,7 @@ export const SubmitQueryModal: React.FC<SubmitQueryModalProps> = ({
     setSubmitting(true); setSubmitError('');
     try {
       await onSubmit(subject, description);
-      onClose();
+
     } catch (err: any) {
       setSubmitError(err?.message || 'Failed to submit query. Please try again.');
     } finally {
@@ -908,6 +908,54 @@ export const SubmitQueryModal: React.FC<SubmitQueryModalProps> = ({
               {submitting ? 'Submitting…' : 'Submit →'}
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+export interface QuerySuccessModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  queryNo?: string;
+}
+ 
+export const QuerySuccessModal: React.FC<QuerySuccessModalProps> = ({
+  isOpen, onClose, queryNo = 'XYZ',
+}) => {
+  useEffect(() => {
+    if (!isOpen) return;
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [isOpen, onClose]);
+ 
+  if (!isOpen) return null;
+ 
+  return (
+    <div className="sm-overlay" onClick={onClose}>
+      <div
+        className="sm-modal sm-qs-modal"
+        style={{ maxWidth: 480 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button className="sm-close-btn sm-qs-close" onClick={onClose} aria-label="Close">
+          <TbX size={18} />
+        </button>
+ 
+        <div className="sm-qs-body">
+          <div className="sm-qs-icon-wrap">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" strokeWidth="2.5"
+              strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          </div>
+ 
+          <h2 className="sm-qs-title">Thank you!</h2>
+          <p className="sm-qs-desc">
+            Query submitted successfully. Our team will come back within 48 hours.
+          </p>
+          <p className="sm-qs-query-no">Query No.: {queryNo}</p>
         </div>
       </div>
     </div>
