@@ -52,9 +52,7 @@ _NOISE_LINE_PATTERNS = (
     re.compile(r"^(sign in|log in|register|subscribe|newsletter)$", re.IGNORECASE),
 )
 _NOISE_ELEMENT_KEYWORDS = (
-    "nav", "menu", "footer", "header", "breadcrumb", "sidebar", "share",
-    "social", "cookie", "consent", "modal", "popup", "banner", "related",
-    "recommend", "newsletter", "subscribe", "country", "language", "locale",
+    "cookie", "consent", "modal", "popup", "newsletter", "subscribe",
 )
 
 
@@ -126,13 +124,13 @@ def _clean_extracted_text(raw_text: str) -> str:
             line_key = line.lower()
             if len(line) <= 2:
                 continue
-            if any(pattern.match(line) for pattern in _NOISE_LINE_PATTERNS):
+            if len(line) < 50 and any(pattern.match(line) for pattern in _NOISE_LINE_PATTERNS):
                 continue
-            if _looks_like_menu_or_country_list(line):
+            if len(line) < 160 and _looks_like_menu_or_country_list(line):
                 continue
             if repeated_counts[line_key] > 2 and seen_counts[line_key] >= 1:
                 continue
-            if len(line.split()) <= 2 and repeated_counts[line_key] > 1:
+            if len(line) < 50 and len(line.split()) <= 2 and repeated_counts[line_key] > 1:
                 continue
             if re.fullmatch(r"[\W_]+", line):
                 continue
@@ -149,7 +147,15 @@ def _clean_extracted_text(raw_text: str) -> str:
                 "Cleaning returned empty content after filtering; "
                 "falling back to normalized text (len=%d)", len(normalized_text)
             )
-            return normalized_text
+            return normalized_text[:50_000]
+
+        if len(result) < 100 and len(normalized_text) > len(result) * 5:
+            logger.warning(
+                "Cleaning produced very short content; appending normalized fallback | cleaned_len=%d | raw_len=%d",
+                len(result),
+                len(normalized_text),
+            )
+            return f"{result}\n\n{normalized_text[:50_000]}".strip()
 
         return result
 
@@ -159,6 +165,66 @@ def _clean_extracted_text(raw_text: str) -> str:
             "Cleaning raised exception, falling back to normalized text | reason=%s", exc
         )
         return normalized_text
+
+
+def _score_content_quality(text: str) -> tuple[float, str]:
+    """
+    Score content quality on a 0-1 scale. Returns (score, label).
+    label is one of: "empty", "low", "medium", "high".
+
+    Three components:
+    - Length score   (0-0.35): rewards longer content up to ~3000 chars
+    - Paragraph density (0-0.35): rewards pages with substantive lines >50 chars
+    - Word quality   (0-0.30): ratio of meaningful words (>3 chars, non-numeric)
+    """
+    if not text or not text.strip():
+        return 0.0, "empty"
+
+    words = text.split()
+    if not words:
+        return 0.0, "empty"
+
+    length = len(text)
+    length_score = min(length / 3000, 1.0) * 0.35
+    content_lines = [ln for ln in text.splitlines() if len(ln.strip()) > 50]
+    para_score = min(len(content_lines) / 8, 1.0) * 0.35
+    meaningful = sum(1 for w in words if len(w) > 3 and not w.isnumeric())
+    word_score = (meaningful / len(words)) * 0.30
+
+    score = round(length_score + para_score + word_score, 3)
+    if score >= 0.55:
+        label = "high"
+    elif score >= 0.25:
+        label = "medium"
+    else:
+        label = "low"
+    return score, label
+
+
+def _extract_readable_webpage_text_relaxed(html: str) -> str:
+    """
+    Relaxed extraction fallback for pages where strict cleaning yields too little text.
+    Uses body.get_text() with minimal whitespace normalization only — no line filtering.
+    Called when standard extraction produces content below the dynamic fallback threshold.
+    """
+    if not html:
+        return ""
+    try:
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup(html, "html.parser")
+        for tag in soup(["script", "style", "noscript", "svg", "canvas", "iframe"]):
+            try:
+                tag.decompose()
+            except Exception:
+                pass
+
+        root = soup.body if soup.body is not None else soup
+        raw = root.get_text(separator="\n")
+        return _normalize_whitespace(raw)
+    except Exception as exc:
+        logger.warning("Relaxed extraction failed | reason=%s", exc)
+        return ""
 
 
 def _select_chunk_size(content_length: int) -> int:
@@ -202,9 +268,10 @@ def _extract_readable_webpage_text(html: str) -> str:
 
         soup = BeautifulSoup(html, "html.parser")
 
-        # Remove noise tags
-        for tag in soup(["script", "style", "nav", "footer", "header",
-                          "aside", "form", "noscript", "svg", "img", "button"]):
+        # Remove only tags that almost never contain article/body text. Do not
+        # remove nav/header/footer wholesale because many modern sites place
+        # useful content inside broad layout wrappers with those names.
+        for tag in soup(["script", "style", "noscript", "svg", "canvas", "iframe"]):
             try:
                 tag.decompose()
             except Exception:
@@ -232,7 +299,9 @@ def _extract_readable_webpage_text(html: str) -> str:
 
                 marker_blob = " ".join(marker_parts).lower()
                 if marker_blob and any(kw in marker_blob for kw in _NOISE_ELEMENT_KEYWORDS):
-                    tags_to_decompose.append(tag)
+                    tag_text = tag.get_text(" ", strip=True) or ""
+                    if len(tag_text) < 500:
+                        tags_to_decompose.append(tag)
             except Exception as exc:
                 # FIX: individual tag inspection failure should never crash the loop
                 logger.debug("Tag inspection skipped | reason=%s", exc)
@@ -305,6 +374,18 @@ def _extract_readable_webpage_text(html: str) -> str:
             except Exception as exc:
                 logger.warning("Root get_text fallback failed | reason=%s", exc)
                 return ""
+        else:
+            try:
+                structured_text = "\n".join(text_parts)
+                root_text = root.get_text(separator="\n")
+                if len(structured_text) < 500 and len(root_text or "") > len(structured_text) * 5:
+                    text_parts.extend(
+                        re.sub(r"\s+", " ", line).strip()
+                        for line in root_text.splitlines()
+                        if line.strip()
+                    )
+            except Exception as exc:
+                logger.debug("Root text expansion skipped | reason=%s", exc)
 
         result = _clean_extracted_text("\n".join(text_parts))
 

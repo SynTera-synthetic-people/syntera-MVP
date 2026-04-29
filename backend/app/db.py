@@ -333,6 +333,81 @@ async def create_sync_schemas():
             CREATE INDEX IF NOT EXISTS idx_sync_source_chunk_doc_type_order
             ON sync_source.content_chunk (document_id, data_type, chunk_index, created_at);
         """))
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS sync_source.scrape_url (
+                id                 VARCHAR PRIMARY KEY,
+                source_document_id VARCHAR REFERENCES sync_source.document(id) ON DELETE CASCADE,
+                source_document_key VARCHAR NOT NULL DEFAULT '',
+                exploration_id     VARCHAR,
+                url                TEXT NOT NULL,
+                domain             VARCHAR,
+                status             VARCHAR NOT NULL DEFAULT 'pending',
+                failure_reason     TEXT,
+                failure_category   VARCHAR,
+                retryable          BOOLEAN NOT NULL DEFAULT TRUE,
+                retry_count        INTEGER NOT NULL DEFAULT 0,
+                max_retries        INTEGER NOT NULL DEFAULT 3,
+                http_status        INTEGER,
+                method_used        VARCHAR,
+                content_chars      INTEGER NOT NULL DEFAULT 0,
+                first_seen_at      TIMESTAMP NOT NULL DEFAULT now(),
+                last_attempt_at    TIMESTAMP,
+                next_retry_at      TIMESTAMP,
+                scraped_at         TIMESTAMP,
+                created_at         TIMESTAMP NOT NULL DEFAULT now(),
+                updated_at         TIMESTAMP NOT NULL DEFAULT now()
+            )
+        """))
+        await conn.execute(text("""
+            ALTER TABLE sync_source.scrape_url
+            ADD COLUMN IF NOT EXISTS source_document_key VARCHAR NOT NULL DEFAULT ''
+        """))
+        await conn.execute(text("""
+            UPDATE sync_source.scrape_url
+            SET source_document_key = COALESCE(source_document_id, '')
+            WHERE source_document_key IS NULL OR source_document_key = ''
+        """))
+        await conn.execute(text("""
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_sync_source_scrape_url_doc_url
+            ON sync_source.scrape_url (source_document_key, url)
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_sync_source_scrape_url_retry
+            ON sync_source.scrape_url (next_retry_at, retry_count)
+            WHERE retryable = TRUE
+              AND status IN ('failed', 'low_quality')
+              AND retry_count < max_retries
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_sync_source_scrape_url_status
+            ON sync_source.scrape_url (status)
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_sync_source_scrape_url_domain
+            ON sync_source.scrape_url (domain)
+        """))
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS sync_source.scrape_url_attempt (
+                id             VARCHAR PRIMARY KEY,
+                scrape_url_id  VARCHAR NOT NULL REFERENCES sync_source.scrape_url(id) ON DELETE CASCADE,
+                attempt_no     INTEGER NOT NULL,
+                status         VARCHAR NOT NULL,
+                method_used    VARCHAR,
+                http_status    INTEGER,
+                failure_reason TEXT,
+                failure_category VARCHAR,
+                retryable      BOOLEAN NOT NULL DEFAULT TRUE,
+                content_chars  INTEGER NOT NULL DEFAULT 0,
+                started_at     TIMESTAMP NOT NULL DEFAULT now(),
+                finished_at    TIMESTAMP NOT NULL DEFAULT now(),
+                metadata       JSONB NOT NULL DEFAULT '{}'::jsonb,
+                UNIQUE (scrape_url_id, attempt_no)
+            )
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_sync_source_scrape_attempt_url
+            ON sync_source.scrape_url_attempt (scrape_url_id)
+        """))
 
 
 async def add_syncdb_envelope_columns():

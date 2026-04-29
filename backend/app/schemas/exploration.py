@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Literal, Optional
 from datetime import datetime
 
@@ -16,6 +16,8 @@ class ExplorationUpdate(BaseModel):
 
 
 class ExplorationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     workspace_id: str
     title: str
@@ -27,9 +29,6 @@ class ExplorationOut(BaseModel):
     is_end: Optional[bool] = None
     is_quantitative: Optional[bool] = None
     is_qualitative: Optional[bool] = None
-
-    class Config:
-        orm_mode = True
 
 
 class ExplorationMethodSelect(BaseModel):

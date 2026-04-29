@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr
 from typing import Optional, List
 
 class WorkspaceCreate(BaseModel):
@@ -8,24 +8,23 @@ class WorkspaceCreate(BaseModel):
 
 
 class WorkspaceOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     name: str
     description: Optional[str]
     department_name: Optional[str]
-
-    class Config:
-        orm_mode = True
 
 class InviteMemberIn(BaseModel):
     email: EmailStr
     role: str = "user"
 
 class InviteRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     email: EmailStr
     role: str
     token: str
-    class Config:
-        orm_mode = True
 
 class RoleUpdate(BaseModel):
     new_role: str

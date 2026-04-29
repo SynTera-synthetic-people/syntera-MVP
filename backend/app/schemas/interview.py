@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
@@ -18,6 +18,8 @@ class MessageOut(BaseModel):
     ts: datetime
 
 class InterviewOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     workspace_id: str
     exploration_id: str
@@ -26,9 +28,6 @@ class InterviewOut(BaseModel):
     generated_answers: Dict[str, Any] = Field(default_factory=dict)
     created_by: str
     created_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 class InterviewSectionCreate(BaseModel):

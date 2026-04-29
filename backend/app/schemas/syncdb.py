@@ -133,3 +133,13 @@ class SourceScrapeReportOut(BaseModel):
     total_succeeded: int
     total_failed: int
     failed_urls: list[SourceScrapeFailureOut]
+    success_rate: Optional[float] = None
+    avg_content_length: Optional[float] = None
+    dynamic_page_percent: Optional[float] = None
+    empty_extraction_percent: Optional[float] = None
+    failure_reason_percent: Optional[dict[str, float]] = None
+    failed_domains: Optional[dict[str, int]] = None
+    skipped_blocklisted: Optional[int] = None
+    failed_permanent: Optional[int] = None
+    playwright_available: Optional[bool] = None
+    retry_limits_used: Optional[dict[str, int]] = None
