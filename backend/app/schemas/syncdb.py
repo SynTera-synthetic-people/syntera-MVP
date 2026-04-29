@@ -88,21 +88,24 @@ class SourceDocumentOut(BaseModel):
     id: str
     title: str
     source_type: str
-    source_url: Optional[str]
-    file_path: Optional[str]
+    source_url: Optional[str] = None
+    file_name: Optional[str] = None
+    domain: Optional[str] = None
+    file_path: Optional[str] = None
     is_processed: bool
-    exploration_id: Optional[str]
-    uploaded_by: Optional[str]
+    exploration_id: Optional[str] = None
+    uploaded_by: Optional[str] = None
     uploaded_at: datetime
-    metadata: dict
+    metadata: Optional[dict] = None  # columns + row_count for tabular docs
 
 
 class SourceChunkOut(BaseModel):
     id: str
     document_id: str
     chunk_index: int
-    content: str
-    content_json: Optional[dict]
+    content: Any
+    content_json: Optional[dict] = None
+    data_type: Optional[str] = None
     created_at: datetime
 
 
@@ -110,5 +113,29 @@ class SourceSearchResult(BaseModel):
     chunk_id: str
     document_id: str
     document_title: str
+    domain: Optional[str]
+    data_type: Optional[str] = None
     chunk_index: int
     snippet: str
+
+
+class SourceScrapeFailureOut(BaseModel):
+    url: str
+    reason: str
+
+
+class SourceScrapeReportOut(BaseModel):
+    total_attempted: int
+    total_succeeded: int
+    total_failed: int
+    failed_urls: list[SourceScrapeFailureOut]
+    success_rate: Optional[float] = None
+    avg_content_length: Optional[float] = None
+    dynamic_page_percent: Optional[float] = None
+    empty_extraction_percent: Optional[float] = None
+    failure_reason_percent: Optional[dict[str, float]] = None
+    failed_domains: Optional[dict[str, int]] = None
+    skipped_blocklisted: Optional[int] = None
+    failed_permanent: Optional[int] = None
+    playwright_available: Optional[bool] = None
+    retry_limits_used: Optional[dict[str, int]] = None
