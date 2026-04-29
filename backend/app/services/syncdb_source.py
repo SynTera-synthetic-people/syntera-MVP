@@ -845,8 +845,8 @@ async def upload_source_document(
     file_bytes: bytes,
     filename: str,
     title: str,
-    domain: Optional[str],
     source_type: str,
+    domain: Optional[str],
     exploration_id: Optional[str],
     user_id: str,
 ) -> Optional[dict]:
@@ -867,11 +867,11 @@ async def upload_source_document(
         text("""
             INSERT INTO sync_source.document
                 (id, title, source_type, source_url,
-                 file_data, file_name,
+                 file_data, file_name, file_path,
                  domain, exploration_id, uploaded_by)
             VALUES
                 (:id, :title, :source_type, NULL,
-                 :file_data, :file_name,
+                 :file_data, :file_name, NULL,
                  :domain, :exploration_id, :uploaded_by)
         """),
         {
@@ -929,11 +929,11 @@ async def register_url_document(
         text("""
             INSERT INTO sync_source.document
                 (id, title, source_type, source_url,
-                 file_data, file_name,
+                 file_data, file_name, file_path,
                  domain, exploration_id, uploaded_by)
             VALUES
                 (:id, :title, 'url', :url,
-                 NULL, NULL,
+                 NULL, NULL, NULL,
                  :domain, :exploration_id, :uploaded_by)
         """),
         {

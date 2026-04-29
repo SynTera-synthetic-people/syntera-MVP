@@ -129,8 +129,6 @@ def _workspace_id(user: User) -> Optional[str]:
 @router.post("/action/upload", response_model=ActionDatasetOut)
 async def upload_action_csv(
     file: UploadFile = File(...),
-    name: str = Form(...),
-    domain: str = Form(...),
     region: Optional[str] = Form(None),
     year: Optional[int] = Form(None),
     exploration_id: Optional[str] = Form(None),
@@ -156,15 +154,12 @@ async def upload_action_csv(
     all detected data sheets into one dataset.
     """
     _require_tabular(file)
-    _validate_domain(domain)
     file_bytes = await file.read()
     try:
         dataset = await syncdb_action.ingest_action_csv(
             db=db,
             file_bytes=file_bytes,
             filename=file.filename,
-            name=name,
-            domain=domain.strip(),
             exploration_id=exploration_id,
             user_id=current_user.id,
             workspace_id=_workspace_id(current_user),
@@ -207,8 +202,6 @@ async def get_action_records(
 @router.post("/survey/upload", response_model=SurveyDatasetOut)
 async def upload_survey_csv(
     file: UploadFile = File(...),
-    name: str = Form(...),
-    domain: str = Form(...),
     region: Optional[str] = Form(None),
     year: Optional[int] = Form(None),
     exploration_id: Optional[str] = Form(None),
@@ -234,15 +227,12 @@ async def upload_survey_csv(
     datamap/metadata sheets inside dataset metadata.
     """
     _require_tabular(file)
-    _validate_domain(domain)
     file_bytes = await file.read()
     try:
         dataset = await syncdb_survey.ingest_survey_csv(
             db=db,
             file_bytes=file_bytes,
             filename=file.filename,
-            name=name,
-            domain=domain.strip(),
             exploration_id=exploration_id,
             user_id=current_user.id,
             workspace_id=_workspace_id(current_user),
@@ -356,8 +346,8 @@ async def upload_source_document(
             file_bytes=file_bytes,
             filename=file.filename,
             title=title,
-            domain=domain,
             source_type=ext.lstrip("."),
+            domain=domain,
             exploration_id=exploration_id,
             user_id=current_user.id,
         )

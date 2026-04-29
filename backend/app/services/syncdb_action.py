@@ -35,6 +35,8 @@ from app.services.syncdb_survey import (
 
 logger = logging.getLogger(__name__)
 
+
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -56,7 +58,8 @@ _MAX_PAGE_SIZE = 1_000
 
 def _sanitize_value(value: Any) -> Any:
     """
-    Convert a single scalar to None if it represents a missing/NaN value.
+    Convert a single scalar to None if it represents a missing/NaN value,
+    and strip embedded null bytes from strings (PostgreSQL JSONB rejects ).
     TypeError-safe: pd.isna raises on dicts/lists/custom objects.
     """
     try:
@@ -64,6 +67,8 @@ def _sanitize_value(value: Any) -> Any:
             return None
     except (TypeError, ValueError):
         pass
+    if isinstance(value, str) and "\x00" in value:
+        value = value.replace("\x00", "")
     return value
 
 
@@ -126,7 +131,6 @@ def _serialize_envelope(envelope: dict) -> str:
 
 def _build_envelope(
     *,
-    domain: str,
     workspace_id: Optional[str],
     region: Optional[str],
     year: Optional[int],
@@ -139,7 +143,6 @@ def _build_envelope(
     """Build the standard record envelope. Payload must already be sanitized."""
     envelope: dict[str, Any] = {
         "source_type": "actions",
-        "domain": domain,
         "workspace_id": workspace_id,
         "region": region,
         "year": year,
@@ -163,29 +166,57 @@ def _prebatch_ids(count: int) -> list[str]:
     return [generate_id() for _ in range(count)]
 
 
-async def _insert_record_batch(db: AsyncSession, batch: list[dict]) -> None:
-    if not batch:
-        return
-    await db.execute(
-        text("""
-            INSERT INTO sync_action.record
-                (id, dataset_id, row_index, data,
-                 status, workspace_id, region, year, source_format, subject_key)
-            VALUES
-                (:id, :dataset_id, :row_index, CAST(:data AS jsonb),
-                 :status, :workspace_id, :region, :year, :source_format, :subject_key)
-        """),
-        batch,
-    )
-    logger.debug("Inserted batch of %d records.", len(batch))
+_RECORD_COLS = (
+    "id", "dataset_id", "row_index", "data",
+    "status", "workspace_id", "region", "year", "source_format", "subject_key",
+)
+# asyncpg hard limit is 32767 parameters per statement.
+_MAX_ROWS_PER_INSERT = 32767 // len(_RECORD_COLS)  # = 3276
 
+
+async def _insert_record_batch(db: AsyncSession, batch: list[dict]) -> int:
+    """
+    Insert a batch of records using multi-row VALUES statements.
+
+    The incoming batch (up to _RECORD_INSERT_BATCH_SIZE rows) is split into
+    sub-batches that stay within asyncpg's 32767-parameter limit.  Each
+    sub-batch is one atomic SQL statement: all rows land or the statement
+    raises, which propagates to the caller — no silent drops.
+
+    Returns the total number of rows inserted.
+    """
+    if not batch:
+        return 0
+
+    col_str = ", ".join(_RECORD_COLS)
+    total_inserted = 0
+
+    for start in range(0, len(batch), _MAX_ROWS_PER_INSERT):
+        sub = batch[start : start + _MAX_ROWS_PER_INSERT]
+
+        placeholders = ", ".join(
+            "(" + ", ".join(f":{col}_{i}" for col in _RECORD_COLS) + ")"
+            for i in range(len(sub))
+        )
+        params: dict[str, Any] = {
+            f"{col}_{i}": row[col]
+            for i, row in enumerate(sub)
+            for col in _RECORD_COLS
+        }
+
+        await db.execute(
+            text(f"INSERT INTO sync_action.record ({col_str}) VALUES {placeholders}"),
+            params,
+        )
+        total_inserted += len(sub)
+
+    logger.debug("Inserted batch | rows=%d", total_inserted)
+    return total_inserted
 
 async def _insert_dataset_row(
     db: AsyncSession,
     *,
     dataset_id: str,
-    name: str,
-    domain: str,
     filename: str,
     exploration_id: Optional[str],
     user_id: str,
@@ -193,17 +224,15 @@ async def _insert_dataset_row(
     await db.execute(
         text("""
             INSERT INTO sync_action.dataset
-                (id, name, domain, source_file, row_count, columns,
+                (id, source_file, row_count, columns,
                  exploration_id, uploaded_by, metadata)
             VALUES
-                (:id, :name, :domain, :source_file, 0,
+                (:id, :source_file, 0,
                  '[]'::jsonb, :exploration_id, :uploaded_by,
                  '{}'::jsonb)
         """),
         {
             "id": dataset_id,
-            "name": name,
-            "domain": domain,
             "source_file": filename,
             "exploration_id": exploration_id,
             "uploaded_by": user_id,
@@ -250,8 +279,6 @@ async def ingest_action_csv(
     db: AsyncSession,
     file_bytes: bytes,
     filename: str,
-    name: str,
-    domain: str,
     exploration_id: Optional[str],
     user_id: str,
     workspace_id: Optional[str],
@@ -284,8 +311,6 @@ async def ingest_action_csv(
         await _insert_dataset_row(
             db,
             dataset_id=dataset_id,
-            name=name,
-            domain=domain,
             filename=filename,
             exploration_id=exploration_id,
             user_id=user_id,
@@ -297,7 +322,6 @@ async def ingest_action_csv(
                 dataset_id=dataset_id,
                 file_bytes=file_bytes,
                 filename=filename,
-                domain=domain,
                 workspace_id=workspace_id,
                 region=region,
                 year=year,
@@ -311,7 +335,6 @@ async def ingest_action_csv(
                 dataset_id=dataset_id,
                 file_bytes=file_bytes,
                 filename=filename,
-                domain=domain,
                 workspace_id=workspace_id,
                 region=region,
                 year=year,
@@ -351,7 +374,6 @@ async def _ingest_csv(
     dataset_id: str,
     file_bytes: bytes,
     filename: str,
-    domain: str,
     workspace_id: Optional[str],
     region: Optional[str],
     year: Optional[int],
@@ -372,7 +394,15 @@ async def _ingest_csv(
     row_index = 0
 
     for chunk in reader:
+        chunk_raw = len(chunk)
         chunk = _clean_dataframe(chunk)
+        chunk_clean = len(chunk)
+
+        logger.debug(
+            "CSV chunk | raw=%d | after_clean=%d | dropped=%d | row_index_start=%d",
+            chunk_raw, chunk_clean, chunk_raw - chunk_clean, row_index,
+        )
+
         if chunk.empty:
             continue
 
@@ -395,7 +425,6 @@ async def _ingest_csv(
             payload = _sanitize_json(payload)
 
             envelope = _build_envelope(
-                domain=domain,
                 workspace_id=workspace_id,
                 region=region,
                 year=year,
@@ -419,8 +448,9 @@ async def _ingest_csv(
             })
             row_index += 1
 
-        await _insert_record_batch(db, batch)
-        total_rows += len(batch)
+        inserted = await _insert_record_batch(db, batch)
+        total_rows += inserted
+        logger.info("Chunk done | inserted=%d | running_total=%d", inserted, total_rows)
 
     return total_rows
 
@@ -431,7 +461,6 @@ async def _ingest_excel(
     dataset_id: str,
     file_bytes: bytes,
     filename: str,
-    domain: str,
     workspace_id: Optional[str],
     region: Optional[str],
     year: Optional[int],
@@ -482,7 +511,6 @@ async def _ingest_excel(
             payload = _sanitize_json(payload)
 
             envelope = _build_envelope(
-                domain=domain,
                 workspace_id=workspace_id,
                 region=region,
                 year=year,
@@ -506,14 +534,13 @@ async def _ingest_excel(
                 "subject_key": subject_key,
             })
             row_index += 1
-            total_rows += 1
 
             if len(batch) >= _RECORD_INSERT_BATCH_SIZE:
-                await _insert_record_batch(db, batch)
+                total_rows += await _insert_record_batch(db, batch)
                 batch.clear()
 
     if batch:
-        await _insert_record_batch(db, batch)
+        total_rows += await _insert_record_batch(db, batch)
 
     return total_rows
 

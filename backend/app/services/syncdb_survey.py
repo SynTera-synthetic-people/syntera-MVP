@@ -386,7 +386,6 @@ async def _insert_data_sheet_responses(
     dataset_id: str,
     data_plans: list[dict[str, Any]],
     question_schema: list[dict],
-    domain: str,
     workspace_id: Optional[str],
     region: Optional[str],
     year: Optional[int],
@@ -421,7 +420,6 @@ async def _insert_data_sheet_responses(
             respondent_index += 1
             envelope = {
                 "source_type": "survey",
-                "domain": domain,
                 "workspace_id": workspace_id,
                 "region": region,
                 "year": year,
@@ -458,8 +456,6 @@ async def ingest_survey_csv(
     db: AsyncSession,
     file_bytes: bytes,
     filename: str,
-    name: str,
-    domain: str,
     exploration_id: Optional[str],
     user_id: str,
     workspace_id: Optional[str],
@@ -507,18 +503,16 @@ async def ingest_survey_csv(
             text(
                 """
                 INSERT INTO sync_survey.dataset
-                    (id, name, domain, source_file, respondent_count,
+                    (id, source_file, respondent_count,
                      question_schema, exploration_id, uploaded_by, metadata)
                 VALUES
-                    (:id, :name, :domain, :source_file, :respondent_count,
+                    (:id, :source_file, :respondent_count,
                      CAST(:question_schema AS jsonb), :exploration_id, :uploaded_by,
                      CAST(:metadata AS jsonb))
                 """
             ),
             {
                 "id": dataset_id,
-                "name": name,
-                "domain": domain,
                 "source_file": filename,
                 "respondent_count": len(rows_as_dicts),
                 "question_schema": json.dumps(question_schema),
@@ -546,7 +540,6 @@ async def ingest_survey_csv(
 
             envelope = {
                 "source_type": "survey",
-                "domain": domain,
                 "workspace_id": workspace_id,
                 "region": region,
                 "year": year,
@@ -690,18 +683,16 @@ async def ingest_survey_csv(
         text(
             """
             INSERT INTO sync_survey.dataset
-                (id, name, domain, source_file, respondent_count,
+                (id, source_file, respondent_count,
                  question_schema, exploration_id, uploaded_by, metadata)
             VALUES
-                (:id, :name, :domain, :source_file, :respondent_count,
+                (:id, :source_file, :respondent_count,
                  CAST(:question_schema AS jsonb), :exploration_id, :uploaded_by,
                  CAST(:metadata AS jsonb))
             """
         ),
         {
             "id": dataset_id,
-            "name": name,
-            "domain": domain,
             "source_file": filename,
             "respondent_count": respondent_count,
             "question_schema": json.dumps(question_schema),
@@ -717,7 +708,6 @@ async def ingest_survey_csv(
         dataset_id=dataset_id,
         data_plans=data_plans,
         question_schema=question_schema,
-        domain=domain,
         workspace_id=workspace_id,
         region=region,
         year=year,

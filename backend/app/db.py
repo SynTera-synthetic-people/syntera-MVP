@@ -186,8 +186,6 @@ async def create_sync_schemas():
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS sync_action.dataset (
                 id          VARCHAR PRIMARY KEY,
-                name        VARCHAR NOT NULL,
-                domain      VARCHAR,
                 source_file VARCHAR,
                 row_count   INTEGER NOT NULL DEFAULT 0,
                 columns     JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -220,8 +218,6 @@ async def create_sync_schemas():
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS sync_survey.dataset (
                 id               VARCHAR PRIMARY KEY,
-                name             VARCHAR NOT NULL,
-                domain           VARCHAR,
                 source_file      VARCHAR,
                 respondent_count INTEGER NOT NULL DEFAULT 0,
                 question_schema  JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -265,6 +261,7 @@ async def create_sync_schemas():
                 file_data    BYTEA,
                 file_name    VARCHAR,
                 domain       VARCHAR,
+                file_path    VARCHAR,
                 is_processed BOOLEAN NOT NULL DEFAULT FALSE,
                 exploration_id VARCHAR,
                 uploaded_by  VARCHAR,
@@ -537,6 +534,14 @@ async def migrate_source_document_file_storage():
         await conn.execute(text("""
             ALTER TABLE sync_source.document
             ADD COLUMN IF NOT EXISTS file_name VARCHAR;
+        """))
+        await conn.execute(text("""
+            ALTER TABLE sync_source.document
+            ADD COLUMN IF NOT EXISTS file_path VARCHAR;
+        """))
+        await conn.execute(text("""
+            ALTER TABLE sync_source.document
+            ADD COLUMN IF NOT EXISTS domain VARCHAR;
         """))
 
 
