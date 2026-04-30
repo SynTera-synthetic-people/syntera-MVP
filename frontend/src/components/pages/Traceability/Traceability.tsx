@@ -362,11 +362,11 @@ const Traceability: React.FC<TraceabilityProps> = ({
               <span className="trc-inputs-divider">|</span>
               <div className="trc-inputs-legend">
                 <span className="trc-inputs-legend-item">
-                  <SpIcon name="sp-Warning-Circle_Check" size={14} style={{ color: 'rgba(255,255,255,0.5)' }} />
+                  <SpIcon name="sp-Warning-Circle_Check" size={14} style={{ color: '#D2D5DE' }} />
                   Validated
                 </span>
                 <span className="trc-inputs-legend-item">
-                  <SpIcon name="sp-Warning-Triangle_Warning" size={13} style={{ color: '#eab308' }} />
+                  <SpIcon name="sp-Warning-Triangle_Warning" size={13} style={{ color: '#D2D5DE' }} />
                   Partially Defined
                 </span>
                 <span className="trc-inputs-legend-item">
@@ -374,7 +374,7 @@ const Traceability: React.FC<TraceabilityProps> = ({
                   Triangulated
                 </span>
                 <span className="trc-inputs-legend-item">
-                  <SpIcon name="sp-Warning-Help" size={14} style={{ color: '#6b7280' }} />
+                  <SpIcon name="sp-Warning-Help" size={14} style={{ color: '#D2D5DE' }} />
                   Input Missing
                 </span>
               </div>
