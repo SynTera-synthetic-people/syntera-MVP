@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Dict, Any, Optional
 from datetime import datetime
 
@@ -8,6 +8,8 @@ class TraceabilityGenerateRequest(BaseModel):
 
 
 class TraceabilityOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     workspace_id: str
     exploration_id: str
@@ -20,9 +22,6 @@ class TraceabilityOut(BaseModel):
 
     created_by: Optional[str]
     created_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 class TraceabilityLayer(TraceabilityOut):

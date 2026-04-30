@@ -4,7 +4,7 @@ Pydantic schemas for Enterprise tier management.
 These DTOs are used exclusively by the /enterprise/* router and enterprise_service.
 They are separate from admin schemas to keep concerns isolated.
 """
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr
 from datetime import datetime
 from typing import Optional
 
@@ -24,6 +24,8 @@ class EnterpriseOrgCreate(BaseModel):
 
 
 class EnterpriseOrgOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     """Summary of an enterprise organisation returned by list/get endpoints."""
     id: str
     name: str
@@ -33,9 +35,6 @@ class EnterpriseOrgOut(BaseModel):
     # Legacy org rows may not have an owner assigned yet.
     owner_id: Optional[str] = None
     created_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 class EnterpriseAddMemberIn(BaseModel):
@@ -49,6 +48,8 @@ class EnterpriseAddMemberIn(BaseModel):
 
 
 class EnterpriseMemberOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     """User profile as seen by enterprise admin in the member list."""
     id: str
     full_name: str
@@ -59,9 +60,6 @@ class EnterpriseMemberOut(BaseModel):
     is_active: bool
     exploration_count: int
     created_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 class EnterpriseUpdateLimitIn(BaseModel):
