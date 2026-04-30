@@ -308,7 +308,7 @@ const renderKebabMenu = (member: Member) => (
               <div className="mu-table-header mu-table-header--team">
                 <div className="mu-hcell">USER NAME</div>
                 <div className="mu-hcell">EMAIL ADDRESS</div>
-                {/* <div className="mu-hcell">ACTIVE WORKSPACE</div> */}
+                <div className="mu-hcell">ACTIVE WORKSPACE</div>
                 <div className="mu-hcell mu-hcell-actions">ACTIONS</div>
               </div>
 
@@ -327,9 +327,9 @@ const renderKebabMenu = (member: Member) => (
                     <div className="mu-cell mu-cell-secondary">
                       {member.email}
                     </div>
-                    {/* <div className="mu-cell mu-cell-secondary">
+                    <div className="mu-cell mu-cell-secondary">
                       {member.workspace_name || propWorkspaceName || "—"}
-                    </div> */}
+                    </div>
                     <div className="mu-cell mu-cell-actions">
                       <div className="mu-kebab-wrap">
                         <button

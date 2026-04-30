@@ -1,14 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import {
-  TbPlus,
-  TbEdit,
-  TbTrash,
-  TbUsers,
-  TbSearch,
-  TbDotsVertical,
-} from 'react-icons/tb';
-
+import SpIcon from '../../../SPIcon';
 import { useWorkspaces, useDeleteWorkspace, useWorkspace } from '../../../../hooks/useWorkspaces';
 import WorkspacePopup from './WorkspacePopup';
 import { ManageUsersModal, DeleteWorkspaceModal } from '../../settings/SettingModal'; // ← added DeleteWorkspaceModal
@@ -180,14 +172,14 @@ const Workspace: React.FC<WorkspaceProps> = ({ embedded = false }) => {
         <div className="ws-header">
           <h2 className="ws-title">Workspace Management</h2>
           <button className="ws-create-btn" onClick={handleCreate}>
-            <TbPlus size={15} />
+            <SpIcon name="sp-Edit-Add_Plus" size={15} />
             Create Workspace
           </button>
         </div>
 
         {/* ── Search ── */}
         <div className="ws-search-wrap">
-          <TbSearch size={14} className="ws-search-icon" />
+          <SpIcon name="sp-Interface-Search_Magnifying_Glass" size={14} className="ws-search-icon" />
           <input
             type="text"
             className="ws-search-input"
@@ -269,7 +261,7 @@ const Workspace: React.FC<WorkspaceProps> = ({ embedded = false }) => {
                               }
                               aria-label="Workspace actions"
                             >
-                              <TbDotsVertical size={17} />
+                              <SpIcon name="sp-Menu-More_Vertical" size={17} />
                             </button>
 
                             {openMenuId === ws.id && (
@@ -281,13 +273,13 @@ const Workspace: React.FC<WorkspaceProps> = ({ embedded = false }) => {
                                     setOpenMenuId(null);
                                   }}
                                 >
-                                  <TbEdit size={14} /> Edit Workspace
+                                  <SpIcon name="sp-Edit-Edit_Pencil_01" size={14} /> Edit Workspace
                                 </div>
                                 <div
                                   className="ws-menu-item"
                                   onClick={(e) => handleManageUsers(ws, e)}
                                 >
-                                  <TbUsers size={14} /> Manage Users
+                                  <SpIcon name="sp-User-Users" size={14} /> Manage Users
                                 </div>
                                 <div className="ws-menu-divider" />
                                 <div
@@ -301,7 +293,7 @@ const Workspace: React.FC<WorkspaceProps> = ({ embedded = false }) => {
                                   {(deleteMutation as any).isPending ? (
                                     <div className="ws-mini-spinner" />
                                   ) : (
-                                    <TbTrash size={14} />
+                                    <SpIcon name="sp-Interface-Trash_Empty" size={14} />
                                   )}
                                   {(deleteMutation as any).isPending ? 'Deleting…' : 'Delete Workspace'}
                                 </div>

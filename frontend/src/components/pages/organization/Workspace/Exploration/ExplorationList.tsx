@@ -1,13 +1,9 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useSelector } from "react-redux";
 import "./ExplorationStyle.css";
 import { motion, useMotionValue, useSpring, useTransform } from "framer-motion";
-import {
-  TbSearch,
-  TbChevronDown,
-  TbX,
-} from "react-icons/tb";
+import { TbChevronDown, TbX } from "react-icons/tb";
 import SpIcon from '../../../../SPIcon';
 import { useTheme } from "../../../../../context/ThemeContext";
 import {
@@ -25,6 +21,7 @@ import UpgradeModal from "../../../Upgrade/UpgradeModal";
 import CreateExploration from "./CreateExploration";
 import InviteTeamModal from "../InviteTeamModal";
 import WorkspacePopup from "../WorkspacePopup";
+import Traceability from '../../../Traceability/Traceability';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -171,7 +168,6 @@ const ExplorationList: React.FC = () => {
   const userIsAdmin = isAdminUser(user);
   const canInviteTeam = Boolean(user?.can_create_workspace);
 
-  // Trial state
   const isTrialMaxedFromRedux =
     user?.is_trial === true &&
       typeof user?.exploration_count === "number" &&
@@ -183,29 +179,32 @@ const ExplorationList: React.FC = () => {
   const effectivelyMaxed = isTrialMaxedFromRedux || upgradeRequired;
 
   // UI state
-  const [showUpgrade, setShowUpgrade] = useState(false);
-  const [showCreate, setShowCreate] = useState(false);
-  const [showInviteModal, setShowInviteModal] = useState(false);
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [showUpgrade, setShowUpgrade]           = useState(false);
+  const [showCreate, setShowCreate]             = useState(false);
+  const [showInviteModal, setShowInviteModal]   = useState(false);
+  const [openMenuId, setOpenMenuId]             = useState<string | null>(null);
   const [isTooltipHovered, setIsTooltipHovered] = useState(false);
   const [csvDownloadingId, setCsvDownloadingId] = useState<string | null>(null);
   const [showEditWorkspace, setShowEditWorkspace] = useState(false);
+
+  // ── Traceability embedded view ──
+  const [traceabilityExplorationId, setTraceabilityExplorationId] = useState<string | null>(null);
 
   // Top-bar kebab (admin only)
   const [showTopKebab, setShowTopKebab] = useState(false);
   const topKebabRef = useRef<HTMLDivElement>(null);
 
   // Search & filters
-  const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "ongoing" | "completed">("all");
+  const [searchQuery, setSearchQuery]       = useState("");
+  const [statusFilter, setStatusFilter]     = useState<"all" | "ongoing" | "completed">("all");
   const [audienceFilter, setAudienceFilter] = useState<"all" | "B2B" | "B2C">("all");
-  const [showStatusDrop, setShowStatusDrop] = useState(false);
+  const [showStatusDrop, setShowStatusDrop]   = useState(false);
   const [showAudienceDrop, setShowAudienceDrop] = useState(false);
-  const statusRef = useRef<HTMLDivElement>(null);
+  const statusRef   = useRef<HTMLDivElement>(null);
   const audienceRef = useRef<HTMLDivElement>(null);
 
   // Delete modal
-  const [deleteModalId, setDeleteModalId] = useState<string | null>(null);
+  const [deleteModalId, setDeleteModalId]       = useState<string | null>(null);
   const [deleteModalTitle, setDeleteModalTitle] = useState<string>("");
 
   // Data fetching
@@ -331,7 +330,7 @@ const ExplorationList: React.FC = () => {
 
       <div className="exploration-container">
 
-        {/* ── Top Bar ── */}
+        {/* ── Top Bar — always visible ── */}
         <div className="top-bar">
           <div className="top-bar-left">
             <span className="workspace-name">{workspaceHeading}</span>
@@ -364,7 +363,6 @@ const ExplorationList: React.FC = () => {
               )}
             </div>
 
-            {/* Kebab — admin only */}
             {userIsAdmin && (
               <div className="topbar-kebab-wrapper" ref={topKebabRef}>
                 <button
@@ -409,183 +407,201 @@ const ExplorationList: React.FC = () => {
           </div>
         </div>
 
-        {/* ── Page Title ── */}
-        <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="page-header">
-          <h1 className="page-title">Research Exploration</h1>
-        </motion.div>
+        {/* ══════════════════════════════════════════════════════
+            TRACEABILITY VIEW — replaces page title + table
+        ══════════════════════════════════════════════════════ */}
+        {traceabilityExplorationId ? (
+          <Traceability
+            key={traceabilityExplorationId}
+            embeddedWorkspaceId={workspaceId ?? ""}
+            embeddedExplorationId={traceabilityExplorationId}
+            onBack={() => setTraceabilityExplorationId(null)}
+          />
+        ) : (
+          <>
+            {/* ── Page Title ── */}
+            <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="page-header">
+              <h1 className="page-title">Research Exploration</h1>
+            </motion.div>
 
-        {/* ── Search + Filters ── */}
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="search-filter-row">
-          <div className="search-wrapper">
-            <SpIcon name="sp-Interface-Search_Magnifying_Glass" size={15} className="search-icon" />
-            <input type="text" className="search-input" placeholder="Search here..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
-          </div>
-
-          <div className="filter-wrapper" ref={statusRef}>
-            <button
-              className={`filter-btn ${statusFilter !== "all" ? "filter-btn--active" : ""}`}
-              onClick={() => { setShowStatusDrop((v) => !v); setShowAudienceDrop(false); }}
-            >
-              {statusFilter === "all" ? "Status" : statusFilter === "ongoing" ? "Ongoing" : "Completed"}
-              <TbChevronDown size={14} className={`filter-chevron ${showStatusDrop ? "filter-chevron--open" : ""}`} />
-            </button>
-            {showStatusDrop && (
-              <div className="filter-menu">
-                {([
-                  { value: "all", label: "All Statuses" },
-                  { value: "ongoing", label: "Ongoing" },
-                  { value: "completed", label: "Completed" },
-                ] as const).map((opt) => (
-                  <div
-                    key={opt.value}
-                    className={`filter-menu-item ${statusFilter === opt.value ? "filter-menu-item--active" : ""}`}
-                    onClick={() => { setStatusFilter(opt.value); setShowStatusDrop(false); }}
-                  >
-                    {opt.value !== "all" && (
-                      <span className={`filter-dot ${opt.value === "ongoing" ? "filter-dot--ongoing" : "filter-dot--completed"}`} />
-                    )}
-                    {opt.label}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="filter-wrapper" ref={audienceRef}>
-            <button
-              className={`filter-btn ${audienceFilter !== "all" ? "filter-btn--active" : ""}`}
-              onClick={() => { setShowAudienceDrop((v) => !v); setShowStatusDrop(false); }}
-            >
-              {audienceFilter === "all" ? "Audience Type" : audienceFilter}
-              <TbChevronDown size={14} className={`filter-chevron ${showAudienceDrop ? "filter-chevron--open" : ""}`} />
-            </button>
-            {showAudienceDrop && (
-              <div className="filter-menu">
-                {([
-                  { value: "all", label: "All Types" },
-                  { value: "B2C", label: "B2C" },
-                  { value: "B2B", label: "B2B" },
-                ] as const).map((opt) => (
-                  <div
-                    key={opt.value}
-                    className={`filter-menu-item ${audienceFilter === opt.value ? "filter-menu-item--active" : ""}`}
-                    onClick={() => { setAudienceFilter(opt.value); setShowAudienceDrop(false); }}
-                  >
-                    {opt.label}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </motion.div>
-
-        {/* ── Main Table Card ── */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="table-card">
-          {visibleExplorations.length === 0 ? (
-            <div className="empty-state">
-              <h3 className="empty-title">
-                {searchQuery || statusFilter !== "all" || audienceFilter !== "all"
-                  ? "No explorations match your filters."
-                  : "No research explorations… yet."}
-              </h3>
-              <p className="empty-description">
-                {searchQuery || statusFilter !== "all" || audienceFilter !== "all"
-                  ? "Try adjusting your search or filters."
-                  : "Create your first exploration to group research initiatives by department, product, or market"}
-              </p>
-            </div>
-          ) : (
-            <>
-              <div className="table-header">
-                <div className="header-cell header-title">Title</div>
-                <div className="header-cell header-description">Description</div>
-                <div className="header-cell header-created">Created On</div>
-                <div className="header-cell header-status">Status</div>
-                <div className="header-cell header-audience">Audience Type</div>
-                <div className="header-cell header-actions">Actions</div>
+            {/* ── Search + Filters ── */}
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="search-filter-row">
+              <div className="search-wrapper">
+                <SpIcon name="sp-Interface-Search_Magnifying_Glass" size={15} className="search-icon" />
+                <input type="text" className="search-input" placeholder="Search here..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
               </div>
 
-              <div className="table-body">
-                {visibleExplorations.map((exploration, index) => (
-                  <motion.div
-                    key={exploration.id}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: index * 0.05 }}
-                    className="table-row"
-                  >
-                    <div className="row-cell cell-title">
-                      <div className="cell-title-inner">
-                        <span className="title-text">{exploration.title || "Untitled Exploration"}</span>
-                      </div>
-                    </div>
-                    <div className="row-cell cell-description">{exploration.description || "No description provided."}</div>
-                    <div className="row-cell cell-created">{formatDateToDDMMYYYY(exploration.created_at) || "N/A"}</div>
-                    <div className="row-cell cell-status">
-                      <span className={`status-badge ${exploration.is_end ? "status-completed" : "status-ongoing"}`}>
-                        {exploration.is_end ? "Completed" : "Ongoing"}
-                      </span>
-                    </div>
-                    <div className="row-cell cell-audience">{exploration.audience_type || "B2C"}</div>
-                    <div className="row-cell cell-actions">
-                      <button
-                        className={`continue-exp-btn ${exploration.is_end ? "disabled" : ""}`}
-                        disabled={exploration.is_end}
-                        onClick={() => {
-                          if (exploration.is_end) return; // extra safety
-                          const path = getExplorationResumeRoute(exploration, workspaceId ?? '');
-                          navigate(path);
-                        }}
+              <div className="filter-wrapper" ref={statusRef}>
+                <button
+                  className={`filter-btn ${statusFilter !== "all" ? "filter-btn--active" : ""}`}
+                  onClick={() => { setShowStatusDrop((v) => !v); setShowAudienceDrop(false); }}
+                >
+                  {statusFilter === "all" ? "Status" : statusFilter === "ongoing" ? "Ongoing" : "Completed"}
+                  <TbChevronDown size={14} className={`filter-chevron ${showStatusDrop ? "filter-chevron--open" : ""}`} />
+                </button>
+                {showStatusDrop && (
+                  <div className="filter-menu">
+                    {([
+                      { value: "all",       label: "All Statuses" },
+                      { value: "ongoing",   label: "Ongoing"      },
+                      { value: "completed", label: "Completed"    },
+                    ] as const).map((opt) => (
+                      <div
+                        key={opt.value}
+                        className={`filter-menu-item ${statusFilter === opt.value ? "filter-menu-item--active" : ""}`}
+                        onClick={() => { setStatusFilter(opt.value); setShowStatusDrop(false); }}
                       >
-                        Continue <SpIcon name="sp-Arrow-Arrow_Right_SM" />
-                      </button>
-                      <div className="action-tooltip-group" />
-                      <div className="kebab-menu-container">
-                        <button className="kebab-btn" onClick={() => toggleMenu(exploration.id)}>
-                          <SpIcon name="sp-Menu-More_Vertical" />
-                        </button>
-                        {openMenuId === exploration.id && (
-                          <div className="kebab-menu">
-                            <div className="menu-item" onClick={() => { navigate(`/main/organization/workspace/explorations/${workspaceId}/${exploration.id}/edit`); setOpenMenuId(null); }}>
-                              <SpIcon name="sp-Edit-Edit_Pencil_01" />Edit
-                            </div>
-                            {exploration.is_end && (
-                              <div className="menu-item" onClick={() => { handleDownloadQuestionnaireCsv(exploration); setOpenMenuId(null); }}>
-                                <SpIcon name="sp-File-File_Blank" />Report
-                              </div>
-                            )}
-
-                            {exploration.is_end && (
-                              <div className="menu-item" onClick={() => { navigate(`/main/traceability/${workspaceId}/${exploration.id}`); setOpenMenuId(null); }}>
-                                <SpIcon name="sp-File-File_Document" />Traceability
-                              </div>
-                            )}
-                            <div className="menu-item menu-item-delete" onClick={() => handleDelete(exploration.id, exploration.title)}>
-                              <SpIcon name="sp-Interface-Trash_Empty" />Delete
-                            </div>
-                          </div>
+                        {opt.value !== "all" && (
+                          <span className={`filter-dot ${opt.value === "ongoing" ? "filter-dot--ongoing" : "filter-dot--completed"}`} />
                         )}
+                        {opt.label}
                       </div>
-                    </div>
-                  </motion.div>
-                ))}
+                    ))}
+                  </div>
+                )}
               </div>
-            </>
-          )}
 
-          {/* Trial Limit Overlay — upgrade CTA lives here, banner above removed */}
-          {effectivelyMaxed && (
-            <motion.div className="trial-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
-              <div className="trial-overlay-content">
-                <h3 className="trial-overlay-title">Trial limit reached</h3>
-                <p className="trial-overlay-subtitle">Upgrade to continue exploring behavioural insights without limits</p>
-                <motion.button className="trial-overlay-btn" whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} onClick={() => setShowUpgrade(true)}>
-                 <SpIcon name="sp-Arrow-Arrow_Circle_Up"/> Upgrade Now 
-                </motion.button>
+              <div className="filter-wrapper" ref={audienceRef}>
+                <button
+                  className={`filter-btn ${audienceFilter !== "all" ? "filter-btn--active" : ""}`}
+                  onClick={() => { setShowAudienceDrop((v) => !v); setShowStatusDrop(false); }}
+                >
+                  {audienceFilter === "all" ? "Audience Type" : audienceFilter}
+                  <TbChevronDown size={14} className={`filter-chevron ${showAudienceDrop ? "filter-chevron--open" : ""}`} />
+                </button>
+                {showAudienceDrop && (
+                  <div className="filter-menu">
+                    {([
+                      { value: "all", label: "All Types" },
+                      { value: "B2C", label: "B2C"       },
+                      { value: "B2B", label: "B2B"       },
+                    ] as const).map((opt) => (
+                      <div
+                        key={opt.value}
+                        className={`filter-menu-item ${audienceFilter === opt.value ? "filter-menu-item--active" : ""}`}
+                        onClick={() => { setAudienceFilter(opt.value); setShowAudienceDrop(false); }}
+                      >
+                        {opt.label}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </motion.div>
-          )}
-        </motion.div>
+
+            {/* ── Main Table Card ── */}
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="table-card">
+              {visibleExplorations.length === 0 ? (
+                <div className="empty-state">
+                  <h3 className="empty-title">
+                    {searchQuery || statusFilter !== "all" || audienceFilter !== "all"
+                      ? "No explorations match your filters."
+                      : "No research explorations… yet."}
+                  </h3>
+                  <p className="empty-description">
+                    {searchQuery || statusFilter !== "all" || audienceFilter !== "all"
+                      ? "Try adjusting your search or filters."
+                      : "Create your first exploration to group research initiatives by department, product, or market"}
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="table-header">
+                    <div className="header-cell header-title">Title</div>
+                    <div className="header-cell header-description">Description</div>
+                    <div className="header-cell header-created">Created On</div>
+                    <div className="header-cell header-status">Status</div>
+                    <div className="header-cell header-audience">Audience Type</div>
+                    <div className="header-cell header-actions">Actions</div>
+                  </div>
+
+                  <div className="table-body">
+                    {visibleExplorations.map((exploration, index) => (
+                      <motion.div
+                        key={exploration.id}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ delay: index * 0.05 }}
+                        className="table-row"
+                      >
+                        <div className="row-cell cell-title">
+                          <div className="cell-title-inner">
+                            <span className="title-text">{exploration.title || "Untitled Exploration"}</span>
+                          </div>
+                        </div>
+                        <div className="row-cell cell-description">{exploration.description || "No description provided."}</div>
+                        <div className="row-cell cell-created">{formatDateToDDMMYYYY(exploration.created_at) || "N/A"}</div>
+                        <div className="row-cell cell-status">
+                          <span className={`status-badge ${exploration.is_end ? "status-completed" : "status-ongoing"}`}>
+                            {exploration.is_end ? "Completed" : "Ongoing"}
+                          </span>
+                        </div>
+                        <div className="row-cell cell-audience">{exploration.audience_type || "B2C"}</div>
+                        <div className="row-cell cell-actions">
+                          <button
+                            className={`continue-exp-btn ${exploration.is_end ? "disabled" : ""}`}
+                            disabled={exploration.is_end}
+                            onClick={() => {
+                              if (exploration.is_end) return;
+                              const path = getExplorationResumeRoute(exploration, workspaceId ?? '');
+                              navigate(path);
+                            }}
+                          >
+                            Continue <SpIcon name="sp-Arrow-Arrow_Right_SM" />
+                          </button>
+                          <div className="action-tooltip-group" />
+                          <div className="kebab-menu-container">
+                            <button className="kebab-btn" onClick={() => toggleMenu(exploration.id)}>
+                              <SpIcon name="sp-Menu-More_Vertical" />
+                            </button>
+                            {openMenuId === exploration.id && (
+                              <div className="kebab-menu">
+                                <div className="menu-item" onClick={() => { navigate(`/main/organization/workspace/explorations/${workspaceId}/${exploration.id}/edit`); setOpenMenuId(null); }}>
+                                  <SpIcon name="sp-Edit-Edit_Pencil_01" />Edit
+                                </div>
+                                {exploration.is_end && (
+                                  <div className="menu-item" onClick={() => { handleDownloadQuestionnaireCsv(exploration); setOpenMenuId(null); }}>
+                                    <SpIcon name="sp-File-File_Blank" />Report Log
+                                  </div>
+                                )}
+                                {exploration.is_end && (
+                                  <div
+                                    className="menu-item"
+                                    onClick={() => {
+                                      setTraceabilityExplorationId(exploration.id);
+                                      setOpenMenuId(null);
+                                    }}
+                                  >
+                                    <SpIcon name="sp-File-File_Document" />Traceability
+                                  </div>
+                                )}
+                                <div className="menu-item menu-item-delete" onClick={() => handleDelete(exploration.id, exploration.title)}>
+                                  <SpIcon name="sp-Interface-Trash_Empty" />Delete
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {effectivelyMaxed && (
+                <motion.div className="trial-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
+                  <div className="trial-overlay-content">
+                    <h3 className="trial-overlay-title">Trial limit reached</h3>
+                    <p className="trial-overlay-subtitle">Upgrade to continue exploring behavioural insights without limits</p>
+                    <motion.button className="trial-overlay-btn" whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} onClick={() => setShowUpgrade(true)}>
+                      <SpIcon name="sp-Arrow-Arrow_Circle_Up" /> Upgrade Now
+                    </motion.button>
+                  </div>
+                </motion.div>
+              )}
+            </motion.div>
+          </>
+        )}
       </div>
 
       {/* ── Modals ── */}

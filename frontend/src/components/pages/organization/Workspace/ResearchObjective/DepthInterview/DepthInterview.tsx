@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useObjectives } from '../../../../../../context/ObjectiveContext';
 import ChatView from './ChatView';
 import { motion, AnimatePresence } from 'framer-motion';
-import { TbLoader, TbX, TbPlus } from 'react-icons/tb';
+import { TbLoader, TbX, TbPlus, TbAlertCircle } from 'react-icons/tb';
 import SpIcon from '../../../../../SPIcon';
 import { useNavigate, useParams } from 'react-router-dom';
 import GuideValidationModal from './components/GuideValidationModal';
@@ -32,6 +32,43 @@ type PendingValidationType =
   | { type: 'createSection'; title: string }
   | { type: 'deleteQuestion'; questionId: string }
   | { type: 'deleteSection'; sectionId: string };
+
+// ── File validation constants ─────────────────────────────────────────────────
+
+const MAX_FILE_SIZE_MB    = 2;
+const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+
+const ALLOWED_MIME_TYPES = new Set([
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+]);
+
+const ALLOWED_EXTENSIONS = ['.pdf', '.doc', '.docx', '.xls', '.xlsx'];
+
+type UploadError = 'size' | 'format' | null;
+
+const getUploadErrorMessage = (errorType: UploadError): { title: string; subtitle: string } => {
+  if (errorType === 'size') return {
+    title: 'Upload Failed',
+    subtitle: `File may exceed size limits of ${MAX_FILE_SIZE_MB}MB" in case of space issue`,
+  };
+  if (errorType === 'format') return {
+    title: 'Upload Failed',
+    subtitle: 'Invalid file format. Only PDF, Word (.doc/.docx) and Excel (.xls/.xlsx) files are allowed.',
+  };
+  return { title: '', subtitle: '' };
+};
+
+const validateFile = (file: File): UploadError => {
+  const mimeOk = ALLOWED_MIME_TYPES.has(file.type);
+  const extOk  = ALLOWED_EXTENSIONS.some(ext => file.name.toLowerCase().endsWith(ext));
+  if (!mimeOk && !extOk) return 'format';
+  if (file.size > MAX_FILE_SIZE_BYTES) return 'size';
+  return null;
+};
 
 // ── Shared Modal Shell ────────────────────────────────────────────────────────
 
@@ -69,7 +106,6 @@ interface SectionModalProps {
 const SectionModal: React.FC<SectionModalProps> = ({ mode, initialValue = '', isPending, onConfirm, onClose }) => {
   const [value, setValue] = useState(initialValue);
   const MAX = 100;
-
   return (
     <ModalOverlay onClose={onClose}>
       <button className="di-modal__close" onClick={onClose}><TbX size={18} /></button>
@@ -114,7 +150,6 @@ interface QuestionModalProps {
 const QuestionModal: React.FC<QuestionModalProps> = ({ mode, initialValue = '', isPending, onConfirm, onClose }) => {
   const [value, setValue] = useState(initialValue);
   const MAX = 100;
-
   return (
     <ModalOverlay onClose={onClose}>
       <button className="di-modal__close" onClick={onClose}><TbX size={18} /></button>
@@ -190,49 +225,42 @@ const DepthInterview: React.FC = () => {
     refetch: refetchGuide, generateGuide, isGenerating, generationError, shouldAutoGenerate,
   } = useDiscussionGuideWithAutoGenerate(workspaceId, objectiveId);
 
-  const createSectionMutation   = useCreateSection(workspaceId!, objectiveId!);
-  const updateSectionMutation   = useUpdateSection(workspaceId!, objectiveId!);
-  const deleteSectionMutation   = useDeleteSection(workspaceId!, objectiveId!);
-  const createQuestionMutation  = useCreateQuestion(workspaceId!, objectiveId!);
-  const updateQuestionMutation  = useUpdateQuestion(workspaceId!, objectiveId!);
-  const deleteQuestionMutation  = useDeleteQuestion(workspaceId!, objectiveId!);
+  const createSectionMutation  = useCreateSection(workspaceId!, objectiveId!);
+  const updateSectionMutation  = useUpdateSection(workspaceId!, objectiveId!);
+  const deleteSectionMutation  = useDeleteSection(workspaceId!, objectiveId!);
+  const createQuestionMutation = useCreateQuestion(workspaceId!, objectiveId!);
+  const updateQuestionMutation = useUpdateQuestion(workspaceId!, objectiveId!);
+  const deleteQuestionMutation = useDeleteQuestion(workspaceId!, objectiveId!);
 
   const { trigger } = useOmniWorkflow();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── UI state ──────────────────────────────────────────────────────────────
 
-  const [showChat,        setShowChat]        = useState(false);
-  const [showLoader,      setShowLoader]      = useState(false);
-  const [showReadyToast,  setShowReadyToast]  = useState(false);
-  const [openKebabId,     setOpenKebabId]     = useState<string | null>(null);
+  const [showChat,       setShowChat]       = useState(false);
+  const [showLoader,     setShowLoader]     = useState(false);
+  const [showReadyToast, setShowReadyToast] = useState(false);
+  const [openKebabId,    setOpenKebabId]    = useState<string | null>(null);
+  const [loaderMode,     setLoaderMode]     = useState<'generate' | 'upload'>('generate');
+  const [showUploadToast, setShowUploadToast] = useState(false);
+  const [uploadReady,    setUploadReady]    = useState(false);
 
-  /**
-   * 'generate' — normal AI generation flow (4 steps)
-   * 'upload'   — file upload processing flow (7 steps)
-   */
-  const [loaderMode, setLoaderMode] = useState<'generate' | 'upload'>('generate');
+  // ── Upload validation error ───────────────────────────────────────────────
+  const [uploadError, setUploadError] = useState<UploadError>(null);
 
-  // Shown as an overlay inside the loader screen after a file is selected
-  const [showUploadToast,  setShowUploadToast]  = useState(false);
-  // Signals the upload-mode loader that the backend is done processing
-  const [uploadReady,      setUploadReady]      = useState(false);
-
-  // Modal state — one active modal at a time
   type ModalState =
-    | { type: 'editSection';   sectionId: string; currentTitle: string }
+    | { type: 'editSection';    sectionId: string; currentTitle: string }
     | { type: 'addSection' }
-    | { type: 'editQuestion';  questionId: string; currentText: string }
-    | { type: 'addQuestion';   sectionId: string }
-    | { type: 'deleteSection'; sectionId: string }
+    | { type: 'editQuestion';   questionId: string; currentText: string }
+    | { type: 'addQuestion';    sectionId: string }
+    | { type: 'deleteSection';  sectionId: string }
     | { type: 'deleteQuestion'; questionId: string }
     | null;
 
   const [modal, setModal] = useState<ModalState>(null);
 
-  // Validation modal
-  const [showValidationModal,  setShowValidationModal]  = useState(false);
-  const [validationReason,     setValidationReason]     = useState('');
+  const [showValidationModal,   setShowValidationModal]   = useState(false);
+  const [validationReason,      setValidationReason]      = useState('');
   const [pendingValidationData, setPendingValidationData] = useState<PendingValidationType | null>(null);
 
   // ── Effects ───────────────────────────────────────────────────────────────
@@ -241,7 +269,6 @@ const DepthInterview: React.FC = () => {
     if (objectiveId) trigger({ stage: 'persona_builder', event: 'BUILD_DISCUSSION_GUIDE', payload: {} });
   }, [objectiveId]);
 
-  // Close kebab on outside click
   useEffect(() => {
     const close = () => setOpenKebabId(null);
     document.addEventListener('click', close);
@@ -287,35 +314,37 @@ const DepthInterview: React.FC = () => {
 
   // ── Upload handlers ───────────────────────────────────────────────────────
 
-  const handleUploadGuide = () => fileInputRef.current?.click();
+  const handleUploadGuide = () => {
+    setUploadError(null);
+    fileInputRef.current?.click();
+  };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    // Reset so the same file can be re-selected if needed
     e.target.value = '';
     if (!file) return;
 
-    // Switch to 7-step upload loader
+    // ── Validate before doing anything ────────────────────────────────────
+    const errorType = validateFile(file);
+    if (errorType) {
+      setUploadError(errorType);
+      setTimeout(() => setUploadError(null), 6_000);
+      return;
+    }
+
+    // ── Validation passed ─────────────────────────────────────────────────
+    setUploadError(null);
     setLoaderMode('upload');
     setUploadReady(false);
     setShowLoader(true);
 
-    // Show "File Uploaded Successfully" toast inside the loader screen
     setShowUploadToast(true);
     setTimeout(() => setShowUploadToast(false), 4000);
 
     try {
       trigger({ stage: 'discussion_guide', event: 'BUILD_DISCUSSION_GUIDE_UPLOAD', payload: {} });
-
-      // TODO: swap this for your real upload API call, e.g.:
-      // await uploadDiscussionGuideFile(workspaceId!, objectiveId!, file);
-      //
-      // For now we simulate the backend completing after a delay so the
-      // 7-step animation has time to play through before onComplete fires.
+      // TODO: replace with real upload API call
       await new Promise<void>((resolve) => setTimeout(resolve, 26_000));
-
-      // Signal the loader that the backend is done — it will finish the
-      // last step and call onComplete (→ handleLoaderComplete) automatically.
       setUploadReady(true);
     } catch (err) {
       console.error('Upload failed:', err);
@@ -333,7 +362,7 @@ const DepthInterview: React.FC = () => {
     setValidationReason('');
     setPendingValidationData(null);
     try {
-      if (data.type === 'updateQuestion')  await saveQuestion(data.questionId, data.text, true);
+      if (data.type === 'updateQuestion')      await saveQuestion(data.questionId, data.text, true);
       else if (data.type === 'createQuestion') await addQuestion(data.sectionId, data.text, true);
       else if (data.type === 'updateSection')  await saveSection(data.sectionId, data.title, true);
       else if (data.type === 'createSection')  await addSection(data.title, true);
@@ -352,8 +381,7 @@ const DepthInterview: React.FC = () => {
       setShowValidationModal(true);
       return;
     }
-    setModal(null);
-    refetchGuide();
+    setModal(null); refetchGuide();
   };
 
   const addSection = async (title: string, isForce = false) => {
@@ -365,8 +393,7 @@ const DepthInterview: React.FC = () => {
       return;
     }
     trigger({ stage: 'discussion_guide', event: 'BUILD_DISCUSSION_GUIDE_C_SECTION', payload: {} });
-    setModal(null);
-    refetchGuide();
+    setModal(null); refetchGuide();
   };
 
   const deleteSection = async (sectionId: string, isForce = false) => {
@@ -378,8 +405,7 @@ const DepthInterview: React.FC = () => {
       return;
     }
     trigger({ stage: 'discussion_guide', event: 'BUILD_DISCUSSION_GUIDE_D_SECTION', payload: {} });
-    setModal(null);
-    refetchGuide();
+    setModal(null); refetchGuide();
   };
 
   // ── Question operations ───────────────────────────────────────────────────
@@ -392,8 +418,7 @@ const DepthInterview: React.FC = () => {
       setShowValidationModal(true);
       return;
     }
-    setModal(null);
-    refetchGuide();
+    setModal(null); refetchGuide();
   };
 
   const addQuestion = async (sectionId: string, text: string, isForce = false) => {
@@ -405,8 +430,7 @@ const DepthInterview: React.FC = () => {
       return;
     }
     trigger({ stage: 'discussion_guide', event: 'BUILD_DISCUSSION_GUIDE_C_QUES', payload: {} });
-    setModal(null);
-    refetchGuide();
+    setModal(null); refetchGuide();
   };
 
   const deleteQuestion = async (questionId: string, isForce = false) => {
@@ -418,8 +442,7 @@ const DepthInterview: React.FC = () => {
       return;
     }
     trigger({ stage: 'discussion_guide', event: 'BUILD_DISCUSSION_GUIDE_D_QUES', payload: {} });
-    setModal(null);
-    refetchGuide();
+    setModal(null); refetchGuide();
   };
 
   // ── Start Interview ───────────────────────────────────────────────────────
@@ -427,6 +450,39 @@ const DepthInterview: React.FC = () => {
   const handleStartInterview = () => {
     if (objectiveId) localStorage.setItem(`qualitative_sub1_${objectiveId}`, '1');
     navigate(`/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/chatview`);
+  };
+
+  // ── Upload error banner ───────────────────────────────────────────────────
+
+  const UploadErrorBanner: React.FC = () => {
+    if (!uploadError) return null;
+    const { title, subtitle } = getUploadErrorMessage(uploadError);
+    return (
+      <AnimatePresence>
+        {uploadError && (
+          <motion.div
+            className="di-upload-error-banner"
+            initial={{ opacity: 0, y: -16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -16 }}
+            transition={{ duration: 0.22 }}
+          >
+            <TbAlertCircle size={20} className="di-upload-error-banner__icon" />
+            <div className="di-upload-error-banner__body">
+              <span className="di-upload-error-banner__title">{title}</span>
+              <span className="di-upload-error-banner__subtitle">{subtitle}</span>
+            </div>
+            <button
+              className="di-upload-error-banner__close"
+              onClick={() => setUploadError(null)}
+              aria-label="Dismiss"
+            >
+              <TbX size={15} />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    );
   };
 
   // ── Derived ───────────────────────────────────────────────────────────────
@@ -439,7 +495,6 @@ const DepthInterview: React.FC = () => {
 
   if (showLoader) return (
     <>
-      {/* "File Uploaded Successfully" toast — rendered on top of the loader */}
       <AnimatePresence>
         {showUploadToast && (
           <motion.div
@@ -492,17 +547,36 @@ const DepthInterview: React.FC = () => {
 
   return (
     <div className="di-page">
-      <input ref={fileInputRef} type="file" accept=".pdf,.doc,.docx,.txt" className="di-file-input" onChange={handleFileChange} />
+      {/* Hidden file input — updated accept to match allowed formats */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".pdf,.doc,.docx,.xls,.xlsx"
+        className="di-file-input"
+        onChange={handleFileChange}
+      />
+
+      {/* Error banner portal — fixed top-center, above everything */}
+      <div className="di-error-portal">
+        <UploadErrorBanner />
+      </div>
 
       {/* ── Empty state ── */}
       {guide.length === 0 && (
         <div className="di-container">
-          <motion.div className="di-empty-card" initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
+          <motion.div
+            className="di-empty-card"
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.35 }}
+          >
             <div className="di-empty-card__icon-wrap">
               <SpIcon name="sp-Warning-Wavy_Help" size={40} />
             </div>
             <h2 className="di-empty-card__title">Start with Discussion Guide Creation</h2>
-            <p className="di-empty-card__subtitle">Let's translate your objective into conversational questions that uncover real behaviour</p>
+            <p className="di-empty-card__subtitle">
+              Let's translate your objective into conversational questions that uncover real behaviour
+            </p>
             <div className="di-empty-card__actions">
               <button className="di-btn di-btn--outline" onClick={handleUploadGuide}>
                 <SpIcon name="sp-File-Cloud_Upload" size={20} className="di-btn__icon" />
@@ -523,33 +597,41 @@ const DepthInterview: React.FC = () => {
       {guide.length > 0 && (
         <div className="di-guide-page">
 
-          {/* Header */}
           <div className="di-guide-page-header">
             <div>
               <h1 className="di-guide-page-title">Discussion Guide</h1>
-              <p className="di-guide-page-subtitle">Structured to uncover behaviours, motivations, and decision triggers</p>
+              <p className="di-guide-page-subtitle">
+                Structured to uncover behaviours, motivations, and decision triggers
+              </p>
             </div>
             <AnimatePresence>
               {showReadyToast && (
-                <motion.div className="di-ready-toast"
-                  initial={{ opacity: 0, y: -8, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -8, scale: 0.97 }} transition={{ duration: 0.22 }}>
+                <motion.div
+                  className="di-ready-toast"
+                  initial={{ opacity: 0, y: -8, scale: 0.97 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -8, scale: 0.97 }}
+                  transition={{ duration: 0.22 }}
+                >
                   <SpIcon name="sp-Warning-Circle_Check" size={18} className="di-ready-toast__icon" />
                   <span>Your Discussion Guide is Ready</span>
-                  <button className="di-ready-toast__close" onClick={() => setShowReadyToast(false)}><TbX size={14} /></button>
+                  <button className="di-ready-toast__close" onClick={() => setShowReadyToast(false)}>
+                    <TbX size={14} />
+                  </button>
                 </motion.div>
               )}
             </AnimatePresence>
           </div>
 
-          {/* Sections container */}
           <div className="di-guide-card">
             {guide.map((section, sectionIndex) => (
-              <motion.div key={section.section_id} className="di-section"
-                initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: sectionIndex * 0.06 }}>
-
-                {/* Section header */}
+              <motion.div
+                key={section.section_id}
+                className="di-section"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: sectionIndex * 0.06 }}
+              >
                 <div className="di-section__header">
                   <div className="di-section__header-left">
                     <div className="di-section__num">{sectionIndex + 1}</div>
@@ -573,13 +655,11 @@ const DepthInterview: React.FC = () => {
 
                 <div className="di-section__divider" />
 
-                {/* Questions */}
                 <div className="di-questions">
                   {section.questions?.map((question, qIndex) => (
                     <div className="di-question" key={question.id}>
                       <span className="di-question__label">Q{qIndex + 1}.</span>
                       <p className="di-question__text">{question.text}</p>
-
                       <div className="di-question__menu-wrap">
                         <button
                           className="di-question__menu-btn"
@@ -600,8 +680,7 @@ const DepthInterview: React.FC = () => {
                                 setModal({ type: 'editQuestion', questionId: question.id, currentText: question.text });
                               }}
                             >
-                              <SpIcon name="sp-Edit-Edit_Pencil_01" size={14} />
-                              Edit
+                              <SpIcon name="sp-Edit-Edit_Pencil_01" size={14} /> Edit
                             </button>
                             <button
                               className="di-question__menu-item di-question__menu-item--danger"
@@ -610,8 +689,7 @@ const DepthInterview: React.FC = () => {
                                 setModal({ type: 'deleteQuestion', questionId: question.id });
                               }}
                             >
-                              <SpIcon name="sp-Interface-Trash_Empty" size={14} />
-                              Delete
+                              <SpIcon name="sp-Interface-Trash_Empty" size={14} /> Delete
                             </button>
                           </div>
                         )}
@@ -620,89 +698,56 @@ const DepthInterview: React.FC = () => {
                   ))}
                 </div>
 
-                {/* Add question */}
                 <button
                   className="di-add-question-btn"
                   onClick={() => setModal({ type: 'addQuestion', sectionId: section.section_id })}
                 >
-                  <TbPlus size={15} />
-                  Add Question
+                  <TbPlus size={15} /> Add Question
                 </button>
-
               </motion.div>
             ))}
 
-            {/* Add New Section */}
             <div className="di-guide-footer">
               <button className="di-footer-add-section-btn" onClick={() => setModal({ type: 'addSection' })}>
-                <TbPlus size={18} />
-                Add New Section
+                <TbPlus size={18} /> Add New Section
               </button>
             </div>
           </div>
 
-          {/* Start Interview */}
           <div className="di-start-interview-bar">
             <button className="di-start-interview-btn" onClick={handleStartInterview}>
               Start Interview
               <SpIcon name="sp-Arrow-Arrow_Right_SM" size={16} />
             </button>
           </div>
-
         </div>
       )}
 
       {/* ── Modals ── */}
       <AnimatePresence>
         {modal?.type === 'editSection' && (
-          <SectionModal
-            mode="edit"
-            initialValue={modal.currentTitle}
-            isPending={updateSectionMutation.isPending}
-            onConfirm={(val) => saveSection(modal.sectionId, val)}
-            onClose={() => setModal(null)}
-          />
+          <SectionModal mode="edit" initialValue={modal.currentTitle} isPending={updateSectionMutation.isPending}
+            onConfirm={(val) => saveSection(modal.sectionId, val)} onClose={() => setModal(null)} />
         )}
         {modal?.type === 'addSection' && (
-          <SectionModal
-            mode="add"
-            isPending={createSectionMutation.isPending}
-            onConfirm={(val) => addSection(val)}
-            onClose={() => setModal(null)}
-          />
+          <SectionModal mode="add" isPending={createSectionMutation.isPending}
+            onConfirm={(val) => addSection(val)} onClose={() => setModal(null)} />
         )}
         {modal?.type === 'editQuestion' && (
-          <QuestionModal
-            mode="edit"
-            initialValue={modal.currentText}
-            isPending={updateQuestionMutation.isPending}
-            onConfirm={(val) => saveQuestion(modal.questionId, val)}
-            onClose={() => setModal(null)}
-          />
+          <QuestionModal mode="edit" initialValue={modal.currentText} isPending={updateQuestionMutation.isPending}
+            onConfirm={(val) => saveQuestion(modal.questionId, val)} onClose={() => setModal(null)} />
         )}
         {modal?.type === 'addQuestion' && (
-          <QuestionModal
-            mode="add"
-            isPending={createQuestionMutation.isPending}
-            onConfirm={(val) => addQuestion(modal.sectionId, val)}
-            onClose={() => setModal(null)}
-          />
+          <QuestionModal mode="add" isPending={createQuestionMutation.isPending}
+            onConfirm={(val) => addQuestion(modal.sectionId, val)} onClose={() => setModal(null)} />
         )}
         {modal?.type === 'deleteSection' && (
-          <DeleteModal
-            target="section"
-            isPending={deleteSectionMutation.isPending}
-            onConfirm={() => deleteSection(modal.sectionId)}
-            onClose={() => setModal(null)}
-          />
+          <DeleteModal target="section" isPending={deleteSectionMutation.isPending}
+            onConfirm={() => deleteSection(modal.sectionId)} onClose={() => setModal(null)} />
         )}
         {modal?.type === 'deleteQuestion' && (
-          <DeleteModal
-            target="question"
-            isPending={deleteQuestionMutation.isPending}
-            onConfirm={() => deleteQuestion(modal.questionId)}
-            onClose={() => setModal(null)}
-          />
+          <DeleteModal target="question" isPending={deleteQuestionMutation.isPending}
+            onConfirm={() => deleteQuestion(modal.questionId)} onClose={() => setModal(null)} />
         )}
       </AnimatePresence>
 
@@ -710,7 +755,11 @@ const DepthInterview: React.FC = () => {
         show={showValidationModal}
         reason={validationReason}
         onContinue={handleValidationContinue}
-        onClose={() => { setShowValidationModal(false); setValidationReason(''); setPendingValidationData(null); }}
+        onClose={() => {
+          setShowValidationModal(false);
+          setValidationReason('');
+          setPendingValidationData(null);
+        }}
       />
     </div>
   );

@@ -16,11 +16,8 @@ interface CategorySummaryCardProps {
     displayName: string;
   }>;
   formData: PersonaFormData;
-  /** Only used by the Formative Experience card — plain string, not part of formData */
   formativeExperience?: string;
-  /** Called when user clicks × on a pill to remove that value */
   onRemoveAttribute?: (key: keyof PersonaFormData, valueToRemove: string) => void;
-  /** Called when user clicks × on the formative experience block */
   onRemoveFormativeExperience?: () => void;
 }
 
@@ -42,6 +39,7 @@ const CategorySummaryCard: React.FC<CategorySummaryCardProps> = ({
   const renderAttributeValue = (
     key: keyof PersonaFormData,
     value: string | string[] | undefined,
+    displayName: string,
   ): React.ReactNode => {
     if (!value) return null;
 
@@ -51,6 +49,7 @@ const CategorySummaryCard: React.FC<CategorySummaryCardProps> = ({
       <div className="category-card__pills">
         {pills.map((item, index) => (
           <span key={index} className="category-card__pill">
+            <span className="category-card__pill-tooltip">{displayName}</span>
             {item}
             {onRemoveAttribute && (
               <button
@@ -62,7 +61,7 @@ const CategorySummaryCard: React.FC<CategorySummaryCardProps> = ({
                 aria-label={`Remove ${item}`}
                 title={`Remove ${item}`}
               >
-                <SpIcon name="sp-Menu-Close_SM" size={10} />
+                <SpIcon name="sp-Menu-Close_MD" size={15} />
               </button>
             )}
           </span>
@@ -85,21 +84,21 @@ const CategorySummaryCard: React.FC<CategorySummaryCardProps> = ({
         )}
       </div>
 
-      {/* Pill attributes (Demographics, Behavioural, etc.) */}
+      {/* Pill attributes */}
       {filledAttributes.length > 0 && (
         <div className="category-card__content">
           {filledAttributes.map((attr) => {
             const value = formData[attr.key];
             return (
               <div key={attr.key} className="category-card__attribute">
-                {renderAttributeValue(attr.key, value)}
+                {renderAttributeValue(attr.key, value, attr.displayName)}
               </div>
             );
           })}
         </div>
       )}
 
-      {/* Formative Experience — plain text block with optional remove */}
+      {/* Formative Experience */}
       {formativeExperience && formativeExperience.trim() !== '' && (
         <div className="category-card__formative-wrap">
           <p className="category-card__formative-text">

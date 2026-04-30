@@ -1,24 +1,22 @@
 /* ═══════════════════════════════════════════════════════════════
-   Traceability.css
-   Prefix: trc-
+   Traceability.css  —  prefix: trc-
+   Renders inside ExplorationList shell (no standalone bg needed)
 ═══════════════════════════════════════════════════════════════ */
 
-/* ── Page shell ── */
-.trc-page {
-  min-height: 100vh;
-  padding: 32px;
+.trc-content {
   display: flex;
   flex-direction: column;
   gap: 0;
-  background: #0d0f14;
   color: #e5e7eb;
+  padding: 0;
+  width: 100%;
 }
 
-/* ── Header ── */
+/* ── Back button ── */
 .trc-back-btn {
   display: inline-flex;
-  width: auto; 
-  align-items: flex-start;
+  width: auto;
+  align-items: center;
   align-self: flex-start;
   gap: 0.375rem;
   font-size: 0.8125rem;
@@ -29,6 +27,7 @@
   border-radius: 0.5rem;
   cursor: pointer;
   padding: 0.375rem 0.875rem;
+  margin-bottom: 20px;
   transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
 }
 .trc-back-btn:hover {
@@ -36,6 +35,7 @@
   color: #e5e7eb;
 }
 
+/* ── Heading ── */
 .trc-title {
   font-size: 28px;
   font-weight: 800;
@@ -86,18 +86,30 @@
 /* ── Research tab layout ── */
 .trc-research-layout {
   display: grid;
-  grid-template-columns: 1fr 380px;
-  gap: 24px;
+  grid-template-columns: 1fr 340px;
+  gap: 28px;
   align-items: start;
+  width: 100%;
+}
+
+.trc-research-left {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+
+.trc-research-right {
+  /* fixed 340px column — score card sits here */
+}
+
+.trc-intent-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 /* ── Research Intent ── */
-.trc-research-intent {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
 .trc-section-title {
   font-size: 15px;
   font-weight: 700;
@@ -121,6 +133,7 @@
   cursor: pointer;
   padding: 0;
   transition: color 0.15s;
+  align-self: flex-start;
 }
 .trc-see-more:hover { color: #2dd4bf; }
 
@@ -144,7 +157,7 @@
 }
 
 .trc-score-number {
-  font-size: 48px;
+  font-size: 52px;
   font-weight: 800;
   color: #ffffff;
   letter-spacing: -1px;
@@ -159,7 +172,7 @@
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
-.trc-score-badge--excellent { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
+.trc-score-badge--excellent { background: rgba(34, 197, 94, 0.15);  color: #22c55e; }
 .trc-score-badge--strong    { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
 .trc-score-badge--good      { background: rgba(234, 179, 8, 0.15);  color: #eab308; }
 .trc-score-badge--poor      { background: rgba(239, 68, 68, 0.15);  color: #ef4444; }
@@ -198,7 +211,7 @@
 .trc-score-breakdown-row {
   display: flex;
   justify-content: center;
-  gap: 28px;
+  gap: 20px;
   flex-wrap: wrap;
   width: 100%;
 }
@@ -211,8 +224,9 @@
 }
 
 .trc-score-breakdown-key {
-  font-size: 11.5px;
+  font-size: 11px;
   color: #6b7280;
+  white-space: nowrap;
 }
 
 .trc-score-breakdown-val {
@@ -226,7 +240,6 @@
   display: flex;
   align-items: center;
   gap: 16px;
-  margin: 8px 0 20px;
   font-size: 13px;
   flex-wrap: wrap;
 }
@@ -234,6 +247,7 @@
 .trc-inputs-count {
   font-weight: 700;
   color: #ffffff;
+  white-space: nowrap;
 }
 
 .trc-inputs-divider {
@@ -253,6 +267,7 @@
   gap: 6px;
   font-size: 12.5px;
   color: #9ca3af;
+  white-space: nowrap;
 }
 
 /* ── Table ── */
@@ -261,11 +276,13 @@
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 16px;
   overflow: hidden;
+  width: 100%;
 }
 
 .trc-table {
   width: 100%;
   border-collapse: collapse;
+  table-layout: fixed;
 }
 
 .trc-table-head {
@@ -285,12 +302,20 @@
 
 .trc-table th.trc-th-right { text-align: right; }
 
+.trc-table th:nth-child(1),
+.trc-table td.trc-td-component { width: 200px; }
+
+.trc-table th:nth-child(2)     { width: auto; }
+
+.trc-table th:nth-child(3),
+.trc-table td.trc-td-status    { width: 160px; }
+
 .trc-table tr {
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
   transition: background 0.12s;
 }
 .trc-table tbody tr:last-child { border-bottom: none; }
-.trc-table tbody tr:hover { background: rgba(255, 255, 255, 0.02); }
+.trc-table tbody tr:hover      { background: rgba(255, 255, 255, 0.02); }
 
 .trc-table td {
   padding: 14px 20px;
@@ -299,19 +324,17 @@
   vertical-align: middle;
 }
 
-.trc-table td.trc-td-component {
+.trc-td-component {
   font-weight: 600;
-  color: #ffffff;
-  width: 200px;
+  color: #ffffff !important;
 }
 
-.trc-table td.trc-td-coverage {
+.trc-td-coverage {
   color: #9ca3af;
 }
 
-.trc-table td.trc-td-status {
+.trc-td-status {
   text-align: right;
-  width: 60px;
 }
 
 /* ── Status icons ── */
@@ -321,15 +344,13 @@
   justify-content: center;
   width: 24px;
   height: 24px;
-
-
 }
-.trc-status-icon--validated  { border-color: rgba(255,255,255,0.3); color: rgba(255,255,255,0.6); }
-.trc-status-icon--partial    { border-color: rgba(234,179,8,0.5);   color: #eab308; }
-.trc-status-icon--inferred   { border-color: rgba(255,255,255,0.3); color: rgba(255,255,255,0.6); }
-.trc-status-icon--missing    { border-color: rgba(255,255,255,0.15); color: #6b7280; }
+.trc-status-icon--validated { color: rgba(255, 255, 255, 0.6); }
+.trc-status-icon--partial   { color: #eab308; }
+.trc-status-icon--inferred  { color: rgba(255, 255, 255, 0.6); }
+.trc-status-icon--missing   { color: #6b7280; }
 
-/* ── Loading / empty ── */
+/* ── Loading / empty / error ── */
 .trc-loading {
   display: flex;
   flex-direction: column;
@@ -342,7 +363,7 @@
 .trc-spinner {
   width: 36px;
   height: 36px;
-  border: 3px solid rgba(255,255,255,0.1);
+  border: 3px solid rgba(255, 255, 255, 0.1);
   border-top-color: #3b82f6;
   border-radius: 50%;
   animation: trc-spin 0.7s linear infinite;
@@ -359,7 +380,6 @@
   font-size: 13.5px;
 }
 
-/* ── Error state ── */
 .trc-error {
   text-align: center;
   padding: 60px 20px;
@@ -370,11 +390,6 @@
 /* ═══════════════════════════════════════════════════════════════
    Persona Tab
 ═══════════════════════════════════════════════════════════════ */
-
-.trc-persona-score-card {
-  max-width: 520px;
-  margin: 0 auto 32px;
-}
 
 .trc-section-heading {
   font-size: 17px;
@@ -389,12 +404,10 @@
   margin: 0 0 20px;
 }
 
-/* Persona inventory table columns */
-.trc-col-persona-name  { width: 60%; }
-.trc-col-created-by    { width: 25%; }
-.trc-col-confidence    { width: 15%; text-align: right; }
+.trc-col-persona-name { width: 60%; }
+.trc-col-created-by   { width: 25%; }
+.trc-col-confidence   { width: 15%; text-align: right; }
 
-/* Created-by avatar */
 .trc-creator {
   display: flex;
   align-items: center;
@@ -405,6 +418,7 @@
   width: 24px;
   height: 24px;
   border-radius: 50%;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -412,7 +426,7 @@
   font-weight: 700;
   flex-shrink: 0;
 }
-.trc-creator-avatar--omi { background: #6366f1; color: #fff; }
+.trc-creator-avatar--omi  { background: #6366f1; color: #fff; }
 .trc-creator-avatar--user { background: #f59e0b; color: #fff; }
 
 .trc-creator-name {
@@ -420,7 +434,6 @@
   color: #d1d5db;
 }
 
-/* Ground truth table */
 .trc-evidence-metric {
   display: flex;
   flex-direction: column;
@@ -447,11 +460,6 @@
 /* ═══════════════════════════════════════════════════════════════
    Quant / Qual Tabs
 ═══════════════════════════════════════════════════════════════ */
-
-.trc-quant-score-card {
-  max-width: 520px;
-  margin: 0 auto 32px;
-}
 
 .trc-quant-section {
   margin-bottom: 32px;
@@ -494,7 +502,7 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   Centered score card (used in persona/quant/qual)
+   Centered score card (persona / quant / qual tabs)
 ═══════════════════════════════════════════════════════════════ */
 
 .trc-centered-score {
@@ -504,7 +512,7 @@
   padding: 36px 32px;
   text-align: center;
   max-width: 520px;
-  margin: 0 auto;
+  margin: 0 auto 32px;
 }
 
 .trc-centered-score-number {
@@ -513,14 +521,6 @@
   color: #ffffff;
   letter-spacing: -1px;
   line-height: 1;
-}
-
-.trc-centered-score-label-row {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  margin: 4px 0 8px;
 }
 
 .trc-centered-score-sublabel {
@@ -552,31 +552,14 @@
 }
 
 /* ── Responsive ── */
+@media (max-width: 1024px) {
+  .trc-research-layout {
+    grid-template-columns: 1fr 300px;
+  }
+}
+
 @media (max-width: 900px) {
   .trc-research-layout {
     grid-template-columns: 1fr;
   }
-  .trc-page {
-    padding: 20px;
-  }
-}
-.trc-creator-avatar {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  overflow: hidden;        /* 👈 ensures image stays inside circle */
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 10px;
-  font-weight: 700;
-  flex-shrink: 0;
-}
-
-.trc-creator-avatar-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: center 30%;
-  display: block;
 }

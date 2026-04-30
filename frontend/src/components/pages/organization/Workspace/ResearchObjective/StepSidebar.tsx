@@ -25,6 +25,8 @@ interface StepSidebarProps {
   isStepUnlocked: (step: number) => boolean;
   /** Which qualitative sub-steps are done: 1=Discussion Guide, 2=Interviews, 3=Insights */
   completedSubSteps?: number[];
+  /** Which quantitative sub-steps are done: 1=Questionnaire Design, 2=Population Calibration, 3=Survey Execution, 4=Insights Generation */
+  completedQuantSubSteps?: number[];
 }
 
 // ── Step definitions ──────────────────────────────────────────────────────────
@@ -57,7 +59,13 @@ const STEPS: StepItem[] = [
     number: 4,
     label: "Step 4",
     name: "Quantitative Exploration",
-    path: "population-builder",
+    path: "questionnaire",
+    subSteps: [
+      { number: 1, label: "Step 1", name: "Questionnaire Design", path: "questionnaire" },
+      { number: 2, label: "Step 2", name: "Population Calibration", path: "population-builder" },
+      { number: 3, label: "Step 3", name: "Survey Execution", path: "survey-results" },
+      { number: 4, label: "Step 4", name: "Insights Generation", path: "rebuttal-mode" },
+    ],
   },
 ];
 
@@ -73,9 +81,9 @@ const getActiveStep = (pathname: string): number => {
     pathname.includes("approach-selection")
   ) return 2;
   if (
-    pathname.includes('depth-interview') ||
-    pathname.includes('chatview') ||
-    pathname.includes('insights')
+    pathname.includes("depth-interview") ||
+    pathname.includes("chatview") ||
+    pathname.includes("insights")
   ) return 3;
   if (
     pathname.includes("population-builder") ||
@@ -91,12 +99,27 @@ const getActiveStep = (pathname: string): number => {
  *   depth-interview → sub-step 1
  *   chatview        → sub-step 2 (or 3 if insights phase reached)
  */
-const getActiveSubStep = (pathname: string, currentId?: string): number => {
+const getActiveQualSubStep = (pathname: string, currentId?: string): number => {
   if (pathname.includes("chatview")) {
     if (currentId && localStorage.getItem(`qualitative_sub3_${currentId}`)) return 3;
     return 2;
   }
   if (pathname.includes("depth-interview")) return 1;
+  return 0;
+};
+
+/**
+ * Active quantitative sub-step from pathname:
+ *   questionnaire    → sub-step 1
+ *   population-builder → sub-step 2
+ *   survey-results   → sub-step 3
+ *   rebuttal-mode    → sub-step 4
+ */
+const getActiveQuantSubStep = (pathname: string): number => {
+  if (pathname.includes("questionnaire")) return 1;
+  if (pathname.includes("population-builder")) return 2;
+  if (pathname.includes("survey-results")) return 3;
+  if (pathname.includes("rebuttal-mode")) return 4;
   return 0;
 };
 
@@ -106,6 +129,7 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
   completedSteps,
   isStepUnlocked,
   completedSubSteps = [],
+  completedQuantSubSteps = [],
 }) => {
   const navigate = useNavigate();
   const { pathname } = useLocation();
@@ -117,40 +141,42 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
 
   const currentId = explorationId || objectiveId;
   const activeStep = getActiveStep(pathname);
-  const activeSubStep = getActiveSubStep(pathname, currentId);
+  const activeQualSubStep = getActiveQualSubStep(pathname, currentId);
+  const activeQuantSubStep = getActiveQuantSubStep(pathname);
 
-  // ── localStorage milestone flags (set by child components on completion) ───
-  //    Source of truth for steps 1 & 2 — the useStepProgress hook may lag
-  //    behind because it depends on backend cache invalidation.
+  // ── localStorage milestone flags ────────────────────────────────────────────
   const lsStep1Done = !!currentId && !!localStorage.getItem(`step1_done_${currentId}`);
   const lsStep2Done = !!currentId && !!localStorage.getItem(`step2_done_${currentId}`);
 
   // ── Completion helpers ──────────────────────────────────────────────────────
 
-  // A sub-step is completed only when its milestone was explicitly written to
-  // localStorage by the owning component.  Never infer from active step number.
-  const isSubStepCompleted = (n: number): boolean =>
+  const isQualSubStepCompleted = (n: number): boolean =>
     completedSubSteps.includes(n);
+
+  const isQuantSubStepCompleted = (n: number): boolean =>
+    completedQuantSubSteps.includes(n);
 
   const isStepCompleted = (stepNumber: number): boolean => {
     if (stepNumber === 1) {
       return lsStep1Done || completedSteps.includes(1);
     }
     if (stepNumber === 2) {
-      // Also treat step 2 as done if approach_ is set — that key predates step2_done
-      // and is proof the user finished personas and selected an exploration method.
       const approachSet = !!currentId && !!localStorage.getItem(`approach_${currentId}`);
       return lsStep2Done || approachSet || completedSteps.includes(2);
     }
     if (stepNumber === 3) {
-      // Step 3 is only complete when ALL three sub-steps are explicitly done.
-      // We intentionally ignore completedSteps.includes(3) from the hook here
-      // because the backend marks step 3 as started (not done) when the approach
-      // is selected — which was causing the green check to appear prematurely.
       return (
         completedSubSteps.includes(1) &&
         completedSubSteps.includes(2) &&
         completedSubSteps.includes(3)
+      );
+    }
+    if (stepNumber === 4) {
+      return (
+        completedQuantSubSteps.includes(1) &&
+        completedQuantSubSteps.includes(2) &&
+        completedQuantSubSteps.includes(3) &&
+        completedQuantSubSteps.includes(4)
       );
     }
     return completedSteps.includes(stepNumber);
@@ -165,17 +191,36 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
 
   const handleStepClick = (step: StepItem) => {
     if (!isStepUnlocked(step.number) || !workspaceId || !currentId) return;
+
     if (step.number === 3) {
-      // Go to furthest reached sub-step
-      go(isSubStepCompleted(1) ? "chatview" : "depth-interview");
+      // Go to furthest reached qualitative sub-step
+      go(isQualSubStepCompleted(1) ? "chatview" : "depth-interview");
       return;
     }
+
+    if (step.number === 4) {
+      // Go to furthest reached quantitative sub-step
+      if (isQuantSubStepCompleted(3)) go("rebuttal-mode");
+      else if (isQuantSubStepCompleted(2)) go("survey-results");
+      else if (isQuantSubStepCompleted(1)) go("population-builder");
+      else go("questionnaire");
+      return;
+    }
+
     go(step.path);
   };
 
-  const handleSubStepClick = (sub: SubStepItem) => {
+  const handleSubStepClick = (step: StepItem, sub: SubStepItem) => {
     if (!workspaceId || !currentId) return;
-    if (sub.number > 1 && !isSubStepCompleted(sub.number - 1)) return;
+
+    if (sub.number > 1) {
+      const prevDone =
+        step.number === 3
+          ? isQualSubStepCompleted(sub.number - 1)
+          : isQuantSubStepCompleted(sub.number - 1);
+      if (!prevDone) return;
+    }
+
     go(sub.path);
   };
 
@@ -200,22 +245,24 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
         {STEPS.map((step) => {
           const completed = isStepCompleted(step.number);
           const active = activeStep === step.number;
-          // A step is unlocked if the hook says so, OR if localStorage shows
-          // the previous step is done (the hook may lag behind backend).
+
           const lsUnlocked =
             step.number === 1 ? true :
               step.number === 2 ? lsStep1Done :
-                // Step 3 is unlocked if:
-                //   a) step2_done is set (new key), OR
-                //   b) approach_ is set (old key — users who went through the old flow), OR
-                //   c) the user is currently active on a step-3 route (they got here somehow, let them stay)
-                step.number === 3 ? (lsStep2Done || !!localStorage.getItem(`approach_${currentId}`) || activeStep === 3) :
-                  step.number === 4 ? (!!localStorage.getItem(`qualitative_sub3_${currentId}`)) :
-                    false;
+                step.number === 3
+                  ? (lsStep2Done || !!localStorage.getItem(`approach_${currentId}`) || activeStep === 3)
+                  : step.number === 4
+                    ? (
+                      activeStep === 4 ||
+                      !!localStorage.getItem(`qualitative_sub3_${currentId}`) ||
+                      localStorage.getItem(`approach_${currentId}`) === 'quantitative'
+                    )
+                    : false;
+
           const locked = !isStepUnlocked(step.number) && !lsUnlocked;
+
           const showSubSteps =
-            !!step.subSteps &&
-            (active || isStepCompleted(step.number));
+            !!step.subSteps && (active || isStepCompleted(step.number));
 
           return (
             <div key={step.number} className="step-sidebar__step-group">
@@ -250,15 +297,24 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
                 </div>
               </button>
 
-              {/* ── Sub-steps (Qualitative only) ── */}
+              {/* ── Sub-steps ── */}
               {showSubSteps && step.subSteps && (
                 <div className="step-sidebar__substeps">
                   {step.subSteps.map((sub) => {
-                    const subCompleted = isSubStepCompleted(sub.number);
+                    const isQual = step.number === 3;
+
+                    const subCompleted = isQual
+                      ? isQualSubStepCompleted(sub.number)
+                      : isQuantSubStepCompleted(sub.number);
+
+                    const activeSubStep = isQual ? activeQualSubStep : activeQuantSubStep;
                     const subActive = active && activeSubStep === sub.number;
+
                     const subLocked =
                       sub.number > 1 &&
-                      !isSubStepCompleted(sub.number - 1) &&
+                      !(isQual
+                        ? isQualSubStepCompleted(sub.number - 1)
+                        : isQuantSubStepCompleted(sub.number - 1)) &&
                       activeSubStep < sub.number;
 
                     return (
@@ -270,7 +326,7 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
                           subCompleted ? "step-sidebar__substep--completed" : "",
                           subLocked ? "step-sidebar__substep--locked" : "",
                         ].join(" ")}
-                        onClick={() => handleSubStepClick(sub)}
+                        onClick={() => handleSubStepClick(step, sub)}
                         disabled={subLocked}
                       >
                         <div className={[

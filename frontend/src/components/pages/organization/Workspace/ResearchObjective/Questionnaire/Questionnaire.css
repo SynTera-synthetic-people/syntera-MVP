@@ -1,0 +1,575 @@
+/* ════════════════════════════════════════════════════════════════════════════
+   Questionnaire — mirrors DepthInterview pattern
+   Prefix: qu-
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Page wrapper ────────────────────────────────────────────────────────── */
+
+.qu-page {
+  flex: 1;
+  min-height: 100%;
+  background: #0E0F12;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.qu-page--centered {
+  align-items: center;
+  justify-content: center;
+}
+
+.qu-file-input {
+  display: none;
+}
+
+/* ── Empty state container ───────────────────────────────────────────────── */
+
+.qu-container {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 3rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* ── Empty card ──────────────────────────────────────────────────────────── */
+
+.qu-empty-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+  max-width: 900px;
+  width: 100%;
+  text-align: center;
+  background: var(--T-Base-B4, #1E2126);
+  border-radius: 28px;
+  /* generous vertical padding to match Figma proportions */
+  padding: 42px 70px 38px;
+  min-height: 300px;
+  justify-content: center;
+}
+
+.qu-empty-card__icon-wrap {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.4);
+  margin-bottom: 0.25rem;
+}
+
+.qu-empty-card__title {
+  font-size: 1.625rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+  line-height: 1.25;
+  letter-spacing: -0.2px;
+}
+
+.qu-empty-card__subtitle {
+  font-size: 1rem;
+  color: rgba(255, 255, 255, 0.4);
+  margin: 0;
+  line-height: 1.55;
+  max-width: 560px;
+}
+
+.qu-empty-card__actions {
+  display: flex;
+  gap: 16px;
+  margin-top: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* Format hint below actions */
+.qu-empty-card__format-hint {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.28);
+  margin: 0;
+  margin-top: -0.25rem;
+  letter-spacing: 0.01em;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   UPLOAD ERROR BANNER  — Figma "Upload Failed" card
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* Portal wrapper — fixed top-center, sits above everything */
+.qu-error-portal {
+  position: fixed;
+  top: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+}
+
+/* The banner card itself — matches Figma red card */
+.qu-upload-error-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px 20px;
+  background: rgba(139, 27, 27, 0.55);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 12px;
+  min-width: 480px;
+  max-width: 640px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(8px);
+  pointer-events: auto;
+}
+
+.qu-upload-error-banner__icon {
+  color: #ef4444;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.qu-upload-error-banner__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.qu-upload-error-banner__title {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: #ef4444;
+  line-height: 1.3;
+}
+
+.qu-upload-error-banner__subtitle {
+  font-size: 0.8125rem;
+  color: #f87171;
+  line-height: 1.45;
+}
+
+.qu-upload-error-banner__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: rgba(248, 113, 113, 0.55);
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  margin-top: 1px;
+  transition: color 0.15s;
+}
+.qu-upload-error-banner__close:hover {
+  color: #f87171;
+}
+
+/* ── Shared buttons ──────────────────────────────────────────────────────── */
+
+.qu-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 28px;
+  border-radius: 10px;
+  font-size: 1rem;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+  white-space: nowrap;
+}
+
+.qu-btn--outline {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.8);
+}
+.qu-btn--outline:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.qu-btn--primary {
+  background: var(--Color-Primary-P-500, #0E63EC);
+  border: 1px solid transparent;
+  color: #ffffff;
+  font-weight: 700;
+}
+.qu-btn--primary:hover {
+  background: #0b56d4;
+}
+.qu-btn--primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.qu-btn--sm {
+  padding: 7px 14px;
+  font-size: 0.8125rem;
+}
+
+.qu-btn__icon {
+  flex-shrink: 0;
+}
+.qu-btn__icon--spin {
+  animation: qu-spin 1s linear infinite;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   GUIDE PAGE (when questionnaire has sections)
+═══════════════════════════════════════════════════════════════════════════ */
+
+.qu-guide-page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 28px 32px 48px;
+  max-width: 100%;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* ── Page header ─────────────────────────────────────────────────────────── */
+
+.qu-guide-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.qu-guide-page-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0 0 4px;
+  line-height: 1.25;
+}
+
+.qu-guide-page-subtitle {
+  font-size: 0.8125rem;
+  color: rgba(255, 255, 255, 0.4);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.qu-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+/* ── Ready toast ─────────────────────────────────────────────────────────── */
+
+.qu-ready-toast {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: #0d2b1e;
+  border: 1px solid #06A17B;
+  border-radius: 10px;
+  color: #06A17B;
+  font-size: 0.875rem;
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.qu-ready-toast__icon { flex-shrink: 0; }
+
+.qu-ready-toast__close {
+  display: flex;
+  align-items: center;
+  background: transparent;
+  border: none;
+  color: rgba(6, 161, 123, 0.6);
+  cursor: pointer;
+  padding: 0;
+  margin-left: 4px;
+  transition: color 0.15s;
+}
+.qu-ready-toast__close:hover { color: #06A17B; }
+
+/* ── Upload toast (fixed, over loader) ───────────────────────────────────── */
+
+.qu-upload-toast {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 200;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: #0d2b1e;
+  border: 1px solid #06A17B;
+  border-radius: 10px;
+  color: #06A17B;
+  font-size: 0.875rem;
+  font-weight: 500;
+  white-space: nowrap;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  pointer-events: auto;
+}
+
+.qu-upload-toast__icon { flex-shrink: 0; }
+
+.qu-upload-toast__close {
+  display: flex;
+  align-items: center;
+  background: transparent;
+  border: none;
+  color: rgba(6, 161, 123, 0.6);
+  cursor: pointer;
+  padding: 0;
+  margin-left: 4px;
+  transition: color 0.15s;
+}
+.qu-upload-toast__close:hover { color: #06A17B; }
+
+/* ── Guide card wrapper ──────────────────────────────────────────────────── */
+
+.qu-guide-card {
+  background: #1E2126;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 16px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ── Section ─────────────────────────────────────────────────────────────── */
+
+.qu-section {
+  background: #121317;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 20px 24px;
+}
+
+/* ── Section header row ──────────────────────────────────────────────────── */
+
+.qu-section__header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 0;
+}
+
+.qu-section__num {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  border-radius: 20px;
+  background: var(--T-Avatar-Base, #005D46);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #ffffff;
+  flex-shrink: 0;
+}
+
+.qu-section__title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+  line-height: 1.3;
+}
+
+/* ── Separator ───────────────────────────────────────────────────────────── */
+
+.qu-section__divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.06);
+  margin: 14px 0 4px;
+}
+
+/* ── Questions list ──────────────────────────────────────────────────────── */
+
+.qu-questions {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Single question row ─────────────────────────────────────────────────── */
+
+.qu-question {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.qu-question:last-child { border-bottom: none; }
+
+.qu-question--open {
+  z-index: 20;
+  position: relative;
+}
+
+.qu-question__label {
+  font-size: 0.875rem;
+  color: rgba(255, 255, 255, 0.45);
+  white-space: nowrap;
+  font-weight: 500;
+  flex-shrink: 0;
+  min-width: 28px;
+  padding-top: 2px;
+}
+
+.qu-question__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.qu-question__text {
+  font-size: 0.9375rem;
+  color: rgba(255, 255, 255, 0.85);
+  margin: 0;
+  line-height: 1.45;
+}
+
+/* ── Dropdown ────────────────────────────────────────────────────────────── */
+
+.qu-dropdown-wrap { position: relative; }
+
+.qu-dropdown-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 240px;
+  padding: 9px 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 0.875rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  text-align: left;
+}
+.qu-dropdown-trigger:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.qu-dropdown-trigger--selected {
+  background: rgba(14, 99, 236, 0.12);
+  border-color: rgba(14, 99, 236, 0.35);
+  color: #6eaaff;
+}
+
+.qu-dropdown-trigger__label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qu-dropdown-trigger__chevron {
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.3);
+  transition: transform 0.2s ease;
+}
+.qu-dropdown-trigger__chevron--open { transform: rotate(180deg); }
+
+/* ── Dropdown menu ───────────────────────────────────────────────────────── */
+
+.qu-dropdown-menu {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  min-width: 240px;
+  background: #1E2026;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  z-index: 50;
+  overflow: hidden;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  padding: 4px;
+}
+
+.qu-dropdown-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 12px;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.875rem;
+  font-family: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: 7px;
+  text-align: left;
+  transition: background 0.12s;
+}
+.qu-dropdown-option:hover { background: rgba(255, 255, 255, 0.06); }
+
+.qu-dropdown-option--selected {
+  background: var(--Color-Primary-P-500, #0E63EC);
+  color: #ffffff;
+}
+.qu-dropdown-option--selected:hover { background: #0b56d4; }
+
+.qu-dropdown-option__check { flex-shrink: 0; color: #ffffff; }
+
+/* ── Confirm & Launch sticky bar ─────────────────────────────────────────── */
+
+.qu-launch-bar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 24px 0 8px;
+}
+
+.qu-launch-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 13px 28px;
+  background: var(--Color-Primary-P-500, #0E63EC);
+  border: none;
+  border-radius: 10px;
+  color: #ffffff;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+.qu-launch-btn:hover { background: #0b56d4; }
+.qu-launch-btn:active { transform: translateY(1px); }
+
+/* ── Spin animation ──────────────────────────────────────────────────────── */
+
+@keyframes qu-spin { to { transform: rotate(360deg); } }
+
+.qu-spin { animation: qu-spin 1s linear infinite; }

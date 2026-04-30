@@ -38,6 +38,12 @@ interface ExplorationData {
   is_qualitative?: boolean;
 }
 
+interface TraceabilityProps {
+  embeddedWorkspaceId?: string;
+  embeddedExplorationId?: string;
+  onBack?: () => void;
+}
+
 // ── Helpers ───────────────────────────────────────────────────
 
 const getScoreLabel = (score: number): string => {
@@ -60,7 +66,7 @@ const StatusIcon: React.FC<{ status: string }> = ({ status }) => {
   switch (status?.toLowerCase()) {
     case 'clear':
       return (
-        <span className="trc-status-icon trc-status-icon--validated" >
+        <span className="trc-status-icon trc-status-icon--validated">
           <SpIcon name="sp-Warning-Circle_Check" size={14} />
         </span>
       );
@@ -86,19 +92,19 @@ const StatusIcon: React.FC<{ status: string }> = ({ status }) => {
   }
 };
 
-// ── Research component labels (from developer notes) ──────────
+// ── Research component labels ──────────────────────────────────
 
 const COMPONENT_COVERAGE: Record<string, string> = {
-  'Business Context':       'The broader business situation that makes this research necessary.',
-  'Decision Problem':       'The specific decision this research is meant to inform or resolve.',
-  'Information Gap':        'What is currently unknown or unclear about the problem.',
-  'Primary Hypothesis':     'The main assumption being tested about how behaviour or outcomes might work.',
-  'Secondary Hypotheses':   'Supporting assumptions that help explore additional behavioural patterns.',
-  'Target Audience':        'The specific group of people whose behaviour this research aims to understand.',
-  'Segmentation Logic':     'How the audience is divided into meaningful groups for deeper analysis.',
+  'Business Context':           'The broader business situation that makes this research necessary.',
+  'Decision Problem':           'The specific decision this research is meant to inform or resolve.',
+  'Information Gap':            'What is currently unknown or unclear about the problem.',
+  'Primary Hypothesis':         'The main assumption being tested about how behaviour or outcomes might work.',
+  'Secondary Hypotheses':       'Supporting assumptions that help explore additional behavioural patterns.',
+  'Target Audience':            'The specific group of people whose behaviour this research aims to understand.',
+  'Segmentation Logic':         'How the audience is divided into meaningful groups for deeper analysis.',
   'Category Competitive Frame': 'The market or product context in which these behaviours occur.',
-  'Behaviours & Attitudes': 'The actions, motivations, and mindsets influencing how people make decisions.',
-  'Geography':              'The locations or environments where the behaviours are being studied.',
+  'Behaviours & Attitudes':     'The actions, motivations, and mindsets influencing how people make decisions.',
+  'Geography':                  'The locations or environments where the behaviours are being studied.',
 };
 
 // ── Calibration Score Card ────────────────────────────────────
@@ -116,7 +122,9 @@ const CalibrationScoreCard: React.FC<ScoreCardProps> = ({
   signalPrecision,
   behaviouralEvidence,
 }) => {
-  const hasBreakdown = inputCoverage != null || signalPrecision != null || behaviouralEvidence != null;
+  const hasBreakdown =
+    inputCoverage != null || signalPrecision != null || behaviouralEvidence != null;
+
   return (
     <div className="trc-score-card">
       <div className="trc-score-main">
@@ -159,6 +167,7 @@ const CalibrationScoreCard: React.FC<ScoreCardProps> = ({
     </div>
   );
 };
+
 // ── Research Table ────────────────────────────────────────────
 
 interface ResearchTableProps {
@@ -210,85 +219,92 @@ const ResearchTable: React.FC<ResearchTableProps> = ({ components, loading }) =>
 
 // ── Main Component ────────────────────────────────────────────
 
-const Traceability: React.FC = () => {
-  const { workspaceId, explorationId } = useParams<{
-    workspaceId: string;
-    explorationId: string;
-  }>();
+const Traceability: React.FC<TraceabilityProps> = ({
+  embeddedWorkspaceId,
+  embeddedExplorationId,
+  onBack,
+}) => {
+  const params = useParams<{ workspaceId: string; explorationId: string }>();
   const navigate = useNavigate();
+
+  const workspaceId   = embeddedWorkspaceId   ?? params.workspaceId;
+  const explorationId = embeddedExplorationId ?? params.explorationId;
+
+  const handleBack = onBack ?? (() =>
+    navigate(`/main/organization/workspace/explorations/${workspaceId}`)
+  );
+
   const [activeTab, setActiveTab] = useState<'research' | 'persona' | 'quantitative' | 'qualitative'>('research');
   const [expanded, setExpanded] = useState(false);
 
-  const { data: explorationData, isLoading: isExplorationLoading } =
-    useExploration(explorationId) as { data: ExplorationData | undefined; isLoading: boolean };
+  const { data: explorationData, isLoading: isExplorationLoading } = useExploration(
+    explorationId,
+  ) as { data: ExplorationData | undefined; isLoading: boolean };
 
-  const { data: apiData, isLoading: isTraceabilityLoading, error } =
-    useTraceability(
-      workspaceId,
-      explorationId,
-      {
-        is_quantitative: explorationData?.is_quantitative,
-        is_qualitative: explorationData?.is_qualitative,
-      },
-      { enabled: !!explorationData }
-    ) as { data: APIData | undefined; isLoading: boolean; error: Error | null };
+  const {
+    data: apiData,
+    isLoading: isTraceabilityLoading,
+    error,
+  } = useTraceability(
+    workspaceId,
+    explorationId,
+    {
+      is_quantitative: explorationData?.is_quantitative,
+      is_qualitative:  explorationData?.is_qualitative,
+    },
+    { enabled: !!explorationData },
+  ) as { data: APIData | undefined; isLoading: boolean; error: Error | null };
 
   const isLoading = isExplorationLoading || isTraceabilityLoading;
 
-  // Build tab list
   const allTabs = [
-    { id: 'research' as const,     label: 'Research Objectives' },
-    { id: 'persona' as const,      label: 'Persona Builder' },
-    { id: 'quantitative' as const, label: 'Quant Simulation' },
-    { id: 'qualitative' as const,  label: 'Qual Exploration' },
+    { id: 'research'     as const, label: 'Research Objectives' },
+    { id: 'persona'      as const, label: 'Persona Builder'     },
+    { id: 'quantitative' as const, label: 'Quant Simulation'    },
+    { id: 'qualitative'  as const, label: 'Qual Exploration'    },
   ];
 
-  const tabs = allTabs.filter(tab => {
+  const tabs = allTabs.filter((tab) => {
     if (tab.id === 'research' || tab.id === 'persona') return true;
     if (tab.id === 'quantitative') return explorationData?.is_quantitative === true;
-    if (tab.id === 'qualitative')  return explorationData?.is_qualitative === true;
+    if (tab.id === 'qualitative')  return explorationData?.is_qualitative  === true;
     return true;
   });
 
-  const roData = apiData?.data?.ro_traceability;
+  const roData                           = apiData?.data?.ro_traceability;
   const components: ResearchComponent[] = roData?.components || [];
-  const roScore = roData?.ro_score || 0;
+  const roScore                          = roData?.ro_score   || 0;
 
-  // Summary counts
   const totalComponents = components.length;
-  const validatedCount  = components.filter(c => c.status?.toLowerCase() === 'clear').length;
-  const partialCount    = components.filter(c => c.status?.toLowerCase() === 'partial').length;
-  const inferredCount   = components.filter(c => c.status?.toLowerCase() === 'inferred').length;
-  const missingCount    = components.filter(c => c.status?.toLowerCase() === 'missing').length;
+  const missingCount    = components.filter((c) => c.status?.toLowerCase() === 'missing').length;
 
-  // Research intent text (from summary or value of Business Context)
-  const summaryText = roData?.summary
-    || components.find(c => c.component === 'Business Context')?.value
-    || '';
+  const summaryText =
+    roData?.summary ||
+    components.find((c) => c.component === 'Business Context')?.value ||
+    '';
 
-  const summaryTruncated = summaryText.length > 400 && !expanded
-    ? summaryText.slice(0, 400) + '…'
-    : summaryText;
+  const summaryTruncated =
+    summaryText.length > 400 && !expanded
+      ? summaryText.slice(0, 400) + '…'
+      : summaryText;
 
-  const personaData   = (apiData?.data?.persona_traceability?.data || {}) as Record<string, unknown>;
-  const quantData     = (apiData?.data?.quant_traceability || {}) as Record<string, unknown>;
-  const qualData      = (apiData?.data?.qual_traceability  || {}) as Record<string, unknown>;
+  const personaData = (apiData?.data?.persona_traceability?.data || {}) as Record<string, unknown>;
+  const quantData   = (apiData?.data?.quant_traceability  || {})        as Record<string, unknown>;
+  const qualData    = (apiData?.data?.qual_traceability   || {})        as Record<string, unknown>;
 
   if (error) {
     return (
-      <div className="trc-page">
+      <div className="trc-content">
         <div className="trc-error">Failed to load traceability data. Please try again.</div>
       </div>
     );
   }
 
   return (
-    <div className="trc-page">
+    <div className="trc-content">
+
       {/* Back button */}
-      <button
-        className="trc-back-btn"
-        onClick={() => navigate(`/main/organization/workspace/explorations/${workspaceId}`)}
-      >
+      <button className="trc-back-btn" onClick={handleBack}>
         <SpIcon name="sp-Arrow-Arrow_Left_SM" />
         Back
       </button>
@@ -301,7 +317,7 @@ const Traceability: React.FC = () => {
 
       {/* Tabs */}
       <div className="trc-tabs">
-        {tabs.map(tab => (
+        {tabs.map((tab) => (
           <button
             key={tab.id}
             className={`trc-tab ${activeTab === tab.id ? 'trc-tab--active' : ''}`}
@@ -310,7 +326,13 @@ const Traceability: React.FC = () => {
             {tab.label}
             {activeTab === tab.id && (
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                <path
+                  d="M3 4.5L6 7.5L9 4.5"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
               </svg>
             )}
           </button>
@@ -320,21 +342,19 @@ const Traceability: React.FC = () => {
       {/* ── Research Tab ── */}
       {activeTab === 'research' && (
         <div className="trc-research-layout">
-          {/* Left: intent + table */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          <div className="trc-research-left">
             {summaryText && (
-              <div>
+              <div className="trc-intent-block">
                 <p className="trc-section-title">Research Intent</p>
                 <p className="trc-research-text">{summaryTruncated}</p>
                 {summaryText.length > 400 && (
-                  <button className="trc-see-more" onClick={() => setExpanded(v => !v)}>
+                  <button className="trc-see-more" onClick={() => setExpanded((v) => !v)}>
                     {expanded ? 'See Less' : 'See More'}
                   </button>
                 )}
               </div>
             )}
 
-            {/* Inputs evaluated */}
             <div className="trc-inputs-bar">
               <span className="trc-inputs-count">
                 Inputs Evaluated: {totalComponents - missingCount} / {totalComponents}
@@ -363,13 +383,14 @@ const Traceability: React.FC = () => {
             <ResearchTable components={components} loading={isLoading} />
           </div>
 
-          {/* Right: score card */}
-          <CalibrationScoreCard
-            score={roScore}
-            inputCoverage={roData?.input_coverage}
-            signalPrecision={roData?.signal_precision}
-            behaviouralEvidence={roData?.behavioural_evidence}
-          />
+          <div className="trc-research-right">
+            <CalibrationScoreCard
+              score={roScore}
+              {...(roData?.input_coverage      != null ? { inputCoverage:      roData.input_coverage      } : {})}
+              {...(roData?.signal_precision    != null ? { signalPrecision:    roData.signal_precision    } : {})}
+              {...(roData?.behavioural_evidence != null ? { behaviouralEvidence: roData.behavioural_evidence } : {})}
+            />
+          </div>
         </div>
       )}
 

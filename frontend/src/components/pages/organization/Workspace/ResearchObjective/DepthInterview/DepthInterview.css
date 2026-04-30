@@ -1,10 +1,3 @@
-/* ════════════════════════════════════════════════════════════════════════════
-   DepthInterview — Figma Accurate
-   Prefix: di-
-   ════════════════════════════════════════════════════════════════════════════ */
-
-/* ── Page wrapper ────────────────────────────────────────────────────────── */
-
 .di-page {
   flex: 1;
   min-height: 100%;
@@ -117,6 +110,89 @@
   justify-content: center;
 }
 
+/* Format hint below actions */
+.di-empty-card__format-hint {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.28);
+  margin: 0;
+  margin-top: -0.25rem;
+  letter-spacing: 0.01em;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   UPLOAD ERROR BANNER  — same Figma "Upload Failed" pattern as Questionnaire
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* Portal wrapper — fixed top-center */
+.di-error-portal {
+  position: fixed;
+  top: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+}
+
+.di-upload-error-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px 20px;
+  background: rgba(139, 27, 27, 0.55);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 12px;
+  min-width: 480px;
+  max-width: 640px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(8px);
+  pointer-events: auto;
+}
+
+.di-upload-error-banner__icon {
+  color: #ef4444;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.di-upload-error-banner__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.di-upload-error-banner__title {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: #ef4444;
+  line-height: 1.3;
+}
+
+.di-upload-error-banner__subtitle {
+  font-size: 0.8125rem;
+  color: #f87171;
+  line-height: 1.45;
+}
+
+.di-upload-error-banner__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: rgba(248, 113, 113, 0.55);
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  margin-top: 1px;
+  transition: color 0.15s;
+}
+.di-upload-error-banner__close:hover { color: #f87171; }
+
 /* ── Shared buttons ──────────────────────────────────────────────────────── */
 
 .di-btn {
@@ -140,7 +216,7 @@
 .di-btn--outline:hover { background: rgba(255,255,255,0.06); }
 
 .di-btn--primary {
-  background: var(--Color-Primary-P-500, #0E63EC);;
+  background: var(--Color-Primary-P-500, #0E63EC);
   border: 1px solid transparent;
   color: #ffffff;
   font-weight: 600;
@@ -241,9 +317,9 @@
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   pointer-events: auto;
 }
- 
+
 .di-upload-toast__icon { flex-shrink: 0; }
- 
+
 .di-upload-toast__close {
   display: flex;
   align-items: center;
@@ -300,7 +376,7 @@
   height: 28px;
   min-width: 28px;
   border-radius: 20px;
-  background: var(--T-Avatar-Base, #005D46);;
+  background: var(--T-Avatar-Base, #005D46);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -357,6 +433,7 @@
   background: rgba(255,255,255,0.06);
   margin: 14px 0 4px;
 }
+
 .di-modal-overlay {
   position: fixed;
   inset: 0;
@@ -368,9 +445,7 @@
   z-index: 100;
   padding: 1rem;
 }
- 
-/* ── Modal box ───────────────────────────────────────────────────────────── */
- 
+
 .di-modal {
   position: relative;
   background: #111214;
@@ -382,9 +457,7 @@
   text-align: center;
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
 }
- 
-/* ── Close button ────────────────────────────────────────────────────────── */
- 
+
 .di-modal__close {
   position: absolute;
   top: 1rem;
@@ -402,9 +475,7 @@
   transition: color 0.15s, background 0.15s;
 }
 .di-modal__close:hover { color: #fff; background: rgba(255,255,255,0.08); }
- 
-/* ── Delete icon ─────────────────────────────────────────────────────────── */
- 
+
 .di-modal__delete-icon {
   width: 64px;
   height: 64px;
@@ -417,9 +488,7 @@
   color: #ef4444;
   margin: 0 auto 1.25rem;
 }
- 
-/* ── Title & subtitle ────────────────────────────────────────────────────── */
- 
+
 .di-modal__title {
   font-size: 1.375rem;
   font-weight: 700;
@@ -427,22 +496,20 @@
   margin: 0 0 0.5rem;
   line-height: 1.25;
 }
- 
+
 .di-modal__subtitle {
   font-size: 0.9rem;
   color: rgba(255, 255, 255, 0.45);
   margin: 0 0 1.5rem;
   line-height: 1.5;
 }
- 
-/* ── Input field wrapper ─────────────────────────────────────────────────── */
- 
+
 .di-modal__field {
   position: relative;
   margin-bottom: 1.5rem;
   text-align: left;
 }
- 
+
 .di-modal__input,
 .di-modal__textarea {
   width: 100%;
@@ -459,13 +526,13 @@
 }
 .di-modal__input:focus,
 .di-modal__textarea:focus { border-color: rgba(255, 255, 255, 0.45); }
- 
+
 .di-modal__textarea {
   resize: vertical;
   line-height: 1.5;
   min-height: 80px;
 }
- 
+
 .di-modal__char-count {
   display: block;
   text-align: right;
@@ -473,14 +540,9 @@
   color: rgba(255, 255, 255, 0.3);
   margin-top: 6px;
 }
- 
-/* ── Action buttons ──────────────────────────────────────────────────────── */
- 
-.di-modal__actions {
-  display: flex;
-  gap: 12px;
-}
- 
+
+.di-modal__actions { display: flex; gap: 12px; }
+
 .di-modal__btn {
   flex: 1;
   display: inline-flex;
@@ -496,37 +558,25 @@
   transition: background 0.15s, opacity 0.15s;
   border: none;
 }
- 
+
 .di-modal__btn--cancel {
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.18);
   color: rgba(255, 255, 255, 0.8);
 }
 .di-modal__btn--cancel:hover { background: rgba(255,255,255,0.06); }
- 
-.di-modal__btn--confirm {
-  background: #4B5563;
-  color: #ffffff;
-}
+
+.di-modal__btn--confirm { background: #4B5563; color: #ffffff; }
 .di-modal__btn--confirm:not(:disabled):hover { background: #374151; }
 .di-modal__btn--confirm:disabled { opacity: 0.45; cursor: not-allowed; }
- 
-.di-modal__btn--delete {
-  background: #ef4444;
-  color: #ffffff;
-}
+
+.di-modal__btn--delete { background: #ef4444; color: #ffffff; }
 .di-modal__btn--delete:not(:disabled):hover { background: #dc2626; }
 .di-modal__btn--delete:disabled { opacity: 0.5; cursor: not-allowed; }
- 
 
 /* ── Questions list ──────────────────────────────────────────────────────── */
 
-.di-questions {
-  display: flex;
-  flex-direction: column;
-}
-
-/* ── Single question row ─────────────────────────────────────────────────── */
+.di-questions { display: flex; flex-direction: column; }
 
 .di-question {
   display: flex;
@@ -536,7 +586,6 @@
   border-bottom: 1px solid rgba(255,255,255,0.04);
   position: relative;
 }
-
 .di-question:last-child { border-bottom: none; }
 
 .di-question__label {
@@ -548,38 +597,21 @@
   min-width: 28px;
 }
 
-.di-question__body {
-  flex: 1;
-  min-width: 0;
-}
-
-/* ── Single question row — fix alignment ─────────────────────────────────── */
+.di-question__body { flex: 1; min-width: 0; }
 
 .di-question__text {
   font-size: 0.9375rem;
   color: rgba(255,255,255,0.85);
   margin: 0;
   line-height: 1.45;
-  flex: 1;     
-  min-width: 0;    
+  flex: 1;
+  min-width: 0;
 }
 
-.di-question__edit {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
+.di-question__edit { display: flex; flex-direction: column; gap: 8px; }
+.di-question__edit-actions { display: flex; gap: 8px; }
 
-.di-question__edit-actions {
-  display: flex;
-  gap: 8px;
-}
-
-/* Three-dot menu */
-.di-question__menu-wrap {
-  position: relative;
-  flex-shrink: 0;
-}
+.di-question__menu-wrap { position: relative; flex-shrink: 0; }
 
 .di-question__menu-btn {
   display: flex;
@@ -630,16 +662,10 @@
 .di-question__menu-item:hover { background: rgba(255,255,255,0.06); }
 .di-question__menu-item--danger { color: #ef4444; }
 .di-question__menu-item--danger:hover { background: rgba(239,68,68,0.08); }
-.di-question__kebab {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  opacity: 0;
-  transition: opacity 0.15s;
-}
- 
+
+.di-question__kebab { display: flex; align-items: center; gap: 2px; opacity: 0; transition: opacity 0.15s; }
 .di-question:hover .di-question__kebab { opacity: 1; }
- 
+
 .di-question__menu-item-inline {
   display: flex;
   align-items: center;
@@ -653,14 +679,8 @@
   border-radius: 6px;
   transition: background 0.12s, color 0.12s;
 }
-.di-question__menu-item-inline:hover {
-  background: rgba(255,255,255,0.07);
-  color: rgba(255,255,255,0.8);
-}
-.di-question__menu-item-inline--danger:hover {
-  background: rgba(239,68,68,0.1);
-  color: #ef4444;
-}
+.di-question__menu-item-inline:hover { background: rgba(255,255,255,0.07); color: rgba(255,255,255,0.8); }
+.di-question__menu-item-inline--danger:hover { background: rgba(239,68,68,0.1); color: #ef4444; }
 
 /* ── Shared textarea ─────────────────────────────────────────────────────── */
 
@@ -696,17 +716,11 @@
   border: none;
 }
 
-.di-action-btn--save {
-  background: #06A17B;
-  color: #ffffff;
-}
+.di-action-btn--save { background: #06A17B; color: #ffffff; }
 .di-action-btn--save:hover:not(:disabled) { background: #059068; }
 .di-action-btn--save:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.di-action-btn--cancel {
-  background: rgba(255,255,255,0.07);
-  color: rgba(255,255,255,0.7);
-}
+.di-action-btn--cancel { background: rgba(255,255,255,0.07); color: rgba(255,255,255,0.7); }
 .di-action-btn--cancel:hover { background: rgba(255,255,255,0.1); }
 
 /* ── Add question ────────────────────────────────────────────────────────── */
@@ -751,9 +765,7 @@
 
 /* ── Guide footer ────────────────────────────────────────────────────────── */
 
-.di-guide-footer {
-  padding: 8px 4px 0;
-}
+.di-guide-footer { padding: 8px 4px 0; }
 
 .di-footer-add-section-btn {
   display: inline-flex;
@@ -777,8 +789,7 @@
 }
 .di-footer-add-section-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-/* ── Start Interview sticky bar ──────────────────────────────────────────── */
-/* Fixed to the bottom of the content area, offset by the 16rem sidebar. */
+/* ── Start Interview bar ─────────────────────────────────────────────────── */
 
 .di-start-interview-bar {
   display: flex;
@@ -791,7 +802,7 @@
   align-items: center;
   gap: 8px;
   padding: 13px 28px;
-  background:  var(--Color-Primary-P-500, #0E63EC);
+  background: var(--Color-Primary-P-500, #0E63EC);
   border: none;
   border-radius: 10px;
   color: #ffffff;
@@ -807,6 +818,4 @@
 
 .di-spin { animation: di-spin 1s linear infinite; }
 
-@keyframes di-spin {
-  to { transform: rotate(360deg); }
-}
+@keyframes di-spin { to { transform: rotate(360deg); } }

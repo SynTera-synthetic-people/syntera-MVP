@@ -92,8 +92,8 @@ const ApproachSelectionPage: React.FC = () => {
 
     if (isQuant) {
       navigate(
-        `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/population-builder`,
-        { state: { researchApproach: 'quantitative' } }
+        `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/questionnaire`,
+      { state: { researchApproach: selected } }
       );
     } else {
       const approach =
@@ -135,8 +135,8 @@ const ApproachSelectionPage: React.FC = () => {
 
       if (selected === 'quantitative') {
         navigate(
-          `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/population-builder`,
-          { state: { researchApproach: selected } }
+          `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/questionnaire`,
+      { state: { researchApproach: 'quantitative' } }
         );
       } else {
         navigate(
