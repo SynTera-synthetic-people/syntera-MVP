@@ -1,4 +1,5 @@
 from pydantic import BaseModel, EmailStr, validator
+from typing import Optional
 import re
 
 class SignupIn(BaseModel):
@@ -64,6 +65,29 @@ class ChangePasswordIn(BaseModel):
     def passwords_match(cls, v, values):
         if "new_password" in values and v != values["new_password"]:
             raise ValueError("Passwords do not match.")
+        return v
+
+
+class UpdateProfileIn(BaseModel):
+    """DTO for authenticated users updating their own profile."""
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    phone: Optional[str] = None
+
+    @validator("first_name", "last_name", pre=True, each_item=False)
+    def strip_names(cls, v):
+        if v is not None:
+            v = v.strip()
+            if v and len(v) > 50:
+                raise ValueError("Name must be 50 characters or fewer.")
+        return v
+
+    @validator("phone", pre=True)
+    def validate_phone(cls, v):
+        if v is not None:
+            v = v.strip()
+            if v and len(v) > 20:
+                raise ValueError("Phone must be 20 characters or fewer.")
         return v
 
 

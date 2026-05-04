@@ -51,16 +51,20 @@ const PublicRoute = ({ children }) => {
           : [];
 
         if (explorations.length > 0) {
-          // Has explorations → go to exploration list
           setRedirectTo(`/main/organization/workspace/explorations/${workspaceId}`);
         } else {
-          // Has workspace but no explorations → landing
           setRedirectTo("/main/landing");
         }
       } catch (err) {
-        // If exploration fetch fails (e.g. 403 limit) but workspace exists
-        // → still go to exploration list, user can see their existing explorations
-        console.error("PublicRoute exploration check failed:", err);
+        // 401 → axiosConfig interceptor already cleared localStorage + redirected
+        // Network error (backend down / timeout) → clear stale auth and show login
+        if (!err?.response || err.code === 'ECONNABORTED') {
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          setChecking(false);
+          return;
+        }
+        // Other errors (403, 500) → go to exploration list anyway
         setRedirectTo(`/main/organization/workspace/explorations/${workspaceId}`);
       } finally {
         setChecking(false);

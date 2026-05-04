@@ -3,6 +3,7 @@ import re
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from sqlmodel import select
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import async_engine
 from app.models.interview import Interview, InterviewFile, InterviewSection, InterviewQuestion
@@ -161,6 +162,34 @@ async def get_full_interview_guide(workspace_id: str, exploration_id: str) -> Li
         })
     
     return result
+
+
+async def clear_qualitative_outputs(workspace_id: str, exploration_id: str) -> None:
+    """Clear generated qualitative data when upstream inputs change, making regeneration explicit."""
+    async with AsyncSession(async_engine) as session:
+        interview_res = await session.execute(
+            select(Interview.id).where(
+                Interview.workspace_id == workspace_id,
+                Interview.exploration_id == exploration_id,
+            )
+        )
+        interview_ids = list(interview_res.scalars().all())
+        if interview_ids:
+            await session.execute(delete(InterviewFile).where(InterviewFile.interview_id.in_(interview_ids)))
+            await session.execute(delete(Interview).where(Interview.id.in_(interview_ids)))
+
+        section_res = await session.execute(
+            select(InterviewSection.id).where(
+                InterviewSection.workspace_id == workspace_id,
+                InterviewSection.exploration_id == exploration_id,
+            )
+        )
+        section_ids = list(section_res.scalars().all())
+        if section_ids:
+            await session.execute(delete(InterviewQuestion).where(InterviewQuestion.section_id.in_(section_ids)))
+            await session.execute(delete(InterviewSection).where(InterviewSection.id.in_(section_ids)))
+
+        await session.commit()
 
 async def delete_interview_section(section_id: str) -> bool:
     """Delete an interview section and all its questions"""
@@ -665,6 +694,230 @@ async def save_interview_file(interview_id: str, stored_name: str, original_name
             "content_type": f.content_type, 
             "uploaded_at": f.uploaded_at
         }
+
+# ── Upload-guide: file text extraction ───────────────────────────────────────
+
+def _extract_text_from_upload(content: bytes, content_type: str, filename: str) -> str:
+    """Extract plain text from an uploaded PDF / DOCX / XLSX guide file."""
+    import io
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+
+    if ext == "pdf" or "pdf" in (content_type or ""):
+        try:
+            from PyPDF2 import PdfReader
+            reader = PdfReader(io.BytesIO(content))
+            return "\n".join(page.extract_text() or "" for page in reader.pages)
+        except Exception as exc:
+            raise ValueError(f"Could not read PDF: {exc}") from exc
+
+    if ext in ("docx", "doc") or "word" in (content_type or ""):
+        try:
+            from docx import Document as DocxDocument
+            doc = DocxDocument(io.BytesIO(content))
+            return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+        except Exception as exc:
+            raise ValueError(f"Could not read Word document: {exc}") from exc
+
+    if ext in ("xlsx", "xls") or "spreadsheet" in (content_type or "") or "excel" in (content_type or ""):
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(io.BytesIO(content))
+            lines = []
+            for sheet in wb.worksheets:
+                for row in sheet.iter_rows(values_only=True):
+                    row_text = " | ".join(str(c) for c in row if c is not None)
+                    if row_text.strip():
+                        lines.append(row_text)
+            return "\n".join(lines)
+        except Exception as exc:
+            raise ValueError(f"Could not read Excel file: {exc}") from exc
+
+    raise ValueError("Unsupported file format. Please upload PDF, Word (.docx), or Excel (.xlsx).")
+
+
+async def create_guide_from_text(
+    workspace_id: str,
+    exploration_id: str,
+    user_id: str,
+    raw_text: str,
+) -> dict:
+    """AI-parse extracted file text into guide sections/questions and store them."""
+    prompt = (
+        "The following is content from a discussion guide document.\n"
+        "Extract the sections and questions from it and structure them as JSON.\n\n"
+        f"CONTENT:\n{raw_text[:8000]}\n\n"
+        "Return ONLY strict JSON:\n"
+        '{ "sections": [ { "title": "Section name", "questions": ["Q1", "Q2"] } ] }\n\n'
+        "Rules: use existing sections if present; group logically otherwise; "
+        "2–6 questions per section; remove duplicates; ensure open-ended phrasing."
+    )
+    res = await client.chat.completions.create(
+        model="gpt-4o-mini",
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": "You extract and structure discussion guide content."},
+            {"role": "user", "content": prompt},
+        ],
+    )
+    data = json.loads(res.choices[0].message.content)
+    sections_data = data.get("sections", [])
+
+    created_sections = []
+    for sd in sections_data:
+        section = await create_interview_section(
+            workspace_id=workspace_id,
+            exploration_id=exploration_id,
+            title=sd.get("title", "Untitled Section"),
+            user_id=user_id,
+            description="",
+        )
+        created_questions = []
+        for qtext in sd.get("questions", []):
+            q = await create_interview_question(section["id"], qtext, user_id)
+            created_questions.append(q)
+        section["questions"] = created_questions
+        created_sections.append(section)
+
+    return {"sections": created_sections, "message": "Guide created from uploaded file"}
+
+
+# ── Run all interviews ────────────────────────────────────────────────────────
+
+async def run_interviews_for_all_personas(
+    workspace_id: str,
+    exploration_id: str,
+    user_id: str,
+) -> dict:
+    """
+    Run interviews for every calibrated persona that doesn't have one yet.
+    Idempotent: personas with existing interviews are skipped.
+    """
+    from sqlmodel import or_
+    from app.models.persona import Persona
+
+    guide_sections = await get_full_interview_guide(workspace_id, exploration_id)
+    if not guide_sections:
+        raise ValueError("No discussion guide found. Generate or upload a guide first.")
+
+    sections_for_interview = [
+        {"title": s["title"], "questions": [q["text"] for q in s.get("questions", [])]}
+        for s in guide_sections
+    ]
+
+    async with AsyncSession(async_engine) as session:
+        persona_r = await session.execute(
+            select(Persona).where(
+                Persona.exploration_id == exploration_id,
+                or_(
+                    Persona.calibration_status.is_(None),
+                    Persona.calibration_status != "draft",
+                ),
+            )
+        )
+        personas = persona_r.scalars().all()
+
+    ran, skipped = [], []
+    for persona in personas:
+        existing = await get_interview_by_persona(workspace_id, exploration_id, persona.id)
+        if existing:
+            skipped.append(persona.id)
+            continue
+        await start_interview(workspace_id, exploration_id, persona.id, user_id, sections_for_interview)
+        ran.append(persona.id)
+
+    return {"ran": ran, "skipped": skipped, "total": len(ran) + len(skipped)}
+
+
+# ── Insight generation ────────────────────────────────────────────────────────
+
+async def generate_verbatim_content(exploration_id: str) -> dict:
+    """
+    Format all interview answers as structured verbatim — no AI call.
+    Groups responses by section → question → persona answers.
+    """
+    from app.services.auto_generated_persona import get_interviews_by_exploration_id
+
+    interviews = await get_interviews_by_exploration_id(exploration_id)
+    sections: dict = {}
+
+    for iv in interviews:
+        persona_id = iv.get("persona_id")
+        msgs = iv.get("messages", [])
+        for i, msg in enumerate(msgs):
+            if msg.get("role") != "user":
+                continue
+            question = msg.get("text", "")
+            section_name = (msg.get("meta") or {}).get("section", "General")
+            answer = ""
+            if i + 1 < len(msgs) and msgs[i + 1].get("role") == "persona":
+                answer = msgs[i + 1].get("text", "")
+            if not answer:
+                continue
+            sections.setdefault(section_name, {}).setdefault(question, []).append(
+                {"persona_id": persona_id, "answer": answer}
+            )
+
+    return {
+        "exploration_id": exploration_id,
+        "type": "verbatim",
+        "sections": [
+            {
+                "section": sname,
+                "questions": [
+                    {"question": q, "responses": responses}
+                    for q, responses in qs.items()
+                ],
+            }
+            for sname, qs in sections.items()
+        ],
+    }
+
+
+async def generate_decision_intelligence_content(exploration_id: str) -> str:
+    """
+    AI-generate a Decision Intelligence report from interview data using Anthropic.
+    Returns markdown string stored in ReportCache.content_md.
+    """
+    from app.utils.anthropic_client import get_async_anthropic_client
+    from app.services.auto_generated_persona import get_interviews_by_exploration_id, get_description
+
+    interviews = await get_interviews_by_exploration_id(exploration_id)
+    ro = await get_description(exploration_id) or "Not specified"
+
+    persona_summaries = []
+    for iv in interviews:
+        msgs = iv.get("messages", [])
+        qa = []
+        for i, msg in enumerate(msgs):
+            if msg.get("role") == "user" and i + 1 < len(msgs):
+                nxt = msgs[i + 1]
+                if nxt.get("role") == "persona":
+                    qa.append(f"Q: {msg.get('text', '')}\nA: {nxt.get('text', '')}")
+        if qa:
+            persona_summaries.append(
+                f"Persona {iv.get('persona_id', 'Unknown')}:\n" + "\n".join(qa[:6])
+            )
+
+    prompt = (
+        f"Research Objective:\n{ro}\n\n"
+        f"Interview Excerpts:\n{chr(10).join(persona_summaries[:6])}\n\n"
+        "Generate a Decision Intelligence report with these sections:\n"
+        "## Key Decision Drivers\n"
+        "## Decision Making Patterns\n"
+        "## Priority Hierarchy\n"
+        "## Trigger Points\n"
+        "## Strategic Recommendations\n\n"
+        "Be concise, direct, and decision-focused (600–900 words)."
+    )
+
+    anthropic_client = get_async_anthropic_client()
+    response = await anthropic_client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=2000,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return response.content[0].text
+
 
 async def export_insights_pdf(interview_id: str, out_path: Optional[str] = None) -> Optional[str]:
     iv = await get_interview(interview_id)

@@ -21,6 +21,11 @@ from app.db import (
     add_syncdb_envelope_columns,
     migrate_source_document_file_storage,
     migrate_source_content_json,
+    add_profile_columns,
+    add_exploration_tracking_columns,
+    add_persona_calibration_column,
+    add_persona_lineage_columns,
+    add_persona_status_column,
 )
 from app.routers import (auth, orgs, workspace, research_objectives, personas, interview,
                          population, questionnaire, rebuttal, traceability, omi, exploration,
@@ -100,6 +105,11 @@ async def startup():
     await create_report_cache_table()
     await create_sync_schemas()
     await add_syncdb_envelope_columns()
+    await add_profile_columns()
+    await add_exploration_tracking_columns()
+    await add_persona_calibration_column()
+    await add_persona_lineage_columns()
+    await add_persona_status_column()
     await ensure_superadmin_exists()
     
     await migrate_source_document_file_storage()
@@ -132,13 +142,13 @@ app.include_router(syncdb.router)
 #     "https://www.synthetic-people.ai",
 # ]
 
-cors = os.getenv("CORS_ORIGINS",  "https://staging-ui.synthetic-people.ai" )
-allow_origins = [x.strip() for x in cors.split(",") if x.strip()] 
+# cors = os.getenv("CORS_ORIGINS",  "https://staging-ui.synthetic-people.ai" )
+# allow_origins = [x.strip() for x in cors.split(",") if x.strip()] 
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allow_origins,
-    # allow_origins=["*"],
+    # allow_origins=allow_origins,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

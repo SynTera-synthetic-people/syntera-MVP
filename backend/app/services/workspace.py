@@ -44,6 +44,16 @@ async def _get_owned_organization(session: AsyncSession, user_id: str) -> Organi
     return result.scalars().first()
 
 
+async def get_or_create_personal_org(session: AsyncSession, user: User) -> Organization:
+    org = await _get_owned_organization(session, user.id)
+    if not org:
+        org = Organization(name="My Organization", owner_id=user.id)
+        session.add(org)
+        await session.flush()
+        await session.refresh(org)
+    return org
+
+
 async def _get_workspace_by_id(session: AsyncSession, workspace_id: str) -> Workspace | None:
     result = await session.execute(
         select(Workspace).where(Workspace.id == workspace_id)
@@ -156,8 +166,51 @@ async def list_accessible_workspaces(
         result = await session.execute(stmt)
         return result.scalars().all()
 
-    personal_workspace = await ensure_personal_workspace(session, user)
-    return [personal_workspace] if include_hidden else []
+    # tier1: return workspaces they own or are a member of (non-hidden by default)
+    org = await _get_owned_organization(session, user.id)
+    owned_ws_ids = []
+    if org:
+        owned_result = await session.execute(
+            select(Workspace.id).where(Workspace.organization_id == org.id)
+        )
+        owned_ws_ids = [row[0] for row in owned_result.all()]
+
+    member_stmt = (
+        select(Workspace)
+        .join(WorkspaceMember, WorkspaceMember.workspace_id == Workspace.id)
+        .where(
+            WorkspaceMember.user_id == user.id,
+            WorkspaceMember.accepted.is_(True),
+        )
+        .order_by(Workspace.created_at.desc())
+    )
+    if not include_hidden:
+        member_stmt = member_stmt.where(Workspace.is_hidden.is_(False))
+    member_result = await session.execute(member_stmt)
+    member_workspaces = list(member_result.scalars().all())
+
+    if owned_ws_ids:
+        owned_stmt = (
+            select(Workspace)
+            .where(Workspace.id.in_(owned_ws_ids))
+            .order_by(Workspace.created_at.desc())
+        )
+        if not include_hidden:
+            owned_stmt = owned_stmt.where(Workspace.is_hidden.is_(False))
+        owned_result2 = await session.execute(owned_stmt)
+        owned_workspaces = list(owned_result2.scalars().all())
+        seen = {ws.id for ws in member_workspaces}
+        for ws in owned_workspaces:
+            if ws.id not in seen:
+                member_workspaces.append(ws)
+                seen.add(ws.id)
+
+    if include_hidden:
+        personal = await ensure_personal_workspace(session, user)
+        if personal.id not in {ws.id for ws in member_workspaces}:
+            member_workspaces.append(personal)
+
+    return member_workspaces
 
 
 async def get_workspace_bootstrap(
@@ -176,10 +229,9 @@ async def get_workspace_bootstrap(
     accessible_workspaces = await list_accessible_workspaces(
         session,
         user,
-        include_hidden=user.account_tier != "enterprise",
+        include_hidden=False,
     )
     preferred_workspace_id = accessible_workspaces[0].id if accessible_workspaces else None
-    default_workspace_id = None
 
     if user.account_tier == "enterprise":
         landing_type = "workspace_dashboard" if preferred_workspace_id else (
@@ -193,12 +245,27 @@ async def get_workspace_bootstrap(
             "can_create_workspace": user.role == "enterprise_admin",
         }
 
-    default_workspace_id = preferred_workspace_id
+    if user.account_tier == "tier1":
+        if not preferred_workspace_id:
+            personal = await ensure_personal_workspace(session, user)
+            preferred_workspace_id = personal.id
+        return {
+            "landing_type": "personal_workspace",
+            "preferred_workspace_id": preferred_workspace_id,
+            "default_workspace_id": preferred_workspace_id,
+            "has_accessible_workspaces": True,
+            "can_create_workspace": True,
+        }
+
+    # free trial — always ensure personal workspace exists
+    if not preferred_workspace_id:
+        personal = await ensure_personal_workspace(session, user)
+        preferred_workspace_id = personal.id
     return {
         "landing_type": "personal_workspace",
         "preferred_workspace_id": preferred_workspace_id,
-        "default_workspace_id": default_workspace_id,
-        "has_accessible_workspaces": bool(accessible_workspaces),
+        "default_workspace_id": preferred_workspace_id,
+        "has_accessible_workspaces": True,
         "can_create_workspace": False,
     }
 
@@ -298,20 +365,33 @@ async def get_workspaces_by_org(org_id: str):
         return result.scalars().all()
 
 
-async def update_workspace(workspace_id: str, data):
+async def update_workspace(
+    workspace_id: str,
+    name: str,
+    description: str | None = None,
+    department_name: str | None = None,
+):
     async with AsyncSession(async_engine) as session:
         workspace = await _get_workspace_by_id(session, workspace_id)
         if not workspace:
             raise ValueError("Workspace not found")
 
-        workspace.name = data.name
-        workspace.description = data.description
-        workspace.department_name = data.department_name
+        workspace.name = name
+        workspace.description = description
+        workspace.department_name = department_name
 
         session.add(workspace)
         await session.commit()
         await session.refresh(workspace)
-        return workspace
+        return {
+            "id": workspace.id,
+            "name": workspace.name,
+            "description": workspace.description,
+            "department_name": workspace.department_name,
+            "created_at": workspace.created_at,
+            "is_hidden": workspace.is_hidden,
+            "is_default_personal": workspace.is_default_personal,
+        }
 
 
 async def create_workspace_invite(
@@ -370,26 +450,31 @@ async def provision_workspace_invite_user(
         raise ValueError("Workspace not found")
 
     org = await session.get(Organization, workspace.organization_id)
-    if not org or org.account_tier != "enterprise":
-        raise ValueError("Only enterprise workspaces can provision invited members.")
+    if not org:
+        raise ValueError("Workspace organization not found.")
 
     existing_result = await session.execute(select(User).where(User.email == email))
     existing_user = existing_result.scalars().first()
     if existing_user:
         raise ValueError("User already exists")
 
+    is_enterprise_org = org.account_tier == "enterprise"
     temp_password = secrets.token_urlsafe(12)
+    invited_full_name = _build_invited_user_name(email)
+    _inv_parts = invited_full_name.split(" ", 1)
     user = User(
-        full_name=_build_invited_user_name(email),
+        first_name=_inv_parts[0],
+        last_name=_inv_parts[1] if len(_inv_parts) > 1 else "",
+        full_name=invited_full_name,
         email=email,
         hashed_password=hash_password(temp_password),
         role="user",
         is_verified=True,
         is_active=True,
-        is_trial=False,
-        account_tier="enterprise",
-        trial_exploration_limit=0,
-        organization_id=org.id,
+        is_trial=is_enterprise_org is False,
+        account_tier="enterprise" if is_enterprise_org else "free",
+        trial_exploration_limit=1 if not is_enterprise_org else 0,
+        organization_id=org.id if is_enterprise_org else None,
         must_change_password=True,
     )
     session.add(user)
@@ -447,9 +532,10 @@ async def accept_invite(token: str, user: User):
 async def list_workspace_members(workspace_id: str):
     async with AsyncSession(async_engine) as session:
         response = await session.execute(
-            select(WorkspaceMember, User.full_name)
+            select(WorkspaceMember, User.full_name, User.avatar_url)
             .outerjoin(User, WorkspaceMember.user_id == User.id)
             .where(WorkspaceMember.workspace_id == workspace_id)
+            .order_by(WorkspaceMember.accepted.desc(), WorkspaceMember.email)
         )
         members = response.all()
         return [
@@ -461,9 +547,174 @@ async def list_workspace_members(workspace_id: str):
                 "role": member.role,
                 "accepted": member.accepted,
                 "full_name": full_name,
+                "avatar_url": avatar_url,
+                "invited_at": member.token_expiry.isoformat() if member.token_expiry else None,
             }
-            for member, full_name in members
+            for member, full_name, avatar_url in members
         ]
+
+
+async def list_accessible_workspaces_with_members(
+    session: AsyncSession,
+    user: User,
+) -> list[dict]:
+    """
+    Same as list_accessible_workspaces but enriches each workspace with
+    a 'users' list so the frontend can render Active Users avatars.
+    Fetches all members in a single query to avoid N+1.
+    """
+    workspaces = await list_accessible_workspaces(session, user)
+    if not workspaces:
+        return []
+
+    workspace_ids = [ws.id for ws in workspaces]
+
+    members_result = await session.execute(
+        select(WorkspaceMember, User.full_name, User.avatar_url)
+        .outerjoin(User, WorkspaceMember.user_id == User.id)
+        .where(
+            WorkspaceMember.workspace_id.in_(workspace_ids),
+            WorkspaceMember.accepted.is_(True),
+        )
+    )
+    all_members = members_result.all()
+
+    # Group members by workspace_id
+    members_by_workspace: dict[str, list[dict]] = {}
+    for member, full_name, avatar_url in all_members:
+        members_by_workspace.setdefault(member.workspace_id, []).append(
+            {
+                "id": member.user_id or member.id,
+                "full_name": full_name or "",
+                "email": member.email,
+                "avatar_url": avatar_url,
+            }
+        )
+
+    result = []
+    for ws in workspaces:
+        result.append(
+            {
+                "id": ws.id,
+                "name": ws.name,
+                "description": ws.description,
+                "department_name": ws.department_name,
+                "created_at": ws.created_at,
+                "is_hidden": getattr(ws, "is_hidden", False),
+                "is_default_personal": getattr(ws, "is_default_personal", False),
+                "users": members_by_workspace.get(ws.id, []),
+            }
+        )
+    return result
+
+
+async def list_all_org_members(session: AsyncSession, user: User) -> list[dict]:
+    """
+    Return all unique members across every workspace visible to the caller.
+
+    Used by Settings > Team Management (mode='team').
+    - enterprise_admin   → all members in their org's workspaces
+    - workspace admin    → members in workspaces they admin
+    - super_admin        → empty list (use admin panel instead)
+    Each record includes the workspace_name they were found in.
+    Duplicate users (member of multiple workspaces) are deduplicated,
+    keeping the entry from the most recently created workspace.
+    """
+    if user.role == "super_admin":
+        return []
+
+    accessible_workspaces = await list_accessible_workspaces(session, user, include_hidden=False)
+    if not accessible_workspaces:
+        return []
+
+    workspace_ids = [ws.id for ws in accessible_workspaces]
+    workspace_name_map = {ws.id: ws.name for ws in accessible_workspaces}
+
+    members_result = await session.execute(
+        select(WorkspaceMember, User.full_name, User.avatar_url)
+        .outerjoin(User, WorkspaceMember.user_id == User.id)
+        .where(WorkspaceMember.workspace_id.in_(workspace_ids))
+        .order_by(WorkspaceMember.workspace_id, WorkspaceMember.accepted.desc())
+    )
+    all_rows = members_result.all()
+
+    # Deduplicate by user_id (or email when user_id is absent for pending invites)
+    seen: dict[str, dict] = {}
+    for member, full_name, avatar_url in all_rows:
+        dedup_key = member.user_id or member.email
+        if dedup_key not in seen:
+            seen[dedup_key] = {
+                "id": member.id,
+                "user_id": member.user_id,
+                "email": member.email,
+                "full_name": full_name or "",
+                "role": member.role,
+                "accepted": member.accepted,
+                "avatar_url": avatar_url,
+                "workspace_name": workspace_name_map.get(member.workspace_id, ""),
+                "workspace_id": member.workspace_id,
+                "invited_at": member.token_expiry.isoformat() if member.token_expiry else None,
+            }
+
+    return list(seen.values())
+
+
+async def update_member_details(
+    workspace_id: str,
+    member_id: str,
+    requesting_user: User,
+    first_name: str | None,
+    last_name: str | None,
+) -> dict:
+    """
+    Update a workspace member's display name.
+
+    - Only workspace admins or enterprise_admin of the same org may do this.
+    - Updates User.full_name for the actual user account (not just the member row).
+    - Returns the updated member record.
+    """
+    async with AsyncSession(async_engine, expire_on_commit=False) as session:
+        # Fetch the member row
+        member_result = await session.execute(
+            select(WorkspaceMember).where(
+                WorkspaceMember.id == member_id,
+                WorkspaceMember.workspace_id == workspace_id,
+            )
+        )
+        member = member_result.scalars().first()
+        if not member:
+            raise ValueError("Workspace member not found.")
+
+        # Permission check
+        is_admin = await is_workspace_admin(workspace_id, requesting_user.id)
+        if not is_admin:
+            raise PermissionError("Only workspace admins can edit member details.")
+
+        # Update the actual user's full_name if they have an account
+        updated_full_name = None
+        if member.user_id and (first_name is not None or last_name is not None):
+            user_obj = await session.get(User, member.user_id)
+            if user_obj:
+                new_first = (first_name or "").strip() if first_name is not None else user_obj.first_name
+                new_last = (last_name or "").strip() if last_name is not None else user_obj.last_name
+                if new_first:  # first_name is required
+                    user_obj.first_name = new_first
+                    user_obj.last_name = new_last
+                    user_obj.full_name = f"{new_first} {new_last}".strip()
+                    session.add(user_obj)
+                    updated_full_name = user_obj.full_name
+
+        await session.commit()
+
+        return {
+            "id": member.id,
+            "workspace_id": member.workspace_id,
+            "user_id": member.user_id,
+            "email": member.email,
+            "role": member.role,
+            "accepted": member.accepted,
+            "full_name": updated_full_name,
+        }
 
 
 async def is_workspace_admin(workspace_id: str, user_id: str):

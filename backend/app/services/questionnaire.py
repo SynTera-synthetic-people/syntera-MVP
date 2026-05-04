@@ -8,6 +8,7 @@ from app.db import async_engine
 from app.models.questionnaire import QuestionnaireSection, QuestionnaireQuestion
 from datetime import datetime
 from app.utils.id_generator import generate_id
+from app.services import report_orchestrator as _report_cache
 
 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
@@ -791,7 +792,9 @@ async def update_section(section_id: str, workspace_id: str, exploration_id: str
         session.add(sec)
         await session.commit()
         await session.refresh(sec)
-        return sec
+
+    await _report_cache.invalidate_cache(exploration_id)
+    return sec
 
 
 async def delete_section(section_id: str, workspace_id: str, exploration_id: str):
@@ -814,7 +817,9 @@ async def delete_section(section_id: str, workspace_id: str, exploration_id: str
 
         await session.delete(sec)
         await session.commit()
-        return True
+
+    await _report_cache.invalidate_cache(exploration_id)
+    return True
 
 
 async def create_question(
@@ -871,7 +876,9 @@ async def update_question(qid: str, workspace_id: str, exploration_id: str, text
         session.add(q)
         await session.commit()
         await session.refresh(q)
-        return q
+
+    await _report_cache.invalidate_cache(exploration_id)
+    return q
 
 
 async def delete_question(qid: str, workspace_id: str, exploration_id: str):
@@ -893,7 +900,9 @@ async def delete_question(qid: str, workspace_id: str, exploration_id: str):
 
         await session.delete(q)
         await session.commit()
-        return True
+
+    await _report_cache.invalidate_cache(exploration_id)
+    return True
 
 
 async def get_full_questionnaire(workspace_id, exploration_id):

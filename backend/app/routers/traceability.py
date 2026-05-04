@@ -1,5 +1,7 @@
 # app/routers/traceability.py
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.db import get_session
 from app.schemas.traceability import TraceabilityGenerateRequest, TraceabilityOut, TraceabilityLayer
 from app.services import traceability as svc
 from app.services.exploration import get_exploration
@@ -13,18 +15,21 @@ router = APIRouter(
     tags=["Traceability"]
 )
 
+
 def is_missing(data: dict | None) -> bool:
     return data is None or data == {}
+
 
 @router.get("/")
 async def get_traceability(
     exploration_id: str,
+    session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_active_user),
 ):
     try:
-        is_quantitative, is_qualitative = await get_exploration_method_flags(
-            exploration_id
-        )
+        is_quantitative, is_qualitative = await get_exploration_method_flags(exploration_id)
+        if is_quantitative is None and is_qualitative is None:
+            raise HTTPException(status_code=404, detail="Exploration not found")
 
         existing = await get_existing_traceability_report(exploration_id)
 
@@ -34,8 +39,8 @@ async def get_traceability(
         if not existing:
             data = await get_traceability_reports(
                 exploration_id=exploration_id,
-                is_quant=is_quantitative,
-                is_qual=is_qualitative
+                is_quant=bool(is_quantitative),
+                is_qual=bool(is_qualitative),
             )
 
             await upsert_traceability_report(
@@ -57,15 +62,17 @@ async def get_traceability(
 
         # -------------------------
         # CASE 2: Partial missing
+        # Only regenerate a section if the method was actually selected AND the data is absent.
+        # This prevents re-generating an empty section just because the method wasn't run yet.
         # -------------------------
-        need_quant = is_missing(existing.quant_traceability)
-        need_qual = is_missing(existing.qual_traceability)
+        need_quant = bool(is_quantitative) and is_missing(existing.quant_traceability)
+        need_qual = bool(is_qualitative) and is_missing(existing.qual_traceability)
 
         if need_quant or need_qual:
             data = await get_traceability_reports(
                 exploration_id=exploration_id,
                 is_quant=need_quant,
-                is_qual=need_qual
+                is_qual=need_qual,
             )
 
             await upsert_traceability_report(
@@ -109,6 +116,10 @@ async def get_traceability(
             },
         )
 
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -120,26 +131,25 @@ async def get_traceability(
         )
 
 
-
 @router.post("/create", response_model=TraceabilityOut)
 async def create_traceability_record(
     workspace_id: str,
     exploration_id: str,
     payload: TraceabilityGenerateRequest,
-    current_user: User = Depends(get_current_active_user)
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
 ):
-    exp = await get_exploration(exploration_id)
+    exp = await get_exploration(session, exploration_id)
     if not exp:
-        raise HTTPException(404, "Research objective not found.")
+        raise HTTPException(404, "Exploration not found.")
 
     created_by = payload.created_by or current_user.id
 
-    # service will fetch full context itself (personas, interviews, surveys, rebuttals)
     return await svc.create_traceability(
         workspace_id=workspace_id,
         exploration_id=exploration_id,
         created_by=created_by,
-        custom_notes=payload.custom_notes or ""
+        custom_notes=payload.custom_notes or "",
     )
 
 
@@ -149,15 +159,16 @@ async def regenerate_traceability(
     exploration_id: str,
     record_id: str,
     payload: TraceabilityGenerateRequest,
-    current_user: User = Depends(get_current_active_user)
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
 ):
-    exp = await get_exploration(exploration_id)
+    exp = await get_exploration(session, exploration_id)
     if not exp:
-        raise HTTPException(404, "Research objective not found.")
+        raise HTTPException(404, "Exploration not found.")
 
     updated = await svc.regenerate_traceability(
         record_id=record_id,
-        custom_notes=payload.custom_notes or ""
+        custom_notes=payload.custom_notes or "",
     )
 
     if not updated:
@@ -167,7 +178,12 @@ async def regenerate_traceability(
 
 
 @router.get("/{record_id}", response_model=TraceabilityOut)
-async def get_traceability_record(workspace_id: str, exploration_id: str, record_id: str):
+async def get_traceability_record(
+    workspace_id: str,
+    exploration_id: str,
+    record_id: str,
+    current_user: User = Depends(get_current_active_user),
+):
     rec = await svc.get_traceability(record_id)
     if not rec:
         raise HTTPException(404, "Record not found")

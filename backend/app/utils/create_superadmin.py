@@ -23,8 +23,11 @@ async def ensure_superadmin_exists():
             await session.commit()
             return
 
+        _parts = (name or "").strip().split(" ", 1)
         superadmin = User(
-            full_name=name,
+            first_name=_parts[0],
+            last_name=_parts[1] if len(_parts) > 1 else "",
+            full_name=(name or "").strip(),
             email=email,
             hashed_password=hash_password(password),
             user_type="Admin",

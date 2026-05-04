@@ -103,9 +103,8 @@ const ManageUsers: React.FC<ManageUsersProps> = ({
     try {
       let response: any;
       if (mode === "team") {
-        response = workspaceId
-          ? await workspaceService.getMembers(workspaceId)
-          : await (workspaceService as any).getOrganisationMembers?.() ?? { data: [] };
+        // Team mode: fetch all org members regardless of individual workspace
+        response = await workspaceService.getOrganisationMembers();
       } else {
         if (!workspaceId) return;
         response = await workspaceService.getMembers(workspaceId);
@@ -175,20 +174,27 @@ const ManageUsers: React.FC<ManageUsersProps> = ({
   };
 
   const handleSaveEditUser = async (updated: EditUserData) => {
-    // TODO: wire to actual PATCH/PUT API
-    await new Promise((r) => setTimeout(r, 600));
-    setMembers((prev) =>
-      prev.map((m) =>
-        m.id === updated.id
-          ? {
-              ...m,
-              full_name: `${updated.firstName} ${updated.lastName}`.trim(),
-              email: updated.email,
-            }
-          : m
-      )
-    );
-    setSuccessMessage("User updated successfully.");
+    setError("");
+    setSuccessMessage("");
+    try {
+      await workspaceService.updateMember(workspaceId, updated.id, {
+        first_name: updated.firstName,
+        last_name: updated.lastName,
+      });
+      setMembers((prev) =>
+        prev.map((m) =>
+          m.id === updated.id
+            ? {
+                ...m,
+                full_name: `${updated.firstName} ${updated.lastName}`.trim(),
+              }
+            : m
+        )
+      );
+      setSuccessMessage("User updated successfully.");
+    } catch (err: any) {
+      setError(err?.message || "Failed to update user.");
+    }
   };
 
   const toggleMenu = (id: string) =>
