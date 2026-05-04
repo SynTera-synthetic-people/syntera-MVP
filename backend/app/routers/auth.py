@@ -10,12 +10,13 @@ from app.schemas.auth import (
     ForgotPasswordIn,
     ResetPasswordIn,
     ChangePasswordIn,
+    UpdateProfileIn,
 )
 from app.utils.security import create_access_token, verify_password
 from app.utils.email_utils import send_verification_email, send_reset_password_email, send_welcome_email, send_tier1_welcome_email, send_enterprise_inquiry_email
 from app.services import auth as auth_service
 from app.services import workspace as workspace_service
-from app.services.auth import upgrade_to_tier1
+from app.services.auth import upgrade_to_tier1, update_profile, delete_account
 from app.routers.auth_dependencies import get_current_active_user
 from app.models.user import User
 from app.schemas.response import SuccessResponse, ErrorResponse
@@ -158,8 +159,12 @@ async def get_current_user(
         message="User profile fetched successfully",
         data={
             "id": current_user.id,
+            "first_name": current_user.first_name,
+            "last_name": current_user.last_name,
             "full_name": current_user.full_name,
             "email": current_user.email,
+            "phone": current_user.phone,
+            "avatar_url": current_user.avatar_url,
             "role": current_user.role,
             "is_verified": current_user.is_verified,
             "is_trial": current_user.is_trial,
@@ -172,6 +177,85 @@ async def get_current_user(
             **bootstrap,
         }
     )
+
+
+@router.patch("/me", response_model=SuccessResponse)
+async def update_current_user_profile(
+    payload: UpdateProfileIn,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Update the authenticated user's own profile.
+
+    All fields are optional — only provided fields are updated.
+    Email cannot be changed here for security; use a dedicated
+    email-change flow if needed.
+    """
+    # Guard: at least one field must be present
+    if payload.first_name is None and payload.last_name is None and payload.phone is None:
+        raise HTTPException(
+            status_code=400,
+            detail=ErrorResponse(
+                status="error",
+                message="No profile fields provided to update."
+            ).dict()
+        )
+
+    try:
+        updated_user = await update_profile(
+            session=session,
+            user=current_user,
+            first_name=payload.first_name,
+            last_name=payload.last_name,
+            phone=payload.phone,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=ErrorResponse(status="error", message=str(exc)).dict()
+        )
+
+    return SuccessResponse(
+        message="Profile updated successfully.",
+        data={
+            "id": updated_user.id,
+            "first_name": updated_user.first_name,
+            "last_name": updated_user.last_name,
+            "full_name": updated_user.full_name,
+            "email": updated_user.email,
+            "phone": updated_user.phone,
+            "avatar_url": updated_user.avatar_url,
+            "role": updated_user.role,
+            "account_tier": updated_user.account_tier,
+        }
+    )
+
+
+@router.delete("/me", response_model=SuccessResponse)
+async def delete_own_account(
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Permanently deactivate and soft-delete the authenticated user's account.
+
+    - The account is immediately marked inactive (existing tokens rejected on next use).
+    - Email is anonymised so the same address can be re-registered later.
+    - No data is hard-deleted; audit trail remains.
+    - Super-admins cannot self-delete through this endpoint to prevent lockout.
+    """
+    if current_user.role == "super_admin":
+        raise HTTPException(
+            status_code=403,
+            detail=ErrorResponse(
+                status="error",
+                message="Super-admin accounts cannot be self-deleted. Contact another super-admin."
+            ).dict()
+        )
+
+    await delete_account(session=session, user=current_user)
+    return SuccessResponse(message="Your account has been deleted successfully.")
 
 
 @router.post("/forgot-password", response_model=SuccessResponse)

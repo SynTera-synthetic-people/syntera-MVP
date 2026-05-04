@@ -22,7 +22,7 @@ import {
 import { useOmniWorkflow } from '../../../../../hooks/useOmiWorkflow';
 // ── CHANGE 1: Import useAutoGeneratePersonas so we can fire the backend
 //             persona generation the moment the user clicks "Create with Omi"
-import { useAutoGeneratePersonas } from '../../../../../hooks/usePersonaBuilder';
+import { useAutoGeneratePersonas, usePersonas } from '../../../../../hooks/usePersonaBuilder';
 import OmiGreet from '../../../../../assets/Omi Animations/OmiGreeting.mp4';
 import OmiPencil from '../../../../../assets/Omi Animations/OmiPencil.mp4';
 import OmiKeyboard from '../../../../../assets/Omi Animations/OmiKeyboard.mp4';
@@ -125,6 +125,10 @@ const AddResearchObjective: React.FC = () => {
   const {
     refetch: triggerPersonaGeneration,
   } = useAutoGeneratePersonas(workspaceId, objectiveId, { enabled: false });
+  const {
+    data: existingPersonasData,
+    refetch: refetchExistingPersonas,
+  } = usePersonas(workspaceId, objectiveId);
 
   // Redux state
   const {
@@ -287,7 +291,7 @@ const AddResearchObjective: React.FC = () => {
   //             while the user watches the ~7 min loader animation.
   //             By the time the loader finishes and navigates to PersonaBuilder,
   //             the personas are ready to fetch.
-  const handleCreateWithOmi = () => {
+  const handleCreateWithOmi = async () => {
     trigger({
       stage: 'persona_builder',
       event: 'PERSONA_WORKFLOW_LOADED',
@@ -296,6 +300,33 @@ const AddResearchObjective: React.FC = () => {
 
     // Mark Step 1 (Research Objective) as complete
     if (objectiveId) localStorage.setItem(`step1_done_${objectiveId}`, '1');
+
+    const currentPersonas =
+      Array.isArray((existingPersonasData as any)?.data)
+        ? (existingPersonasData as any).data
+        : Array.isArray(existingPersonasData)
+          ? existingPersonasData
+          : [];
+
+    const refreshed = currentPersonas.length
+      ? { data: existingPersonasData }
+      : await refetchExistingPersonas();
+
+    const savedPersonas =
+      Array.isArray((refreshed.data as any)?.data)
+        ? (refreshed.data as any).data
+        : Array.isArray(refreshed.data)
+          ? refreshed.data
+          : [];
+
+    if (savedPersonas.some((p: any) => p?.calibration_status !== "draft")) {
+      // Personas already exist; skip the loader so the UI does not look like Omi is regenerating.
+      navigate(
+        `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-builder`,
+        { state: { fromLoader: true, flow: "omi", reusedExisting: true } }
+      );
+      return;
+    }
 
     // Fire-and-forget: kick off backend generation now, don't await.
     // PersonaBuilder will fetch the completed result when the loader finishes.

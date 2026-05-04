@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr
 from datetime import datetime
 from typing import Optional, Literal
 
@@ -46,6 +46,8 @@ class AdminUpdateUserIn(BaseModel):
 
 
 class AdminUserDetailOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     """Full user detail for admin views including trial state and pricing tier."""
     id: str
     full_name: str
@@ -59,6 +61,3 @@ class AdminUserDetailOut(BaseModel):
     trial_exploration_limit: int
     must_change_password: bool
     created_at: datetime
-
-    class Config:
-        from_attributes = True

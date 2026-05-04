@@ -1,6 +1,59 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, List, Dict
 from datetime import datetime
+
+
+# ── Structured input sub-models for manual persona flow ──────────────────────
+
+class DemographicsInput(BaseModel):
+    """Required section — age + gender mandatory per design."""
+    age_range: str               # e.g. "18-25", "26-34"
+    gender: str
+    income_range: Optional[str] = None
+    education_level: Optional[str] = None
+    occupation: Optional[str] = None
+    marital_status: Optional[str] = None
+    family_size: Optional[str] = None
+    location_country: Optional[str] = None
+    location_state: Optional[str] = None
+    geography: Optional[str] = None
+
+
+class PsychologicalInput(BaseModel):
+    lifestyle: Optional[List[str]] = None
+    values: Optional[List[str]] = None
+    personality: Optional[List[str]] = None
+    interests: Optional[List[str]] = None
+    motivations: Optional[List[str]] = None
+
+
+class BehaviouralInput(BaseModel):
+    decision_making_style: Optional[str] = None
+    consumption_frequency: Optional[str] = None
+    purchase_channel: Optional[str] = None
+    price_sensitivity: Optional[str] = None
+    brand_sensitivity: Optional[str] = None
+    switching_behaviour: Optional[str] = None
+    purchase_triggers: Optional[List[str]] = None
+    purchase_barriers: Optional[List[str]] = None
+    media_consumption_patterns: Optional[List[str]] = None
+    digital_behaviour: Optional[str] = None
+
+
+class AdditionalInfoInput(BaseModel):
+    occupation: Optional[str] = None      # overrides demographics.occupation if set
+    industry: Optional[str] = None
+    category_awareness: Optional[str] = None
+
+
+class ManualPersonaCreate(BaseModel):
+    """Structured input for the manual persona builder form."""
+    name: Optional[str] = Field(None, max_length=100)
+    demographics: DemographicsInput
+    psychological: Optional[PsychologicalInput] = None
+    behavioural: Optional[BehaviouralInput] = None
+    additional_info: Optional[AdditionalInfoInput] = None
+    formative_experience: Optional[str] = Field(None, max_length=1000)
 
 class PersonaBase(BaseModel):
     name: str = Field(..., min_length=3, max_length=50)
@@ -100,13 +153,17 @@ class PersonaUpdate(BaseModel):
 
 
 class PersonaOut(PersonaBase):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     workspace_id: str
     created_by: str
+    created_by_name: Optional[str] = None   # "Omi" or user's full name
+    calibration_confidence: Optional[int] = None
+    persona_source: Optional[str] = None    # "omi" | "manual" | "replicated"
+    parent_persona_id: Optional[str] = None
+    calibration_status: Optional[str] = None  # "draft" | "calibrated" | None (legacy)
     created_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 class PersonaPreview(BaseModel):
@@ -140,6 +197,14 @@ class PersonaValidationResponse(BaseModel):
 
 class PersonaBackstoryIn(BaseModel):
     backstory: str
+
+
+class PersonaReplicateRequest(BaseModel):
+    target_country: str = Field(..., min_length=2, max_length=100)
+
+
+class PersonaBulkDownloadRequest(BaseModel):
+    persona_ids: list[str] = Field(..., min_items=1, max_items=20)
 
 
 class PersonaBackstoryOut(BaseModel):

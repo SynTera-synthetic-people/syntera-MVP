@@ -125,12 +125,18 @@ export const WorkspaceProvider = ({ children }) => {
     );
   };
 
+  const clearWorkspace = () => {
+    setSelectedWorkspace(null);
+    setWorkspaces([]);
+  };
+
   return (
     <WorkspaceContext.Provider
       value={{
         workspaces,
         selectedWorkspace,
         setSelectedWorkspace,
+        clearWorkspace,
         addWorkspace,
         updateWorkspace,
         deleteWorkspace,

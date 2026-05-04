@@ -5,39 +5,41 @@ from app.db import get_session
 from app.schemas.exploration import (
     ExplorationCreate,
     ExplorationUpdate,
-    ExplorationOut, ExplorationMethodSelect
+    ExplorationOut,
+    ExplorationMethodSelect,
 )
 from app.services.exploration import (
     create_exploration,
     get_explorations_by_workspace,
     get_exploration,
+    get_exploration_enriched,
     update_exploration,
     delete_exploration,
     select_exploration_method,
     TrialLimitReachedException,
     PlanLimitReachedException,
+    WorkflowError,
 )
-from sqlmodel import select
 from app.models.user import User
 from app.routers.auth_dependencies import get_current_active_user
-from app.models import research_objectives
-from app.models.research_objectives import ResearchObjectives
 
 router = APIRouter(prefix="/explorations", tags=["Explorations"])
 
 
-@router.post(
-    "",
-    response_model=ExplorationOut,
-    status_code=201
-)
+def _assert_owner_or_admin(exploration, current_user: User) -> None:
+    if current_user.role in ("admin", "super_admin"):
+        return
+    if exploration.created_by != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to modify this exploration")
+
+
+@router.post("", response_model=ExplorationOut, status_code=201)
 async def create(
     data: ExplorationCreate,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_active_user),
 ):
-    try:
-        return await create_exploration(
+    try: return await create_exploration(
             session,
             data.workspace_id,
             current_user.id,
@@ -64,31 +66,24 @@ async def create(
         )
 
 
-
-@router.get(
-    "/workspace/{workspace_id}",
-    response_model=list[ExplorationOut]
-)
+@router.get("/workspace/{workspace_id}", response_model=list[ExplorationOut])
 async def get_all(
     workspace_id: str,
     session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
 ):
     return await get_explorations_by_workspace(session, workspace_id)
 
 
-
-@router.get(
-    "/{exploration_id}",
-    response_model=ExplorationOut
-)
+@router.get("/{exploration_id}", response_model=ExplorationOut)
 async def get_one(
     exploration_id: str,
     session: AsyncSession = Depends(get_session),
 ):
-    exploration = await get_exploration(session, exploration_id)
+    # Use enriched fetch so current_step is granular (same as list endpoint)
+    exploration = await get_exploration_enriched(session, exploration_id)
     if not exploration:
         raise HTTPException(status_code=404, detail="Exploration not found")
-
     return exploration
 
 
@@ -97,41 +92,32 @@ async def update(
     exploration_id: str,
     data: ExplorationUpdate,
     session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
 ):
     exploration = await get_exploration(session, exploration_id)
     if not exploration:
         raise HTTPException(status_code=404, detail="Exploration not found")
 
-    return await update_exploration(session, exploration, data)
+    _assert_owner_or_admin(exploration, current_user)
+
+    return await update_exploration(session, exploration, data, updated_by=current_user.id)
 
 
-@router.delete("/{exploration_id}", status_code=204)
+@router.delete("/{exploration_id}", status_code=200)
 async def delete(
     exploration_id: str,
     session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
 ):
     exploration = await get_exploration(session, exploration_id)
     if not exploration:
         raise HTTPException(status_code=404, detail="Exploration not found")
 
-    ro = await session.execute(
-        select(ResearchObjectives.id).where(
-            ResearchObjectives.exploration_id == exploration_id
-        )
-    )
+    _assert_owner_or_admin(exploration, current_user)
 
-    if ro.first():
-        raise HTTPException(
-            status_code=409,
-            detail="Exploration cannot be deleted after research objective creation"
-        )
+    await delete_exploration(session, exploration, current_user=current_user)
 
-    await delete_exploration(session, exploration)
-
-    return {
-        "status": "success",
-        "message": "Exploration deleted successfully"
-    }
+    return {"status": "success", "message": "Exploration deleted successfully"}
 
 
 @router.post("/{exploration_id}/method")
@@ -146,6 +132,7 @@ async def select_method(
             exploration_id=exploration_id,
             data=payload,
         )
+    except WorkflowError as e:
+        raise HTTPException(status_code=400, detail=e.message)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-

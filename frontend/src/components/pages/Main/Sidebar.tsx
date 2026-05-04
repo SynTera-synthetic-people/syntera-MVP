@@ -15,6 +15,7 @@ import { useWorkspaces } from "../../../hooks/useWorkspaces";
 import { useWorkspace as useWorkspaceContext } from "../../../context/WorkspaceContext";
 import WorkspacePopup from "../organization/Workspace/WorkspacePopup";
 import UpgradeModal from "../Upgrade/UpgradeModal";
+import { useQueryClient } from "@tanstack/react-query";
 import "./Sidebar.css";
 
 interface Workspace {
@@ -129,7 +130,8 @@ const Sidebar: React.FC = () => {
   const [showWorkspacePopup, setShowWorkspacePopup] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
-  const { selectedWorkspace, setSelectedWorkspace } = useWorkspaceContext();
+  const { selectedWorkspace, setSelectedWorkspace, clearWorkspace } = useWorkspaceContext();
+  const queryClient = useQueryClient();
 
   const sidebarRef = useRef<HTMLDivElement>(null);
   const profileMenuRef = useRef<HTMLDivElement>(null);
@@ -233,6 +235,8 @@ const Sidebar: React.FC = () => {
 
   /* ── actions ── */
   const handleLogout = () => {
+    queryClient.clear();
+    clearWorkspace();
     dispatch(logout() as any);
     localStorage.removeItem("token");
     localStorage.removeItem("user");

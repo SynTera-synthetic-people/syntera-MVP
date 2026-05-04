@@ -36,6 +36,12 @@ async def get_current_active_user(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    if getattr(user, "is_deleted", False):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="This account has been deleted."
+        )
+
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

@@ -234,6 +234,14 @@ const ExplorationList: React.FC = () => {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  // Redirect to landing page when no explorations and no filters active
+  useEffect(() => {
+    if (!isLoading && !error && Array.isArray(explorations) && explorations.length === 0
+      && !searchQuery && statusFilter === "all" && audienceFilter === "all") {
+      navigate("/main/landing");
+    }
+  }, [isLoading, error, explorations, searchQuery, statusFilter, audienceFilter]);
+
   // ── Handlers ───────────────────────────────────────────────────────────────
 
   const handleDownloadQuestionnaireCsv = async (exploration: Exploration) => {
@@ -660,6 +668,7 @@ const ExplorationList: React.FC = () => {
 
       {showCreate && (
         <CreateExploration
+          workspaceId={workspaceId}
           onClose={() => { setShowCreate(false); refetch(); }}
           onTrialLimitReached={() => setUpgradeRequired(true)}
         />

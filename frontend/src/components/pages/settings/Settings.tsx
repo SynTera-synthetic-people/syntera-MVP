@@ -11,6 +11,7 @@ import Privacy from './privacy/Privacy';
 import ChangePassword from './ChangePassword/ChangePassword';
 
 import { useWorkspace as useWorkspaceContext } from '../../../context/WorkspaceContext';
+import { useQueryClient } from '@tanstack/react-query';
 import ManageUsers from '../organization/Workspace/ManageUsers';
 import Workspace from '../organization/Workspace/Workspace';
 import UpgradePlanPage from '../Upgrade/Upgrade';
@@ -124,7 +125,8 @@ const HEADING: Record<string, string> = {
 const Settings: React.FC = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
-  const { selectedWorkspace } = useWorkspaceContext();
+  const { selectedWorkspace, clearWorkspace } = useWorkspaceContext();
+  const queryClient = useQueryClient();
   const { user } = useSelector((state: RootState) => state.auth);
 
   const isAdmin = isAdminUser(user);
@@ -451,6 +453,10 @@ const Settings: React.FC = () => {
         appName="Synthetic People"
         {...(user?.email ? { userEmail: user.email } : {})}
         onConfirm={async () => {
+          queryClient.clear();
+          clearWorkspace();
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
           dispatch(logout());
           navigate('/login', { replace: true });
         }}

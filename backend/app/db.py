@@ -51,11 +51,6 @@ async def add_is_active_column():
             ADD COLUMN IF NOT EXISTS is_qualitative BOOLEAN NOT NULL DEFAULT FALSE,
             ADD COLUMN IF NOT EXISTS is_end BOOLEAN NOT NULL DEFAULT FALSE;
         """))
-        # await conn.execute(text("""
-        # ALTER TABLE persona
-        # ADD COLUMN IF NOT EXISTS persona_details JSONB;
-        # """))
-        #
 
         await conn.execute(text("""
         DO $$
@@ -263,6 +258,9 @@ async def create_sync_schemas():
                 title        VARCHAR NOT NULL,
                 source_type  VARCHAR NOT NULL,
                 source_url   VARCHAR,
+                file_data    BYTEA,
+                file_name    VARCHAR,
+                domain       VARCHAR,
                 file_path    VARCHAR,
                 is_processed BOOLEAN NOT NULL DEFAULT FALSE,
                 exploration_id VARCHAR,
@@ -279,17 +277,133 @@ async def create_sync_schemas():
                 chunk_index  INTEGER NOT NULL,
                 content      TEXT NOT NULL,
                 content_json JSONB,
+                data_type    VARCHAR NOT NULL DEFAULT 'document',
                 created_at   TIMESTAMP NOT NULL DEFAULT now()
             )
         """))
+
+        # ── FIX: ensure data_type + content_json exist on already-created tables ──
+        # If content_chunk was created by an older migration (without these columns),
+        # ADD COLUMN IF NOT EXISTS safely backfills them — no-op if already present.
+        await conn.execute(text("""
+            ALTER TABLE sync_source.content_chunk
+            ADD COLUMN IF NOT EXISTS content_json JSONB;
+        """))
+        await conn.execute(text("""
+            ALTER TABLE sync_source.content_chunk
+            ADD COLUMN IF NOT EXISTS data_type VARCHAR NOT NULL DEFAULT 'document';
+        """))
+        # Backfill any NULL data_type values left by the old schema
+        await conn.execute(text("""
+            UPDATE sync_source.content_chunk AS c
+            SET data_type = CASE
+                WHEN c.content_json IS NOT NULL
+                     OR d.source_type IN ('csv', 'xlsx', 'xls') THEN 'tabular'
+                WHEN d.source_type = 'url' THEN 'scraped'
+                ELSE 'document'
+            END
+            FROM sync_source.document AS d
+            WHERE d.id = c.document_id
+              AND (c.data_type IS NULL OR BTRIM(c.data_type) = '');
+        """))
+        # ── end fix ───────────────────────────────────────────────────────────
+
         await conn.execute(text("""
             CREATE INDEX IF NOT EXISTS idx_sync_source_chunk_document
             ON sync_source.content_chunk (document_id)
         """))
         await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_sync_source_chunk_data_type
+            ON sync_source.content_chunk (data_type)
+        """))
+        await conn.execute(text("""
             CREATE INDEX IF NOT EXISTS idx_sync_source_chunk_fts
             ON sync_source.content_chunk
             USING GIN (to_tsvector('simple', COALESCE(content, '')))
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_sync_source_chunk_content_json
+            ON sync_source.content_chunk
+            USING GIN (content_json);
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_sync_source_chunk_doc_type_order
+            ON sync_source.content_chunk (document_id, data_type, chunk_index, created_at);
+        """))
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS sync_source.scrape_url (
+                id                 VARCHAR PRIMARY KEY,
+                source_document_id VARCHAR REFERENCES sync_source.document(id) ON DELETE CASCADE,
+                source_document_key VARCHAR NOT NULL DEFAULT '',
+                exploration_id     VARCHAR,
+                url                TEXT NOT NULL,
+                domain             VARCHAR,
+                status             VARCHAR NOT NULL DEFAULT 'pending',
+                failure_reason     TEXT,
+                failure_category   VARCHAR,
+                retryable          BOOLEAN NOT NULL DEFAULT TRUE,
+                retry_count        INTEGER NOT NULL DEFAULT 0,
+                max_retries        INTEGER NOT NULL DEFAULT 3,
+                http_status        INTEGER,
+                method_used        VARCHAR,
+                content_chars      INTEGER NOT NULL DEFAULT 0,
+                first_seen_at      TIMESTAMP NOT NULL DEFAULT now(),
+                last_attempt_at    TIMESTAMP,
+                next_retry_at      TIMESTAMP,
+                scraped_at         TIMESTAMP,
+                created_at         TIMESTAMP NOT NULL DEFAULT now(),
+                updated_at         TIMESTAMP NOT NULL DEFAULT now()
+            )
+        """))
+        await conn.execute(text("""
+            ALTER TABLE sync_source.scrape_url
+            ADD COLUMN IF NOT EXISTS source_document_key VARCHAR NOT NULL DEFAULT ''
+        """))
+        await conn.execute(text("""
+            UPDATE sync_source.scrape_url
+            SET source_document_key = COALESCE(source_document_id, '')
+            WHERE source_document_key IS NULL OR source_document_key = ''
+        """))
+        await conn.execute(text("""
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_sync_source_scrape_url_doc_url
+            ON sync_source.scrape_url (source_document_key, url)
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_sync_source_scrape_url_retry
+            ON sync_source.scrape_url (next_retry_at, retry_count)
+            WHERE retryable = TRUE
+              AND status IN ('failed', 'low_quality')
+              AND retry_count < max_retries
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_sync_source_scrape_url_status
+            ON sync_source.scrape_url (status)
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_sync_source_scrape_url_domain
+            ON sync_source.scrape_url (domain)
+        """))
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS sync_source.scrape_url_attempt (
+                id             VARCHAR PRIMARY KEY,
+                scrape_url_id  VARCHAR NOT NULL REFERENCES sync_source.scrape_url(id) ON DELETE CASCADE,
+                attempt_no     INTEGER NOT NULL,
+                status         VARCHAR NOT NULL,
+                method_used    VARCHAR,
+                http_status    INTEGER,
+                failure_reason TEXT,
+                failure_category VARCHAR,
+                retryable      BOOLEAN NOT NULL DEFAULT TRUE,
+                content_chars  INTEGER NOT NULL DEFAULT 0,
+                started_at     TIMESTAMP NOT NULL DEFAULT now(),
+                finished_at    TIMESTAMP NOT NULL DEFAULT now(),
+                metadata       JSONB NOT NULL DEFAULT '{}'::jsonb,
+                UNIQUE (scrape_url_id, attempt_no)
+            )
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_sync_source_scrape_attempt_url
+            ON sync_source.scrape_url_attempt (scrape_url_id)
         """))
 
 
@@ -406,5 +520,163 @@ async def create_report_cache_table():
         await conn.execute(text("""
             CREATE UNIQUE INDEX IF NOT EXISTS uq_report_cache_quant
             ON report_cache (exploration_id, simulation_id, cta_type)
-            WHERE simulation_id IS NOT NULL
+            WHERE simulation_id IS NOT NULL"""))
+async def add_profile_columns():
+    """Safe migration: add first_name/last_name, profile, and soft-delete columns."""
+    async with async_engine.begin() as conn:
+        # Separate name columns
+        await conn.execute(text("""
+            ALTER TABLE "user"
+            ADD COLUMN IF NOT EXISTS first_name VARCHAR NOT NULL DEFAULT '';
+        """))
+
+
+async def migrate_source_document_file_storage():
+    async with async_engine.begin() as conn:
+        await conn.execute(text("""
+            ALTER TABLE sync_source.document
+            ADD COLUMN IF NOT EXISTS file_data BYTEA;
+        """))
+
+        await conn.execute(text("""
+            ALTER TABLE sync_source.document
+            ADD COLUMN IF NOT EXISTS file_name VARCHAR;
+        """))
+        await conn.execute(text("""
+            ALTER TABLE sync_source.document
+            ADD COLUMN IF NOT EXISTS file_path VARCHAR;
+        """))
+        await conn.execute(text("""
+            ALTER TABLE sync_source.document
+            ADD COLUMN IF NOT EXISTS domain VARCHAR;
+        """))
+
+
+async def migrate_source_content_json():
+    """
+    Ensure content_json/data_type columns + supporting indexes exist on
+    content_chunk, and metadata JSONB column exists on document.
+    Idempotent — all operations use IF NOT EXISTS.
+    """
+    async with async_engine.begin() as conn:
+        await conn.execute(text("""
+            ALTER TABLE sync_source.content_chunk
+            ADD COLUMN IF NOT EXISTS content_json JSONB;
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_sync_source_chunk_content_json
+            ON sync_source.content_chunk
+            USING GIN (content_json);
+        """))
+        await conn.execute(text("""
+            ALTER TABLE sync_source.content_chunk
+            ADD COLUMN IF NOT EXISTS data_type VARCHAR;
+        """))
+        await conn.execute(text("""
+            UPDATE sync_source.content_chunk AS c
+            SET data_type = CASE
+                WHEN c.content_json IS NOT NULL OR d.source_type IN ('csv', 'xlsx', 'xls') THEN 'tabular'
+                WHEN d.source_type = 'url' THEN 'scraped'
+                ELSE 'document'
+            END
+            FROM sync_source.document AS d
+            WHERE d.id = c.document_id
+              AND (c.data_type IS NULL OR BTRIM(c.data_type) = '');
+        """))
+        await conn.execute(text("""
+            ALTER TABLE sync_source.content_chunk
+            ALTER COLUMN data_type SET DEFAULT 'document';
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_sync_source_chunk_data_type
+            ON sync_source.content_chunk (data_type);
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_sync_source_chunk_doc_type_order
+            ON sync_source.content_chunk (document_id, data_type, chunk_index, created_at);
+        """))
+        await conn.execute(text("""
+            ALTER TABLE sync_source.document
+            ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
+        """))
+        await conn.execute(text("""
+            ALTER TABLE "user"
+            ADD COLUMN IF NOT EXISTS last_name VARCHAR NOT NULL DEFAULT '';
+        """))
+        # Backfill first_name / last_name from existing full_name rows
+        await conn.execute(text("""
+            UPDATE "user"
+            SET
+                first_name = TRIM(SPLIT_PART(full_name, ' ', 1)),
+                last_name  = TRIM(
+                    CASE
+                        WHEN POSITION(' ' IN full_name) > 0
+                        THEN SUBSTRING(full_name FROM POSITION(' ' IN full_name) + 1)
+                        ELSE ''
+                    END
+                )
+            WHERE first_name = '';
+        """))
+        # Profile fields
+        await conn.execute(text("""
+            ALTER TABLE "user"
+            ADD COLUMN IF NOT EXISTS phone VARCHAR;
+        """))
+        await conn.execute(text("""
+            ALTER TABLE "user"
+            ADD COLUMN IF NOT EXISTS avatar_url VARCHAR;
+        """))
+        # Soft-delete fields
+        await conn.execute(text("""
+            ALTER TABLE "user"
+            ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT FALSE;
+        """))
+        await conn.execute(text("""
+            ALTER TABLE "user"
+            ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP WITHOUT TIME ZONE;
+        """))
+        # Index for fast active-user lookups
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS ix_user_is_deleted
+            ON "user" (is_deleted);
+        """))
+
+
+async def add_exploration_tracking_columns():
+    """Safe migration: add deleted_by and updated_by tracking to explorations."""
+    async with async_engine.begin() as conn:
+        await conn.execute(text("""
+            ALTER TABLE explorations
+            ADD COLUMN IF NOT EXISTS deleted_by VARCHAR REFERENCES "user"(id) ON DELETE SET NULL;
+        """))
+        await conn.execute(text("""
+            ALTER TABLE explorations
+            ADD COLUMN IF NOT EXISTS updated_by VARCHAR REFERENCES "user"(id) ON DELETE SET NULL;
+        """))
+
+
+async def add_persona_calibration_column():
+    """Safe migration: add calibration_confidence score to persona."""
+    async with async_engine.begin() as conn:
+        await conn.execute(text("""
+            ALTER TABLE persona
+            ADD COLUMN IF NOT EXISTS calibration_confidence INTEGER;
+        """))
+
+
+async def add_persona_lineage_columns():
+    """Safe migration: add parent_persona_id for replication traceability."""
+    async with async_engine.begin() as conn:
+        await conn.execute(text("""
+            ALTER TABLE persona
+            ADD COLUMN IF NOT EXISTS parent_persona_id VARCHAR;
+        """))
+
+
+async def add_persona_status_column():
+    """Safe migration: add calibration_status for draft/calibrated lifecycle."""
+    async with async_engine.begin() as conn:
+        await conn.execute(text("""
+            ALTER TABLE persona
+            ADD COLUMN IF NOT EXISTS calibration_status VARCHAR;
         """))

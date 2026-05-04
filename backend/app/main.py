@@ -1,4 +1,6 @@
 import json
+import logging
+import os
 
 from fastapi import FastAPI
 from fastapi import HTTPException
@@ -17,16 +19,37 @@ from app.db import (
     create_report_cache_table,
     create_sync_schemas,
     add_syncdb_envelope_columns,
+    migrate_source_document_file_storage,
+    migrate_source_content_json,
+    add_profile_columns,
+    add_exploration_tracking_columns,
+    add_persona_calibration_column,
+    add_persona_lineage_columns,
+    add_persona_status_column,
 )
 from app.routers import (auth, orgs, workspace, research_objectives, personas, interview,
                          population, questionnaire, rebuttal, traceability, omi, exploration,
                          omi_workflow, admin, enterprise, syncdb)
 from app.routers import reports as reports_router_module
 from app.schemas.response import ErrorResponse
-import json
-import os
 from app.utils.create_superadmin import ensure_superadmin_exists
 
+
+def _configure_logging() -> None:
+    level_name = os.getenv("LOG_LEVEL", "INFO").upper()
+    level = getattr(logging, level_name, logging.INFO)
+
+    root_logger = logging.getLogger()
+    if not root_logger.handlers:
+        logging.basicConfig(
+            level=level,
+            format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+        )
+
+    logging.getLogger("app").setLevel(level)
+
+
+_configure_logging()
 
 app = FastAPI(title="Synthetic People")
 
@@ -82,7 +105,15 @@ async def startup():
     await create_report_cache_table()
     await create_sync_schemas()
     await add_syncdb_envelope_columns()
+    await add_profile_columns()
+    await add_exploration_tracking_columns()
+    await add_persona_calibration_column()
+    await add_persona_lineage_columns()
+    await add_persona_status_column()
     await ensure_superadmin_exists()
+    
+    await migrate_source_document_file_storage()
+    await migrate_source_content_json()
 
 
 app.include_router(auth.router)
@@ -111,13 +142,13 @@ app.include_router(syncdb.router)
 #     "https://www.synthetic-people.ai",
 # ]
 
-cors = os.getenv("CORS_ORIGINS",  "https://staging-ui.synthetic-people.ai" )
-allow_origins = [x.strip() for x in cors.split(",") if x.strip()] 
+# cors = os.getenv("CORS_ORIGINS",  "https://staging-ui.synthetic-people.ai" )
+# allow_origins = [x.strip() for x in cors.split(",") if x.strip()] 
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allow_origins,
-    # allow_origins=["*"],
+    # allow_origins=allow_origins,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

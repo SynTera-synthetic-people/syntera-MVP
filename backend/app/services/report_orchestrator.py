@@ -1,14 +1,14 @@
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import and_, select, update
+from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import async_engine
 from app.models.report_cache import ReportCache
 
-CACHE_TTL_HOURS = 24
+CACHE_TTL_HOURS = None
 
 
 def _cache_key_filter(
@@ -28,7 +28,7 @@ async def get_cached_report(
     cta_type: str,
     simulation_id: Optional[str] = None,
 ) -> Optional[ReportCache]:
-    """Return a valid (non-expired, done) cache entry, or None on miss."""
+    """Return a valid cached report; reports only expire when upstream input changes."""
     async with AsyncSession(async_engine) as session:
         stmt = (
             select(ReportCache)
@@ -36,7 +36,10 @@ async def get_cached_report(
                 and_(
                     _cache_key_filter(exploration_id, cta_type, simulation_id),
                     ReportCache.status == "done",
-                    ReportCache.expires_at > datetime.utcnow(),
+                    or_(
+                        ReportCache.expires_at.is_(None),
+                        ReportCache.expires_at > datetime.utcnow(),
+                    ),
                 )
             )
             .order_by(ReportCache.created_at.desc(), ReportCache.id.desc())
@@ -69,11 +72,13 @@ async def store_report_cache(
     pdf_path: Optional[str],
     report_type: str,
     simulation_id: Optional[str] = None,
+    content_md: Optional[str] = None,
 ) -> ReportCache:
     """Persist a newly generated report to the cache table."""
     async with AsyncSession(async_engine) as session:
         now = datetime.utcnow()
-        expires_at = now + timedelta(hours=CACHE_TTL_HOURS)
+        # Keep generated insights idempotent; invalidate_cache handles input changes.
+        expires_at = None
         stmt = (
             select(ReportCache)
             .where(_cache_key_filter(exploration_id, cta_type, simulation_id))
@@ -87,7 +92,7 @@ async def store_report_cache(
             cache.report_type = report_type
             cache.status = "done"
             cache.pdf_path = pdf_path
-            cache.content_md = None
+            cache.content_md = content_md
             cache.error_message = None
             cache.created_at = now
             cache.expires_at = expires_at
@@ -103,6 +108,7 @@ async def store_report_cache(
                 cta_type=cta_type,
                 status="done",
                 pdf_path=pdf_path,
+                content_md=content_md,
                 expires_at=expires_at,
             )
             session.add(cache)
@@ -124,7 +130,8 @@ async def set_report_status(
     """Persist a non-terminal or failed report status for polling clients."""
     async with AsyncSession(async_engine) as session:
         now = datetime.utcnow()
-        expires_at = now + timedelta(hours=CACHE_TTL_HOURS)
+        # Pending/failed status should also persist until replaced or invalidated.
+        expires_at = None
         stmt = (
             select(ReportCache)
             .where(_cache_key_filter(exploration_id, cta_type, simulation_id))
