@@ -1,11 +1,19 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import JSONResponse
 from typing import List
-from app.schemas.persona import PersonaCreate, PersonaOut, PersonaUpdate, PersonaPreview, PersonaBackstoryIn
+from app.schemas.persona import (
+    PersonaCreate, PersonaOut, PersonaUpdate, PersonaPreview,
+    PersonaBackstoryIn, PersonaReplicateRequest, PersonaBulkDownloadRequest,
+    ManualPersonaCreate,
+)
 from app.schemas.response import SuccessResponse, ErrorResponse, DeleteResponse
 from app.services import persona as persona_service
 from app.services import auto_generated_persona, manual_generated_persona
+from app.services import interview as interview_service
+from app.services import report_orchestrator as report_cache
 from app.services import workspace as ws_service
 from app.services import exploration as exploration_service
+from app.services.exploration import require_ro_exists, WorkflowError
 from app.routers.auth_dependencies import get_current_active_user
 from app.models.user import User
 from app.services import persona_templates as persona_template
@@ -60,17 +68,48 @@ async def auto_generate_personas(
     current_user: User = Depends(get_current_active_user),
     session: AsyncSession = Depends(get_session),
 ):
+    # Guard outside try/except so HTTPException isn't swallowed by the broad catch below
+    exp = await exploration_service.get_exploration(session, exploration_id)
+    if not exp:
+        raise HTTPException(status_code=404, detail="Exploration not found")
     try:
-        members = await ws_service.list_workspace_members(workspace_id)
-        if not any(m["user_id"] == current_user.id for m in members):
-            raise HTTPException(
-                status_code=403,
-                detail="Not authorized"
-            )
+        await require_ro_exists(session, exploration_id)
+    except WorkflowError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=ErrorResponse(status="error", message=e.message).dict()
+        )
 
-        exp = await exploration_service.get_exploration(session, exploration_id)
-        if not exp:
-            raise HTTPException(status_code=404, detail="Research objective not found")
+    members = await ws_service.list_workspace_members(workspace_id)
+    if not any(m["user_id"] == current_user.id for m in members):
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    existing_personas = await persona_service.list_non_draft_personas(workspace_id, exploration_id)
+    if existing_personas:
+        # Personas are downstream output; reuse them so repeated clicks do not rerun Omi.
+        return SuccessResponse(
+            message="Personas already exist",
+            data={"personas": existing_personas}
+        )
+
+    # Enforce max 4 Omi-generated personas per exploration
+    from app.models.persona import Persona as _Persona
+    from sqlalchemy import func as _func
+    omi_count_r = await session.execute(
+        select(_func.count()).select_from(_Persona).where(
+            _Persona.exploration_id == exploration_id,
+            _Persona.auto_generated_persona.is_(True),
+            _Persona.parent_persona_id.is_(None),  # don't count replicas
+        )
+    )
+    if omi_count_r.scalar() >= 4:
+        raise HTTPException(
+            status_code=400,
+            detail=ErrorResponse(status="error", message="Maximum of 4 Omi-generated personas already reached for this exploration").dict()
+        )
+
+    try:
+        # exploration already fetched above
 
         # personas = await persona_service.generate_auto_personas(exp, exploration_id)
         current_user_id = current_user.id
@@ -140,6 +179,15 @@ async def create_persona(
             detail=ErrorResponse(status="error", message="Exploration objective not found").dict()
         )
 
+    # Guard: manual persona creation also requires an RO
+    try:
+        await require_ro_exists(session, exploration_id)
+    except WorkflowError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=ErrorResponse(status="error", message=e.message).dict()
+        )
+
     exp_workspace_id = exp.workspace_id
     if str(exp_workspace_id) != str(workspace_id):
         raise HTTPException(
@@ -181,6 +229,9 @@ async def create_persona(
 
     p = await manual_generated_persona.manual_persona(exp.id, workspace_id, current_user.id, payload)
     # p = await persona_service.create_persona(workspace_id, current_user.id, payload)
+    # New persona inputs make any existing qualitative outputs stale.
+    await interview_service.clear_qualitative_outputs(workspace_id, exploration_id)
+    await report_cache.invalidate_cache(exploration_id)
     
     # Encourage user with Omi
     try:
@@ -210,6 +261,48 @@ async def list_personas(
 
     personas = await persona_service.list_personas(workspace_id, exploration_id)
     return SuccessResponse(message="Personas fetched successfully", data=personas)
+
+
+@router.post("/manual", response_model=SuccessResponse, status_code=status.HTTP_201_CREATED)
+async def create_manual_persona_draft(
+    workspace_id: str,
+    exploration_id: str,
+    payload: ManualPersonaCreate,
+    current_user: User = Depends(get_current_active_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    Phase 1 of manual persona flow: store structured trait input as a draft.
+    No AI is called here. The frontend should follow up with POST /{id}/calibrate.
+    """
+    if not await ws_service.is_workspace_admin(workspace_id, current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=ErrorResponse(status="error", message="Only workspace admins can create personas").dict()
+        )
+
+    exp = await get_exploration(session, exploration_id)
+    if not exp:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=ErrorResponse(status="error", message="Exploration not found").dict()
+        )
+
+    try:
+        await require_ro_exists(session, exploration_id)
+    except WorkflowError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=ErrorResponse(status="error", message=e.message).dict()
+        )
+
+    draft = await persona_service.create_manual_persona_draft(
+        exploration_id, workspace_id, current_user.id, payload
+    )
+    # Draft traits are persona inputs; clear downstream generated qualitative data.
+    await interview_service.clear_qualitative_outputs(workspace_id, exploration_id)
+    await report_cache.invalidate_cache(exploration_id)
+    return SuccessResponse(message="Persona draft created", data=draft)
 
 
 @router.get("/{persona_id}", response_model=SuccessResponse)
@@ -258,6 +351,9 @@ async def update_persona(
         )
 
     updated = await persona_service.update_persona(persona_id, payload)
+    # Persona edits change qualitative inputs; clear generated guide/interviews/reports.
+    await interview_service.clear_qualitative_outputs(workspace_id, exploration_id)
+    await report_cache.invalidate_cache(exploration_id)
     return SuccessResponse(message="Persona updated successfully", data=updated)
 
 
@@ -282,7 +378,143 @@ async def delete_persona(
         )
 
     await persona_service.delete_persona(persona_id)
+    # Removing a persona changes qualitative inputs; downstream generated data is stale.
+    await interview_service.clear_qualitative_outputs(workspace_id, exploration_id)
+    await report_cache.invalidate_cache(exploration_id)
     return DeleteResponse(message="Persona deleted successfully")
+
+
+@router.post("/bulk-download")
+async def bulk_download_personas(
+    workspace_id: str,
+    exploration_id: str,
+    payload: PersonaBulkDownloadRequest,
+    current_user: User = Depends(get_current_active_user),
+):
+    """Return a ZIP archive containing one JSON file per selected persona."""
+    import zipfile, io
+    from datetime import datetime as _dt
+    from fastapi.responses import StreamingResponse
+
+    members = await ws_service.list_workspace_members(workspace_id)
+    if not any(m["user_id"] == current_user.id for m in members):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=ErrorResponse(status="error", message="Not a member of this workspace").dict()
+        )
+
+    buf = io.BytesIO()
+    found = 0
+    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for pid in payload.persona_ids:
+            p = await persona_service.get_persona(pid)
+            # silently skip personas that don't belong to this exploration
+            if not p or str(p["exploration_id"]) != str(exploration_id):
+                continue
+            safe_name = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in (p.get("name") or pid))
+            import json as _json
+            def _serial(obj):
+                if isinstance(obj, _dt):
+                    return obj.isoformat()
+                raise TypeError
+            zf.writestr(f"{safe_name}.json", _json.dumps(p, default=_serial, ensure_ascii=False, indent=2))
+            found += 1
+
+    if found == 0:
+        raise HTTPException(status_code=404, detail=ErrorResponse(status="error", message="No matching personas found").dict())
+
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="personas_{exploration_id[:8]}.zip"'},
+    )
+
+
+@router.post("/{persona_id}/replicate", response_model=SuccessResponse)
+async def replicate_persona(
+    workspace_id: str,
+    exploration_id: str,
+    persona_id: str,
+    payload: PersonaReplicateRequest,
+    current_user: User = Depends(get_current_active_user),
+):
+    """Generate a country-localised copy of an existing persona."""
+    members = await ws_service.list_workspace_members(workspace_id)
+    if not any(m["user_id"] == current_user.id for m in members):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=ErrorResponse(status="error", message="Not a member of this workspace").dict()
+        )
+
+    source = await persona_service.get_persona(persona_id)
+    if not source or str(source["exploration_id"]) != str(exploration_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=ErrorResponse(status="error", message="Persona not found").dict()
+        )
+
+    try:
+        new_persona = await persona_service.replicate_persona(
+            source_persona_id=persona_id,
+            target_country=payload.target_country,
+            exploration_id=exploration_id,
+            workspace_id=workspace_id,
+            current_user_id=current_user.id,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=ErrorResponse(status="error", message=str(e)).dict()
+        )
+
+    return SuccessResponse(message="Persona replicated successfully", data=new_persona)
+
+
+@router.post("/{persona_id}/calibrate", response_model=SuccessResponse)
+async def calibrate_persona(
+    workspace_id: str,
+    exploration_id: str,
+    persona_id: str,
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Phase 2 of manual persona flow: enrich draft with AI behavioral depth.
+    Uses stored raw_traits from the draft; updates the persona in-place.
+    Idempotent — calling on an already-calibrated persona returns it unchanged.
+    """
+    if not await ws_service.is_workspace_admin(workspace_id, current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=ErrorResponse(status="error", message="Only workspace admins can calibrate personas").dict()
+        )
+
+    existing = await persona_service.get_persona(persona_id)
+    if not existing or str(existing["exploration_id"]) != str(exploration_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=ErrorResponse(status="error", message="Persona not found").dict()
+        )
+
+    try:
+        calibrated = await persona_service.calibrate_manual_persona(persona_id, exploration_id)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=ErrorResponse(status="error", message=str(e)).dict()
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail={"status": "error", "message": str(e), "type": e.__class__.__name__}
+        )
+
+    if existing.get("calibration_status") != "calibrated":
+        # Calibration changes persona content; generated qualitative outputs must be rebuilt.
+        await interview_service.clear_qualitative_outputs(workspace_id, exploration_id)
+        await report_cache.invalidate_cache(exploration_id)
+
+    return SuccessResponse(message="Persona calibrated successfully", data=calibrated)
 
 
 @router.get("/{persona_id}/preview", response_model=SuccessResponse)
@@ -399,6 +631,47 @@ async def validate_persona_traits(
     return validation
 
 
+@router.get("/{persona_id}/download")
+async def download_persona(
+    workspace_id: str,
+    exploration_id: str,
+    persona_id: str,
+    current_user: User = Depends(get_current_active_user),
+):
+    """Return full persona data as a downloadable JSON file."""
+    members = await ws_service.list_workspace_members(workspace_id)
+    if not any(m["user_id"] == current_user.id for m in members):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=ErrorResponse(status="error", message="You are not a member of this workspace").dict()
+        )
+
+    p = await persona_service.get_persona(persona_id)
+    if not p or str(p["exploration_id"]) != str(exploration_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=ErrorResponse(status="error", message="Persona not found").dict()
+        )
+
+    safe_name = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in (p.get("name") or "persona"))
+    filename = f"persona_{safe_name}.json"
+
+    import json as _json
+    from datetime import datetime
+
+    def _serialise(obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        raise TypeError(f"Not serialisable: {type(obj)}")
+
+    content = _json.dumps(p, default=_serialise, ensure_ascii=False, indent=2)
+
+    return JSONResponse(
+        content=_json.loads(content),
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.put("/{persona_id}/backstory", response_model=PersonaBackstoryOut)
 async def save_persona_backstory(
     persona_id: str,
@@ -414,6 +687,10 @@ async def save_persona_backstory(
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+    # Backstory is persona input; clear generated qualitative outputs tied to it.
+    await interview_service.clear_qualitative_outputs(persona.workspace_id, persona.exploration_id)
+    await report_cache.invalidate_cache(persona.exploration_id)
 
     return PersonaBackstoryOut(
         persona_id=persona.id,

@@ -1,9 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { TbPencil, TbTrash } from 'react-icons/tb';
 import SpIcon from '../../../SPIcon';
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { DeleteAccountModal } from '../SettingModal';
+import { updateUser, logout } from '../../../../redux/slices/authSlice';
+import axiosInstance from '../../../../utils/axiosConfig';
+import { useQueryClient } from '@tanstack/react-query';
 import './AccountStyles.css';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -130,6 +133,8 @@ const buildProfileFromUser = (user: AuthUser | null): ProfileState => {
 
 const Account: React.FC = () => {
   const navigate = useNavigate();
+  const dispatch = useDispatch();
+  const queryClient = useQueryClient();
   const { user } = useSelector((state: RootState) => state.auth);
 
   const [profile, setProfile] = useState<ProfileState>(() =>
@@ -142,8 +147,10 @@ const Account: React.FC = () => {
 
   const [errors, setErrors] = useState<ProfileErrors>({});
   const [saving, setSaving] = useState(false);
-  const [savedAt] = useState<string>('30 sec ago');
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleChange = (
@@ -166,9 +173,26 @@ const Account: React.FC = () => {
   const handleSave = async () => {
     if (!validate()) return;
     setSaving(true);
+    setSaveError(null);
     try {
-      // TODO: wire to profile update API
-      await new Promise((r) => setTimeout(r, 600));
+      const res = await axiosInstance.patch('/auth/me', {
+        first_name: profile.firstName,
+        last_name: profile.lastName,
+        phone: profile.phone || null,
+      });
+      // Sync updated name/phone back into Redux so all components reflect the change
+      if (res.data?.data) {
+        dispatch(updateUser({
+          full_name: res.data.data.full_name,
+          first_name: res.data.data.first_name,
+          last_name: res.data.data.last_name,
+          phone: res.data.data.phone,
+        }));
+      }
+      const now = new Date();
+      setSavedAt(`${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}`);
+    } catch (err: any) {
+      setSaveError(err?.message || err?.response?.data?.message || 'Failed to save profile.');
     } finally {
       setSaving(false);
     }
@@ -192,10 +216,17 @@ const Account: React.FC = () => {
       <div className="ap-page">
 
         {/* Auto-save indicator */}
-        <div className="ap-autosave">
-          <span className="ap-autosave-dot" />
-          Auto saved: {savedAt}
-        </div>
+        {savedAt && (
+          <div className="ap-autosave">
+            <span className="ap-autosave-dot" />
+            Saved at {savedAt}
+          </div>
+        )}
+        {saveError && (
+          <div className="ap-autosave" style={{ color: '#e55' }}>
+            {saveError}
+          </div>
+        )}
 
         {/* Profile card */}
         <div className="ap-card">
@@ -333,10 +364,24 @@ const Account: React.FC = () => {
 
       <DeleteAccountModal
         isOpen={showDeleteModal}
-        onClose={() => setShowDeleteModal(false)}
+        onClose={() => !deleting && setShowDeleteModal(false)}
         onConfirm={async () => {
-          // TODO: call delete account API here, then clear auth state
-          navigate('/login');
+          setDeleting(true);
+          try {
+            await axiosInstance.delete('/auth/me');
+            queryClient.clear();
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            dispatch(logout());
+            navigate('/login');
+          } catch (err: any) {
+            setSaveError(
+              err?.response?.data?.message || 'Failed to delete account. Please try again.'
+            );
+            setShowDeleteModal(false);
+          } finally {
+            setDeleting(false);
+          }
         }}
       />
     </>

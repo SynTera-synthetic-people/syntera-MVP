@@ -125,6 +125,11 @@ const CreateExploration: React.FC<CreateExplorationProps> = ({ onClose, workspac
       return;
     }
 
+    if (!isEditMode && !workspaceId) {
+      setErrors({ title: "No workspace selected. Please create a workspace first." });
+      return;
+    }
+
     try {
       let result: any;
 
@@ -152,16 +157,17 @@ const CreateExploration: React.FC<CreateExplorationProps> = ({ onClose, workspac
         );
       }
 
-      // API returns { status, message, data: { id, ... } } or { id, ... } directly
-      const expId =
-        result?.data?.id ||
-        result?.id ||
-        explorationId;
+      if (isEditMode) {
+        // Edit flow: stay on list, toast already shown by useUpdateExploration
+        handleClose();
+        return;
+      }
 
-      console.log("Navigation result:", result, "expId:", expId, "workspaceId:", workspaceId);
+      // Create flow: navigate into the new exploration's research mode
+      const expId = result?.data?.id || result?.id;
 
       if (!expId) {
-        console.error("No exploration ID returned from mutation");
+        console.error("No exploration ID returned from create mutation");
         return;
       }
 

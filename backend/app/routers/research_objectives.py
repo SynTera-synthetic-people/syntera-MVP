@@ -14,6 +14,9 @@ from app.models.exploration import Exploration
 from app.schemas.response import SuccessResponse, DeleteResponse, ErrorResponse
 from app.schemas.research_objectives import ResearchObjectivesCreate, ResearchObjectivesUpdate, ResearchObjectivesOut
 from app.services import research_objectives as exp_service
+from app.services import persona as persona_service
+from app.services import interview as interview_service
+from app.services import report_orchestrator as report_cache
 from app.services.exploration import get_exploration_by_id
 from app.services import workspace as ws_service
 from app.services import templates as template_service
@@ -238,6 +241,12 @@ async def update_objective(
     if file and updated:
         await exp_service.add_file(updated.id, stored_name, file.filename, size, ctype)
         updated = await exp_service.get_res_obj(updated.id)
+
+    if description is not None or file:
+        # RO changes invalidate every downstream AI artifact; clear them so the next click regenerates.
+        await interview_service.clear_qualitative_outputs(exploration.workspace_id, exploration_id)
+        await persona_service.clear_personas_for_exploration(exploration.workspace_id, exploration_id)
+        await report_cache.invalidate_cache(exploration_id)
 
     return SuccessResponse(
         message="The description is validated. Research objective updated successfully.",

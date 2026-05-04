@@ -13,6 +13,7 @@ from app.services.omi import build_persona_validation_prompt, PERSONA_VALIDATION
 from app.services.omi import call_omi
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy import delete
 from app.models.persona import Persona
 
 
@@ -95,7 +96,140 @@ async def create_persona(workspace_id: str, user_id: str, data: PersonaCreate) -
 
         return persona_to_dict(p)
 
-def persona_to_dict(p: Persona) -> dict:
+def _persona_source(p: Persona) -> str:
+    """Derive source label from lineage and generation flag."""
+    if p.parent_persona_id:
+        return "replicated"
+    if p.auto_generated_persona:
+        return "omi"
+    return "manual"
+
+
+def _needs_human_creator(p: Persona) -> bool:
+    """Manual and replicated personas should display the user who created them."""
+    return bool(p.parent_persona_id) or not p.auto_generated_persona
+
+
+# Static platform methodology defaults shown in the Calibration Breakdown tab.
+# These represent Synthetic People's data infrastructure, not per-persona calculations.
+_CALIBRATION_BREAKDOWN_DEFAULTS = {
+    "real_actions_signal": {
+        "description": "Anchored in real people's action patterns, not self-reported opinions.",
+        "parameters_integrated": [
+            "Purchase & Transaction Receipts",
+            "Click intent",
+            "Interaction Trails",
+            "Feature Usage",
+            "Engagement Channel",
+            "Online Browsing Patterns",
+        ],
+        "techniques_used": [
+            "Purchase & Transaction Receipts",
+            "Click intent",
+            "Interaction Trails",
+            "Online Browsing Patterns",
+            "Feature Usage",
+            "Engagement Channel",
+        ],
+    },
+    "emotional_neural_layers": {
+        "description": "Models emotional responses that shape decisions before rationalization appears.",
+        "parameters_integrated": [
+            "Cognitive Load and Decision Tension",
+            "Subconscious Bias and Emotional Friction",
+            "Regret Anticipation & Risk Perception",
+            "Affective Response Modelling",
+        ],
+        "technology_used": [
+            "EOG (Eye Tracking)",
+            "ECG (Electrocardiogram)",
+            "GSR (Galvanic Skin Response)",
+            "EMG (Electromyography)",
+            "PSG (Polysomnography)",
+            "ERP (Event Related Potential)",
+        ],
+    },
+    "validated_studies": {
+        "description": "Calibrated against credible consumer and behavioural studies.",
+        "technology_used": [
+            "FGDs",
+            "Survey",
+            "Longitudinal Studies",
+            "Academic behaviour science benchmark",
+            "CATI interviews and ethnographic research",
+            "Thought Leaderships, White papers, Articles",
+        ],
+    },
+}
+
+_CONFIDENCE_LABEL_MAP = {
+    "volume": "Volume",
+    "source_diversity": "Source Diversity",
+    "recency": "Recency",
+    "signal_clarity": "Signal Clarity",
+    "ro_alignment": "RO Alignment",
+}
+
+
+def _build_calibration_breakdown(persona_details: Optional[dict]) -> dict:
+    """
+    Assembles calibration_breakdown for the detail page.
+    multi_platform_conversations is populated from evidence_snapshot (per-persona).
+    The other 3 sections are platform methodology constants with optional AI overrides.
+    Always returns a full dict — never None.
+    """
+    details = persona_details or {}
+    evidence = details.get("evidence_snapshot") or {}
+
+    # multi_platform_conversations — derive from web research evidence_snapshot
+    total_convs = evidence.get("total_conversations", 0)
+    sources = evidence.get("sources") or []
+    platforms = [s.get("platform") for s in sources if s.get("platform")]
+
+    conf_breakdown = evidence.get("confidence_breakdown") or {}
+    key_attributes = (
+        [_CONFIDENCE_LABEL_MAP.get(k, k.replace("_", " ").title()) for k in conf_breakdown]
+        or ["Volume", "Recency", "RO Alignment", "Source Diversity", "Signal Clarity", "Platforms Covered"]
+    )
+
+    # If the AI already produced a calibration_breakdown (future-proof), respect it
+    existing = details.get("calibration_breakdown") or {}
+
+    return {
+        "real_actions_signal": existing.get("real_actions_signal") or {
+            **_CALIBRATION_BREAKDOWN_DEFAULTS["real_actions_signal"],
+            # people_analysed is an optional AI-generated field; 0 means unavailable
+            "count": details.get("people_analysed") or 0,
+        },
+        "emotional_neural_layers": existing.get("emotional_neural_layers") or {
+            **_CALIBRATION_BREAKDOWN_DEFAULTS["emotional_neural_layers"],
+            "count": 0,
+        },
+        "validated_studies": existing.get("validated_studies") or {
+            **_CALIBRATION_BREAKDOWN_DEFAULTS["validated_studies"],
+            "count": 0,
+        },
+        "multi_platform_conversations": existing.get("multi_platform_conversations") or {
+            "description": "Calibrated against credible consumer and behavioural studies.",
+            "count": total_convs,
+            "key_attributes": key_attributes,
+            "platforms_covered": platforms,
+        },
+    }
+
+
+def persona_to_dict(p: Persona, creator_full_name: Optional[str] = None) -> dict:
+    if p.parent_persona_id:
+        created_by_name = creator_full_name or "Unknown"
+    elif p.auto_generated_persona:
+        created_by_name = "Omi"
+    else:
+        created_by_name = creator_full_name or "Unknown"
+
+    persona_details = p.persona_details or {}
+    ocean_profile = p.ocean_profile
+    if not ocean_profile and isinstance(persona_details, dict):
+        ocean_profile = persona_details.get("ocean_profile")
 
     return {
         "id": p.id,
@@ -133,38 +267,88 @@ def persona_to_dict(p: Persona) -> dict:
 
         "digital_activity": p.digital_activity,
         "preferences": p.preferences,
-        
-        "backstory": p.backstory,
-        # "ocean_profile": p.ocean_profile,
 
-        # "sample_size": p.sample_size,
+        "backstory": p.backstory,
+
         "created_by": p.created_by,
+        "created_by_name": created_by_name,
+        "calibration_confidence": p.calibration_confidence,
         "created_at": p.created_at,
         "auto_generated_persona": p.auto_generated_persona,
-        "persona_details":p.persona_details,
+        "persona_source": _persona_source(p),
+        "parent_persona_id": p.parent_persona_id,
+        "calibration_status": p.calibration_status,
+        "persona_details": p.persona_details,
+        # Flat column exposed separately so frontend doesn't have to dig into persona_details
+        "ocean_profile": ocean_profile,
+        # Assembled for the Calibration Breakdown tab; never None
+        "calibration_breakdown": _build_calibration_breakdown(persona_details),
     }
 
 async def get_persona(persona_id: str) -> Optional[dict]:
+    from app.models.user import User
     async with AsyncSession(async_engine) as session:
-        persona_query = select(Persona).where(Persona.id == persona_id)
-        res = await session.execute(persona_query)
+        res = await session.execute(select(Persona).where(Persona.id == persona_id))
         p = res.scalars().first()
-
         if not p:
             return None
 
-        return persona_to_dict(p)
+        full_name: Optional[str] = None
+        if _needs_human_creator(p):
+            user_res = await session.execute(select(User).where(User.id == p.created_by))
+            u = user_res.scalars().first()
+            if u:
+                full_name = u.full_name or f"{u.first_name} {u.last_name}".strip() or None
+
+        return persona_to_dict(p, creator_full_name=full_name)
+
 
 async def list_personas(workspace_id: str, exploration_id: str) -> List[dict]:
+    from app.models.user import User
     async with AsyncSession(async_engine) as session:
-        persona_query = select(Persona).where(
-            Persona.workspace_id == workspace_id,
-            Persona.exploration_id == exploration_id
+        res = await session.execute(
+            select(Persona).where(
+                Persona.workspace_id == workspace_id,
+                Persona.exploration_id == exploration_id,
+            )
         )
-        res = await session.execute(persona_query)
         rows = res.scalars().all()
 
-        return [persona_to_dict(p) for p in rows]
+        # Batch-fetch the unique human creators (skip Omi-generated ones)
+        human_ids = list({p.created_by for p in rows if _needs_human_creator(p)})
+        user_map: Dict[str, str] = {}
+        if human_ids:
+            user_res = await session.execute(select(User).where(User.id.in_(human_ids)))
+            for u in user_res.scalars().all():
+                display = u.full_name or f"{u.first_name} {u.last_name}".strip() or None
+                if display:
+                    user_map[u.id] = display
+
+        return [
+            persona_to_dict(p, creator_full_name=user_map.get(p.created_by))
+            for p in rows
+        ]
+
+
+async def list_non_draft_personas(workspace_id: str, exploration_id: str) -> List[dict]:
+    """Return saved personas that are already usable, so Omi does not regenerate them."""
+    personas = await list_personas(workspace_id, exploration_id)
+    return [
+        p for p in personas
+        if p.get("calibration_status") != "draft"
+    ]
+
+
+async def clear_personas_for_exploration(workspace_id: str, exploration_id: str) -> None:
+    """Clear personas after RO edits so the next trigger can regenerate against new input."""
+    async with AsyncSession(async_engine) as session:
+        await session.execute(
+            delete(Persona).where(
+                Persona.workspace_id == workspace_id,
+                Persona.exploration_id == exploration_id,
+            )
+        )
+        await session.commit()
 
 
 def list_to_string(value, sep=", "):
@@ -218,6 +402,117 @@ async def delete_persona(persona_id: str) -> bool:
         await session.commit()
 
         return True
+_REPLICATE_PROMPT = """
+You are adapting an existing consumer persona for a new geographic market.
+
+SOURCE PERSONA (JSON):
+{source_json}
+
+TARGET COUNTRY: {target_country}
+
+Rules:
+1. Keep the core archetype, behavioral patterns, and psychographic profile intact.
+2. Update ONLY: location fields, income ranges (local currency/norms), education system references, platform/brand names relevant to {target_country}, cultural values where they differ.
+3. Return a valid JSON object containing ALL fields from the source, adapted for {target_country}.
+4. Return ONLY the JSON object — no explanation, no markdown fences.
+""".strip()
+
+
+async def replicate_persona(
+    source_persona_id: str,
+    target_country: str,
+    exploration_id: str,
+    workspace_id: str,
+    current_user_id: str,
+) -> dict:
+    """
+    Clone an existing persona and localise it for a different country.
+    Uses a cheap, targeted LLM call (no web search) since we already have
+    the source behavioural data — we only need geographic adaptation.
+    """
+    source = await get_persona(source_persona_id)
+    if not source:
+        raise ValueError("Source persona not found")
+
+    source_details = source.get("persona_details") or {}
+    if not source_details:
+        raise ValueError("Source persona has no details to replicate")
+    if source.get("calibration_status") == "draft":
+        raise ValueError("Draft personas must be calibrated before replication")
+
+    prompt = _REPLICATE_PROMPT.format(
+        source_json=json.dumps(source_details, ensure_ascii=False, default=str),
+        target_country=target_country,
+    )
+
+    response = await client.chat.completions.create(
+        model="gpt-4o-mini",   # cheap model — no web search needed for geo-adaptation
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.4,
+        response_format={"type": "json_object"},
+    )
+    raw = response.choices[0].message.content
+    adapted: dict = json.loads(raw)
+
+    from app.services.auto_generated_persona import _extract_calibration_confidence
+    from types import SimpleNamespace
+    d = SimpleNamespace(**{**source_details, **adapted})
+
+    new_id = generate_id()
+    async with AsyncSession(async_engine) as session:
+        p = Persona(
+            id=new_id,
+            exploration_id=exploration_id,
+            workspace_id=workspace_id,
+            name=adapted.get("name") or source["name"],
+            age_range=adapted.get("age_range") or getattr(d, "age_range", ""),
+            gender=adapted.get("gender") or getattr(d, "gender", ""),
+            location_country=target_country,
+            location_state=adapted.get("location_state") or "",
+            education_level=adapted.get("education_level") or getattr(d, "education_level", ""),
+            occupation=adapted.get("occupation") or getattr(d, "occupation", ""),
+            income_range=adapted.get("income_range") or getattr(d, "income_range", ""),
+            family_size=adapted.get("family_size") or getattr(d, "family_size", ""),
+            geography=adapted.get("geography") or target_country,
+            lifestyle=adapted.get("lifestyle") or getattr(d, "lifestyle", ""),
+            values=adapted.get("values") or getattr(d, "values", ""),
+            personality=adapted.get("personality") or getattr(d, "personality", ""),
+            interests=adapted.get("interests") or getattr(d, "interests", ""),
+            motivations=adapted.get("motivations") or getattr(d, "motivations", ""),
+            brand_sensitivity=adapted.get("brand_sensitivity") or getattr(d, "brand_sensitivity", ""),
+            price_sensitivity=adapted.get("price_sensitivity") or getattr(d, "price_sensitivity", ""),
+            mobility=adapted.get("mobility") or getattr(d, "mobility", ""),
+            accommodation=adapted.get("accommodation") or getattr(d, "accommodation", ""),
+            marital_status=adapted.get("marital_status") or getattr(d, "marital_status", ""),
+            daily_rhythm=adapted.get("daily_rhythm") or getattr(d, "daily_rhythm", ""),
+            hobbies=adapted.get("hobbies") or getattr(d, "hobbies", ""),
+            professional_traits=adapted.get("professional_traits") or getattr(d, "professional_traits", ""),
+            digital_activity=adapted.get("digital_activity") or getattr(d, "digital_activity", ""),
+            preferences=adapted.get("preferences") or getattr(d, "preferences", ""),
+            backstory=adapted.get("backstory") or source.get("backstory") or "",
+            created_by=current_user_id,
+            persona_details=adapted,
+            auto_generated_persona=True,
+            parent_persona_id=source_persona_id,
+            calibration_status=source.get("calibration_status") or "calibrated",
+            calibration_confidence=_extract_calibration_confidence(adapted)
+                or source.get("calibration_confidence")
+                or 75,
+        )
+        session.add(p)
+        await session.commit()
+        await session.refresh(p)
+
+        from app.models.user import User
+        user_res = await session.execute(select(User).where(User.id == current_user_id))
+        u = user_res.scalars().first()
+        full_name = None
+        if u:
+            full_name = u.full_name or f"{u.first_name} {u.last_name}".strip() or None
+
+    return persona_to_dict(p, creator_full_name=full_name)
+
+
 async def total_sample_size(workspace_id: str, exploration_id: str) -> int:
     async with AsyncSession(async_engine) as session:
 
@@ -582,6 +877,177 @@ async def update_persona_backstory(
     await session.refresh(persona)
 
     return persona
+
+_CALIBRATION_PROMPT = """
+You are a consumer insights expert enriching a persona from structured researcher-provided traits.
+
+RESEARCH OBJECTIVE:
+{research_objective}
+
+PERSONA TRAITS (structured input from researcher):
+{raw_traits_json}
+
+YOUR TASK:
+1. Preserve ALL provided traits — never change or remove them.
+2. Infer and fill any missing demographic/psychographic fields using the traits as context.
+3. Add behavioral depth: barriers_pain_points, triggers_opportunities.
+4. Generate an ocean_profile (openness, conscientiousness, extraversion, agreeableness, neuroticism, each 0.0-1.0).
+5. Generate an evidence_snapshot with confidence_calculation_detail.value (float 0.0-1.0) and weighted_total.
+6. Write a backstory (2-3 sentences) if not already provided.
+
+Return a single valid JSON object with these exact keys:
+name, age_range, gender, location_country, location_state, education_level,
+occupation, income_range, family_size, geography, lifestyle, values, personality,
+interests, motivations, brand_sensitivity, price_sensitivity, mobility,
+accommodation, marital_status, daily_rhythm, hobbies, professional_traits,
+digital_activity, preferences, backstory, ocean_profile,
+barriers_pain_points, triggers_opportunities, evidence_snapshot
+
+Return ONLY the JSON — no markdown, no explanation.
+""".strip()
+
+
+async def create_manual_persona_draft(
+    exploration_id: str,
+    workspace_id: str,
+    user_id: str,
+    payload,  # ManualPersonaCreate — avoid circular import, resolved at call site
+) -> dict:
+    """
+    Creates a persona from structured form input without any AI call.
+    calibration_status="draft" signals the frontend that calibration is pending.
+    """
+    d = payload.demographics
+    psych = payload.psychological
+    beh = payload.behavioural
+    add = payload.additional_info
+
+    def _join(lst):
+        return ", ".join(str(v) for v in lst if v) if lst else None
+
+    occupation = (add.occupation if add and add.occupation else None) or d.occupation or ""
+
+    async with AsyncSession(async_engine) as session:
+        p = Persona(
+            id=generate_id(),
+            exploration_id=exploration_id,
+            workspace_id=workspace_id,
+            name=payload.name or "Persona Draft",
+            age_range=d.age_range,
+            gender=d.gender,
+            location_country=d.location_country or "",
+            location_state=d.location_state,
+            education_level=d.education_level or "",
+            occupation=occupation,
+            income_range=d.income_range or "",
+            family_size=d.family_size,
+            geography=d.geography,
+            marital_status=d.marital_status,
+            lifestyle=_join(psych.lifestyle) if psych else None,
+            values=_join(psych.values) if psych else None,
+            personality=_join(psych.personality) if psych else None,
+            interests=psych.interests if psych else None,       # JSONB list
+            motivations=_join(psych.motivations) if psych else None,
+            brand_sensitivity=beh.brand_sensitivity if beh else None,
+            price_sensitivity=beh.price_sensitivity if beh else None,
+            digital_activity=beh.digital_behaviour if beh else None,
+            backstory=payload.formative_experience,
+            created_by=user_id,
+            auto_generated_persona=False,
+            calibration_status="draft",
+            calibration_confidence=None,
+            # Store full structured input so the calibrate endpoint can use it
+            persona_details={"raw_traits": payload.dict()},
+        )
+        session.add(p)
+        await session.commit()
+        await session.refresh(p)
+
+    return persona_to_dict(p)
+
+
+async def calibrate_manual_persona(persona_id: str, exploration_id: str) -> dict:
+    """
+    AI-enriches a draft persona in-place using the stored raw_traits.
+    Uses gpt-4o (no web search) — traits are already provided, just needs depth.
+    Sets calibration_status="calibrated" and updates calibration_confidence.
+    """
+    from app.services.auto_generated_persona import get_description, _extract_calibration_confidence
+
+    source = await get_persona(persona_id)
+    if not source:
+        raise ValueError("Persona not found")
+
+    # Already calibrated — idempotent
+    if source.get("calibration_status") == "calibrated":
+        return source
+
+    # Raw traits stored at draft creation; fallback to flat persona dict
+    details = source.get("persona_details") or {}
+    raw_traits = details.get("raw_traits") or source
+
+    research_objective = await get_description(exploration_id) or ""
+
+    prompt = _CALIBRATION_PROMPT.format(
+        research_objective=research_objective,
+        raw_traits_json=json.dumps(raw_traits, ensure_ascii=False, default=str),
+    )
+
+    response = await client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.4,
+        response_format={"type": "json_object"},
+    )
+    enriched: dict = json.loads(response.choices[0].message.content)
+
+    async with AsyncSession(async_engine) as session:
+        res = await session.execute(select(Persona).where(Persona.id == persona_id))
+        p = res.scalars().first()
+        if not p:
+            raise ValueError("Persona not found")
+
+        # Update flat model columns — only overwrite if AI returned a non-empty value
+        _str_fields = (
+            "name", "age_range", "gender", "location_country", "location_state",
+            "education_level", "occupation", "income_range", "family_size",
+            "geography", "lifestyle", "values", "personality", "motivations",
+            "brand_sensitivity", "price_sensitivity", "mobility", "accommodation",
+            "marital_status", "daily_rhythm", "hobbies", "professional_traits",
+            "digital_activity", "preferences", "backstory",
+        )
+        for field in _str_fields:
+            val = enriched.get(field)
+            if val:
+                setattr(p, field, val if not isinstance(val, list)
+                        else ", ".join(str(v) for v in val))
+
+        if enriched.get("interests"):
+            raw_int = enriched["interests"]
+            p.interests = raw_int if isinstance(raw_int, list) else [raw_int]
+
+        p.ocean_profile = enriched.get("ocean_profile") or p.ocean_profile
+        p.calibration_confidence = _extract_calibration_confidence(enriched)
+        p.calibration_status = "calibrated"
+
+        # Merge enriched fields into persona_details (preserves raw_traits)
+        merged = dict(p.persona_details or {})
+        merged.update(enriched)
+        p.persona_details = merged
+
+        session.add(p)
+        await session.commit()
+        await session.refresh(p)
+
+        full_name: Optional[str] = None
+        from app.models.user import User
+        user_res = await session.execute(select(User).where(User.id == p.created_by))
+        u = user_res.scalars().first()
+        if u:
+            full_name = u.full_name or f"{u.first_name} {u.last_name}".strip() or None
+
+    return persona_to_dict(p, creator_full_name=full_name)
+
 
 async def get_personas_by_ids(
     persona_ids: List[str],

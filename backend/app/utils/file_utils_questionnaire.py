@@ -5,14 +5,10 @@ from typing import Tuple
 import mimetypes
 
 
-# Allow all formats we support
-ALLOWED_EXT = {
-    ".pdf", ".docx", ".txt",
-    ".xls", ".xlsx", ".csv",
-    ".png", ".jpg", ".jpeg"
-}
+# Design spec: PDF, Word, Excel only — 10 MB max
+ALLOWED_EXT = {".pdf", ".docx", ".doc", ".xls", ".xlsx"}
 
-MAX_FILE_BYTES = 20 * 1024 * 1024  # 20 MB
+MAX_FILE_BYTES = 10 * 1024 * 1024  # 10 MB
 
 UPLOAD_DIR = Path("uploads/questionnaire")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)

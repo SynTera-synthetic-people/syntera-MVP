@@ -6,6 +6,7 @@ const BASE_URL = API_CONFIG.BACKEND_URL || 'http://localhost:5000/api';
 // Create axios instance with base URL
 const axiosInstance = axios.create({
   baseURL: BASE_URL,
+  timeout: API_CONFIG.TIMEOUT || 15000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -44,10 +45,12 @@ axiosInstance.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // Token expired or invalid
+      // Token expired or invalid — clear auth and redirect
       localStorage.removeItem('token');
       localStorage.removeItem('user');
-      window.location.href = '/login';
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }

@@ -23,6 +23,12 @@ async def get_user_by_email(
     return result.scalars().first()
 
 
+def _split_name(full_name: str) -> tuple[str, str]:
+    """'John Michael Doe' → ('John', 'Michael Doe'). Safe for single-word names."""
+    parts = (full_name or "").strip().split(" ", 1)
+    return parts[0].strip(), parts[1].strip() if len(parts) > 1 else ""
+
+
 async def create_user(
     email: str,
     password: str,
@@ -33,10 +39,13 @@ async def create_user(
     account_tier: str = "free",
 ):
     hashed = hash_password(password)
+    first_name, last_name = _split_name(full_name)
 
     new_user = User(
         email=email,
-        full_name=full_name,
+        first_name=first_name,
+        last_name=last_name,
+        full_name=f"{first_name} {last_name}".strip(),
         hashed_password=hashed,
         role=role,
         is_verified=True,
@@ -171,3 +180,64 @@ async def change_password(
     await session.commit()
     logger.info("Password changed successfully", extra={"user_id": user.id})
     return True
+
+
+async def update_profile(
+    session: AsyncSession,
+    user: User,
+    first_name: str | None,
+    last_name: str | None,
+    phone: str | None,
+) -> User:
+    """
+    Update a user's profile fields.
+
+    - first_name / last_name are stored in their own columns.
+    - full_name is kept in sync as the denormalised join.
+    - Any field passed as None is left unchanged.
+    - phone can be set to an empty string to clear it.
+    """
+    new_first = first_name.strip() if first_name is not None else user.first_name
+    new_last = last_name.strip() if last_name is not None else user.last_name
+
+    if not new_first:
+        raise ValueError("First name cannot be empty.")
+
+    user.first_name = new_first
+    user.last_name = new_last
+    # Keep full_name in sync for backward compat
+    user.full_name = f"{new_first} {new_last}".strip()
+
+    if phone is not None:
+        # Empty string clears the phone number
+        user.phone = phone.strip() or None
+
+    session.add(user)
+    await session.commit()
+    await session.refresh(user)
+    logger.info("Profile updated", extra={"user_id": user.id})
+    return user
+
+
+async def delete_account(session: AsyncSession, user: User) -> None:
+    """
+    Soft-delete the user's own account.
+
+    - Marks the account as deleted and inactive so tokens are immediately rejected.
+    - Anonymises the email so the same address can be re-registered later.
+    - Does NOT hard-delete any rows so audit trails remain intact.
+    """
+    timestamp = int(datetime.utcnow().timestamp())
+    # Anonymise email to free the address for future re-registration
+    user.email = f"deleted_{user.id}_{timestamp}@deleted.local"
+    user.is_active = False
+    user.is_deleted = True
+    user.deleted_at = datetime.utcnow()
+    # Invalidate any pending reset / verification tokens so they can't be abused
+    user.reset_token = None
+    user.reset_token_expiry = None
+    user.verification_token = None
+    user.verification_expiry = None
+    session.add(user)
+    await session.commit()
+    logger.info("Account soft-deleted", extra={"user_id": user.id})

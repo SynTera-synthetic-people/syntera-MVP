@@ -142,7 +142,7 @@ const LandingPage: React.FC = () => {
           transition={{ delay: 0.35, duration: 0.4 }}
         >
           {!hasWorkspace && canCreateWorkspace ? (
-            // Admin with no workspace → create workspace first
+            // Enterprise admin with no workspace yet → create workspace first
             <button
               className="landing-cta-btn"
               onClick={() => setShowWorkspaceModal(true)}
@@ -151,7 +151,7 @@ const LandingPage: React.FC = () => {
               <span>Create Workspace</span>
             </button>
           ) : (
-            // Normal user or user with workspace → create exploration
+            // Has workspace (or trial user — personal workspace auto-created) → create exploration
             <button
               className="landing-cta-btn"
               onClick={() => setShowCreateExploration(true)}

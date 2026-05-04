@@ -94,4 +94,33 @@ export const workspaceService = {
       throw error.response?.data || error.message;
     }
   },
+
+  /**
+   * Update a workspace member's display name.
+   * Used by Settings > Team Management > Edit User modal.
+   */
+  updateMember: async (workspaceId, memberId, payload) => {
+    try {
+      const response = await axiosInstance.patch(
+        `/workspaces/${workspaceId}/members/${memberId}`,
+        payload,
+      );
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || error.message;
+    }
+  },
+
+  /**
+   * Fetch all unique members across every workspace visible to the caller.
+   * Used by Settings > Team Management (mode = 'team').
+   */
+  getOrganisationMembers: async () => {
+    try {
+      const response = await axiosInstance.get('/workspaces/members/all');
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || error.message;
+    }
+  },
 };

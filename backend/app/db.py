@@ -520,7 +520,14 @@ async def create_report_cache_table():
         await conn.execute(text("""
             CREATE UNIQUE INDEX IF NOT EXISTS uq_report_cache_quant
             ON report_cache (exploration_id, simulation_id, cta_type)
-            WHERE simulation_id IS NOT NULL
+            WHERE simulation_id IS NOT NULL"""))
+async def add_profile_columns():
+    """Safe migration: add first_name/last_name, profile, and soft-delete columns."""
+    async with async_engine.begin() as conn:
+        # Separate name columns
+        await conn.execute(text("""
+            ALTER TABLE "user"
+            ADD COLUMN IF NOT EXISTS first_name VARCHAR NOT NULL DEFAULT '';
         """))
 
 
@@ -591,4 +598,85 @@ async def migrate_source_content_json():
         await conn.execute(text("""
             ALTER TABLE sync_source.document
             ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
+        """))
+        await conn.execute(text("""
+            ALTER TABLE "user"
+            ADD COLUMN IF NOT EXISTS last_name VARCHAR NOT NULL DEFAULT '';
+        """))
+        # Backfill first_name / last_name from existing full_name rows
+        await conn.execute(text("""
+            UPDATE "user"
+            SET
+                first_name = TRIM(SPLIT_PART(full_name, ' ', 1)),
+                last_name  = TRIM(
+                    CASE
+                        WHEN POSITION(' ' IN full_name) > 0
+                        THEN SUBSTRING(full_name FROM POSITION(' ' IN full_name) + 1)
+                        ELSE ''
+                    END
+                )
+            WHERE first_name = '';
+        """))
+        # Profile fields
+        await conn.execute(text("""
+            ALTER TABLE "user"
+            ADD COLUMN IF NOT EXISTS phone VARCHAR;
+        """))
+        await conn.execute(text("""
+            ALTER TABLE "user"
+            ADD COLUMN IF NOT EXISTS avatar_url VARCHAR;
+        """))
+        # Soft-delete fields
+        await conn.execute(text("""
+            ALTER TABLE "user"
+            ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT FALSE;
+        """))
+        await conn.execute(text("""
+            ALTER TABLE "user"
+            ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP WITHOUT TIME ZONE;
+        """))
+        # Index for fast active-user lookups
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS ix_user_is_deleted
+            ON "user" (is_deleted);
+        """))
+
+
+async def add_exploration_tracking_columns():
+    """Safe migration: add deleted_by and updated_by tracking to explorations."""
+    async with async_engine.begin() as conn:
+        await conn.execute(text("""
+            ALTER TABLE explorations
+            ADD COLUMN IF NOT EXISTS deleted_by VARCHAR REFERENCES "user"(id) ON DELETE SET NULL;
+        """))
+        await conn.execute(text("""
+            ALTER TABLE explorations
+            ADD COLUMN IF NOT EXISTS updated_by VARCHAR REFERENCES "user"(id) ON DELETE SET NULL;
+        """))
+
+
+async def add_persona_calibration_column():
+    """Safe migration: add calibration_confidence score to persona."""
+    async with async_engine.begin() as conn:
+        await conn.execute(text("""
+            ALTER TABLE persona
+            ADD COLUMN IF NOT EXISTS calibration_confidence INTEGER;
+        """))
+
+
+async def add_persona_lineage_columns():
+    """Safe migration: add parent_persona_id for replication traceability."""
+    async with async_engine.begin() as conn:
+        await conn.execute(text("""
+            ALTER TABLE persona
+            ADD COLUMN IF NOT EXISTS parent_persona_id VARCHAR;
+        """))
+
+
+async def add_persona_status_column():
+    """Safe migration: add calibration_status for draft/calibrated lifecycle."""
+    async with async_engine.begin() as conn:
+        await conn.execute(text("""
+            ALTER TABLE persona
+            ADD COLUMN IF NOT EXISTS calibration_status VARCHAR;
         """))

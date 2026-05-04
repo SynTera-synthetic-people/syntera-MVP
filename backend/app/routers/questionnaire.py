@@ -77,24 +77,40 @@ async def upload_questionnaire_file(
 
     try:
         saved_path, stored_name, _ = await save_upload_file(file)
+    except ValueError as e:
+        msg = str(e)
+        if "exceed" in msg.lower() or "size" in msg.lower():
+            raise HTTPException(
+                413,
+                ErrorResponse(status="error", message="File may exceed size limits of 2MB").dict(),
+            )
+        raise HTTPException(
+            422,
+            ErrorResponse(
+                status="error",
+                message="The file is in an unsupported format (PDF, Word, Excel only)",
+            ).dict(),
+        )
     except Exception as e:
         raise HTTPException(
             400,
-            ErrorResponse(
-                status="error",
-                message=f"Failed to save file: {str(e)}"
-            ).dict()
+            ErrorResponse(status="error", message=f"Failed to save file: {str(e)}").dict(),
         )
 
     try:
         parsed = parse_file(saved_path, file.filename)
-    except Exception as e:
+    except ValueError as e:
         raise HTTPException(
-            500,
+            422,
             ErrorResponse(
                 status="error",
-                message=f"Failed to parse file: {str(e)}"
-            ).dict()
+                message="The file is in an unsupported format (PDF, Word, Excel only)",
+            ).dict(),
+        )
+    except Exception as e:
+        raise HTTPException(
+            422,
+            ErrorResponse(status="error", message=f"Failed to parse file: {str(e)}").dict(),
         )
 
     try:
@@ -138,6 +154,14 @@ async def generate_questionnaire_api(
     simulation = await get_simulation(payload.simulation_id)
     if not simulation:
         raise HTTPException(404, "Population simulation not found")
+
+    # Idempotency: reuse existing questionnaire instead of re-running the LLM.
+    if payload.simulation_id:
+        existing = await service.get_questionnaire_by_simulation(
+            workspace_id, payload.exploration_id, payload.simulation_id
+        )
+        if existing:
+            return SuccessResponse(message="Questionnaire already exists", data={"questionnaire": existing})
 
     if not payload.persona_id:
         raise HTTPException(400, "persona_id must be provided")

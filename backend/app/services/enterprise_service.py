@@ -114,8 +114,11 @@ async def provision_enterprise_org(
     await session.flush()   # get org.id without committing
 
     # Create the enterprise admin user, linked to this org
+    _admin_parts = (data.admin_full_name or "").strip().split(" ", 1)
     admin_user = User(
-        full_name=data.admin_full_name,
+        first_name=_admin_parts[0],
+        last_name=_admin_parts[1] if len(_admin_parts) > 1 else "",
+        full_name=(data.admin_full_name or "").strip(),
         email=data.admin_email,
         hashed_password=hash_password(temp_password),
         role="enterprise_admin",
@@ -181,8 +184,11 @@ async def add_enterprise_member(
 
     temp_password = secrets.token_urlsafe(12)
 
+    _member_parts = (data.full_name or "").strip().split(" ", 1)
     user = User(
-        full_name=data.full_name,
+        first_name=_member_parts[0],
+        last_name=_member_parts[1] if len(_member_parts) > 1 else "",
+        full_name=(data.full_name or "").strip(),
         email=data.email,
         hashed_password=hash_password(temp_password),
         role="user",

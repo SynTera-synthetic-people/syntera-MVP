@@ -1279,6 +1279,12 @@ const PersonaBuilder: React.FC = () => {
 
   const handleAIGenerate = async () => {
     try {
+      if (savedPersonasFromAPI.some(p => p?.calibration_status !== "draft")) {
+        // Existing personas are reusable; do not trigger Omi generation again.
+        setShowGrid(true);
+        return;
+      }
+
       setIsMockGenerating(true);
       setIsNavigatingToPreview(true);
       await generatePersonas();
