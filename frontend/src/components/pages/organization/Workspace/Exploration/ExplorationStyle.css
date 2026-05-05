@@ -109,6 +109,63 @@
 .create-btn-wrapper {
   position: relative;
 }
+/* ── Trial limit tooltip (shown on disabled Create Exploration button) ── */
+.trial-limit-tooltip {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 10px);
+  z-index: 200;
+  width: 22rem;
+  padding: 14px 16px;
+  background: #1a1d24;
+  border: 1px solid #2a2d35;
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+  pointer-events: auto;
+}
+
+.trial-limit-tooltip__title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0 0 4px;
+}
+
+.trial-limit-tooltip__body {
+  font-size: 13.5px;
+  color: #9ca3af;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.trial-limit-tooltip__upgrade-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #14b8a6;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: color 0.15s;
+}
+.trial-limit-tooltip__upgrade-link:hover {
+  color: #2dd4bf;
+}
+
+/* Upward-pointing arrow */
+.trial-limit-tooltip__arrow {
+  position: absolute;
+  top: -5px;
+  right: 1.5rem;
+  width: 10px;
+  height: 10px;
+  background: #1a1d24;
+  border-left: 1px solid #2a2d35;
+  border-top: 1px solid #2a2d35;
+  transform: rotate(45deg);
+}
 
 /* Top-bar kebab dropdown wrapper */
 .topbar-kebab-wrapper {

@@ -14,7 +14,7 @@ import UpgradeModal from "../../../Upgrade/UpgradeModal";
 /* ── Types ── */
 interface CreateExplorationProps {
   onClose?: () => void;
-  workspaceId?: string;
+  workspaceId?: string | undefined; 
   onTrialLimitReached?: () => void; // callback to parent when limit hit
 }
 

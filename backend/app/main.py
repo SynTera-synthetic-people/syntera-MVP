@@ -97,6 +97,7 @@ async def custom_http_exception_handler(request: Request, exc: HTTPException):
 @app.on_event("startup")
 async def startup():
     await init_db()
+    await migrate_source_content_json()
     await add_is_active_column()
     await add_trial_columns()
     await add_enterprise_columns()
@@ -113,8 +114,6 @@ async def startup():
     await ensure_superadmin_exists()
     
     await migrate_source_document_file_storage()
-    await migrate_source_content_json()
-
 
 app.include_router(auth.router)
 app.include_router(orgs.router)

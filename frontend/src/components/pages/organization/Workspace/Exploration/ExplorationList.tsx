@@ -179,10 +179,10 @@ const ExplorationList: React.FC = () => {
   const effectivelyMaxed = isTrialMaxedFromRedux || upgradeRequired;
 
   // UI state
-  const [showUpgrade, setShowUpgrade]           = useState(false);
-  const [showCreate, setShowCreate]             = useState(false);
-  const [showInviteModal, setShowInviteModal]   = useState(false);
-  const [openMenuId, setOpenMenuId]             = useState<string | null>(null);
+  const [showUpgrade, setShowUpgrade] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [isTooltipHovered, setIsTooltipHovered] = useState(false);
   const [csvDownloadingId, setCsvDownloadingId] = useState<string | null>(null);
   const [showEditWorkspace, setShowEditWorkspace] = useState(false);
@@ -195,16 +195,16 @@ const ExplorationList: React.FC = () => {
   const topKebabRef = useRef<HTMLDivElement>(null);
 
   // Search & filters
-  const [searchQuery, setSearchQuery]       = useState("");
-  const [statusFilter, setStatusFilter]     = useState<"all" | "ongoing" | "completed">("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "ongoing" | "completed">("all");
   const [audienceFilter, setAudienceFilter] = useState<"all" | "B2B" | "B2C">("all");
-  const [showStatusDrop, setShowStatusDrop]   = useState(false);
+  const [showStatusDrop, setShowStatusDrop] = useState(false);
   const [showAudienceDrop, setShowAudienceDrop] = useState(false);
-  const statusRef   = useRef<HTMLDivElement>(null);
+  const statusRef = useRef<HTMLDivElement>(null);
   const audienceRef = useRef<HTMLDivElement>(null);
 
   // Delete modal
-  const [deleteModalId, setDeleteModalId]       = useState<string | null>(null);
+  const [deleteModalId, setDeleteModalId] = useState<string | null>(null);
   const [deleteModalTitle, setDeleteModalTitle] = useState<string>("");
 
   // Data fetching
@@ -354,7 +354,7 @@ const ExplorationList: React.FC = () => {
               <motion.button
                 whileHover={effectivelyMaxed ? {} : { scale: 1.02 }}
                 whileTap={effectivelyMaxed ? {} : { scale: 0.98 }}
-                onMouseEnter={() => !effectivelyMaxed && setIsTooltipHovered(true)}
+                onMouseEnter={() => setIsTooltipHovered(true)}
                 onMouseLeave={() => setIsTooltipHovered(false)}
                 onClick={() => !effectivelyMaxed && setShowCreate(true)}
                 disabled={effectivelyMaxed}
@@ -363,8 +363,33 @@ const ExplorationList: React.FC = () => {
                 <SpIcon name="sp-Edit-Add_Plus" />
                 <span>Create Exploration</span>
               </motion.button>
+
+              {isTooltipHovered && effectivelyMaxed && (
+                <motion.div
+                  initial={{ opacity: 0, y: 6, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  className="trial-limit-tooltip"
+                >
+                  <p className="trial-limit-tooltip__title">Trial limit reached.</p>
+                  <p className="trial-limit-tooltip__body">
+                    <button
+                      className="trial-limit-tooltip__upgrade-link"
+                      onClick={() => navigate('/main/settings')}
+                    >
+                      Upgrade
+                    </button>
+                    {' '}to continue exploring behavioural insights without limits.
+                  </p>
+                  <div className="trial-limit-tooltip__arrow" />
+                </motion.div>
+              )}
+
               {isTooltipHovered && !effectivelyMaxed && (
-                <motion.div initial={{ opacity: 0, y: 10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} className="create-tooltip">
+                <motion.div
+                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  className="create-tooltip"
+                >
                   Create a dedicated exploration for each research question or study.
                   <div className="tooltip-arrow" />
                 </motion.div>
@@ -450,9 +475,9 @@ const ExplorationList: React.FC = () => {
                 {showStatusDrop && (
                   <div className="filter-menu">
                     {([
-                      { value: "all",       label: "All Statuses" },
-                      { value: "ongoing",   label: "Ongoing"      },
-                      { value: "completed", label: "Completed"    },
+                      { value: "all", label: "All Statuses" },
+                      { value: "ongoing", label: "Ongoing" },
+                      { value: "completed", label: "Completed" },
                     ] as const).map((opt) => (
                       <div
                         key={opt.value}
@@ -481,8 +506,8 @@ const ExplorationList: React.FC = () => {
                   <div className="filter-menu">
                     {([
                       { value: "all", label: "All Types" },
-                      { value: "B2C", label: "B2C"       },
-                      { value: "B2B", label: "B2B"       },
+                      { value: "B2C", label: "B2C" },
+                      { value: "B2B", label: "B2B" },
                     ] as const).map((opt) => (
                       <div
                         key={opt.value}

@@ -645,87 +645,62 @@ export const HowBillingWorksModal: React.FC<HowBillingWorksModalProps> = ({
     <div className="sm-overlay" onClick={onClose}>
       <div
         className="sm-modal sm-modal--how-billing"
-        style={{ maxWidth: 480 }}
+        style={{ maxWidth: 520 }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header — centered title, X top-right */}
-        <div className="sm-hbw-header">
-          <button className="sm-close-btn sm-hbw-close" onClick={onClose} aria-label="Close">
+        {/* Header */}
+        <div className="sm-modal-header sm-modal-header--left">
+          <div className="sm-modal-titles sm-modal-titles--left">
+            <h2 className="sm-modal-title">How Billing Works</h2>
+            <p className="sm-modal-subtitle">
+              Understand how your usage is calculated and billed.
+            </p>
+          </div>
+          <button className="sm-close-btn" onClick={onClose} aria-label="Close">
             <TbX size={18} />
           </button>
-          <h2 className="sm-hbw-title">How Billing Works</h2>
         </div>
 
         {/* Body */}
-        <div className="sm-hbw-body">
-
-          {/* "1 Exploration includes" section */}
-          <div className="sm-hbw-includes">
-            <p className="sm-hbw-includes-heading">1 Exploration includes</p>
-            <ul className="sm-hbw-includes-list">
-              <li>4 manual/OMI generate personas</li>
-              <li>Unlimited sample size</li>
-              <li>Unlimited conversations</li>
-              <li>Decision intelligence reports</li>
-              <li>Data playground and more</li>
-            </ul>
+        <div className="sm-modal-body sm-modal-body--billing">
+          <div className="sm-billing-section">
+            <h3 className="sm-billing-section-title">Exploration Used</h3>
+            <p className="sm-billing-section-desc">
+              Number of explorations executed in the selected billing period. Your plan includes a set
+              number of explorations per billing cycle. Usage resets at the start of each new period.
+            </p>
           </div>
 
-          {/* Pricing columns */}
-          <div className="sm-hbw-pricing-row">
-            <div className="sm-hbw-pricing-col">
-              <p className="sm-hbw-pricing-label">Explorations</p>
-              <p className="sm-hbw-pricing-sub">Add as many as you need</p>
-              <div className="sm-hbw-pricing-amount">
-                <span className="sm-hbw-price">$2499</span>
-                <span className="sm-hbw-price-unit">/ Exploration</span>
-              </div>
-            </div>
-            <div className="sm-hbw-pricing-col">
-              <p className="sm-hbw-pricing-label">Additional Personas</p>
-              <p className="sm-hbw-pricing-sub">Add as many as you need</p>
-              <div className="sm-hbw-pricing-amount">
-                <span className="sm-hbw-price">$49</span>
-                <span className="sm-hbw-price-unit">/ Additional Persona</span>
-              </div>
-            </div>
+          <div className="sm-billing-divider" />
+
+          <div className="sm-billing-section">
+            <h3 className="sm-billing-section-title">Additional Personas</h3>
+            <p className="sm-billing-section-desc">
+              Each exploration includes 4 personas by default. Any personas added beyond that are
+              billed as additional personas — there is no cap, and they are billed as used.
+            </p>
           </div>
 
-          {/* Summary table */}
-          <div className="sm-hbw-summary">
-            <p className="sm-hbw-summary-title">Summary (May 2026)</p>
-            <div className="sm-hbw-summary-rows">
-              <div className="sm-hbw-summary-row">
-                <span>Exploration (200 x #2,499)</span>
-                <span>$499,800</span>
-              </div>
-              <div className="sm-hbw-summary-row">
-                <span>Additional Personas (24 x $49)</span>
-                <span>$499,800</span>
-              </div>
-            </div>
-            <div className="sm-hbw-summary-divider" />
-            <div className="sm-hbw-summary-rows">
-              <div className="sm-hbw-summary-row sm-hbw-summary-row--muted">
-                <span>Subtotal</span>
-                <span>$6,176</span>
-              </div>
-              <div className="sm-hbw-summary-row sm-hbw-summary-row--muted">
-                <span>Tax (18%)</span>
-                <span>$1,111</span>
-              </div>
-            </div>
-            <div className="sm-hbw-summary-divider" />
-            <div className="sm-hbw-summary-row sm-hbw-summary-total">
-              <span>Total</span>
-              <span>$7,285</span>
-            </div>
+          <div className="sm-billing-divider" />
+
+          <div className="sm-billing-section">
+            <h3 className="sm-billing-section-title">Amount Payable</h3>
+            <p className="sm-billing-section-desc">
+              Total payable for the selected period based on usage before taxes. Taxes are calculated
+              at checkout based on your billing address and applicable regional rates.
+            </p>
           </div>
 
-          {/* CTA */}
-          <button className="sm-hbw-cta" onClick={onClose}>
-            Ok, Got It
-          </button>
+          <div className="sm-billing-divider" />
+
+          <div className="sm-billing-section">
+            <h3 className="sm-billing-section-title">Usage Overview Chart</h3>
+            <p className="sm-billing-section-desc">
+              Monthly distribution of explorations (blue) and additional personas (pink) used across
+              the year. Switch between Monthly and Yearly views using the filter in the top-right of
+              the chart.
+            </p>
+          </div>
         </div>
       </div>
     </div>
@@ -800,7 +775,7 @@ export const SubmitQueryModal: React.FC<SubmitQueryModalProps> = ({
     setSubmitting(true); setSubmitError('');
     try {
       await onSubmit(subject, description);
-
+      onClose();
     } catch (err: any) {
       setSubmitError(err?.message || 'Failed to submit query. Please try again.');
     } finally {
@@ -913,12 +888,189 @@ export const SubmitQueryModal: React.FC<SubmitQueryModalProps> = ({
     </div>
   );
 };
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 10.  SHARE INVOICE BILLING MODAL
+//      Triggered by the "Share Invoice" button on the Amount Payable card.
+//      Figma: centered title, email input with + button, chip pills, Send btn.
+// ══════════════════════════════════════════════════════════════════════════════
+
+export interface ShareInvoiceBillingModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onSend: (emails: string[]) => Promise<void>;
+}
+
+const MAX_BILLING_RECIPIENTS = 5;
+const isValidBillingEmail = (val: string) =>
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val.trim());
+
+export const ShareInvoiceBillingModal: React.FC<ShareInvoiceBillingModalProps> = ({
+  isOpen, onClose, onSend,
+}) => {
+  const [inputVal, setInputVal]     = useState('');
+  const [emails, setEmails]         = useState<string[]>([]);
+  const [inputError, setInputError] = useState('');
+  const [sending, setSending]       = useState(false);
+  const [sendError, setSendError]   = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      setEmails([]);
+      setInputVal('');
+      setInputError('');
+      setSendError('');
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [isOpen, onClose]);
+
+  const addEmail = () => {
+    const val = inputVal.trim();
+    if (!val) return;
+    if (!isValidBillingEmail(val)) { setInputError('Enter a valid email address.'); return; }
+    if (emails.includes(val))      { setInputError('This email is already added.'); return; }
+    if (emails.length >= MAX_BILLING_RECIPIENTS) {
+      setInputError(`Maximum ${MAX_BILLING_RECIPIENTS} recipients allowed.`);
+      return;
+    }
+    setEmails(prev => [...prev, val]);
+    setInputVal('');
+    setInputError('');
+    inputRef.current?.focus();
+  };
+
+  const removeEmail = (email: string) =>
+    setEmails(prev => prev.filter(e => e !== email));
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') { e.preventDefault(); addEmail(); }
+    if (e.key === 'Backspace' && inputVal === '' && emails.length > 0)
+      setEmails(prev => prev.slice(0, -1));
+  };
+
+  const handleSend = async () => {
+    if (emails.length === 0) { setInputError('Add at least one email address.'); return; }
+    setSending(true);
+    setSendError('');
+    try {
+      await onSend(emails);
+      onClose();
+    } catch (err: any) {
+      setSendError(err?.message || 'Failed to send. Please try again.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="sm-overlay" onClick={onClose}>
+      <div
+        className="sm-modal sm-sib-modal"
+        style={{ maxWidth: 480 }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Close */}
+        <button className="sm-close-btn sm-sib-close" onClick={onClose} aria-label="Close">
+          <TbX size={18} />
+        </button>
+
+        {/* Header */}
+        <div className="sm-sib-header">
+          <h2 className="sm-sib-title">Share Invoice</h2>
+          <p className="sm-sib-subtitle">
+            Share this invoice with your team or stakeholders for review and process.
+          </p>
+        </div>
+
+        {/* Body */}
+        <div className="sm-sib-body">
+          {sendError && <p className="sm-error-msg">{sendError}</p>}
+
+          <div className="sm-sib-field">
+            <label className="sm-sib-label">
+              Email Address <span className="sm-required">*</span>
+            </label>
+
+            {/* Input + plus */}
+            <div className={`sm-sib-input-wrap ${inputError ? 'sm-sib-input-wrap--error' : ''}`}>
+              <input
+                ref={inputRef}
+                type="email"
+                className="sm-sib-input"
+                placeholder="Enter email addresses to share this invoice"
+                value={inputVal}
+                onChange={e => { setInputVal(e.target.value); setInputError(''); }}
+                onKeyDown={handleKeyDown}
+                disabled={emails.length >= MAX_BILLING_RECIPIENTS}
+              />
+              <button
+                className="sm-sib-add-btn"
+                onClick={addEmail}
+                disabled={emails.length >= MAX_BILLING_RECIPIENTS}
+                aria-label="Add email"
+                tabIndex={-1}
+              >
+                <TbPlus size={18} />
+              </button>
+            </div>
+
+            {inputError && <p className="sm-sib-field-error">{inputError}</p>}
+
+            {/* Chips — click to remove */}
+            {emails.length > 0 && (
+              <div className="sm-sib-chips">
+                {emails.map(email => (
+                  <button
+                    key={email}
+                    className="sm-sib-chip"
+                    onClick={() => removeEmail(email)}
+                    title="Click to remove"
+                  >
+                    {email}
+                    <TbX size={11} className="sm-sib-chip-x" />
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <p className="sm-sib-hint">
+              You can share this invoice with up to {MAX_BILLING_RECIPIENTS} recipients.
+            </p>
+          </div>
+
+          {/* Send button */}
+          <button
+            className="sm-sib-send-btn"
+            onClick={handleSend}
+            disabled={sending || emails.length === 0}
+          >
+            {sending ? 'Sending…' : 'Send Invoice'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 11.  QUERY SUCCESS MODAL
+// ══════════════════════════════════════════════════════════════════════════════
+
 export interface QuerySuccessModalProps {
   isOpen: boolean;
   onClose: () => void;
   queryNo?: string;
 }
- 
+
 export const QuerySuccessModal: React.FC<QuerySuccessModalProps> = ({
   isOpen, onClose, queryNo = 'XYZ',
 }) => {
@@ -928,9 +1080,9 @@ export const QuerySuccessModal: React.FC<QuerySuccessModalProps> = ({
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
   }, [isOpen, onClose]);
- 
+
   if (!isOpen) return null;
- 
+
   return (
     <div className="sm-overlay" onClick={onClose}>
       <div
@@ -941,7 +1093,7 @@ export const QuerySuccessModal: React.FC<QuerySuccessModalProps> = ({
         <button className="sm-close-btn sm-qs-close" onClick={onClose} aria-label="Close">
           <TbX size={18} />
         </button>
- 
+
         <div className="sm-qs-body">
           <div className="sm-qs-icon-wrap">
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none"
@@ -950,7 +1102,7 @@ export const QuerySuccessModal: React.FC<QuerySuccessModalProps> = ({
               <polyline points="20 6 9 17 4 12" />
             </svg>
           </div>
- 
+
           <h2 className="sm-qs-title">Thank you!</h2>
           <p className="sm-qs-desc">
             Query submitted successfully. Our team will come back within 48 hours.

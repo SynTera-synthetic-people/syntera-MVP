@@ -1,5 +1,5 @@
 import React, { useState, createContext, useContext } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import SpIcon from '../../SPIcon';
 
@@ -124,6 +124,7 @@ const HEADING: Record<string, string> = {
 
 const Settings: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const dispatch = useDispatch();
   const { selectedWorkspace, clearWorkspace } = useWorkspaceContext();
   const queryClient = useQueryClient();
@@ -142,7 +143,11 @@ const Settings: React.FC = () => {
     ? 'upgrade'
     : 'billing';
 
-  const [activeView, setActiveView] = useState<ActiveView>(defaultView);
+  // Read initial view from navigation state (e.g. when arriving from sidebar Upgrade button)
+  const navState = location.state as { initialView?: ActiveView } | null;
+  const initialView: ActiveView = navState?.initialView ?? defaultView;
+
+  const [activeView, setActiveView] = useState<ActiveView>(initialView);
   const [open, setOpen] = useState<OpenGroups>({
     org: true,
     billing: false,

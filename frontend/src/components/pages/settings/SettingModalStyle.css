@@ -489,186 +489,37 @@
    8. HOW BILLING WORKS MODAL
 ════════════════════════════════════════════════════════════════ */
 
-
 .sm-modal--how-billing {
-  background: var(--T-Base-B1, #08090a);
-  border-color: var(--T-GreyScale-Grey-700, #4F535F);
+  /* inherits sm-modal base */
 }
 
-/* Header: centered title, X absolutely top-right */
-.sm-hbw-header {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 28px 24px 16px;
+.sm-modal-body--billing {
+  gap: 0;
+  padding-top: 16px;
 }
 
-.sm-hbw-title {
-  font-size: 20px;
-  font-weight: 700;
-  color: #ffffff;
-  margin: 0;
-  letter-spacing: -0.3px;
-  text-align: center;
+.sm-billing-section {
+  padding: 16px 0;
 }
 
-.sm-hbw-close {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-}
-
-/* Body */
-.sm-hbw-body {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  padding: 0 24px 28px;
-}
-
-/* "1 Exploration includes" */
-.sm-hbw-includes-heading {
+.sm-billing-section-title {
   font-size: 14px;
   font-weight: 600;
   color: #f3f4f6;
-  margin: 0 0 10px;
-}
-
-.sm-hbw-includes-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.sm-hbw-includes-list li {
-  font-size: 13px;
-  color: #9ca3af;
-  padding-left: 14px;
-  position: relative;
-  line-height: 1.5;
-}
-
-.sm-hbw-includes-list li::before {
-  content: '•';
-  position: absolute;
-  left: 0;
-  color: #6b7280;
-}
-
-/* Pricing columns */
-.sm-hbw-pricing-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-
-.sm-hbw-pricing-col {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.sm-hbw-pricing-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: #e5e7eb;
-  margin: 0;
-}
-
-.sm-hbw-pricing-sub {
-  font-size: 12px;
-  color: #6b7280;
   margin: 0 0 6px;
 }
 
-.sm-hbw-pricing-amount {
-  display: flex;
-  align-items: baseline;
-  gap: 5px;
-}
-
-.sm-hbw-price {
-  font-size: 26px;
-  font-weight: 700;
-  color: #ffffff;
-  letter-spacing: -0.5px;
-  line-height: 1;
-}
-
-.sm-hbw-price-unit {
-  font-size: 12px;
-  color: #6b7280;
-}
-
-/* Summary table */
-.sm-hbw-summary {
-  background: var(--T-Base-B4, #1E2126);
-  border-radius: 16px;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.sm-hbw-summary-title {
+.sm-billing-section-desc {
   font-size: 13px;
-  font-weight: 600;
-  color: #e5e7eb;
-  margin: 0 0 4px;
-}
-
-.sm-hbw-summary-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.sm-hbw-summary-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 13px;
-  color: #d1d5db;
-}
-
-.sm-hbw-summary-row--muted {
   color: #9ca3af;
+  line-height: 1.65;
+  margin: 0;
 }
 
-.sm-hbw-summary-total {
-  font-size: 15px;
-  font-weight: 700;
-  color: #ffffff;
-}
-
-.sm-hbw-summary-divider {
+.sm-billing-divider {
   height: 1px;
-  background: rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.06);
   width: 100%;
-}
-
-/* CTA button */
-.sm-hbw-cta {
-  width: 100%;
-  padding: 13px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background: transparent;
-  color: #e5e7eb;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
-  letter-spacing: 0.1px;
-}
-
-.sm-hbw-cta:hover {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.25);
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -835,23 +686,236 @@
 }
 .sm-query-submit-btn:hover:not(:disabled) { background: #1d4ed8; }
 .sm-query-submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.sm-modal-header--space-between {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  padding: 24px 24px 0;
-  gap: 12px;
-}
- 
-/* Ensure left-aligned titles stack correctly */
-.sm-modal-titles--left {
-  text-align: left;
-  align-items: flex-start;
-  flex: 1;
-}
+
 /* ════════════════════════════════════════════════════════════════
-   10. QUERY SUCCESS MODAL  (sm-qs-*)
-   Add to SettingModalStyle.css
+   10. SHARE INVOICE BILLING MODAL  (sm-sib-*)
+   Triggered from Amount Payable card → Share Invoice button.
+   Figma: centered title, full-width email input + inline + btn,
+          wrapping chip pills, full-width blue Send Invoice btn.
+════════════════════════════════════════════════════════════════ */
+
+/* Modal shell overrides */
+.sm-sib-modal {
+  background: #0d0e12;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 24px;
+  overflow: visible;
+  position: relative;
+}
+
+/* X close — absolute top-right */
+.sm-sib-close {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  z-index: 1;
+}
+
+/* Header: centered title + subtitle */
+.sm-sib-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 44px 32px 0;
+  gap: 10px;
+}
+
+.sm-sib-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+  letter-spacing: -0.3px;
+  line-height: 1.2;
+}
+
+.sm-sib-subtitle {
+  font-size: 13.5px;
+  color: #9ca3af;
+  margin: 0;
+  line-height: 1.6;
+  max-width: 340px;
+}
+
+/* Body */
+.sm-sib-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 24px 28px 32px;
+}
+
+/* Field wrapper */
+.sm-sib-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-bottom: 20px;
+}
+
+/* Label */
+.sm-sib-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e5e7eb;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+/* Input + plus button wrapper */
+.sm-sib-input-wrap {
+  display: flex;
+  align-items: center;
+  background: #111318;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  overflow: hidden;
+  transition: border-color 0.15s;
+  margin-bottom: 12px;
+}
+
+.sm-sib-input-wrap:focus-within {
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+.sm-sib-input-wrap--error {
+  border-color: #f87171 !important;
+}
+
+.sm-sib-input {
+  flex: 1;
+  padding: 13px 16px;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #e5e7eb;
+  font-size: 13.5px;
+  font-family: inherit;
+  min-width: 0;
+}
+
+.sm-sib-input::placeholder {
+  color: #4b5563;
+}
+
+.sm-sib-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* + button inside input */
+.sm-sib-add-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  color: #9ca3af;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.sm-sib-add-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+  color: #e5e7eb;
+}
+
+.sm-sib-add-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* Field-level error */
+.sm-sib-field-error {
+  font-size: 12px;
+  color: #f87171;
+  margin: -8px 0 8px;
+}
+
+/* Email chips — wrapping flex grid matching Figma */
+.sm-sib-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+/* Individual chip — plain dark pill, click to remove */
+.sm-sib-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: #1a1b20;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 8px;
+  color: #d1d5db;
+  font-size: 13px;
+  font-family: inherit;
+  font-weight: 400;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+  line-height: 1;
+}
+
+.sm-sib-chip:hover {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+}
+
+.sm-sib-chip-x {
+  color: rgba(255, 255, 255, 0.3);
+  flex-shrink: 0;
+  transition: color 0.12s;
+}
+
+.sm-sib-chip:hover .sm-sib-chip-x {
+  color: #f87171;
+}
+
+/* Hint text */
+.sm-sib-hint {
+  font-size: 12px;
+  color: #6b7280;
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* Full-width blue Send Invoice button */
+.sm-sib-send-btn {
+  width: 100%;
+  padding: 15px;
+  border-radius: 10px;
+  border: none;
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s;
+  letter-spacing: 0.1px;
+}
+
+.sm-sib-send-btn:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.sm-sib-send-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   11. QUERY SUCCESS MODAL  (sm-qs-*)
 ════════════════════════════════════════════════════════════════ */
 
 .sm-qs-modal {
@@ -876,7 +940,6 @@
   gap: 0;
 }
 
-/* Green rounded-square icon */
 .sm-qs-icon-wrap {
   width: 68px;
   height: 68px;

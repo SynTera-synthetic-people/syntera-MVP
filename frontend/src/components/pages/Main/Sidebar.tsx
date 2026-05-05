@@ -14,7 +14,6 @@ import SpIcon from "../../SPIcon";
 import { useWorkspaces } from "../../../hooks/useWorkspaces";
 import { useWorkspace as useWorkspaceContext } from "../../../context/WorkspaceContext";
 import WorkspacePopup from "../organization/Workspace/WorkspacePopup";
-import UpgradeModal from "../Upgrade/UpgradeModal";
 import { useQueryClient } from "@tanstack/react-query";
 import "./Sidebar.css";
 
@@ -31,7 +30,6 @@ interface User {
   user_type?: string;
   role?: string;
   account_tier?: string;
-  // Split name fields — some backends send these separately
   first_name?: string;
   name?: string;
 }
@@ -73,44 +71,21 @@ const getPlanClass = (user: User | null): string => {
 const isAdminUser = (user: User | null): boolean =>
   user?.role === "enterprise_admin" || user?.user_type === "enterprise_admin";
 
-/**
- * Returns the display name for a workspace.
- *
- * Admin / enterprise users → use the real workspace name (set by the org admin).
- * Individual / solo users  → the backend auto-creates a workspace during
- *   onboarding so its stored name is often a UUID or generic string.
- *   We instead build a friendly label from the user's onboarding name:
- *   "Shreyas's Workspace" / "James' Workspace".
- *
- * For individual users who belong to multiple workspaces (edge case),
- * we fall back to the real workspace name for every workspace beyond
- * the first — since those were likely explicitly named.
- *
- * @param ws          The workspace object
- * @param user        The Redux auth user
- * @param isFirst     Whether this is the user's primary / first workspace
- */
 const getWorkspaceDisplayName = (
   ws: Workspace,
   user: User | null,
   isFirst: boolean = false
 ): string => {
-  // Admins always see the real workspace name they set.
   if (isAdminUser(user)) return ws.name;
-
-  // For individual users, only override the primary (auto-created) workspace.
-  // Any additional workspace they've been explicitly added to keeps its real name.
   if (!isFirst) return ws.name;
 
-  // Build "{FirstName}'s Workspace" from the onboarding name.
-  // Prefer first_name, fall back to splitting full_name / name.
   const rawFirst =
     user?.first_name ||
     user?.full_name?.split(" ")[0] ||
     user?.name?.split(" ")[0] ||
     null;
 
-  if (!rawFirst) return ws.name; // No name available — don't override.
+  if (!rawFirst) return ws.name;
 
   const apostrophe = rawFirst.endsWith("s") ? "'" : "'s";
   return `${rawFirst}${apostrophe} Workspace`;
@@ -128,7 +103,6 @@ const Sidebar: React.FC = () => {
   const [showWorkspaceDropdown, setShowWorkspaceDropdown] = useState(false);
   const [tooltip, setTooltip] = useState<Tooltip>({ visible: false, content: "", x: 0, y: 0 });
   const [showWorkspacePopup, setShowWorkspacePopup] = useState(false);
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
   const { selectedWorkspace, setSelectedWorkspace, clearWorkspace } = useWorkspaceContext();
   const queryClient = useQueryClient();
@@ -147,15 +121,11 @@ const Sidebar: React.FC = () => {
     refetch: () => void;
   };
 
-  // Sort workspaces once so we can reliably identify the "first" (primary) one.
-  // The primary workspace is the oldest — it's the one the backend auto-created
-  // during onboarding for individual users.
   const sortedWorkspaces = [...workspaces].sort(
     (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
   );
   const primaryWorkspaceId = sortedWorkspaces[0]?.id;
 
-  // Auto-select first workspace (most recent for navigation UX, unchanged).
   useEffect(() => {
     if (workspaces.length > 0 && !selectedWorkspace) {
       const sorted = [...workspaces].sort(
@@ -374,12 +344,6 @@ const Sidebar: React.FC = () => {
                       <SpIcon name="sp-Navigation-Building_04" className="nav-icon" />
                     </div>
                     <div className="workspace-info">
-                      {/*
-                        Display name for the currently selected workspace.
-                        Individual users see "{FirstName}'s Workspace" for
-                        their primary (auto-created) workspace.
-                        Admin users and secondary workspaces show the real name.
-                      */}
                       <p className="workspace-name-text">
                         {getWorkspaceDisplayName(
                           selectedWorkspace,
@@ -388,7 +352,7 @@ const Sidebar: React.FC = () => {
                         )}
                       </p>
                       <p className="workspace-desc">
-                        {selectedWorkspace.description || "No descripicon-defaulttion"}
+                        {selectedWorkspace.description || "No description"}
                       </p>
                     </div>
                   </button>
@@ -418,11 +382,6 @@ const Sidebar: React.FC = () => {
                               </div>
                               <div className="workspace-item-info">
                                 <div className="workspace-item-header">
-                                  {/*
-                                    Same logic in the dropdown list.
-                                    Primary workspace → friendly name.
-                                    All others        → real API name.
-                                  */}
                                   <p className="workspace-item-name">
                                     {getWorkspaceDisplayName(
                                       ws,
@@ -440,7 +399,7 @@ const Sidebar: React.FC = () => {
                         )}
                       </div>
 
-                      {/* Create Workspace — admin only (unchanged) */}
+                      {/* Create Workspace — admin only */}
                       {userIsAdmin && <div className="workspace-divider" />}
                       {userIsAdmin && (
                         <div className="create-workspace-container">
@@ -457,7 +416,7 @@ const Sidebar: React.FC = () => {
             </nav>
           </div>
 
-          {/* ── Bottom: Profile + Plan + Upgrade ── */}
+          {/* ── Bottom: Profile + Plan ── */}
           <div className="sidebar-bottom-section">
             <div className="sidebar-profile-section" ref={profileMenuRef}>
               <button
@@ -482,7 +441,7 @@ const Sidebar: React.FC = () => {
                         className="sidebar-upgrade-btn"
                         onClick={(e) => {
                           e.stopPropagation();
-                          setShowUpgradeModal(true);
+                          navigate("/main/settings", { state: { initialView: "upgrade" } });
                         }}
                       >
                         Upgrade
@@ -496,15 +455,14 @@ const Sidebar: React.FC = () => {
               {showProfileMenu && (
                 <div className={`profile-popup ${isCollapsed ? "profile-popup-collapsed" : "profile-popup-expanded"}`}>
                   <div className="profile-menu">
-                    <button onClick={toggleTheme} className="profile-menu-item">
+                    {/* <button onClick={toggleTheme} className="profile-menu-item">
                       <span className="menu-icon">{theme === "dark" ? <SpIcon name="sp-Environment-Sun" /> : <SpIcon name="sp-Environment-Moon" />}</span>
                       {theme === "dark" ? "Light Mode" : "Dark Mode"}
-                    </button>
+                    </button> */}
                     <button onClick={() => navigate("/main/settings")} className="profile-menu-item">
                       <span className="menu-icon"><SpIcon name="sp-Interface-Settings" /></span>
                       Settings
                     </button>
-                    {/* <div className="profile-menu-divider" /> */}
                     <button onClick={handleLogout} className="profile-menu-item profile-menu-logout">
                       <SpIcon name="sp-Interface-Log_Out" />
                       Logout
@@ -529,12 +487,6 @@ const Sidebar: React.FC = () => {
           />
         )}
       </div>
-
-      <UpgradeModal
-        isOpen={showUpgradeModal}
-        onClose={() => setShowUpgradeModal(false)}
-        onUpgradeSuccess={() => setShowUpgradeModal(false)}
-      />
     </>
   );
 };

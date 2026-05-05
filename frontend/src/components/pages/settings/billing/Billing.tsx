@@ -7,7 +7,7 @@ import {
 } from 'react-icons/tb';
 import SpIcon from '../../../SPIcon';
 import { useSelector } from 'react-redux';
-import { ShareInvoiceModal, HowBillingWorksModal, SubmitQueryModal } from '../SettingModal';
+import { ShareInvoiceModal, ShareInvoiceBillingModal, HowBillingWorksModal, SubmitQueryModal } from '../SettingModal';
 import './BillingStyle.css';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -432,6 +432,7 @@ const Billing: React.FC<BillingProps> = ({ view = 'billing' }) => {
   const [showHowBilling, setShowHowBilling] = useState(false);
   const [showSubmitQuery, setShowSubmitQuery] = useState(false);
   const [showSuccessToast, setShowSuccessToast] = useState(false);
+  const [showShareInvoiceBilling, setShowShareInvoiceBilling] = useState(false);
 
   const triggerToast = () => {
     setShowSuccessToast(true);
@@ -516,7 +517,7 @@ const Billing: React.FC<BillingProps> = ({ view = 'billing' }) => {
               Download Invoice
               <SpIcon name="sp-File-File_Download" />
             </button>
-            <button className="bl-share-invoice-btn">
+            <button className="bl-share-invoice-btn" onClick={() => setShowShareInvoiceBilling(true)}>
               Share Invoice
               <SpIcon name="sp-Communication-Share_iOS_Export" />
             </button>
@@ -549,6 +550,15 @@ const Billing: React.FC<BillingProps> = ({ view = 'billing' }) => {
         invoiceId={shareInvoice?.id ?? ''}
         invoiceTitle={shareInvoice?.title ?? ''}
         onSend={async () => { triggerToast(); }}
+      />
+      <ShareInvoiceBillingModal
+        isOpen={showShareInvoiceBilling}
+        onClose={() => setShowShareInvoiceBilling(false)}
+        onSend={async (emails) => {
+          await new Promise(r => setTimeout(r, 600));
+          setShowShareInvoiceBilling(false);
+          triggerToast();
+        }}
       />
     </div>
   );
