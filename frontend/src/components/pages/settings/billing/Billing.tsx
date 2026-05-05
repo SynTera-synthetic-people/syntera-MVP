@@ -382,12 +382,18 @@ const InvoiceTable: React.FC<InvoiceTableProps> = ({ invoices, onShareInvoice })
                 <div className="bl-cell bl-cell--muted">{inv.completedOn}</div>
                 <div className="bl-cell">{inv.amount}</div>
                 <div className="bl-cell bl-cell--actions">
-                  <button className="bl-action-btn" title="Download invoice">
-                    <SpIcon name="sp-File-File_Download" />
-                  </button>
-                  <button className="bl-action-btn" title="Share invoice" onClick={() => onShareInvoice(inv)}>
-                    <SpIcon name="sp-Communication-Share_iOS_Export" />
-                  </button>
+                  {inv.status === 'Paid' ? (
+                    <>
+                      <button className="bl-action-btn" title="Download receipt">
+                        <SpIcon name="sp-File-File_Download" />
+                      </button>
+                      <button className="bl-action-btn" title="Share Receipt" onClick={() => onShareInvoice(inv)}>
+                        <SpIcon name="sp-Communication-Share_iOS_Export" />
+                      </button>
+                    </>
+                  ) : (
+                    <span className="bl-cell--muted" style={{ fontSize: '0.75rem' }}>—</span>
+                  )}
                 </div>
               </div>
             ))
@@ -482,7 +488,6 @@ const Billing: React.FC<BillingProps> = ({ view = 'billing' }) => {
 
       {/* ── Stat cards ── */}
       <div className="bl-stat-cards">
-        {/* Left card: Exploration + Personas */}
         <div className="bl-stat-card bl-stat-card--left">
           <StatCard
             label="Exploration Used"
@@ -499,8 +504,6 @@ const Billing: React.FC<BillingProps> = ({ view = 'billing' }) => {
           />
         </div>
 
-        {/* Right card: Amount Payable */}
-        {/* Right card: Amount Payable */}
         <div className="bl-stat-card bl-stat-card--payable">
           <div className="bl-payable-info">
             <div className="bl-stat-label-row">

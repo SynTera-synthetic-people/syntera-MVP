@@ -395,8 +395,8 @@ export const ShareInvoiceModal: React.FC<ShareInvoiceModalProps> = ({
 
   return (
     <ModalShell isOpen={isOpen} onClose={onClose}
-      title="Share Invoice"
-      subtitle="Share this invoice with your team or stakeholders for review and process."
+      title="Share Receipt"
+      subtitle="Share this receipt with your team or stakeholders for review and process."
       maxWidth={520}
     >
       {sendError && <p className="sm-error-msg">{sendError}</p>}
@@ -406,7 +406,7 @@ export const ShareInvoiceModal: React.FC<ShareInvoiceModalProps> = ({
         <div className="sm-email-input-row">
           <input ref={inputRef} type="email"
             className={`sm-input sm-input--chip-input ${inputError ? 'sm-input--error' : ''}`}
-            placeholder="Enter email addresses to share this invoice"
+            placeholder="Enter email addresses to share this receipt"
             value={inputVal}
             onChange={(e) => { setInputVal(e.target.value); setInputError(''); }}
             onKeyDown={handleKeyDown}
@@ -435,7 +435,7 @@ export const ShareInvoiceModal: React.FC<ShareInvoiceModalProps> = ({
       </div>
 
       <button className="sm-send-btn" onClick={handleSend} disabled={sending || emails.length === 0}>
-        {sending ? 'Sending…' : 'Send Invoice'}
+        {sending ? 'Sending…' : 'Send Receipt'}
       </button>
     </ModalShell>
   );
