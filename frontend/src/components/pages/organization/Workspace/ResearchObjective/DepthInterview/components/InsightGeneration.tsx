@@ -12,7 +12,7 @@ import {
   usePrepareQualReport,
   useQualReportStatus,
 } from '../../../../../../../hooks/useInterview';
-import { useExploration,useUpdateExplorationMethod } from '../../../../../../../hooks/useExplorations';
+import { useExploration, useUpdateExplorationMethod } from '../../../../../../../hooks/useExplorations';
 import { useOmniWorkflow } from '../../../../../../../hooks/useOmiWorkflow';
 import InsightViewerModal from './InsightViewerModal';
 import ImpactHighFiveModal from './ImpactHighFiveModal';
@@ -71,8 +71,8 @@ const INSIGHT_CARDS: InsightCard[] = [
 // ── Component ─────────────────────────────────────────────────────────────────
 
 const InsightGeneration: React.FC = () => {
-  const navigate     = useNavigate();
-  const queryClient  = useQueryClient();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { workspaceId, objectiveId } = useParams<{
     workspaceId: string;
     objectiveId: string;
@@ -92,8 +92,8 @@ const InsightGeneration: React.FC = () => {
 
   // ── Modal visibility ──────────────────────────────────────────────────────
 
-  const [viewingCard,          setViewingCard]          = useState<InsightCardId | null>(null);
-  const [showImpactModal,      setShowImpactModal]      = useState<boolean>(false);
+  const [viewingCard, setViewingCard] = useState<InsightCardId | null>(null);
+  const [showImpactModal, setShowImpactModal] = useState<boolean>(false);
   const [showConversationStudio, setShowConversationStudio] = useState<boolean>(false);
   // Conversation Studio only rendered once at least one insight has been generated
   const hasAnyInsightReady = Object.values(cardStates).some((s) => s === 'ready');
@@ -150,7 +150,7 @@ const InsightGeneration: React.FC = () => {
   });
 
   const { data: explorationData } = useExploration(objectiveId);
-  const updateExplorationMutation  = useUpdateExplorationMethod();
+  const updateExplorationMutation = useUpdateExplorationMethod();
 
   const researchApproach = (
     (explorationData as any)?.data?.research_approach ||
@@ -222,7 +222,7 @@ const InsightGeneration: React.FC = () => {
       payload: {},
     });
     navigate(
-      `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/population-builder`
+      `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/questionnaire`
     );
   };
 
@@ -244,7 +244,7 @@ const InsightGeneration: React.FC = () => {
         {INSIGHT_CARDS.map((card, i) => {
           const state = cardStates[card.id];
           const isGenerating = state === 'generating';
-          const isReady      = state === 'ready';
+          const isReady = state === 'ready';
 
           return (
             <motion.div

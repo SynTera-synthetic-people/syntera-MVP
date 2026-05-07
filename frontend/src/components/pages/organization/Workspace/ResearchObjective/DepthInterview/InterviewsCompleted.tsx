@@ -31,8 +31,8 @@ const InterviewsCompleted: React.FC = () => {
           <motion.div
             className="ic-toast"
             initial={{ opacity: 0, y: -16, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0,   scale: 1    }}
-            exit={{   opacity: 0, y: -16,  scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -16, scale: 0.95 }}
             transition={{ duration: 0.25 }}
           >
             <SpIcon name="sp-Warning-Circle_Check" size={20} className="ic-toast__icon" />
@@ -52,7 +52,7 @@ const InterviewsCompleted: React.FC = () => {
       <motion.div
         className="ic-card"
         initial={{ opacity: 0, y: 24 }}
-        animate={{ opacity: 1, y: 0   }}
+        animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, delay: 0.15 }}
       >
         {/* Bar chart icon — matches Figma */}

@@ -13,6 +13,8 @@ interface SubTabNavigationProps {
   activeSubTab: string;
   onSubTabChange: (subTabId: string) => void;
   completedSubTabs?: string[];
+  /** Sub-tab briefly flashed after a search navigation to show where the user landed */
+  highlightedSubTab?: string | null;
 }
 
 const SubTabNavigation: React.FC<SubTabNavigationProps> = ({
@@ -20,6 +22,7 @@ const SubTabNavigation: React.FC<SubTabNavigationProps> = ({
   activeSubTab,
   onSubTabChange,
   completedSubTabs = [],
+  highlightedSubTab = null,
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -81,6 +84,7 @@ const SubTabNavigation: React.FC<SubTabNavigationProps> = ({
         {subTabs.map((subTab) => {
           const isActive = activeSubTab === subTab.id;
           const isCompleted = completedSubTabs.includes(subTab.id);
+          const isHighlighted = highlightedSubTab === subTab.id;
 
           return (
             <button
@@ -88,7 +92,9 @@ const SubTabNavigation: React.FC<SubTabNavigationProps> = ({
               onClick={() => onSubTabChange(subTab.id)}
               className={`subtab-nav__item ${
                 isActive ? 'subtab-nav__item--active' : ''
-              } ${isCompleted ? 'subtab-nav__item--completed' : ''}`}
+              } ${isCompleted ? 'subtab-nav__item--completed' : ''} ${
+                isHighlighted ? 'subtab-nav__item--highlighted' : ''
+              }`}
             >
               <span className="subtab-nav__label">{subTab.label}</span>
               {isActive && (

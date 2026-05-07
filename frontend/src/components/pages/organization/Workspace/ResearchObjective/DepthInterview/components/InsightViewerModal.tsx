@@ -1,7 +1,8 @@
-import React from 'react';
-import { motion } from 'framer-motion';
-import { TbLoader } from 'react-icons/tb';
+import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { TbX, TbLoader } from 'react-icons/tb';
 import SpIcon from '../../../../../../SPIcon';
+import ShareInsightsModal from './ShareInsightModal';
 import './InsightViewerModal.css';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -30,7 +31,7 @@ interface InsightViewerModalProps {
 const CARD_META: Record<InsightCardId, { title: string; subtitle: string }> = {
   verbatim: {
     title: 'Interview Verbatim',
-    subtitle: 'What people said — in their own words',
+    subtitle: 'What people said - in their own words',
   },
   decision: {
     title: 'Decision Intelligence',
@@ -55,13 +56,14 @@ const InsightViewerModal: React.FC<InsightViewerModalProps> = ({
 }) => {
   const meta = CARD_META[cardId];
 
+  // ── Share modal state ─────────────────────────────────────────────────────
+  const [shareOpen, setShareOpen] = useState(false);
   const activeMutation =
-    cardId === 'verbatim'  ? downloadTranscriptsMutation :
-    cardId === 'decision'  ? downloadDecisionMutation    :
-                             downloadBehaviourMutation;
-
-  const downloadLabel =
-    cardId === 'verbatim' ? 'Download DOCX' : 'Download PDF';
+    cardId === 'verbatim'
+      ? downloadTranscriptsMutation
+      : cardId === 'decision'
+        ? downloadDecisionMutation
+        : downloadBehaviourMutation;
 
   const handleDownload = async () => {
     try {
@@ -71,117 +73,120 @@ const InsightViewerModal: React.FC<InsightViewerModalProps> = ({
     }
   };
 
-  const handleShare = () => {
-    // Share functionality — TBD with backend shareable link endpoint
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(window.location.href).catch(console.error);
-    }
+  const handleShareSend = (email: string) => {
+    // Share functionality — wire backend shareable link endpoint here
+    console.log('Sharing with:', email);
   };
 
   return (
-    <motion.div
-      className="ivm-overlay"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      onClick={onClose}
-    >
+    <>
       <motion.div
-        className="ivm-panel"
-        initial={{ opacity: 0, y: 24, scale: 0.98 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: 24, scale: 0.98 }}
-        transition={{ duration: 0.22, ease: 'easeOut' }}
-        onClick={(e) => e.stopPropagation()}
+        className="ivm-overlay"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={onClose}
       >
+        <motion.div
+          className="ivm-panel"
+          initial={{ opacity: 0, y: 24, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 24, scale: 0.98 }}
+          transition={{ duration: 0.22, ease: 'easeOut' }}
+          onClick={(e) => e.stopPropagation()}
+        >
 
-        {/* ── Header ── */}
-        <div className="ivm-header">
-          <div className="ivm-header__text">
-            <h2 className="ivm-header__title">{meta.title}</h2>
-            <p className="ivm-header__subtitle">{meta.subtitle}</p>
-          </div>
-          <div className="ivm-header__actions">
-            {/* Share (circular bordered) */}
-            <button
-              className="ivm-icon-btn ivm-icon-btn--circle"
-              onClick={handleShare}
-              title="Share"
-            >
-              <SpIcon name="sp-Communication-Share_Android" size={20} />
-            </button>
-
-            {/* Close (no border) */}
-            <button
-              className="ivm-icon-btn ivm-icon-btn--ghost"
-              onClick={onClose}
-              title="Close"
-            >
-              <SpIcon name="sp-Menu-Close_MD" size={20} />
-            </button>
-          </div>
-        </div>
-
-        {/* ── Content area ── */}
-        <div className="ivm-body">
-          {cardId === 'verbatim' ? (
-            verbatimLoading ? (
-              <div className="ivm-loading">
-                <TbLoader className="ivm-loading__spinner" size={32} />
-                <p className="ivm-loading__text">Loading transcript…</p>
-              </div>
-            ) : verbatimPreviewData ? (
-              <VerbatimContent data={verbatimPreviewData} />
-            ) : (
-              <div className="ivm-empty">
-                <p>No verbatim data available yet.</p>
-              </div>
-            )
-          ) : (
-            // Decision Intelligence & Behaviour Archaeology — placeholder until
-            // backend endpoints are wired up. Content renders here once the
-            // generate mutation returns document data.
-            <div className="ivm-placeholder">
-              <p className="ivm-placeholder__label">
-                {meta.title}
-              </p>
-              <p className="ivm-placeholder__sub">
-                {meta.subtitle}
-              </p>
-              <p className="ivm-placeholder__note">
-                [Document content would render here as embedded PDF or HTML preview]
-              </p>
+          {/* ── Header ── */}
+          <div className="ivm-header">
+            <div className="ivm-header__text">
+              <h2 className="ivm-header__title">{meta.title}</h2>
+              <p className="ivm-header__subtitle">{meta.subtitle}</p>
             </div>
-          )}
-        </div>
+            <div className="ivm-header__actions">
+              {/* Share — opens ShareInsightsModal */}
+              <button
+                className="ivm-icon-btn ivm-icon-btn--circle"
+                onClick={() => setShareOpen(true)}
+                title="Share"
+              >
+                <SpIcon name="sp-Communication-Share_Android" size={20} />
+              </button>
 
-        {/* ── Footer ── */}
-        <div className="ivm-footer">
-          <button
-            className="ivm-download-btn"
-            onClick={handleDownload}
-            disabled={activeMutation.isPending}
-          >
-            {activeMutation.isPending ? (
-              <>
-                <TbLoader className="ivm-download-btn__spinner" size={16} />
-                Downloading…
-              </>
+              {/* Close */}
+              <button
+                className="ivm-icon-btn ivm-icon-btn--ghost"
+                onClick={onClose}
+                title="Close"
+              >
+                <SpIcon name="sp-Menu-Close_MD" size={20} />
+              </button>
+            </div>
+          </div>
+
+          {/* ── Content area ── */}
+          <div className="ivm-body">
+            {cardId === 'verbatim' ? (
+              verbatimLoading ? (
+                <div className="ivm-loading">
+                  <TbLoader className="ivm-loading__spinner" size={32} />
+                  <p className="ivm-loading__text">Loading transcript…</p>
+                </div>
+              ) : verbatimPreviewData ? (
+                <VerbatimContent data={verbatimPreviewData} />
+              ) : (
+                <div className="ivm-empty">
+                  <p>No verbatim data available yet.</p>
+                </div>
+              )
             ) : (
-              <>
-                <SpIcon name="sp-File-File_Download" size={16} />
-                {downloadLabel}
-              </>
+              <div className="ivm-placeholder">
+                <p className="ivm-placeholder__label">{meta.title}</p>
+                <p className="ivm-placeholder__sub">{meta.subtitle}</p>
+                <p className="ivm-placeholder__note">
+                  [Document content would render here as embedded PDF or HTML preview]
+                </p>
+              </div>
             )}
-          </button>
-        </div>
+          </div>
 
+          {/* ── Footer ── */}
+          <div className="ivm-footer">
+            <button
+              className="ivm-download-btn"
+              onClick={handleDownload}
+              disabled={activeMutation.isPending}
+            >
+              {activeMutation.isPending ? (
+                <>
+                  <TbLoader className="ivm-download-btn__spinner" size={16} />
+                  Downloading…
+                </>
+              ) : (
+                <>
+                  <SpIcon name="sp-File-File_Download" size={16} />
+                  Download PDF
+                </>
+              )}
+            </button>
+          </div>
+
+        </motion.div>
       </motion.div>
-    </motion.div>
+
+      {/* ── Share Insights Modal — rendered on top ── */}
+      <AnimatePresence>
+        {shareOpen && (
+          <ShareInsightsModal
+            onClose={() => setShareOpen(false)}
+            onShare={handleShareSend}
+          />
+        )}
+      </AnimatePresence>
+    </>
   );
 };
 
-// ── VerbatimContent — renders useAllInterviewPreview data ─────────────────────
+// ── VerbatimContent ───────────────────────────────────────────────────────────
 
 interface VerbatimSection {
   section: string;

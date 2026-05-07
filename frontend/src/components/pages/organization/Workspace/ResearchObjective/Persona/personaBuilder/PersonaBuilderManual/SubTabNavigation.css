@@ -106,3 +106,15 @@
     font-size: 12px;
   }
 }
+
+/* ── Search navigation flash highlight ──────────────────────────────────── */
+
+@keyframes subtab-flash {
+  0%   { border-color: #00D4A8; background: rgba(0, 212, 168, 0.12); color: #00D4A8; }
+  60%  { border-color: #00D4A8; background: rgba(0, 212, 168, 0.08); color: #fff; }
+  100% { border-color: transparent; background: transparent; }
+}
+
+.subtab-nav__item--highlighted {
+  animation: subtab-flash 1.4s ease-out forwards;
+}

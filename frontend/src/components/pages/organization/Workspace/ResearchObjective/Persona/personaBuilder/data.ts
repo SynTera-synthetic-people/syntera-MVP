@@ -1,6 +1,5 @@
 // ══════════════════════════════════════════════════════════════════════════════
-// Persona Builder - Data Configuration (TypeScript)
-// Aligned with Figma design specifications
+// Persona Builder - Data Configuration
 // ══════════════════════════════════════════════════════════════════════════════
 
 import type { MainCategory } from './PersonaBuilderType';

@@ -4,9 +4,13 @@ import { motion } from "framer-motion";
 import SpIcon from "../../../SPIcon";
 import { workspaceService } from "../../../../services/workspaceService";
 import InviteTeamModal from "./InviteTeamModal";
-import { EditUserModal, RemoveUserModal } from "../../settings/SettingModal";  // ← added RemoveUserModal
+import { EditUserModal, RemoveUserModal } from "../../settings/SettingModal";
 import type { EditUserData } from "../../settings/SettingModal";
 import "./ManageUsersStyle.css";
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const MAX_MEMBERS = 10;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -69,18 +73,19 @@ const ManageUsers: React.FC<ManageUsersProps> = ({
   const workspaceId = propWorkspaceId || paramId;
   const handleBack = propOnBack || (() => navigate(-1));
 
-  const [members, setMembers]               = useState<Member[]>([]);
-  const [loading, setLoading]               = useState(true);
-  const [removingId, setRemovingId]         = useState<string | null>(null);
-  const [error, setError]                   = useState("");
+  const [members, setMembers] = useState<Member[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [removingId, setRemovingId] = useState<string | null>(null);
+  const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
-  const [searchQuery, setSearchQuery]       = useState("");
-  const [openMenuId, setOpenMenuId]         = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [showInviteModal, setShowInviteModal] = useState(false);
-  const [editUser, setEditUser]             = useState<EditUserData | null>(null);
-
-  // ── NEW: tracks which member's "Remove" was clicked — drives RemoveUserModal ──
+  const [editUser, setEditUser] = useState<EditUserData | null>(null);
   const [pendingRemoveId, setPendingRemoveId] = useState<string | null>(null);
+
+  // ── Derived: has the workspace hit the member cap? ────────────────────────
+  const isAtLimit = members.length >= MAX_MEMBERS;
 
   // ── Filtered list ─────────────────────────────────────────────────────────
 
@@ -95,7 +100,7 @@ const ManageUsers: React.FC<ManageUsersProps> = ({
     );
   }, [members, searchQuery, propWorkspaceName]);
 
-  // ── Data fetching — team mode fetches all org members ────────────────────
+  // ── Data fetching ─────────────────────────────────────────────────────────
 
   const fetchMembers = async () => {
     setLoading(true);
@@ -103,7 +108,6 @@ const ManageUsers: React.FC<ManageUsersProps> = ({
     try {
       let response: any;
       if (mode === "team") {
-        // Team mode: fetch all org members regardless of individual workspace
         response = await workspaceService.getOrganisationMembers();
       } else {
         if (!workspaceId) return;
@@ -131,20 +135,11 @@ const ManageUsers: React.FC<ManageUsersProps> = ({
 
   // ── Handlers ─────────────────────────────────────────────────────────────
 
-  /**
-   * Called when "Remove" is clicked in the kebab menu.
-   * Sets pendingRemoveId → opens RemoveUserModal.
-   * Replaces the old window.confirm approach.
-   */
   const handleRemoveClick = (memberId: string) => {
-    setOpenMenuId(null);           // close kebab first
-    setPendingRemoveId(memberId);  // open modal
+    setOpenMenuId(null);
+    setPendingRemoveId(memberId);
   };
 
-  /**
-   * Called when user confirms inside RemoveUserModal.
-   * Performs the actual API call.
-   */
   const handleRemoveConfirm = async () => {
     if (!pendingRemoveId) return;
     setRemovingId(pendingRemoveId);
@@ -165,10 +160,10 @@ const ManageUsers: React.FC<ManageUsersProps> = ({
   const handleEditUser = (member: Member) => {
     const nameParts = (member.full_name || "").trim().split(" ");
     setEditUser({
-      id:        member.id,
+      id: member.id,
       firstName: nameParts[0] ?? "",
-      lastName:  nameParts.slice(1).join(" ") || "",
-      email:     member.email,
+      lastName: nameParts.slice(1).join(" ") || "",
+      email: member.email,
     });
     setOpenMenuId(null);
   };
@@ -184,10 +179,7 @@ const ManageUsers: React.FC<ManageUsersProps> = ({
       setMembers((prev) =>
         prev.map((m) =>
           m.id === updated.id
-            ? {
-                ...m,
-                full_name: `${updated.firstName} ${updated.lastName}`.trim(),
-              }
+            ? { ...m, full_name: `${updated.firstName} ${updated.lastName}`.trim() }
             : m
         )
       );
@@ -200,54 +192,75 @@ const ManageUsers: React.FC<ManageUsersProps> = ({
   const toggleMenu = (id: string) =>
     setOpenMenuId(openMenuId === id ? null : id);
 
+  // ── Add User button — disabled + tooltip when at limit ────────────────────
+
+  const renderAddUserButton = () => (
+    <div className={`mu-add-btn-wrap${isAtLimit ? " mu-add-btn-wrap--disabled" : ""}`}>
+      <motion.button
+        whileHover={isAtLimit ? {} : { scale: 1.02 }}
+        whileTap={isAtLimit ? {} : { scale: 0.98 }}
+        className="mu-add-btn"
+        onClick={() => { if (!isAtLimit) setShowInviteModal(true); }}
+        disabled={isAtLimit}
+        aria-disabled={isAtLimit}
+      >
+        <SpIcon name="sp-User-User_Add" size={17} />
+        Add User
+      </motion.button>
+      {isAtLimit && (
+        <div className="mu-add-btn-tooltip">You reached the Limit</div>
+      )}
+    </div>
+  );
+
   // ── Kebab dropdown ────────────────────────────────────────────────────────
 
-const renderKebabMenu = (member: Member) => (
-  openMenuId === member.id && (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.95, y: 4 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      className="mu-kebab-menu"
-    >
-      <div className="mu-menu-item" onClick={() => handleEditUser(member)}>
-        <SpIcon name="sp-Edit-Edit_Pencil_01" size={14} /> Edit User
-      </div>
-
-      {!member.accepted && (
-        <div
-          className="mu-menu-item"
-          onClick={() => {
-            setOpenMenuId(null);
-            // TODO: wire to resend invitation API
-          }}
-        >
-          <SpIcon name="sp-User-User_03" size={14} /> Resend Invitation
-        </div>
-      )}
-
-      <div
-        className="mu-menu-item mu-menu-item--danger"
-        onClick={() => handleRemoveClick(member.id)}
+  const renderKebabMenu = (member: Member) => (
+    openMenuId === member.id && (
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 4 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        className="mu-kebab-menu"
       >
-        <SpIcon name="sp-User-User_Remove" size={14} />
-        {removingId === member.id ? "Removing..." : "Remove User"}
-      </div>
-    </motion.div>
-  )
-);
+        <div className="mu-menu-item" onClick={() => handleEditUser(member)}>
+          <SpIcon name="sp-Edit-Edit_Pencil_01" size={14} /> Edit User
+        </div>
+
+        {!member.accepted && (
+          <div
+            className="mu-menu-item"
+            onClick={() => {
+              setOpenMenuId(null);
+              // TODO: wire to resend invitation API
+            }}
+          >
+            <SpIcon name="sp-User-User_03" size={14} /> Resend Invitation
+          </div>
+        )}
+
+        <div
+          className="mu-menu-item mu-menu-item--danger"
+          onClick={() => handleRemoveClick(member.id)}
+        >
+          <SpIcon name="sp-User-User_Remove" size={14} />
+          {removingId === member.id ? "Removing..." : "Remove User"}
+        </div>
+      </motion.div>
+    )
+  );
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
-  // Derive the pending member's display name for the modal subtitle
   const pendingMember = members.find((m) => m.id === pendingRemoveId);
 
   return (
     <>
-      <div className={`mu-page ${isEmbedded ? 'mu-page--embedded' : ''}`}>
+      <div className={`mu-page ${isEmbedded ? "mu-page--embedded" : ""}`}>
 
-        <div className="mu-top-bar">
-          <div className="mu-top-bar-left">
-            {!isEmbedded && (
+        {/* ── Standalone top bar: Back btn on its own line, title + Add User below ── */}
+        {!isEmbedded && (
+          <>
+            <div className="mu-standalone-back-row">
               <motion.button
                 whileHover={{ scale: 1.04 }}
                 whileTap={{ scale: 0.96 }}
@@ -257,22 +270,28 @@ const renderKebabMenu = (member: Member) => (
                 <SpIcon name="sp-Arrow-Arrow_Left_SM" size={14} />
                 Back
               </motion.button>
-            )}
-            <h1 className="mu-title">
-              {mode === "team" ? "Team Management" : "Manage Users"}
-            </h1>
-          </div>
+            </div>
 
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            className="mu-add-btn"
-            onClick={() => setShowInviteModal(true)}
-          >
-            <SpIcon name="sp-User-User_Add" size={17} />
-            Add User
-          </motion.button>
-        </div>
+            <div className="mu-standalone-title-row">
+              <h1 className="mu-title">
+                {mode === "team" ? "Team Management" : "Manage Users"}
+              </h1>
+              {renderAddUserButton()}
+            </div>
+          </>
+        )}
+
+        {/* ── Embedded top bar: title + Add User on one line (no Back btn) ── */}
+        {isEmbedded && (
+          <div className="mu-top-bar">
+            <div className="mu-top-bar-left">
+              <h1 className="mu-title">
+                {mode === "team" ? "Team Management" : "Manage Users"}
+              </h1>
+            </div>
+            {renderAddUserButton()}
+          </div>
+        )}
 
         {/* Feedback */}
         {successMessage && (
@@ -355,11 +374,10 @@ const renderKebabMenu = (member: Member) => (
 
           ) : (
 
-            /* ── WORKSPACE mode — full 7-column layout ── */
+            /* ── WORKSPACE mode — full 6-column layout ── */
             <>
               <div className="mu-table-header">
                 <div className="mu-hcell">USER NAME</div>
-                {/* <div className="mu-hcell">WORKSPACE NAME</div> */}
                 <div className="mu-hcell">EMAIL</div>
                 <div className="mu-hcell">INVITED ON</div>
                 <div className="mu-hcell">STATUS</div>
@@ -377,15 +395,11 @@ const renderKebabMenu = (member: Member) => (
                     className="mu-table-row"
                   >
                     <div className="mu-cell mu-cell-name">{formatMemberName(member)}</div>
-                    {/* <div className="mu-cell mu-cell-secondary">
-                      {member.workspace_name || propWorkspaceName || "—"}
-                    </div> */}
                     <div className="mu-cell mu-cell-secondary">{member.email}</div>
                     <div className="mu-cell mu-cell-secondary">{formatDate(member.invited_at)}</div>
                     <div className="mu-cell">
-                      <span className={`mu-status-badge ${
-                        member.accepted ? "mu-status-badge--accepted" : "mu-status-badge--pending"
-                      }`}>
+                      <span className={`mu-status-badge ${member.accepted ? "mu-status-badge--accepted" : "mu-status-badge--pending"
+                        }`}>
                         {member.accepted ? "Accepted" : "Pending"}
                       </span>
                     </div>
@@ -433,11 +447,6 @@ const renderKebabMenu = (member: Member) => (
         />
       </div>
 
-      {/*
-        Remove user confirmation modal — rendered OUTSIDE mu-page so it
-        sits at the top of the stacking context and is never clipped.
-        Opens when pendingRemoveId is set; closes on cancel or after confirm.
-      */}
       <RemoveUserModal
         isOpen={pendingRemoveId !== null}
         onClose={() => setPendingRemoveId(null)}

@@ -1,0 +1,294 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   PersonaSearch.css — Search bar + dropdown, dark theme, Figma-matched
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Root container ─────────────────────────────────────────────────────── */
+
+.psearch {
+  position: relative;
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+/* ── Input row ──────────────────────────────────────────────────────────── */
+
+.psearch__input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  height: 40px;
+  background: #1A1D23;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.psearch__input-row:focus-within,
+.psearch__input-row--open {
+  border-color: rgba(255, 255, 255, 0.25);
+  background: #1E2128;
+}
+
+/* ── Search icon ──────────────────────────────────────────────────────────── */
+
+.psearch__icon-search {
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.35);
+  transition: color 0.15s;
+}
+
+.psearch__input-row:focus-within .psearch__icon-search {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* ── Input ────────────────────────────────────────────────────────────────── */
+
+.psearch__input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #fff;
+  font-size: 13px;
+  font-family: inherit;
+  line-height: 1;
+}
+
+.psearch__input::placeholder {
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.psearch__input:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* ── Right side: kbd hint / clear ───────────────────────────────────────── */
+
+.psearch__right {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.psearch__kbd {
+  font-size: 11px;
+  font-family: inherit;
+  color: rgba(255, 255, 255, 0.25);
+  border-radius: 5px;
+  padding: 2px 6px;
+  line-height: 1.5;
+  pointer-events: none;
+}
+
+.psearch__clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  border: none;
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.45);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  padding: 0;
+}
+
+.psearch__clear:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+/* ── Dropdown shell ─────────────────────────────────────────────────────── */
+
+.psearch__dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 100;
+  background: #1A1D23;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+}
+
+/* ── Results list ───────────────────────────────────────────────────────── */
+
+.psearch__list {
+  list-style: none;
+  margin: 0;
+  padding: 6px 0;
+  max-height: 340px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+
+.psearch__list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.psearch__list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+}
+
+/* ── Section group header ────────────────────────────────────────────────── */
+
+.psearch__group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.psearch__group-icon {
+  display: flex;
+  align-items: center;
+  color: rgba(255, 255, 255, 0.25);
+}
+
+/* ── Individual result row ──────────────────────────────────────────────── */
+
+.psearch__result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+  transition: background 0.1s;
+  border-radius: 0;
+}
+
+.psearch__result:hover,
+.psearch__result--active {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.psearch__result-label {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.85);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.psearch__result-context {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.3);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.psearch__result-arrow {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.0);
+  flex-shrink: 0;
+  transition: color 0.12s;
+}
+
+.psearch__result--active .psearch__result-arrow,
+.psearch__result:hover .psearch__result-arrow {
+  color: #00D4A8;
+}
+
+/* ── Match highlight ────────────────────────────────────────────────────── */
+
+.psearch-highlight {
+  background: transparent;
+  color: #00D4A8;
+  font-weight: 600;
+}
+
+/* ── Empty state ────────────────────────────────────────────────────────── */
+
+.psearch__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 28px 20px;
+  text-align: center;
+}
+
+.psearch__empty-icon {
+  color: rgba(255, 255, 255, 0.2);
+  margin-bottom: 4px;
+}
+
+.psearch__empty-text {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.55);
+  margin: 0;
+}
+
+.psearch__empty-text strong {
+  color: rgba(255, 255, 255, 0.8);
+  font-weight: 500;
+}
+
+.psearch__empty-hint {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.3);
+  margin: 0;
+}
+
+.psearch__empty-hint-cta {
+  color: #00D4A8;
+  font-weight: 500;
+}
+
+/* ── Footer keyboard hint bar ───────────────────────────────────────────── */
+
+.psearch__footer {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.28);
+}
+
+.psearch__footer kbd {
+  font-family: inherit;
+  font-size: 10px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  padding: 1px 5px;
+  margin-right: 3px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+/* ── Responsive ─────────────────────────────────────────────────────────── */
+
+@media (max-width: 768px) {
+  .psearch__input-row {
+    height: 38px;
+  }
+
+  .psearch__kbd {
+    display: none;
+  }
+
+  .psearch__dropdown {
+    border-radius: 10px;
+  }
+
+  .psearch__footer {
+    gap: 10px;
+  }
+}

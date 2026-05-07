@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import OmiKeyboard from '../../../../../../assets/Omi Animations/OmiKeyboard.mp4';
 import './QuestionnaireLoader.css';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -39,9 +40,9 @@ const UPLOAD_STEPS: LoaderStep[] = [
   { statement: 'Optimising for clarity and reliability.' },
 ];
 
-const STEP_MS     = 3_500;
+const STEP_MS = 3_500;
 const RING_RADIUS = 54;
-const RING_CIRC   = 2 * Math.PI * RING_RADIUS;
+const RING_CIRC = 2 * Math.PI * RING_RADIUS;
 
 // ── Ring SVG ──────────────────────────────────────────────────────────────────
 
@@ -49,7 +50,7 @@ const RingProgress: React.FC<{ progress: number }> = ({ progress }) => {
   const offset = RING_CIRC - (progress / 100) * RING_CIRC;
   return (
     <svg className="ql-ring-svg" viewBox="0 0 120 120">
-      <circle className="ql-ring-track"    cx="60" cy="60" r={RING_RADIUS} />
+      <circle className="ql-ring-track" cx="60" cy="60" r={RING_RADIUS} />
       <circle
         className="ql-ring-progress"
         cx="60" cy="60" r={RING_RADIUS}
@@ -67,19 +68,19 @@ const QuestionnaireLoader: React.FC<QuestionnaireLoaderProps> = ({
   isReady = false,
   mode = 'generate',
 }) => {
-  const LOADER_STEPS  = mode === 'upload' ? UPLOAD_STEPS : GENERATE_STEPS;
-  const TOTAL_STEPS   = LOADER_STEPS.length;
+  const LOADER_STEPS = mode === 'upload' ? UPLOAD_STEPS : GENERATE_STEPS;
+  const TOTAL_STEPS = LOADER_STEPS.length;
   const LAST_STEP_IDX = TOTAL_STEPS - 1;
 
-  const [currentStep,       setCurrentStep]       = useState(0);
+  const [currentStep, setCurrentStep] = useState(0);
   const [waitingForBackend, setWaitingForBackend] = useState(false);
-  const [done,              setDone]              = useState(false);
+  const [done, setDone] = useState(false);
 
   const ringProgress = done
     ? 100
     : waitingForBackend
-    ? 88
-    : ((currentStep + 1) / TOTAL_STEPS) * 100;
+      ? 88
+      : ((currentStep + 1) / TOTAL_STEPS) * 100;
 
   // ── Advance steps 0 → (LAST_STEP_IDX - 1) at fixed interval ─────────────
   useEffect(() => {
@@ -111,7 +112,7 @@ const QuestionnaireLoader: React.FC<QuestionnaireLoaderProps> = ({
 
   const step = LOADER_STEPS[currentStep];
 
-  const heading  = mode === 'upload'
+  const heading = mode === 'upload'
     ? 'Processing your Questionnaire'
     : 'Building Questionnaire';
   const subtitle = mode === 'upload'
@@ -130,8 +131,14 @@ const QuestionnaireLoader: React.FC<QuestionnaireLoaderProps> = ({
           <div className="ql-ring-wrapper">
             <RingProgress progress={ringProgress} />
             <div className="ql-character">
-              {/* Reuse the same Omi animation — swap for a questionnaire-specific one if available */}
-              <div className="ql-character-placeholder" />
+              <video
+                className="dgl-character-video"
+                src={OmiKeyboard}
+                autoPlay
+                loop
+                muted
+                playsInline
+              />
             </div>
           </div>
           <p className="ql-step-label">Step {currentStep + 1}/{TOTAL_STEPS}</p>

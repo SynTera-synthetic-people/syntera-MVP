@@ -1,13 +1,11 @@
 // ══════════════════════════════════════════════════════════════════════════════
-// PersonaBuilderManual Component — Figma Accurate (no sidebar, parent handles it)
+// PersonaBuilderManual Component — with PersonaSearch integrated
 // ══════════════════════════════════════════════════════════════════════════════
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-    TbLoader,
-} from 'react-icons/tb';
+import { TbLoader } from 'react-icons/tb';
 import SpIcon from '../../../../../../../SPIcon';
 import { useTheme } from '../../../../../../../../context/ThemeContext';
 import { useOmniWorkflow } from '../../../../../../../../hooks/useOmiWorkflow';
@@ -28,6 +26,7 @@ import SubTabNavigation from './SubTabNavigation';
 import AttributeSelectionPanel from './AttributeSelectionPanel';
 import PersonaSummaryView from './PersonaSummaryView';
 import EditPersonaNameModal from './EditPersonaNameModal';
+import PersonaSearch from '../PersonaSearch';
 
 import './PersonaBuilderManual.css';
 
@@ -52,8 +51,6 @@ const PersonaBuilderManual: React.FC = () => {
     const exploration =
         (explorationData as Record<string, unknown>)?.data ??
         (explorationData as Record<string, unknown> | undefined);
-    const currentApproach = (exploration as Record<string, unknown> | undefined)
-        ?.research_approach as string | undefined;
     const isApproachLocked = !!(
         (exploration as Record<string, unknown> | undefined)?.is_qualitative ||
         (exploration as Record<string, unknown> | undefined)?.is_quantitative
@@ -70,21 +67,17 @@ const PersonaBuilderManual: React.FC = () => {
     const [formData, setFormData] = useState<PersonaFormData>({});
     const [formativeExperience, setFormativeExperience] = useState<string>('');
 
-    const [showBackstoryModal, setShowBackstoryModal] = useState<boolean>(false);
-    const [showApproachModal, setShowApproachModal] = useState<boolean>(false);
-
     const [completedSubTabs, setCompletedSubTabs] = useState<Set<string>>(new Set());
+
+    // Flash-highlight state: briefly rings the sub-tab the search jumped to
+    const [highlightedSubTab, setHighlightedSubTab] = useState<string | null>(null);
+    const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // ── Init ───────────────────────────────────────────────────────────────────
 
     useEffect(() => {
         if (!objectiveId) return;
-
-        trigger({
-            stage: 'persona_builder',
-            event: 'PERSONA_WORKFLOW_LOADED',
-            payload: {},
-        });
+        trigger({ stage: 'persona_builder', event: 'PERSONA_WORKFLOW_LOADED', payload: {} });
     }, [objectiveId]);
 
     // ── Category & Sub-Tab ────────────────────────────────────────────────────
@@ -109,7 +102,7 @@ const PersonaBuilderManual: React.FC = () => {
         setActiveSubTab(subTabId);
     };
 
-    // ── Attribute Selection ────────────────────────────────────────────────────
+    // ── Attribute key mapping ─────────────────────────────────────────────────
 
     const getFormDataKey = (attributeName: string): keyof PersonaFormData => {
         const mapping: Record<string, keyof PersonaFormData> = {
@@ -143,6 +136,50 @@ const PersonaBuilderManual: React.FC = () => {
         return mapping[attributeName] ?? (attributeName as keyof PersonaFormData);
     };
 
+    // ── Search navigation ─────────────────────────────────────────────────────
+    //
+    // Three result types, three behaviours:
+    //  • category  → switch tab only
+    //  • attribute → switch tab + jump to sub-tab + flash highlight
+    //  • option    → all of the above + auto-select the option chip
+
+    const handleSearchNavigate = useCallback(
+        (category: MainCategory, subTab?: string, optionValue?: string) => {
+            setActiveCategory(category);
+
+            if (subTab) {
+                setActiveSubTab(subTab);
+
+                if (optionValue) {
+                    const formKey = getFormDataKey(subTab);
+                    const isMulti = isMultiSelectAttribute(subTab);
+
+                    setFormData((prev) => {
+                        const current = prev[formKey];
+                        if (isMulti) {
+                            const existing = Array.isArray(current) ? current : [];
+                            const next = existing.includes(optionValue)
+                                ? existing
+                                : [...existing, optionValue];
+                            return { ...prev, [formKey]: next };
+                        }
+                        return { ...prev, [formKey]: optionValue };
+                    });
+
+                    setCompletedSubTabs((prev) => new Set([...prev, subTab]));
+                }
+
+                // Flash the sub-tab so the user sees exactly where they landed
+                if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+                setHighlightedSubTab(subTab);
+                highlightTimerRef.current = setTimeout(() => setHighlightedSubTab(null), 1400);
+            }
+        },
+        []
+    );
+
+    // ── Attribute selection ────────────────────────────────────────────────────
+
     const handleAttributeSelect = (attributeName: string, value: string | string[]) => {
         const formKey = getFormDataKey(attributeName);
         setFormData((prev) => ({ ...prev, [formKey]: value }));
@@ -151,9 +188,9 @@ const PersonaBuilderManual: React.FC = () => {
             setCompletedSubTabs((prev) => new Set([...prev, attributeName]));
         } else {
             setCompletedSubTabs((prev) => {
-                const newSet = new Set(prev);
-                newSet.delete(attributeName);
-                return newSet;
+                const s = new Set(prev);
+                s.delete(attributeName);
+                return s;
             });
         }
     };
@@ -165,7 +202,6 @@ const PersonaBuilderManual: React.FC = () => {
 
     // ── Submit ─────────────────────────────────────────────────────────────────
 
-    // AFTER
     const handleCalibratePersona = () => {
         const validation = validatePersonaData(formData);
         if (!validation.isValid) {
@@ -181,8 +217,6 @@ const PersonaBuilderManual: React.FC = () => {
             objectiveId
         );
 
-        // Fire-and-forget — submit in background while user watches the loader.
-        // PersonaBuilder grid view will fetch the completed persona when the loader finishes.
         try {
             (submitCompletePersona as unknown as (p: Record<string, unknown>) => Promise<unknown>)(payload);
         } catch (error) {
@@ -197,48 +231,7 @@ const PersonaBuilderManual: React.FC = () => {
 
     // ── Navigation ────────────────────────────────────────────────────────────
 
-    const handleExplorationMethod = () => {
-        // Mark Step 2 (Persona Creation) as complete — moving to Step 3
-        if (objectiveId) localStorage.setItem(`step2_done_${objectiveId}`, '1');
-
-        if (isApproachLocked) {
-            if (
-                (exploration as Record<string, unknown> | undefined)?.is_quantitative &&
-                !(exploration as Record<string, unknown> | undefined)?.is_qualitative
-            ) {
-                navigate(
-                    `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/population-builder`,
-                    { state: { researchApproach: 'quantitative' } }
-                );
-            } else {
-                navigate(
-                    `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/depth-interview`,
-                    {
-                        state: {
-                            researchApproach:
-                                (exploration as Record<string, unknown> | undefined)?.is_qualitative &&
-                                    (exploration as Record<string, unknown> | undefined)?.is_quantitative
-                                    ? 'both'
-                                    : 'qualitative',
-                        },
-                    }
-                );
-            }
-            return;
-        }
-
-        navigate(
-            `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/approach-selection`,
-            {
-                state: {
-                    backPath: `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-builder/manual`,
-                },
-            }
-        );
-    };
-
     const handleApproachSelect = async (approach: string) => {
-        // Mark Step 2 (Persona Creation) as complete — approach is being selected
         if (objectiveId) localStorage.setItem(`step2_done_${objectiveId}`, '1');
         try {
             const methodData = {
@@ -269,27 +262,23 @@ const PersonaBuilderManual: React.FC = () => {
             console.error('Failed to update research approach:', error);
         }
     };
+
     const handleRemoveAttribute = (key: keyof PersonaFormData, valueToRemove: string) => {
         setFormData((prev) => {
             const current = prev[key];
             if (Array.isArray(current)) {
-                // Multi-select: remove just this value
                 const updated = current.filter((v) => v !== valueToRemove);
                 const newData = { ...prev, [key]: updated };
-                // If array is now empty, remove the key entirely so card hides it
                 if (updated.length === 0) delete newData[key];
                 return newData;
             }
-            // Single-select: clear the key
             const newData = { ...prev };
             delete newData[key];
             return newData;
         });
 
-        // Also remove from completedSubTabs if the attribute is now empty
         setCompletedSubTabs((prev) => {
-            const newSet = new Set(prev);
-            // Find the subtab name that maps to this formData key
+            const s = new Set(prev);
             const subtabName = Object.entries({
                 'Age': 'age', 'Gender': 'gender', 'Income': 'income',
                 'Education Level': 'educationLevel', 'Occupation Level': 'occupationLevel',
@@ -304,15 +293,12 @@ const PersonaBuilderManual: React.FC = () => {
                 'Purchase Barriers': 'purchaseBarriers', 'Media Consumption Patterns': 'mediaConsumption',
                 'Digital Behaviour': 'digitalBehaviour',
             } as Record<string, string>).find(([, v]) => v === key)?.[0];
-
-            if (subtabName) newSet.delete(subtabName);
-            return newSet;
+            if (subtabName) s.delete(subtabName);
+            return s;
         });
     };
 
-    const handleRemoveFormativeExperience = () => {
-        setFormativeExperience('');
-    };
+    const handleRemoveFormativeExperience = () => setFormativeExperience('');
 
     const handleBack = () => {
         navigate(
@@ -329,13 +315,12 @@ const PersonaBuilderManual: React.FC = () => {
             if (!categoryData) return acc;
             return [...acc, ...categoryData.items];
         }, []);
-
         if (allSubTabs.length === 0) return 0;
         const completed = allSubTabs.filter((tab) => completedSubTabs.has(tab)).length;
         return Math.round((completed / allSubTabs.length) * 100);
     };
 
-    // ── Render ─────────────────────────────────────────────────────────────────
+    // ── Render helpers ─────────────────────────────────────────────────────────
 
     const renderCategoryTabs = () => (
         <div className="pbm-category-tabs">
@@ -373,6 +358,7 @@ const PersonaBuilderManual: React.FC = () => {
                     activeSubTab={activeSubTab}
                     onSubTabChange={handleSubTabChange}
                     completedSubTabs={Array.from(completedSubTabs)}
+                    highlightedSubTab={highlightedSubTab}
                 />
                 <AttributeSelectionPanel
                     attributeName={activeSubTab}
@@ -393,6 +379,12 @@ const PersonaBuilderManual: React.FC = () => {
                 {/* ── Section Title ── */}
                 <h2 className="pbm-section-title">Key Attributes</h2>
 
+                {/* ── Search Bar ── */}
+                <PersonaSearch
+                    onNavigate={handleSearchNavigate}
+                    disabled={isSubmitting}
+                />
+
                 {/* ── Main Card ── */}
                 <motion.div
                     initial={{ opacity: 0, y: 12 }}
@@ -400,10 +392,8 @@ const PersonaBuilderManual: React.FC = () => {
                     transition={{ duration: 0.2 }}
                     className="pbm-main-card"
                 >
-                    {/* Category Tabs */}
                     {renderCategoryTabs()}
 
-                    {/* Content */}
                     <div className="pbm-content">
                         <AnimatePresence mode="wait">
                             <motion.div
@@ -417,10 +407,9 @@ const PersonaBuilderManual: React.FC = () => {
                             </motion.div>
                         </AnimatePresence>
                     </div>
-                    {/* ← No footer inside the card anymore */}
                 </motion.div>
 
-                {/* ── Persona Summary — always visible below the main card ── */}
+                {/* ── Persona Summary ── */}
                 <PersonaSummaryView
                     personaName={personaName}
                     formData={formData}
@@ -431,7 +420,7 @@ const PersonaBuilderManual: React.FC = () => {
                     onRemoveFormativeExperience={handleRemoveFormativeExperience}
                 />
 
-                {/* ── Footer — lives below summary, sticky to bottom ── */}
+                {/* ── Footer ── */}
                 <div className="pbm-footer">
                     <div className="pbm-footer-left">
                         <button className="pbm-back-link" onClick={handleBack}>
@@ -468,7 +457,6 @@ const PersonaBuilderManual: React.FC = () => {
 
             </div>
 
-            {/* ── Edit Persona Name Modal ── */}
             <EditPersonaNameModal
                 isOpen={showEditNameModal}
                 currentName={personaName}
@@ -482,7 +470,7 @@ const PersonaBuilderManual: React.FC = () => {
     );
 };
 
-// ── Formative Experience tab inner content ─────────────────────────────────
+// ── Formative Experience inner tab ─────────────────────────────────────────
 
 import FormativeExperienceInput from './FormativeExpInput';
 

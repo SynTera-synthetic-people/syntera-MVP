@@ -351,18 +351,22 @@ const ExplorationList: React.FC = () => {
             </button>
 
             <div className="create-btn-wrapper">
-              <motion.button
-                whileHover={effectivelyMaxed ? {} : { scale: 1.02 }}
-                whileTap={effectivelyMaxed ? {} : { scale: 0.98 }}
-                onMouseEnter={() => setIsTooltipHovered(true)}
+              <div
+                onMouseEnter={() => effectivelyMaxed && setIsTooltipHovered(true)}
                 onMouseLeave={() => setIsTooltipHovered(false)}
-                onClick={() => !effectivelyMaxed && setShowCreate(true)}
-                disabled={effectivelyMaxed}
-                className={`create-exploration-btn ${effectivelyMaxed ? "disabled" : ""}`}
+                style={{ display: 'inline-block' }}
               >
-                <SpIcon name="sp-Edit-Add_Plus" />
-                <span>Create Exploration</span>
-              </motion.button>
+                <motion.button
+                  whileHover={effectivelyMaxed ? {} : { scale: 1.02 }}
+                  whileTap={effectivelyMaxed ? {} : { scale: 0.98 }}
+                  onClick={() => !effectivelyMaxed && setShowCreate(true)}
+                  disabled={effectivelyMaxed}
+                  className={`create-exploration-btn ${effectivelyMaxed ? "disabled" : ""}`}
+                >
+                  <SpIcon name="sp-Edit-Add_Plus" />
+                  <span>Create Exploration</span>
+                </motion.button>
+              </div>
 
               {isTooltipHovered && effectivelyMaxed && (
                 <motion.div
@@ -374,24 +378,13 @@ const ExplorationList: React.FC = () => {
                   <p className="trial-limit-tooltip__body">
                     <button
                       className="trial-limit-tooltip__upgrade-link"
-                      onClick={() => navigate('/main/settings')}
+                      onClick={() => navigate('/main/settings', { state: { initialView: 'upgrade' } })}
                     >
                       Upgrade
                     </button>
                     {' '}to continue exploring behavioural insights without limits.
                   </p>
                   <div className="trial-limit-tooltip__arrow" />
-                </motion.div>
-              )}
-
-              {isTooltipHovered && !effectivelyMaxed && (
-                <motion.div
-                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  className="create-tooltip"
-                >
-                  Create a dedicated exploration for each research question or study.
-                  <div className="tooltip-arrow" />
                 </motion.div>
               )}
             </div>

@@ -1,9 +1,10 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { TbLoader, TbX, TbSend, TbUpload, TbCheck, TbChevronDown, TbAlertCircle } from 'react-icons/tb';
+import { TbLoader, TbX, TbAlertCircle } from 'react-icons/tb';
 import SpIcon from '../../../../../SPIcon';
 import QuestionnaireLoader from './QuestionnaireLoader';
+import QuestionnaireGuide from './QuestionnaireGuide';
 import './Questionnaire.css';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -140,19 +141,6 @@ const Questionnaire: React.FC = () => {
   // ── Upload validation error state ─────────────────────────────────────────
   const [uploadError,      setUploadError]      = useState<UploadError>(null);
 
-  const [openDropdown,     setOpenDropdown]     = useState<string | null>(null);
-  const [selectedOptions,  setSelectedOptions]  = useState<Record<string, string>>({});
-
-  // ── Close dropdown on outside click ──────────────────────────────────────
-
-  useEffect(() => {
-    const close = () => setOpenDropdown(null);
-    document.addEventListener('click', close);
-    return () => document.removeEventListener('click', close);
-  }, []);
-
-  // ── File validation ───────────────────────────────────────────────────────
-
   /**
    * Validates file against:
    *   1. Format — must be PDF, Word, or Excel (by MIME + extension)
@@ -249,14 +237,12 @@ const Questionnaire: React.FC = () => {
   };
 
   const handleConfirmLaunch = () => {
+    if (objectiveId) {
+      localStorage.setItem(`quantitative_sub1_${objectiveId}`, '1');
+    }
     navigate(
       `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/population-builder`
     );
-  };
-
-  const handleOptionSelect = (questionId: string, option: string) => {
-    setSelectedOptions((prev) => ({ ...prev, [questionId]: option }));
-    setOpenDropdown(null);
   };
 
   // ── Upload error banner (Figma-accurate, shown before loader) ─────────────
@@ -379,10 +365,10 @@ const Questionnaire: React.FC = () => {
     );
   }
 
-  // ── Main questionnaire view ───────────────────────────────────────────────
+  // ── Main questionnaire view — delegates to QuestionnaireGuide ─────────
 
   return (
-    <div className="qu-page">
+    <>
       <input
         ref={fileInputRef}
         type="file"
@@ -396,145 +382,13 @@ const Questionnaire: React.FC = () => {
         <UploadErrorBanner />
       </div>
 
-      <div className="qu-guide-page">
-
-        {/* ── Page header ── */}
-        <div className="qu-guide-page-header">
-          <div>
-            <h1 className="qu-guide-page-title">Questionnaire</h1>
-            <p className="qu-guide-page-subtitle">
-              Structured to measure behaviours, preferences, and decision-making at scale
-            </p>
-          </div>
-
-          <div className="qu-header-actions">
-            <AnimatePresence>
-              {showReadyToast && (
-                <motion.div
-                  className="qu-ready-toast"
-                  initial={{ opacity: 0, y: -8, scale: 0.97 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -8, scale: 0.97 }}
-                  transition={{ duration: 0.22 }}
-                >
-                  <SpIcon name="sp-Warning-Circle_Check" size={18} className="qu-ready-toast__icon" />
-                  <span>Your Questionnaire is Ready</span>
-                  <button
-                    className="qu-ready-toast__close"
-                    onClick={() => setShowReadyToast(false)}
-                  >
-                    <TbX size={14} />
-                  </button>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            <button className="qu-btn qu-btn--outline qu-btn--sm" onClick={handleUploadClick}>
-              <TbUpload size={16} />
-              Upload
-            </button>
-          </div>
-        </div>
-
-        {/* ── Sections ── */}
-        <div className="qu-guide-card">
-          {SECTIONS.map((section, sectionIndex) => (
-            <motion.div
-              key={sectionIndex}
-              className="qu-section"
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: sectionIndex * 0.06 }}
-            >
-              <div className="qu-section__header">
-                <div className="qu-section__num">{sectionIndex + 1}</div>
-                <h3 className="qu-section__title">{section.title}</h3>
-              </div>
-
-              <div className="qu-section__divider" />
-
-              <div className="qu-questions">
-                {section.questions.map((question, qIndex) => (
-                  <div
-                    key={question.id}
-                    className={`qu-question ${openDropdown === question.id ? 'qu-question--open' : ''}`}
-                  >
-                    <span className="qu-question__label">Q{qIndex + 1}.</span>
-
-                    <div className="qu-question__body">
-                      <p className="qu-question__text">{question.text}</p>
-
-                      <div className="qu-dropdown-wrap">
-                        <button
-                          className={[
-                            'qu-dropdown-trigger',
-                            selectedOptions[question.id] ? 'qu-dropdown-trigger--selected' : '',
-                          ].join(' ')}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setOpenDropdown(openDropdown === question.id ? null : question.id);
-                          }}
-                        >
-                          <span className="qu-dropdown-trigger__label">
-                            {selectedOptions[question.id] || 'Select an option to preview…'}
-                          </span>
-                          <TbChevronDown
-                            className={[
-                              'qu-dropdown-trigger__chevron',
-                              openDropdown === question.id ? 'qu-dropdown-trigger__chevron--open' : '',
-                            ].join(' ')}
-                            size={16}
-                          />
-                        </button>
-
-                        <AnimatePresence>
-                          {openDropdown === question.id && (
-                            <motion.div
-                              className="qu-dropdown-menu"
-                              initial={{ opacity: 0, y: 8, scale: 0.97 }}
-                              animate={{ opacity: 1, y: 0, scale: 1 }}
-                              exit={{ opacity: 0, y: 8, scale: 0.97 }}
-                              transition={{ duration: 0.16 }}
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {question.options.map((option) => {
-                                const isSelected = selectedOptions[question.id] === option;
-                                return (
-                                  <button
-                                    key={option}
-                                    className={[
-                                      'qu-dropdown-option',
-                                      isSelected ? 'qu-dropdown-option--selected' : '',
-                                    ].join(' ')}
-                                    onClick={() => handleOptionSelect(question.id, option)}
-                                  >
-                                    <span>{option}</span>
-                                    {isSelected && <TbCheck size={15} className="qu-dropdown-option__check" />}
-                                  </button>
-                                );
-                              })}
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-          ))}
-        </div>
-
-        {/* ── Confirm & Launch bar ── */}
-        <div className="qu-launch-bar">
-          <button className="qu-launch-btn" onClick={handleConfirmLaunch}>
-            Confirm & Launch Survey
-            <TbSend size={18} />
-          </button>
-        </div>
-
-      </div>
-    </div>
+      <QuestionnaireGuide
+        onConfirm={handleConfirmLaunch}
+        onUpload={handleUploadClick}
+        showReadyToast={showReadyToast}
+        onDismissToast={() => setShowReadyToast(false)}
+      />
+    </>
   );
 };
 
