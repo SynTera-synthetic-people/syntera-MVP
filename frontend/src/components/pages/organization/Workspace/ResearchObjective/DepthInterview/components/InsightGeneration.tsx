@@ -1,12 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
-import { TbLoader, TbX } from 'react-icons/tb';
+import { TbLoader } from 'react-icons/tb';
 import SpIcon, { type SpIconName } from '../../../../../../SPIcon';
 import {
-  useExportAllInterviewsPdf,
   useAllInterviewPreview,
+  useDownloadQualTranscripts,
+  useDownloadQualDecisionIntelligence,
+  useDownloadQualBehaviorArchaeology,
+  usePrepareQualReport,
+  useQualReportStatus,
 } from '../../../../../../../hooks/useInterview';
 import { useExploration,useUpdateExplorationMethod } from '../../../../../../../hooks/useExplorations';
 import { useOmniWorkflow } from '../../../../../../../hooks/useOmiWorkflow';
@@ -83,6 +87,9 @@ const InsightGeneration: React.FC = () => {
     behaviour: 'idle',
   });
 
+  // When true, useQualReportStatus polls every 5 s for DI/BA completion.
+  const [pollingEnabled, setPollingEnabled] = useState(false);
+
   // ── Modal visibility ──────────────────────────────────────────────────────
 
   const [viewingCard,          setViewingCard]          = useState<InsightCardId | null>(null);
@@ -93,13 +100,51 @@ const InsightGeneration: React.FC = () => {
 
   // ── Hooks ─────────────────────────────────────────────────────────────────
 
-  const exportAllMutation = useExportAllInterviewsPdf(workspaceId, objectiveId);
+  // Download mutations — used only in the viewer modal (cache hit, fast).
+  const downloadTranscriptsMutation = useDownloadQualTranscripts(workspaceId, objectiveId);
+  const downloadDecisionMutation    = useDownloadQualDecisionIntelligence(workspaceId, objectiveId);
+  const downloadBehaviourMutation   = useDownloadQualBehaviorArchaeology(workspaceId, objectiveId);
+
+  // Prepare mutation — fires background LLM generation on the server and returns
+  // immediately so the browser never blocks waiting for a 2-3 min LLM call.
+  const prepareMutation = usePrepareQualReport(workspaceId, objectiveId);
+
+  // Poll report status every 5 s while DI/BA are generating; also restores
+  // card states when the user navigates back to this page.
+  const { data: reportStatusData } = useQualReportStatus(workspaceId, objectiveId, {
+    enabled: !!(workspaceId && objectiveId),
+    refetchInterval: pollingEnabled ? 5_000 : false,
+    staleTime: 0,
+  });
+
+  // Sync card states from server report status.
+  useEffect(() => {
+    const qual = (reportStatusData as any)?.qual;
+    if (!qual) return;
+
+    const DI = qual.DECISION_INTELLIGENCE?.status as string | undefined;
+    const BA = qual.BEHAVIORAL_ARCHAEOLOGY?.status as string | undefined;
+    const TR = qual.TRANSCRIPTS?.status as string | undefined;
+
+    setCardStates((prev) => {
+      const next = { ...prev };
+      if (DI === 'done')                                       next.decision  = 'ready';
+      else if (DI === 'failed' && prev.decision === 'generating') next.decision  = 'idle';
+      if (BA === 'done')                                       next.behaviour = 'ready';
+      else if (BA === 'failed' && prev.behaviour === 'generating') next.behaviour = 'idle';
+      // Restore verbatim only if not currently generating (avoid race)
+      if (TR === 'done' && prev.verbatim !== 'generating')    next.verbatim  = 'ready';
+      return next;
+    });
+
+    // Stop polling once nothing is pending
+    if (DI !== 'pending' && BA !== 'pending') setPollingEnabled(false);
+  }, [reportStatusData]);
 
   // Pre-fetch verbatim preview data so it's ready when user clicks "View"
   const {
     data: verbatimPreviewData,
     isLoading: verbatimLoading,
-    refetch: refetchVerbatim,
   } = useAllInterviewPreview(workspaceId, objectiveId, {
     enabled: !!workspaceId && !!objectiveId,
   });
@@ -118,21 +163,19 @@ const InsightGeneration: React.FC = () => {
 
   const handleGenerate = async (cardId: InsightCardId) => {
     setCardStates((prev) => ({ ...prev, [cardId]: 'generating' }));
-
     try {
       if (cardId === 'verbatim') {
-        // Verbatim uses the existing export-all-interviews PDF endpoint
-        await exportAllMutation.mutateAsync();
-        await refetchVerbatim();
+        // Transcripts: synchronous DOCX generation — no LLM, completes in seconds.
+        await downloadTranscriptsMutation.mutateAsync();
+        setCardStates((prev) => ({ ...prev, [cardId]: 'ready' }));
       } else {
-        // Decision Intelligence & Behaviour Archaeology: hooks TBD from backend.
-        // For now we simulate the generation delay and mark as ready.
-        // Replace the setTimeout with the real mutateAsync call once the
-        // backend endpoints are available (e.g. useGenerateDecisionIntel,
-        // useGenerateBehaviourArchaeology).
-        await new Promise<void>((resolve) => setTimeout(resolve, 2000));
+        // DI / BA: fire background LLM task on server, return immediately.
+        // useQualReportStatus polls every 5 s and flips the card to 'ready'
+        // once the server reports the PDF is done.
+        const slug = cardId === 'decision' ? 'decision-intelligence' : 'behavior-archaeology';
+        await prepareMutation.mutateAsync(slug);
+        setPollingEnabled(true);
       }
-      setCardStates((prev) => ({ ...prev, [cardId]: 'ready' }));
     } catch (err) {
       console.error(`Failed to generate ${cardId}:`, err);
       setCardStates((prev) => ({ ...prev, [cardId]: 'idle' }));
@@ -296,7 +339,9 @@ const InsightGeneration: React.FC = () => {
             objectiveId={objectiveId ?? ''}
             verbatimPreviewData={verbatimPreviewData}
             verbatimLoading={verbatimLoading}
-            exportAllMutation={exportAllMutation}
+            downloadTranscriptsMutation={downloadTranscriptsMutation}
+            downloadDecisionMutation={downloadDecisionMutation}
+            downloadBehaviourMutation={downloadBehaviourMutation}
             onClose={() => setViewingCard(null)}
           />
         )}

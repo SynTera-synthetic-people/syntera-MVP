@@ -4,7 +4,8 @@ from datetime import datetime
 
 class InterviewCreate(BaseModel):
     persona_id: Optional[str] = None
-    # extra_questions: List[str] = Field(default_factory=list)
+    force_new: bool = False    # Bypass idempotency — always create a new record
+    lightweight: bool = False  # Skip batch LLM generation (Conversation Studio mode)
 
 class MessageIn(BaseModel):
     role: str = Field(..., pattern=r"^(user|persona|system|other)$")

@@ -60,6 +60,23 @@ export const personaService = {
     return response.data;
   },
 
+  downloadPersonaCards: async (workspaceId, objectiveId, personaIds) => {
+    const response = await axiosInstance.post(
+      `/workspaces/${workspaceId}/explorations/${objectiveId}/personas/bulk-download`,
+      { persona_ids: personaIds },
+      { responseType: 'blob' }
+    );
+    return response.data;
+  },
+
+  replicatePersona: async (workspaceId, objectiveId, personaId, targetCountry) => {
+    const response = await axiosInstance.post(
+      `/workspaces/${workspaceId}/explorations/${objectiveId}/personas/${personaId}/replicate`,
+      { target_country: targetCountry }
+    );
+    return response.data;
+  },
+
   // Get persona preview
   getPersonaPreview: async (workspaceId, objectiveId, personaId) => {
     const response = await axiosInstance.get(

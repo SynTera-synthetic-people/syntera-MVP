@@ -134,7 +134,7 @@ const RunningInterviews: React.FC = () => {
         });
         for (const persona of personas) {
             try {
-                await startInterviewMutation.mutateAsync(persona.id);
+                await startInterviewMutation.mutateAsync({ personaId: persona.id });
             } catch (err) {
                 // Individual failures are non-fatal — the visual loader continues.
                 // The InsightGeneration page will handle cases where some interviews

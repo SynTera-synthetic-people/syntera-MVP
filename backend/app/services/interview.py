@@ -340,6 +340,33 @@ async def generate_discussion_guide_with_llm(workspace_id: str, exploration_id: 
         "message": "Interview guide generated successfully with section and question IDs"
     }
 
+async def create_conversation_session(
+    workspace_id: str,
+    exploration_id: str,
+    persona_id: Optional[str],
+    user_id: str,
+) -> InterviewOut:
+    """
+    Create a lightweight interview record for Conversation Studio.
+    No LLM batch generation — the session is empty and ready for
+    free-form user messages handled by add_user_message_and_get_persona_reply.
+    """
+    async with AsyncSession(async_engine) as session:
+        iv = Interview(
+            id=generate_id(),
+            workspace_id=workspace_id,
+            exploration_id=exploration_id,
+            persona_id=persona_id,
+            messages=[{"role": "system", "text": "Conversation Studio session", "ts": datetime.utcnow().isoformat()}],
+            generated_answers={},
+            created_by=user_id,
+        )
+        session.add(iv)
+        await session.commit()
+        await session.refresh(iv)
+        return _map_interview_row_to_out(iv)
+
+
 async def start_interview(
     workspace_id: str,
     exploration_id: str,

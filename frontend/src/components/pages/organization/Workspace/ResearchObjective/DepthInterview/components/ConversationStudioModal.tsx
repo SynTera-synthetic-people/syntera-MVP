@@ -7,7 +7,6 @@ import {
   useStartInterview,
   useSendMessage,
   useInterview,
-  useInterviewByPersona,
 } from '../../../../../../../hooks/useInterview';
 import './ConversationStudioModal.css';
 
@@ -69,17 +68,7 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
   const startInterviewMutation = useStartInterview(workspaceId, objectiveId);
   const sendMessageMutation    = useSendMessage(workspaceId, objectiveId, interviewId ?? '');
 
-  // Check if an interview already exists for the selected persona before
-  // starting a new one — prevents unnecessary LLM re-runs on re-visit.
-  const {
-    data: existingInterviewData,
-    isLoading: isCheckingExisting,
-    isFetched: existingInterviewFetched,
-  } = useInterviewByPersona(workspaceId, objectiveId, selectedPersona);
-
-  // Fetch messages for an active interview. When restoring an existing interview
-  // we do NOT poll (refetchInterval: false) — we only need a one-time load.
-  // When the user is actively chatting we poll every 5 s to pick up new replies.
+  // Poll for new persona replies while the chat is active.
   const { data: interviewData, isLoading: isInterviewLoading } = useInterview(
     workspaceId,
     objectiveId,
@@ -92,11 +81,16 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
 
   // ── Effects ───────────────────────────────────────────────────────────────
 
-  // Sync messages from polling / one-time restore fetch
+  // Sync messages from polling. System-role entries are internal markers and are
+  // never shown; the persona greeting lives in local state only.
   useEffect(() => {
     const apiMessages = (interviewData as any)?.data?.messages;
     if (!apiMessages) return;
-    const formatted: ChatMessage[] = apiMessages.map((msg: any) => ({
+
+    const visible = apiMessages.filter((msg: any) => msg.role !== 'system');
+    if (visible.length === 0) return; // nothing displayable yet — keep greeting
+
+    const formatted: ChatMessage[] = visible.map((msg: any) => ({
       sender: msg.role === 'user' ? 'user' : 'bot',
       text: msg.text || '',
       timestamp: msg.ts,
@@ -136,38 +130,28 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
   const handleStartConversation = async () => {
     if (!selectedPersona) return;
 
+    // Always start a brand-new interview session. Passing forceNew=true tells
+    // the backend to bypass the idempotency guard so old messages are never
+    // loaded into this fresh Conversation Studio session.
     try {
-      // If an existing interview is found for this persona, restore it directly
-      // without re-running the LLM. Messages are populated automatically by the
-      // useInterview hook once interviewId is set (one-time fetch, no polling).
-     const existingInterview = existingInterviewData?.data as Interview | null;
-
-      if (existingInterview?.id) {
-        setInterviewId(existingInterview.id);
-        setIsChatActive(true);
-        // Messages will be populated by the useInterview useEffect above.
-        return;
-      }
-
-      // No existing interview — start a fresh one (LLM call).
-      const result = await startInterviewMutation.mutateAsync(selectedPersona);
+      const result = await startInterviewMutation.mutateAsync({
+        personaId: selectedPersona,
+        forceNew: true,
+        lightweight: true,
+      });
       const id = (result as any)?.data?.id;
 
       if (id) {
-        setInterviewId(id);
-        setIsChatActive(true);
+        // Show greeting immediately from local state; DB session starts empty.
         setMessages([
           {
             sender: 'bot',
-            text: `Hello! I'm ${selectedPersonaName}. You can ask me questions about my experiences and perspectives.`,
-            timestamp: new Date().toISOString(),
-          },
-          {
-            sender: 'bot',
-            text: 'You can type your questions below, or use the microphone for voice input.',
+            text: `Hey, I'm ${selectedPersonaName}. You bring the curiosity, I'll handle the heavy lifting.`,
             timestamp: new Date().toISOString(),
           },
         ]);
+        setInterviewId(id);
+        setIsChatActive(true);
       }
     } catch (err) {
       console.error('Failed to start interview:', err);
@@ -234,10 +218,7 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
   const activePersona = personas.find((p) => p.id === selectedPersona);
   const hasSelection  = !!selectedPersona;
 
-  // The "Start Interview" button should be disabled while:
-  //   1. We're still checking whether an existing interview exists, or
-  //   2. A new interview is being created.
-  const isStarting = isCheckingExisting || startInterviewMutation.isPending;
+  const isStarting = startInterviewMutation.isPending;
 
   // ── Format timestamp ──────────────────────────────────────────────────────
 
@@ -417,8 +398,7 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
                       )}
                     </button>
                   </div>
-                ) : messages.length === 0 && (isInterviewLoading || isCheckingExisting) ? (
-                  /* Loading state: restoring existing interview messages */
+                ) : messages.length === 0 && isInterviewLoading ? (
                   <div className="cs-messages__loading">
                     <TbLoader size={28} className="cs-messages__loading-spinner" />
                     <span>Setting up the interview…</span>

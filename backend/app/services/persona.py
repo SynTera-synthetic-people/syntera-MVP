@@ -912,10 +912,13 @@ async def create_manual_persona_draft(
     workspace_id: str,
     user_id: str,
     payload,  # ManualPersonaCreate — avoid circular import, resolved at call site
+    validation_warnings: Optional[list] = None,
 ) -> dict:
     """
     Creates a persona from structured form input without any AI call.
     calibration_status="draft" signals the frontend that calibration is pending.
+    validation_warnings (from plausibility engine) are stored in persona_details
+    so they remain accessible after the draft is created.
     """
     d = payload.demographics
     psych = payload.psychological
@@ -926,6 +929,12 @@ async def create_manual_persona_draft(
         return ", ".join(str(v) for v in lst if v) if lst else None
 
     occupation = (add.occupation if add and add.occupation else None) or d.occupation or ""
+
+    # Store raw traits + any plausibility warnings so the calibrate step can
+    # reference them and the detail view can surface them to the frontend.
+    persona_details_init: dict = {"raw_traits": payload.dict()}
+    if validation_warnings:
+        persona_details_init["validation_warnings"] = validation_warnings
 
     async with AsyncSession(async_engine) as session:
         p = Persona(
@@ -956,8 +965,7 @@ async def create_manual_persona_draft(
             auto_generated_persona=False,
             calibration_status="draft",
             calibration_confidence=None,
-            # Store full structured input so the calibrate endpoint can use it
-            persona_details={"raw_traits": payload.dict()},
+            persona_details=persona_details_init,
         )
         session.add(p)
         await session.commit()

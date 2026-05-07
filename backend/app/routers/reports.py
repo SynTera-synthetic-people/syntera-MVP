@@ -405,6 +405,10 @@ async def quant_behavior_archaeology(
 
 # ─── STATUS ───────────────────────────────────────────────────────────────────
 
+def _isoformat_or_none(value):
+    return value.isoformat() if value else None
+
+
 @router.get("/status")
 async def report_status(
     workspace_id: str,
@@ -435,8 +439,8 @@ async def report_status(
             error_message = latest.error_message
         result["qual"][public_cta] = {
             "available": cached is not None,
-            "generated_at": cached.created_at.isoformat() if cached else None,
-            "expires_at": cached.expires_at.isoformat() if cached else None,
+            "generated_at": _isoformat_or_none(cached.created_at if cached else None),
+            "expires_at": _isoformat_or_none(cached.expires_at if cached else None),
             "status": status,
             "error_message": error_message,
         }
@@ -446,8 +450,8 @@ async def report_status(
             cached = await cache.get_cached_report(exploration_id, cache_cta, simulation_id)
             result["quant"][public_cta] = {
                 "available": cached is not None,
-                "generated_at": cached.created_at.isoformat() if cached else None,
-                "expires_at": cached.expires_at.isoformat() if cached else None,
+                "generated_at": _isoformat_or_none(cached.created_at if cached else None),
+                "expires_at": _isoformat_or_none(cached.expires_at if cached else None),
             }
 
     return result

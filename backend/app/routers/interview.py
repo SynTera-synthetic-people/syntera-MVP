@@ -189,9 +189,18 @@ async def start_interview(workspace_id: str, exploration_id: str, payload: Inter
     if not await ws_service.is_workspace_admin(workspace_id, current_user.id):
         raise HTTPException(status_code=403, detail=ErrorResponse(status="error", message="Only workspace admins can start interviews").dict())
 
-    # Idempotency guard: if an interview already exists for this persona, return it
-    # instead of re-running the expensive LLM generation step.
-    if payload.persona_id:
+    # Conversation Studio lightweight path: skip LLM batch generation entirely.
+    # Creates an empty session instantly; individual messages use the live reply endpoint.
+    if payload.force_new and payload.lightweight:
+        iv = await interview_service.create_conversation_session(
+            workspace_id, exploration_id, payload.persona_id, current_user.id
+        )
+        await report_cache.invalidate_cache(exploration_id)
+        return SuccessResponse(message="Conversation session started", data=iv)
+
+    # Idempotency guard: skip when force_new=True, otherwise return the existing
+    # interview to avoid re-running the expensive LLM generation step.
+    if payload.persona_id and not payload.force_new:
         existing = await interview_service.get_interview_by_persona(workspace_id, exploration_id, payload.persona_id)
         if existing:
             return SuccessResponse(message="Interview already exists for this persona", data=existing)
@@ -210,7 +219,6 @@ async def start_interview(workspace_id: str, exploration_id: str, payload: Inter
         })
 
     iv = await interview_service.start_interview(workspace_id, exploration_id, payload.persona_id, current_user.id, sections)
-    # New interview data changes insight inputs; force reports to be regenerated once.
     await report_cache.invalidate_cache(exploration_id)
     return SuccessResponse(message="Interview started", data=iv)
 

@@ -2,11 +2,11 @@
 import axiosInstance from '../utils/axiosConfig';
 
 export const interviewService = {
-  // Start a new interview
-  startInterview: async (workspaceId, explorationId, personaId) => {
+  // Start an interview. forceNew bypasses idempotency; lightweight skips batch LLM (Conversation Studio).
+  startInterview: async (workspaceId, explorationId, personaId, forceNew = false, lightweight = false) => {
     const response = await axiosInstance.post(
       `/workspaces/${workspaceId}/explorations/${explorationId}/in-depth/interviews`,
-      { persona_id: personaId }
+      { persona_id: personaId, force_new: forceNew, lightweight }
     );
     return response.data;
   },

@@ -19,6 +19,7 @@ import {
   useUpdateExplorationMethod,
   useExploration,
 } from '../../../../../../../hooks/useExplorations';
+import { personaService } from '../../../../../../../services/personaService';
 import { useTheme } from '../../../../../../../context/ThemeContext';
 import { useOmniWorkflow } from '../../../../../../../hooks/useOmiWorkflow';
 import {
@@ -417,8 +418,13 @@ const ReplicatePersonaModal: React.FC<ReplicatePersonaModalProps> = ({
   const [countryDropdownOpen, setCountryDropdownOpen] = useState(false);
 
   useEffect(() => {
-    if (preSelectedPersona) setSelectedPersonaIds([preSelectedPersona.id]);
-  }, [preSelectedPersona]);
+    if (!show) return;
+    setSelectedPersonaIds(preSelectedPersona ? [preSelectedPersona.id] : []);
+    setSelectedCountry('');
+    setAgreed(false);
+    setPersonaDropdownOpen(false);
+    setCountryDropdownOpen(false);
+  }, [show, preSelectedPersona]);
 
   const togglePersona = (id: string) => {
     setSelectedPersonaIds(prev =>
@@ -431,8 +437,9 @@ const ReplicatePersonaModal: React.FC<ReplicatePersonaModalProps> = ({
   };
 
   const selectedCountryObj = COUNTRIES.find(c => c.code === selectedCountry);
-  const additionalCount = selectedPersonaIds.length || 3;
+  const additionalCount = selectedPersonaIds.length;
   const priceEach = 49;
+  const totalPrice = additionalCount * priceEach;
 
   const canConfirm = selectedPersonaIds.length > 0 && selectedCountry && agreed;
 
@@ -553,7 +560,7 @@ const ReplicatePersonaModal: React.FC<ReplicatePersonaModalProps> = ({
               <div className="pb-pricing-divider" />
               <div className="pb-pricing-row pb-pricing-row--total">
                 <span>Total</span>
-                <span>${priceEach}</span>
+                <span>${totalPrice}</span>
               </div>
             </div>
 
@@ -582,7 +589,7 @@ const ReplicatePersonaModal: React.FC<ReplicatePersonaModalProps> = ({
               <button
                 className={`pb-modal-primary-btn${!canConfirm ? ' pb-modal-primary-btn--disabled' : ''}`}
                 disabled={!canConfirm || isLoading}
-                onClick={() => canConfirm && onConfirm(selectedPersonaIds, selectedCountry)}
+                onClick={() => canConfirm && onConfirm(selectedPersonaIds, selectedCountryObj?.name || selectedCountry)}
               >
                 {isLoading ? <TbLoader size={14} className="pb-btn-spinner" /> : null}
                 Add & Calibrate
@@ -1030,8 +1037,18 @@ const PersonaBuilder: React.FC = () => {
   const [showDownloadToast, setShowDownloadToast] = useState(false);
 
   const handleDownloadPersonaCards = async (selectedIds: string[]) => {
-    // TODO: trigger actual download/export logic here
-    // e.g. await downloadPersonaCards(selectedIds);
+    if (!workspaceId || !objectiveId) return;
+
+    const blob = await personaService.downloadPersonaCards(workspaceId, objectiveId, selectedIds);
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `personas_${objectiveId.slice(0, 8)}.zip`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+
     setShowDownloadToast(true);
     setTimeout(() => setShowDownloadToast(false), 3500);
   };
@@ -1220,6 +1237,8 @@ const PersonaBuilder: React.FC = () => {
   }, []);
 
   const handleReplicateConfirm = async (selectedPersonaIds: string[], country: string) => {
+    if (!workspaceId || !objectiveId || selectedPersonaIds.length === 0 || !country) return;
+
     setIsReplicating(true);
     try {
       trigger({
@@ -1228,20 +1247,18 @@ const PersonaBuilder: React.FC = () => {
         payload: {},
       });
 
-      // Fire persona generation (same as "Create with Omi" in AddResearchObjective)
-      try {
-        await generatePersonas();
-      } catch (err) {
-        console.error('Failed to kick off persona generation:', err);
-      }
+      await Promise.all(
+        selectedPersonaIds.map(personaId =>
+          personaService.replicatePersona(workspaceId, objectiveId, personaId, country)
+        )
+      );
 
       setShowReplicateModal(false);
+      setReplicatePreSelectedPersona(null);
 
-      // Navigate to persona generation loader
-      navigate(
-        `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-generating`,
-        { state: { flow: 'replicate', personaIds: selectedPersonaIds, country } }
-      );
+      await queryClient.invalidateQueries({
+        queryKey: personaKeys.list(workspaceId, objectiveId),
+      });
     } catch (error) {
       console.error('Failed to replicate personas:', error);
     } finally {

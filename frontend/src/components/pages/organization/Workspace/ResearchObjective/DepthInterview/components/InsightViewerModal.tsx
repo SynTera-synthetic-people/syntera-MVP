@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { TbX, TbDownload, TbLoader, TbShare } from 'react-icons/tb';
+import { TbLoader } from 'react-icons/tb';
 import SpIcon from '../../../../../../SPIcon';
 import './InsightViewerModal.css';
 
@@ -8,16 +8,20 @@ import './InsightViewerModal.css';
 
 type InsightCardId = 'verbatim' | 'decision' | 'behaviour';
 
+interface DownloadMutation {
+  mutateAsync: () => Promise<unknown>;
+  isPending: boolean;
+}
+
 interface InsightViewerModalProps {
   cardId: InsightCardId;
   workspaceId: string;
   objectiveId: string;
   verbatimPreviewData: unknown;
   verbatimLoading: boolean;
-  exportAllMutation: {
-    mutateAsync: () => Promise<unknown>;
-    isPending: boolean;
-  };
+  downloadTranscriptsMutation: DownloadMutation;
+  downloadDecisionMutation: DownloadMutation;
+  downloadBehaviourMutation: DownloadMutation;
   onClose: () => void;
 }
 
@@ -42,24 +46,29 @@ const CARD_META: Record<InsightCardId, { title: string; subtitle: string }> = {
 
 const InsightViewerModal: React.FC<InsightViewerModalProps> = ({
   cardId,
-  workspaceId,
-  objectiveId,
   verbatimPreviewData,
   verbatimLoading,
-  exportAllMutation,
+  downloadTranscriptsMutation,
+  downloadDecisionMutation,
+  downloadBehaviourMutation,
   onClose,
 }) => {
   const meta = CARD_META[cardId];
 
+  const activeMutation =
+    cardId === 'verbatim'  ? downloadTranscriptsMutation :
+    cardId === 'decision'  ? downloadDecisionMutation    :
+                             downloadBehaviourMutation;
+
+  const downloadLabel =
+    cardId === 'verbatim' ? 'Download DOCX' : 'Download PDF';
+
   const handleDownload = async () => {
-    if (cardId === 'verbatim') {
-      try {
-        await exportAllMutation.mutateAsync();
-      } catch (err) {
-        console.error('Download failed:', err);
-      }
+    try {
+      await activeMutation.mutateAsync();
+    } catch (err) {
+      console.error('Download failed:', err);
     }
-    // Decision Intelligence & Behaviour Archaeology download hooks TBD
   };
 
   const handleShare = () => {
@@ -151,9 +160,9 @@ const InsightViewerModal: React.FC<InsightViewerModalProps> = ({
           <button
             className="ivm-download-btn"
             onClick={handleDownload}
-            disabled={exportAllMutation.isPending}
+            disabled={activeMutation.isPending}
           >
-            {exportAllMutation.isPending ? (
+            {activeMutation.isPending ? (
               <>
                 <TbLoader className="ivm-download-btn__spinner" size={16} />
                 Downloading…
@@ -161,7 +170,7 @@ const InsightViewerModal: React.FC<InsightViewerModalProps> = ({
             ) : (
               <>
                 <SpIcon name="sp-File-File_Download" size={16} />
-                Download PDF
+                {downloadLabel}
               </>
             )}
           </button>

@@ -16,6 +16,12 @@ export interface MessagePayload {
   role?: string;
 }
 
+export interface StartInterviewPayload {
+  personaId: string;
+  forceNew?: boolean;
+  lightweight?: boolean;
+}
+
 export interface ExportInterviewPayload {
   interviewId: string;
   personaName?: string;
@@ -124,25 +130,29 @@ export const useStartInterview = (
 ) => {
   const queryClient = useQueryClient();
 
-  return useMutation<Interview, Error, string>({
-    mutationFn: (personaId: string) =>
-      interviewService.startInterview(workspaceId, explorationId, personaId),
+  return useMutation<Interview, Error, StartInterviewPayload>({
+    mutationFn: ({ personaId, forceNew = false, lightweight = false }: StartInterviewPayload) =>
+      interviewService.startInterview(workspaceId, explorationId, personaId, forceNew, lightweight),
 
-    onSuccess: (newInterview, personaId) => {
+    onSuccess: (newInterview, { personaId, forceNew }) => {
       // Invalidate interviews list
       queryClient.invalidateQueries({
         queryKey: interviewKeys.list(workspaceId, explorationId),
       });
-      // Seed the by-persona cache so re-navigation within the staleTime window
-      // restores the interview instantly without a round-trip to the server.
-      queryClient.setQueryData(
-        [
-          ...interviewKeys.details(),
-          { workspaceId, explorationId, personaId },
-          'by-persona',
-        ],
-        newInterview
-      );
+      if (!forceNew) {
+        // Seed the by-persona cache so re-navigation within the staleTime window
+        // restores the interview instantly without a round-trip to the server.
+        // Skip this when force_new=true — the old cached entry must remain
+        // untouched so RunningInterviews still gets idempotent behaviour.
+        queryClient.setQueryData(
+          [
+            ...interviewKeys.details(),
+            { workspaceId, explorationId, personaId },
+            'by-persona',
+          ],
+          newInterview
+        );
+      }
     },
   });
 };

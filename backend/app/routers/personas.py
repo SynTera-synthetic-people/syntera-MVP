@@ -39,6 +39,7 @@ from app.utils.omi_helpers import (
 from app.models.omi import WorkflowStage
 from app.services import omi as omi_service
 from app.services.exploration import get_exploration
+from app.services.persona_plausibility import evaluate_from_schema
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/explorations/{exploration_id}/personas",
@@ -263,6 +264,30 @@ async def list_personas(
     return SuccessResponse(message="Personas fetched successfully", data=personas)
 
 
+@router.post("/validate", response_model=SuccessResponse)
+async def validate_persona_plausibility(
+    workspace_id: str,
+    exploration_id: str,
+    payload: ManualPersonaCreate,
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Soft plausibility check for manual persona traits.
+    Returns a list of warnings — never blocks creation.
+    Call this before or after POST /manual to show a warning modal.
+    """
+    warnings = evaluate_from_schema(payload)
+    return SuccessResponse(
+        message="Plausibility check complete",
+        data={
+            "warnings": warnings,
+            "has_warnings": bool(warnings),
+            # Always True — warnings are advisory, not blocking
+            "can_proceed": True,
+        },
+    )
+
+
 @router.post("/manual", response_model=SuccessResponse, status_code=status.HTTP_201_CREATED)
 async def create_manual_persona_draft(
     workspace_id: str,
@@ -274,6 +299,9 @@ async def create_manual_persona_draft(
     """
     Phase 1 of manual persona flow: store structured trait input as a draft.
     No AI is called here. The frontend should follow up with POST /{id}/calibrate.
+    Plausibility warnings are computed and stored with the draft — they never
+    block creation and are surfaced in the response so the frontend can show
+    a review modal before the user proceeds to calibration.
     """
     if not await ws_service.is_workspace_admin(workspace_id, current_user.id):
         raise HTTPException(
@@ -296,13 +324,26 @@ async def create_manual_persona_draft(
             detail=ErrorResponse(status="error", message=e.message).dict()
         )
 
+    # Run plausibility checks before saving — zero DB cost, never blocks
+    warnings = evaluate_from_schema(payload)
+
     draft = await persona_service.create_manual_persona_draft(
-        exploration_id, workspace_id, current_user.id, payload
+        exploration_id, workspace_id, current_user.id, payload,
+        validation_warnings=warnings or None,
     )
     # Draft traits are persona inputs; clear downstream generated qualitative data.
     await interview_service.clear_qualitative_outputs(workspace_id, exploration_id)
     await report_cache.invalidate_cache(exploration_id)
-    return SuccessResponse(message="Persona draft created", data=draft)
+    return SuccessResponse(
+        message="Persona draft created",
+        data={
+            **draft,
+            # Surface warnings inline so the frontend can show a review nudge
+            # without a second API call. Empty list = no issues found.
+            "validation_warnings": warnings,
+            "has_plausibility_warnings": bool(warnings),
+        },
+    )
 
 
 @router.get("/{persona_id}", response_model=SuccessResponse)
