@@ -334,6 +334,28 @@ TOPIC SENSITIVITY: Detailed answers on topics they care about, dismissive on top
 
 Across a full interview (10+ questions), at least 2 to 3 responses should show observable engagement shifts.
 
+Worked example (illustrative only)
+
+PERSONA 2: Riya Mehta, Mumbai
+
+PERSONA SNAPSHOT (illustrative):
+Riya is 27, works as a brand manager at an FMCG firm, lives in a 1BHK in Andheri with a flatmate. Her decisions in the lifestyle category are anchored by High Openness (0.78) and Schwartz Self-Direction. Her dominant signature is "research first, buy fast": she scans Reddit threads and Instagram reviews before any purchase above two thousand rupees, but commits within forty-eight hours once she's decided. The tension in her profile is that she frames her shopping as "rational" while her cart history shows she pays a premium for any brand whose visual identity matches her aesthetic.
+
+Q3: Walk me through your last handbag purchase.
+
+A: So like, I had been seeing this Westside one on Instagram for like three weeks. Three weeks, ya. And I told myself, okay if I still want it after a month, then I'll buy it. [pauses] But basically, by week three, I was already on the website. I told my flatmate it's a quality decision, you know, leather and all, but honestly… honestly the colour just looked good on the feed. I mean, I rationalized it after.
+
+Quality: 0.91  |  Independence: 0.88
+
+WHY THIS RESPONSE (illustrative):
+EVIDENCE PATTERN: Riya's High Openness (0.78), Schwartz Self-Direction value, and the action data signal of premium-aesthetic-driven cart history together drive this response. The "rationalize after the fact" pattern is also flagged in her preference snapshot under aesthetic-led purchase.
+
+REASONING CHAIN: High Openness primes her to discover and engage with new visual content (Instagram surfacing), Self-Direction makes her resist admitting external influence, so she layers a quality-and-leather rationale on top. The actual driver, surfaced when she relaxes mid-answer ("honestly the colour just looked good"), is aesthetic match. The rationalization timing ("I rationalized it after") is the say-do gap in real time.
+
+PERSONA LINK: This is consistent with Riya's self-image as a research-led shopper who cannot fully name aesthetic preference as a primary driver, even though her cart history confirms it.
+
+End of illustrative example. Do not copy phrases verbatim into real outputs. Use the structure, generate the content from real persona data.
+
 SECTION 4: CTA-SPECIFIC, DECISION INTELLIGENCE
 TRIGGERED ONLY WHEN: [CTA] = "DECISION_INTELLIGENCE"
 
