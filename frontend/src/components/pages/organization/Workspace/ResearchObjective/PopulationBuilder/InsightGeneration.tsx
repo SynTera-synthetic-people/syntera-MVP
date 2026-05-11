@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { TbLoader } from 'react-icons/tb';
+import SpIcon from '../../../../../SPIcon'
 import './InsightGeneration.css';
 
 interface InsightsGenerationProps {
@@ -65,7 +66,7 @@ const PlaygroundIcon = () => (
 const INSIGHT_CARDS: InsightCard[] = [
   {
     id: 'raw',
-    icon: <RawDataIcon />,
+    icon: <SpIcon name="sp-User-User_Voice" size={48} />,
     timeLabel: 'Less than 20-30 sec',
     title: 'Raw Data Shell',
     description: 'Structured response data, ready for analysis, export, and validation',
@@ -73,7 +74,7 @@ const INSIGHT_CARDS: InsightCard[] = [
   },
   {
     id: 'decision',
-    icon: <DecisionIcon />,
+    icon: <SpIcon name="sp-Environment-Bulb" size={48} />,
     timeLabel: '2-3 mins',
     title: 'Decision Intelligence',
     description: 'From responses to clear, decision-ready insights and recommendations',
@@ -81,7 +82,7 @@ const INSIGHT_CARDS: InsightCard[] = [
   },
   {
     id: 'behaviour',
-    icon: <BehaviourIcon />,
+    icon: <SpIcon name="sp-Edit-Undo" size={48} />,
     timeLabel: '2 to 3 mins',
     title: 'Behaviour Archaeology',
     description: 'Uncover the behavioural patterns, motivations, and hidden drivers behind responses',
@@ -89,7 +90,7 @@ const INSIGHT_CARDS: InsightCard[] = [
   },
   {
     id: 'playground',
-    icon: <PlaygroundIcon />,
+    icon: <SpIcon name="sp-Environment-Puzzle" size={48} />,
     timeLabel: '2 to 3 mins',
     title: 'Data Playground',
     description: 'Slice, filter, and explore your data dynamically to test hypotheses and uncover patterns',
@@ -97,9 +98,13 @@ const INSIGHT_CARDS: InsightCard[] = [
   },
 ];
 
-const InsightsGeneration: React.FC<InsightsGenerationProps> = ({ onLaunchSurvey }) => {
+const InsightsGeneration: React.FC<InsightsGenerationProps> = ({ onLaunchSurvey, explorationId }) => {
   const [cardStates, setCardStates] = useState<Record<string, CardState>>({});
-
+  useEffect(() => {
+    if (explorationId) {
+      localStorage.setItem(`quant_sub4_${explorationId}`, '1');
+    }
+  }, [explorationId]);
   const handleAction = (cardId: string) => {
     setCardStates((prev) => ({ ...prev, [cardId]: 'generating' }));
     setTimeout(() => {
@@ -147,10 +152,7 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({ onLaunchSurvey 
               </div>
 
               <div className="ig-card__badge">
-                <svg className="ig-card__badge-clock" viewBox="0 0 16 16" fill="none">
-                  <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.2" />
-                  <path d="M8 5v3.5l2 1" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-                </svg>
+                <SpIcon name="sp-Calendar-Alarm" size={16} />
                 {card.timeLabel}
               </div>
 

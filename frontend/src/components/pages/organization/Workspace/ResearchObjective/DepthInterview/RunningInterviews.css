@@ -77,7 +77,8 @@
   height: 100px;
   border-radius: 50%;
   /* Static green ring by default */
-  border: 3px solid #06A17B;
+  border: 3.5px solid #06A17B;
+  box-shadow: 0 0 12px rgba(6, 161, 123, 0.5);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -87,7 +88,7 @@
 /* Active persona gets a brighter border + animated pulses */
 .ri-persona-avatar--active .ri-persona-ring {
   border-color: #06A17B;
-  box-shadow: 0 0 0 2px rgba(6, 161, 123, 0.4);
+    box-shadow: 0 0 0 3px rgba(6, 161, 123, 0.5), 0 0 16px rgba(6, 161, 123, 0.4);
 }
 
 /* Pulse rings radiate outward on the active persona */
@@ -101,20 +102,26 @@
 }
 
 .ri-persona-ring__pulse--inner {
-  inset: -8px;
-  border-color: rgba(6, 161, 123, 0.3);
-  animation-delay: 0.5s;
+  inset: -13px;
+  border: 2.5px solid rgba(6, 161, 123, 0.35); /* was 2px, 0.3 */
+  animation-delay: 0.6s;
 }
 
 .ri-persona-ring__pulse--outer {
-  inset: -14px;
-  border-color: rgba(6, 161, 123, 0.15);
-  animation-delay: 1s;
+  inset: -6px;
+  border: 3px solid rgba(6, 161, 123, 0.55); /* was 2px, 0.15 */
+  animation-delay: 0s;
+}
+.ri-persona-ring__pulse--outermost {
+  inset: -22px;
+  border: 2px solid rgba(6, 161, 123, 0.18);
+  animation-delay: 1.2s;
 }
 
 @keyframes ri-ring-pulse {
-  0%   { opacity: 1; transform: scale(1); }
-  100% { opacity: 0; transform: scale(1.18); }
+  0%   { opacity: 1;   transform: scale(1); }
+  70%  { opacity: 0.3; transform: scale(1.25); }
+  100% { opacity: 0;   transform: scale(1.35); }
 }
 
 /* ── Avatar circle (inside ring) ─────────────────────────────────────────── */

@@ -77,6 +77,7 @@ const PersonaAvatar: React.FC<PersonaAvatarProps> = ({ persona, index, isActive 
         <div className="ri-persona-ring">
             {isActive && (
                 <>
+                    <div className="ri-persona-ring__pulse ri-persona-ring__pulse--outermost" />
                     <div className="ri-persona-ring__pulse ri-persona-ring__pulse--outer" />
                     <div className="ri-persona-ring__pulse ri-persona-ring__pulse--inner" />
                 </>

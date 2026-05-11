@@ -70,6 +70,20 @@ const PopulationBuilder: React.FC = () => {
     if (questionnairesData?.data) setQuestionnaireData(questionnairesData.data);
   }, [questionnairesData]);
 
+  // Mark quant sub-step 1 (Questionnaire Design) done when questionnaire data loads
+  useEffect(() => {
+    if (explorationId && questionnairesData?.data?.length) {
+      localStorage.setItem(`quant_sub1_${explorationId}`, '1');
+    }
+  }, [questionnairesData, explorationId]);
+
+  // Mark quant sub-step 2 (Population Calibration) done when phase leaves setup
+  useEffect(() => {
+    if (explorationId && phase !== 'setup') {
+      localStorage.setItem(`quant_sub2_${explorationId}`, '1');
+    }
+  }, [phase, explorationId]);
+
   // Restore latest saved population from DB
   useEffect(() => {
     if (restoredFromServerRef.current) return;
@@ -129,7 +143,7 @@ const PopulationBuilder: React.FC = () => {
       delete next[persona.id];
       setSampleSizes(next);
     } else {
-      if (selectedPersonas.length >= 8) return; // Max 8 personas
+      if (selectedPersonas.length >= 8) return;
       setSelectedPersonas((prev) => [...prev, { id: persona.id, name: persona.name }]);
       setSampleSizes((prev) => ({ ...prev, [persona.id]: 100 }));
     }
@@ -167,6 +181,9 @@ const PopulationBuilder: React.FC = () => {
         setSimulationResult(simulationResponse.data);
         setSimulationId(simulationResponse.data.id);
 
+        // Mark sub-step 2 done (Population Calibration confirmed)
+        localStorage.setItem(`quant_sub2_${explorationId}`, '1');
+
         trigger({ stage: 'questionnaire', event: 'QUESTIONAIRE_BUILD', payload: {} });
 
         // Move to survey phase immediately — globe shows while questionnaire generates
@@ -189,6 +206,10 @@ const PopulationBuilder: React.FC = () => {
   };
 
   const handleSurveyComplete = () => {
+    // Mark sub-step 3 done (Survey Execution complete)
+    if (explorationId) {
+      localStorage.setItem(`quant_sub3_${explorationId}`, '1');
+    }
     setPhase('insights');
   };
 

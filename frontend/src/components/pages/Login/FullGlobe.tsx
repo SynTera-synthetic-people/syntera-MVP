@@ -53,7 +53,7 @@ function generatePoints(): GlobePoint[] {
         }
     }
 
-    const totalFaces = 450;
+    const totalFaces = 300;
     const imageCount = PEOPLE_IMAGES.length;
     const goldenAngle = Math.PI * (3 - Math.sqrt(5));
 
@@ -301,7 +301,7 @@ export default function FullGlobe() {
                 // MUCH darker backface rendering
                 const alpha = isFront
                     ? 0.28 + 0.72 * depthNorm
-                    : 0.08 + 0.18 * depthNorm;
+                    : 0.03 + 0.08 * depthNorm;
 
                 // flatter depth scaling like figma
                 const depthScale = isFront
@@ -438,7 +438,7 @@ export default function FullGlobe() {
                         Math.PI * 2,
                     );
 
-                    ctx.fillStyle = `rgba(255,255,255,${alpha * 0.08})`;
+                    ctx.fillStyle = `rgba(255,255,255,${alpha * 0.04})`;
 
                     ctx.fill();
                 }

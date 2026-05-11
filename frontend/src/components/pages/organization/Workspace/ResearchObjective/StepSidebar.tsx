@@ -23,9 +23,7 @@ interface StepItem {
 interface StepSidebarProps {
   completedSteps: number[];
   isStepUnlocked: (step: number) => boolean;
-  /** Which qualitative sub-steps are done: 1=Discussion Guide, 2=Interviews, 3=Insights */
   completedSubSteps?: number[];
-  /** Which quantitative sub-steps are done: 1=Questionnaire Design, 2=Population Calibration, 3=Survey Execution, 4=Insights Generation */
   completedQuantSubSteps?: number[];
 }
 
@@ -94,32 +92,25 @@ const getActiveStep = (pathname: string): number => {
   return 1;
 };
 
-/**
- * Active qualitative sub-step from pathname + localStorage:
- *   depth-interview → sub-step 1
- *   chatview        → sub-step 2 (or 3 if insights phase reached)
- */
 const getActiveQualSubStep = (pathname: string, currentId?: string): number => {
   if (pathname.includes("chatview")) {
     if (currentId && localStorage.getItem(`qualitative_sub3_${currentId}`)) return 3;
+    if (currentId && localStorage.getItem(`qualitative_sub2_${currentId}`)) return 3;
     return 2;
   }
   if (pathname.includes("depth-interview")) return 1;
   return 0;
 };
 
-/**
- * Active quantitative sub-step from pathname:
- *   questionnaire    → sub-step 1
- *   population-builder → sub-step 2
- *   survey-results   → sub-step 3
- *   rebuttal-mode    → sub-step 4
- */
-const getActiveQuantSubStep = (pathname: string): number => {
-  if (pathname.includes("questionnaire")) return 1;
-  if (pathname.includes("population-builder")) return 2;
-  if (pathname.includes("survey-results")) return 3;
+const getActiveQuantSubStep = (pathname: string, currentId?: string): number => {
   if (pathname.includes("rebuttal-mode")) return 4;
+  if (pathname.includes("survey-results")) return 3;
+  if (pathname.includes("population-builder")) {
+    if (currentId && localStorage.getItem(`quant_sub3_${currentId}`)) return 4;
+    if (currentId && localStorage.getItem(`quant_sub2_${currentId}`)) return 3;
+    return 2;
+  }
+  if (pathname.includes("questionnaire")) return 1;
   return 0;
 };
 
@@ -144,31 +135,34 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
   const activeQualSubStep = getActiveQualSubStep(pathname, currentId);
   const activeQuantSubStep = getActiveQuantSubStep(pathname);
 
-  // ── localStorage milestone flags ────────────────────────────────────────────
   const lsStep1Done = !!currentId && !!localStorage.getItem(`step1_done_${currentId}`);
   const lsStep2Done = !!currentId && !!localStorage.getItem(`step2_done_${currentId}`);
 
   // ── Completion helpers ──────────────────────────────────────────────────────
 
-  const isQualSubStepCompleted = (n: number): boolean =>
-    completedSubSteps.includes(n);
+  const isQualSubStepCompleted = (n: number): boolean => {
+    if (completedSubSteps.includes(n)) return true;
+    if (!currentId) return false;
+    if (n === 1) return !!localStorage.getItem(`qualitative_sub1_${currentId}`);
+    if (n === 2) return !!localStorage.getItem(`qualitative_sub2_${currentId}`);
+    if (n === 3) return !!localStorage.getItem(`qualitative_sub3_${currentId}`);
+    return false;
+  };
 
   const isQuantSubStepCompleted = (n: number): boolean =>
     completedQuantSubSteps.includes(n);
 
   const isStepCompleted = (stepNumber: number): boolean => {
-    if (stepNumber === 1) {
-      return lsStep1Done || completedSteps.includes(1);
-    }
+    if (stepNumber === 1) return lsStep1Done || completedSteps.includes(1);
     if (stepNumber === 2) {
       const approachSet = !!currentId && !!localStorage.getItem(`approach_${currentId}`);
       return lsStep2Done || approachSet || completedSteps.includes(2);
     }
     if (stepNumber === 3) {
       return (
-        completedSubSteps.includes(1) &&
-        completedSubSteps.includes(2) &&
-        completedSubSteps.includes(3)
+        isQualSubStepCompleted(1) &&
+        isQualSubStepCompleted(2) &&
+        isQualSubStepCompleted(3)
       );
     }
     if (stepNumber === 4) {
@@ -190,16 +184,15 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
     );
 
   const handleStepClick = (step: StepItem) => {
-    if (!isStepUnlocked(step.number) || !workspaceId || !currentId) return;
+    if (!isStepUnlocked(step.number) && !isStepCompleted(step.number)) return;
+    if (!workspaceId || !currentId) return;
 
     if (step.number === 3) {
-      // Go to furthest reached qualitative sub-step
       go(isQualSubStepCompleted(1) ? "chatview" : "depth-interview");
       return;
     }
 
     if (step.number === 4) {
-      // Go to furthest reached quantitative sub-step
       if (isQuantSubStepCompleted(3)) go("rebuttal-mode");
       else if (isQuantSubStepCompleted(2)) go("survey-results");
       else if (isQuantSubStepCompleted(1)) go("population-builder");
@@ -262,7 +255,12 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
           const locked = !isStepUnlocked(step.number) && !lsUnlocked;
 
           const showSubSteps =
-            !!step.subSteps && (active || isStepCompleted(step.number));
+            !!step.subSteps && (
+              active ||
+              completed ||
+              (step.number === 3 && activeStep === 3) ||
+              (step.number === 4 && activeStep === 4)
+            );
 
           return (
             <div key={step.number} className="step-sidebar__step-group">
