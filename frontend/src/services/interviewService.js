@@ -162,4 +162,12 @@ export const interviewService = {
     );
     return response.data;
   },
+
+  shareQualReport: async (workspaceId, explorationId, reportSlug, recipientEmail) => {
+    const response = await axiosInstance.post(
+      `/workspaces/${workspaceId}/explorations/${explorationId}/reports/qual/${reportSlug}/share`,
+      { recipient_email: recipientEmail }
+    );
+    return response.data;
+  },
 };

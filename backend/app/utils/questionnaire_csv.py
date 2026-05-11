@@ -21,7 +21,13 @@ def _ensure_option_list(opts: Any) -> List[str]:
     if opts is None:
         return []
     if isinstance(opts, list):
-        return [str(x) if x is not None else "" for x in opts]
+        labels: List[str] = []
+        for x in opts:
+            if isinstance(x, dict):
+                labels.append(str(x.get("text") or x.get("label") or x.get("option") or x.get("value") or ""))
+            else:
+                labels.append(str(x) if x is not None else "")
+        return labels
     if isinstance(opts, str):
         t = opts.strip()
         if not t:
@@ -29,7 +35,7 @@ def _ensure_option_list(opts: Any) -> List[str]:
         try:
             parsed = json.loads(t)
             if isinstance(parsed, list):
-                return [str(x) if x is not None else "" for x in parsed]
+                return _ensure_option_list(parsed)
         except json.JSONDecodeError:
             pass
     return []

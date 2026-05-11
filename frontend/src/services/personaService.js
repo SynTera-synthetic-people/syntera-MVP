@@ -85,25 +85,28 @@ export const personaService = {
     return response.data;
   },
 
-  // Validate persona traits
-  validateTraits: async (objectiveId, traitGroup, traits) => {
+  // Legacy trait-group validator (tab-switching checks, separate backend route)
+  validateTraits: async (workspaceId, objectiveId, traitGroup, traits) => {
     const response = await axiosInstance.post(
-      `/workspaces/{workspace_id}/explorations/{exploration_id}/personas/traits_validation`,
-      {
-        exploration_id: objectiveId,
-        trait_group: traitGroup,
-        traits: traits
-      }
+      `/workspaces/${workspaceId}/explorations/${objectiveId}/personas/validate`,
+      { trait_group: traitGroup, traits }
     );
     return response.data;
   },
+  // Plausibility check — accepts full ManualPersonaCreate payload (nested shape)
+  // Returns { data: { warnings[], has_warnings, can_proceed } }
+  validatePersonaPlausibility: async (workspaceId, objectiveId, manualPersonaPayload) => {
+    const response = await axiosInstance.post(
+      `/workspaces/${workspaceId}/explorations/${objectiveId}/personas/validate`,
+      manualPersonaPayload
+    );
+    return response.data;
+  },
+  // Create manual persona draft — returns validation_warnings + has_plausibility_warnings
   submitCompletePersona: async (workspaceId, objectiveId, data) => {
     const response = await axiosInstance.post(
-      `/workspaces/${workspaceId}/explorations/${objectiveId}/personas/`,
-      {
-        ...data,
-        exploration_id: objectiveId // Add exploration_id from objectiveId
-      }
+      `/workspaces/${workspaceId}/explorations/${objectiveId}/personas/manual`,
+      data
     );
     return response.data;
   },

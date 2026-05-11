@@ -179,6 +179,64 @@ export const transformFormDataToAPIPayload = (
   };
 };
 
+// ── Nested ManualPersonaCreate payload (for /validate and /manual endpoints) ──
+// transformFormDataToAPIPayload produces a flat shape for legacy endpoints.
+// buildManualPersonaPayload produces the nested ManualPersonaCreate shape that
+// POST /personas/manual and POST /personas/validate both expect.
+
+export const buildManualPersonaPayload = (
+  formData: PersonaFormData,
+  name?: string,
+  formativeExperience?: string,
+): Record<string, unknown> => {
+  const toArray = (v: unknown): string[] | null => {
+    if (!v) return null;
+    if (Array.isArray(v)) return v.length ? v : null;
+    return [v as string];
+  };
+
+  return {
+    name: name ?? null,
+    demographics: {
+      age_range: formData.age ?? '',
+      gender: formData.gender ?? '',
+      income_range: formData.income ?? null,
+      education_level: formData.educationLevel ?? null,
+      occupation: formData.occupation ?? null,
+      marital_status: formData.maritalStatus ?? null,
+      family_size: formData.familyStructure ?? null,
+      location_country: formData.geography ?? null,
+      location_state: null,
+      geography: formData.geography ?? null,
+    },
+    psychological: {
+      lifestyle: toArray(formData.lifestyle),
+      values: toArray(formData.values),
+      personality: toArray(formData.personality),
+      interests: toArray(formData.interests),
+      motivations: toArray(formData.motivations),
+    },
+    behavioural: {
+      decision_making_style: formData.decisionMakingStyle ?? null,
+      consumption_frequency: formData.consumptionFrequency ?? null,
+      purchase_channel: formData.purchaseChannel ?? null,
+      price_sensitivity: formData.priceSensitivity ?? null,
+      brand_sensitivity: formData.brandSensitivity ?? null,
+      switching_behaviour: formData.switchingBehaviour ?? null,
+      purchase_triggers: toArray(formData.purchaseTriggers),
+      purchase_barriers: toArray(formData.purchaseBarriers),
+      media_consumption_patterns: toArray(formData.mediaConsumption),
+      digital_behaviour: formData.digitalBehaviour ?? null,
+    },
+    additional_info: {
+      occupation: formData.occupation ?? null,
+      industry: formData.industry ?? null,
+      category_awareness: formData.categoryAwareness ?? null,
+    },
+    formative_experience: formativeExperience ?? null,
+  };
+};
+
 // ── String Utilities ──────────────────────────────────────────────────────────
 
 export const truncateText = (text: string, maxLength: number): string => {

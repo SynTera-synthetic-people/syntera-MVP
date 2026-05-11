@@ -5,12 +5,45 @@ from app.config import OPENAI_API_KEY
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 from app.db import async_engine
-from app.models.questionnaire import QuestionnaireSection, QuestionnaireQuestion
+from app.models.questionnaire import QuestionnaireQuestionAsset, QuestionnaireSection, QuestionnaireQuestion
 from datetime import datetime
 from app.utils.id_generator import generate_id
 from app.services import report_orchestrator as _report_cache
+from app.services.question_engine import (
+    build_question_payload,
+    canonicalize_section_payload,
+    get_question_type_catalog,
+    question_model_to_dict,
+    section_model_to_dict,
+)
+from pathlib import Path
+from uuid import uuid4
+import aiofiles
+import mimetypes
 
 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+
+QUESTION_ASSET_DIR = Path("uploads/questionnaire/assets")
+QUESTION_ASSET_DIR.mkdir(parents=True, exist_ok=True)
+QUESTION_ASSET_MAX_BYTES = 50 * 1024 * 1024
+QUESTION_ASSET_ALLOWED_EXT = {
+    ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".txt",
+    ".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".mov", ".webm",
+    ".mp3", ".wav", ".m4a",
+}
+
+
+def _asset_type_for_content(content_type: str, ext: str) -> str:
+    ctype = (content_type or "").lower()
+    if ctype.startswith("image/") or ext in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
+        return "image"
+    if ctype.startswith("video/") or ext in {".mp4", ".mov", ".webm"}:
+        return "video"
+    if ctype.startswith("audio/") or ext in {".mp3", ".wav", ".m4a"}:
+        return "audio"
+    if ext in {".csv", ".xls", ".xlsx"}:
+        return "data"
+    return "file"
 
 
 async def build_questionnaire_prompt(objective, personas_list, population, exploration_id):
@@ -711,13 +744,17 @@ async def store_ai_generated_questionnaire(workspace_id: str, objective_id: str,
     sections_out = []
 
     async with AsyncSession(async_engine) as session:
-        for sec in data.get("sections", []):
+        for sec_index, sec in enumerate(data.get("sections", [])):
+            sec_payload = canonicalize_section_payload(sec, sec_index)
             sec_obj = QuestionnaireSection(
                 id=generate_id(),
                 workspace_id=workspace_id,
                 exploration_id=objective_id,
                 simulation_id=simulation_id,
-                title=sec.get("title", "Untitled Section"),
+                parent_section_id=sec_payload["parent_section_id"],
+                title=sec_payload["title"],
+                order_index=sec_payload["order_index"],
+                section_metadata=sec_payload["metadata"],
                 created_by=user_id,
                 created_at=datetime.utcnow()
             )
@@ -725,12 +762,28 @@ async def store_ai_generated_questionnaire(workspace_id: str, objective_id: str,
             await session.flush()
 
             qlist = []
-            for q in sec.get("questions", []):
+            for q_index, q in enumerate(sec.get("questions", [])):
+                q_payload = build_question_payload(
+                    text=q.get("text", ""),
+                    options=q.get("options", []),
+                    question_type=q.get("question_type") or q.get("type"),
+                    question_key=q.get("question_key") or q.get("question_id"),
+                    config={
+                        k: v
+                        for k, v in q.items()
+                        if k not in {"text", "options", "question_type", "type", "question_key", "question_id"}
+                    },
+                    order_index=q.get("order_index", q_index),
+                )
                 q_obj = QuestionnaireQuestion(
                     id=generate_id(),
                     section_id=sec_obj.id,
-                    text=q.get("text", ""),
-                    options=q.get("options", []),
+                    question_key=q_payload["question_key"],
+                    question_type=q_payload["question_type"],
+                    text=q_payload["text"],
+                    options=q_payload["options"],
+                    config=q_payload["config"],
+                    order_index=q_payload["order_index"],
                     created_by=user_id,
                     created_at=datetime.utcnow()
                 )
@@ -750,23 +803,48 @@ async def store_ai_generated_questionnaire(workspace_id: str, objective_id: str,
     for sec in sections_out:
         result.append({
             "id": sec["section"].id,
+            "section_id": sec["section"].id,
             "title": sec["section"].title,
+            "simulation_id": sec["section"].simulation_id,
+            "parent_section_id": sec["section"].parent_section_id,
+            "order_index": sec["section"].order_index,
+            "metadata": sec["section"].section_metadata,
             "questions": [
-                {"id": q.id, "text": q.text, "options": q.options}
+                question_model_to_dict(q)
                 for q in sec["questions"]
             ]
         })
 
     return result
 
-async def create_section(workspace_id, exploration_id, title, user_id, simulation_id=None):
+async def create_section(
+    workspace_id,
+    exploration_id,
+    title,
+    user_id,
+    simulation_id=None,
+    parent_section_id=None,
+    order_index=None,
+    metadata=None,
+):
     async with AsyncSession(async_engine) as session:
+        if order_index is None:
+            count_stmt = select(QuestionnaireSection).where(
+                QuestionnaireSection.workspace_id == workspace_id,
+                QuestionnaireSection.exploration_id == exploration_id
+            )
+            existing = (await session.execute(count_stmt)).scalars().all()
+            order_index = len(existing)
+
         sec = QuestionnaireSection(
             id=generate_id(),
             workspace_id=workspace_id,
             exploration_id=exploration_id,
             simulation_id=simulation_id,
+            parent_section_id=parent_section_id,
             title=title,
+            order_index=order_index,
+            section_metadata=metadata or {},
             created_by=user_id
         )
         session.add(sec)
@@ -775,7 +853,15 @@ async def create_section(workspace_id, exploration_id, title, user_id, simulatio
         return sec
 
 
-async def update_section(section_id: str, workspace_id: str, exploration_id: str, title: str):
+async def update_section(
+    section_id: str,
+    workspace_id: str,
+    exploration_id: str,
+    title: str,
+    parent_section_id=None,
+    order_index=None,
+    metadata=None,
+):
     async with AsyncSession(async_engine) as session:
         questionnaire = select(QuestionnaireSection).where(
             QuestionnaireSection.id == section_id,
@@ -789,6 +875,12 @@ async def update_section(section_id: str, workspace_id: str, exploration_id: str
             return None
 
         sec.title = title
+        if parent_section_id is not None:
+            sec.parent_section_id = parent_section_id
+        if order_index is not None:
+            sec.order_index = order_index
+        if metadata is not None:
+            sec.section_metadata = metadata
         session.add(sec)
         await session.commit()
         await session.refresh(sec)
@@ -828,7 +920,11 @@ async def create_question(
     exploration_id: str,
     text: str,
     options: list,
-    user_id: str
+    user_id: str,
+    question_type: str = None,
+    config: dict = None,
+    question_key: str = None,
+    order_index: int = None,
 ):
     async with AsyncSession(async_engine) as session:
         section_query = select(QuestionnaireSection).where(
@@ -841,11 +937,31 @@ async def create_question(
         if not section:
             return None
 
+        if order_index is None:
+            count_stmt = select(QuestionnaireQuestion).where(
+                QuestionnaireQuestion.section_id == section_id
+            )
+            existing_questions = (await session.execute(count_stmt)).scalars().all()
+            order_index = len(existing_questions)
+
+        q_payload = build_question_payload(
+            text=text,
+            options=options,
+            question_type=question_type,
+            config=config or {},
+            question_key=question_key,
+            order_index=order_index,
+        )
+
         q = QuestionnaireQuestion(
             id=generate_id(),
             section_id=section_id,
-            text=text,
-            options=options,
+            question_key=q_payload["question_key"],
+            question_type=q_payload["question_type"],
+            text=q_payload["text"],
+            options=q_payload["options"],
+            config=q_payload["config"],
+            order_index=q_payload["order_index"],
             created_by=user_id
         )
         session.add(q)
@@ -854,7 +970,17 @@ async def create_question(
         return q
 
 
-async def update_question(qid: str, workspace_id: str, exploration_id: str, text: str, options: list):
+async def update_question(
+    qid: str,
+    workspace_id: str,
+    exploration_id: str,
+    text: str,
+    options: list,
+    question_type: str = None,
+    config: dict = None,
+    question_key: str = None,
+    order_index: int = None,
+):
     async with AsyncSession(async_engine) as session:
         questionnaire = (
             select(QuestionnaireQuestion)
@@ -871,8 +997,21 @@ async def update_question(qid: str, workspace_id: str, exploration_id: str, text
         if not q:
             return None
 
-        q.text = text
-        q.options = options
+        q_payload = build_question_payload(
+            text=text,
+            options=options,
+            question_type=question_type or q.question_type,
+            config=config if config is not None else (q.config or {}),
+            question_key=question_key or q.question_key,
+            order_index=order_index if order_index is not None else q.order_index,
+        )
+
+        q.question_key = q_payload["question_key"]
+        q.question_type = q_payload["question_type"]
+        q.text = q_payload["text"]
+        q.options = q_payload["options"]
+        q.config = q_payload["config"]
+        q.order_index = q_payload["order_index"]
         session.add(q)
         await session.commit()
         await session.refresh(q)
@@ -905,33 +1044,215 @@ async def delete_question(qid: str, workspace_id: str, exploration_id: str):
     return True
 
 
+async def validate_question_payload(payload: dict):
+    q_payload = build_question_payload(
+        text=payload.get("text", ""),
+        options=payload.get("options", []),
+        question_type=payload.get("question_type"),
+        config=payload.get("config") or {},
+        question_key=payload.get("question_key"),
+        order_index=payload.get("order_index"),
+    )
+    return {"valid": True, "question": q_payload, "question_types": get_question_type_catalog()}
+
+
+async def reorder_sections(workspace_id: str, exploration_id: str, items: list[dict]):
+    async with AsyncSession(async_engine) as session:
+        updated = []
+        for item in items:
+            section_id = item.get("section_id")
+            if not section_id:
+                continue
+            stmt = select(QuestionnaireSection).where(
+                QuestionnaireSection.id == section_id,
+                QuestionnaireSection.workspace_id == workspace_id,
+                QuestionnaireSection.exploration_id == exploration_id,
+            )
+            sec = (await session.execute(stmt)).scalars().first()
+            if not sec:
+                continue
+            sec.order_index = int(item.get("order_index") or 0)
+            if "parent_section_id" in item:
+                sec.parent_section_id = item.get("parent_section_id")
+            session.add(sec)
+            updated.append(sec)
+        await session.commit()
+        for sec in updated:
+            await session.refresh(sec)
+
+    await _report_cache.invalidate_cache(exploration_id)
+    return [
+        {
+            "section_id": sec.id,
+            "title": sec.title,
+            "order_index": sec.order_index,
+            "parent_section_id": sec.parent_section_id,
+        }
+        for sec in updated
+    ]
+
+
+async def reorder_questions(workspace_id: str, exploration_id: str, items: list[dict]):
+    async with AsyncSession(async_engine) as session:
+        updated = []
+        for item in items:
+            question_id = item.get("question_id")
+            if not question_id:
+                continue
+            stmt = (
+                select(QuestionnaireQuestion)
+                .join(QuestionnaireSection, QuestionnaireQuestion.section_id == QuestionnaireSection.id)
+                .where(
+                    QuestionnaireQuestion.id == question_id,
+                    QuestionnaireSection.workspace_id == workspace_id,
+                    QuestionnaireSection.exploration_id == exploration_id,
+                )
+            )
+            q = (await session.execute(stmt)).scalars().first()
+            if not q:
+                continue
+            if item.get("section_id"):
+                q.section_id = item["section_id"]
+            q.order_index = int(item.get("order_index") or 0)
+            session.add(q)
+            updated.append(q)
+        await session.commit()
+        for q in updated:
+            await session.refresh(q)
+
+    await _report_cache.invalidate_cache(exploration_id)
+    return [question_model_to_dict(q) for q in updated]
+
+
+async def _get_question_for_workspace(question_id: str, workspace_id: str, exploration_id: str):
+    async with AsyncSession(async_engine) as session:
+        stmt = (
+            select(QuestionnaireQuestion)
+            .join(QuestionnaireSection, QuestionnaireQuestion.section_id == QuestionnaireSection.id)
+            .where(
+                QuestionnaireQuestion.id == question_id,
+                QuestionnaireSection.workspace_id == workspace_id,
+                QuestionnaireSection.exploration_id == exploration_id,
+            )
+        )
+        return (await session.execute(stmt)).scalars().first()
+
+
+async def save_question_asset(question_id: str, workspace_id: str, exploration_id: str, upload_file, user_id: str):
+    q = await _get_question_for_workspace(question_id, workspace_id, exploration_id)
+    if not q:
+        return None
+
+    original_name = upload_file.filename or "upload"
+    ext = Path(original_name).suffix.lower()
+    if ext not in QUESTION_ASSET_ALLOWED_EXT:
+        raise ValueError(f"Unsupported file type: {ext}")
+
+    content = await upload_file.read()
+    size = len(content)
+    if size > QUESTION_ASSET_MAX_BYTES:
+        raise ValueError("File exceeds 50 MB size limit")
+
+    content_type = upload_file.content_type or mimetypes.guess_type(original_name)[0] or "application/octet-stream"
+    stored_name = f"{uuid4().hex}{ext}"
+    saved_path = QUESTION_ASSET_DIR / stored_name
+    async with aiofiles.open(saved_path, "wb") as f:
+        await f.write(content)
+
+    asset_type = _asset_type_for_content(content_type, ext)
+    async with AsyncSession(async_engine) as session:
+        asset = QuestionnaireQuestionAsset(
+            id=generate_id(),
+            question_id=question_id,
+            workspace_id=workspace_id,
+            exploration_id=exploration_id,
+            filename=str(saved_path),
+            original_name=original_name,
+            content_type=content_type,
+            size=size,
+            asset_type=asset_type,
+            asset_metadata={},
+            uploaded_by=user_id,
+            uploaded_at=datetime.utcnow(),
+        )
+        session.add(asset)
+        await session.commit()
+        await session.refresh(asset)
+        return asset_to_dict(asset)
+
+
+def asset_to_dict(asset: QuestionnaireQuestionAsset):
+    return {
+        "id": asset.id,
+        "question_id": asset.question_id,
+        "workspace_id": asset.workspace_id,
+        "exploration_id": asset.exploration_id,
+        "filename": asset.filename,
+        "original_name": asset.original_name,
+        "content_type": asset.content_type,
+        "size": asset.size,
+        "asset_type": asset.asset_type,
+        "metadata": asset.asset_metadata or {},
+        "uploaded_by": asset.uploaded_by,
+        "uploaded_at": asset.uploaded_at.isoformat() if asset.uploaded_at else None,
+    }
+
+
+async def list_question_assets(question_id: str, workspace_id: str, exploration_id: str):
+    q = await _get_question_for_workspace(question_id, workspace_id, exploration_id)
+    if not q:
+        return None
+    async with AsyncSession(async_engine) as session:
+        stmt = (
+            select(QuestionnaireQuestionAsset)
+            .where(
+                QuestionnaireQuestionAsset.question_id == question_id,
+                QuestionnaireQuestionAsset.workspace_id == workspace_id,
+                QuestionnaireQuestionAsset.exploration_id == exploration_id,
+            )
+            .order_by(QuestionnaireQuestionAsset.uploaded_at.desc())
+        )
+        assets = (await session.execute(stmt)).scalars().all()
+        return [asset_to_dict(asset) for asset in assets]
+
+
+async def delete_question_asset(asset_id: str, workspace_id: str, exploration_id: str):
+    async with AsyncSession(async_engine) as session:
+        stmt = select(QuestionnaireQuestionAsset).where(
+            QuestionnaireQuestionAsset.id == asset_id,
+            QuestionnaireQuestionAsset.workspace_id == workspace_id,
+            QuestionnaireQuestionAsset.exploration_id == exploration_id,
+        )
+        asset = (await session.execute(stmt)).scalars().first()
+        if not asset:
+            return False
+        path = Path(asset.filename)
+        await session.delete(asset)
+        await session.commit()
+    try:
+        if path.exists() and path.is_file():
+            path.unlink()
+    except OSError:
+        pass
+    return True
+
+
 async def get_full_questionnaire(workspace_id, exploration_id):
     async with AsyncSession(async_engine) as session:
         questionnaire = select(QuestionnaireSection).where(
             QuestionnaireSection.workspace_id == workspace_id,
             QuestionnaireSection.exploration_id == exploration_id
-        )
+        ).order_by(QuestionnaireSection.order_index, QuestionnaireSection.created_at)
         sections = (await session.execute(questionnaire)).scalars().all()
 
         result = []
         for sec in sections:
             questionnaireSection = select(QuestionnaireQuestion).where(
                 QuestionnaireQuestion.section_id == sec.id
-            )
+            ).order_by(QuestionnaireQuestion.order_index, QuestionnaireQuestion.created_at)
             questions = (await session.execute(questionnaireSection)).scalars().all()
 
-            result.append({
-                "section_id": sec.id,
-                "title": sec.title,
-                "questions": [
-                    {
-                        "id": q.id,
-                        "text": q.text,
-                        "options": q.options
-                    }
-                    for q in questions
-                ]
-            })
+            result.append(section_model_to_dict(sec, questions))
 
         return result
 
@@ -945,29 +1266,17 @@ async def get_questionnaire_by_simulation(workspace_id: str, exploration_id: str
             QuestionnaireSection.workspace_id == workspace_id,
             QuestionnaireSection.exploration_id == exploration_id,
             QuestionnaireSection.simulation_id == simulation_id
-        )
+        ).order_by(QuestionnaireSection.order_index, QuestionnaireSection.created_at)
         sections = (await session.execute(questionnaire)).scalars().all()
 
         result = []
         for sec in sections:
             questionnaireSection = select(QuestionnaireQuestion).where(
                 QuestionnaireQuestion.section_id == sec.id
-            )
+            ).order_by(QuestionnaireQuestion.order_index, QuestionnaireQuestion.created_at)
             questions = (await session.execute(questionnaireSection)).scalars().all()
 
-            result.append({
-                "section_id": sec.id,
-                "title": sec.title,
-                "simulation_id": sec.simulation_id,
-                "questions": [
-                    {
-                        "id": q.id,
-                        "text": q.text,
-                        "options": q.options
-                    }
-                    for q in questions
-                ]
-            })
+            result.append(section_model_to_dict(sec, questions))
 
         return result
 
@@ -976,8 +1285,9 @@ async def store_parsed_json(workspace_id, objective_id, parsed, user_id, simulat
     async with AsyncSession(async_engine) as session:
         sections_saved = []
 
-        for sec in parsed.get("sections", []):
-            section_title = sec.get("title", "Untitled Section")
+        for sec_index, sec in enumerate(parsed.get("sections", [])):
+            sec_payload = canonicalize_section_payload(sec, sec_index)
+            section_title = sec_payload["title"]
             
             existing_section = None
             if simulation_id:
@@ -998,7 +1308,10 @@ async def store_parsed_json(workspace_id, objective_id, parsed, user_id, simulat
                     workspace_id=workspace_id,
                     exploration_id=objective_id,
                     simulation_id=simulation_id,
+                    parent_section_id=sec_payload["parent_section_id"],
                     title=section_title,
+                    order_index=sec_payload["order_index"],
+                    section_metadata=sec_payload["metadata"],
                     created_by=user_id,
                     created_at=datetime.utcnow()
                 )
@@ -1006,12 +1319,28 @@ async def store_parsed_json(workspace_id, objective_id, parsed, user_id, simulat
                 await session.flush()
 
             questions_out = []
-            for q in sec.get("questions", []):
+            for q_index, q in enumerate(sec.get("questions", [])):
+                q_payload = build_question_payload(
+                    text=q.get("text", ""),
+                    options=q.get("options", []),
+                    question_type=q.get("question_type") or q.get("type"),
+                    question_key=q.get("question_key") or q.get("question_id"),
+                    config={
+                        k: v
+                        for k, v in q.items()
+                        if k not in {"text", "options", "question_type", "type", "question_key", "question_id"}
+                    },
+                    order_index=q.get("order_index", q_index),
+                )
                 q_obj = QuestionnaireQuestion(
                     id=generate_id(),
                     section_id=section_obj.id,
-                    text=q.get("text", ""),
-                    options=q.get("options", []),
+                    question_key=q_payload["question_key"],
+                    question_type=q_payload["question_type"],
+                    text=q_payload["text"],
+                    options=q_payload["options"],
+                    config=q_payload["config"],
+                    order_index=q_payload["order_index"],
                     created_by=user_id,
                     created_at=datetime.utcnow()
                 )
@@ -1019,9 +1348,7 @@ async def store_parsed_json(workspace_id, objective_id, parsed, user_id, simulat
                 await session.flush()
 
                 questions_out.append({
-                    "id": q_obj.id,
-                    "text": q_obj.text,
-                    "options": q_obj.options
+                    **question_model_to_dict(q_obj)
                 })
 
             sections_saved.append({

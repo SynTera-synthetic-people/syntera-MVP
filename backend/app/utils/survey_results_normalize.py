@@ -52,6 +52,12 @@ def _lift_zero_counts(counts: List[int]) -> List[int]:
     return counts
 
 
+def _option_label(opt: Any) -> str:
+    if isinstance(opt, dict):
+        return str(opt.get("text") or opt.get("label") or opt.get("option") or opt.get("value") or "").strip()
+    return str(opt) if opt is not None else ""
+
+
 def _scale_counts_to_total(raw: List[int], total: int) -> List[int]:
     if not raw:
         return raw
@@ -135,9 +141,11 @@ def build_normalized_survey_results(
     for i, fq in enumerate(flat_questions):
         qtext = (fq.get("text") or "").strip()
         canonical_opts = fq.get("options") or []
+        if not canonical_opts and isinstance(fq.get("config"), dict):
+            canonical_opts = fq["config"].get("options") or []
         if not isinstance(canonical_opts, list):
             canonical_opts = []
-        canonical_opts = [str(x) if x is not None else "" for x in canonical_opts]
+        canonical_opts = [_option_label(x) for x in canonical_opts]
 
         row = _pick_llm_row(llm_rows, i, qtext)
         if not row:
@@ -168,3 +176,46 @@ def build_normalized_survey_results(
         out[qtext] = processed
 
     return out
+
+
+def build_canonical_survey_results(
+    legacy_results: Dict[str, List[Dict[str, Any]]],
+    flat_questions: List[Dict[str, Any]],
+    total_sample_size: int,
+) -> Dict[str, Any]:
+    """
+    Question-keyed result envelope for the new question engine.
+
+    `legacy_results` remains the stable public shape used by existing reports:
+    {question_text: [{option,count,pct}]}.  This wrapper keeps that data but
+    indexes it by immutable question_key so wording edits do not orphan results.
+    """
+    questions: Dict[str, Any] = {}
+    order: List[str] = []
+
+    for index, q in enumerate(flat_questions, start=1):
+        qtext = (q.get("text") or "").strip()
+        qkey = str(q.get("question_key") or q.get("id") or f"Q{index}")
+        result_block = legacy_results.get(qtext, [])
+        config = q.get("config") or {}
+        option_schema = q.get("option_schema") or config.get("options") or []
+        order.append(qkey)
+        questions[qkey] = {
+            "question_key": qkey,
+            "question_id": q.get("id"),
+            "question_type": q.get("question_type") or config.get("question_type") or "single_select",
+            "text": qtext,
+            "options": q.get("options") or [],
+            "option_schema": option_schema,
+            "config": config,
+            "results": result_block,
+            "total": total_sample_size,
+        }
+
+    return {
+        "schema_version": 1,
+        "result_key": "question_key",
+        "total_sample_size": total_sample_size,
+        "order": order,
+        "questions": questions,
+    }

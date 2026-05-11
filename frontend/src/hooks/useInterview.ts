@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'react-toastify';
 import { interviewService } from '../services/interviewService';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -89,8 +90,11 @@ function _triggerBlobDownload(blob: Blob, filename: string): void {
   a.download = filename;
   document.body.appendChild(a);
   a.click();
-  window.URL.revokeObjectURL(url);
-  document.body.removeChild(a);
+  // Defer cleanup so the browser has time to initiate the download
+  setTimeout(() => {
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  }, 150);
 }
 
 // ── Hooks ────────────────────────────────────────────────────────────────────
@@ -347,6 +351,8 @@ export const useDownloadQualTranscripts = (
       interviewService.downloadQualTranscripts(workspaceId, explorationId),
     onSuccess: (blob) =>
       _triggerBlobDownload(blob, `transcripts_${explorationId}.docx`),
+    onError: () =>
+      toast.error('Failed to download transcripts. Please try again.'),
   });
 };
 
@@ -360,6 +366,8 @@ export const useDownloadQualDecisionIntelligence = (
       interviewService.downloadQualDecisionIntelligence(workspaceId, explorationId),
     onSuccess: (blob) =>
       _triggerBlobDownload(blob, `decision_intelligence_${explorationId}.pdf`),
+    onError: () =>
+      toast.error('Failed to download Decision Intelligence report. Please try again.'),
   });
 };
 
@@ -373,6 +381,8 @@ export const useDownloadQualBehaviorArchaeology = (
       interviewService.downloadQualBehaviorArchaeology(workspaceId, explorationId),
     onSuccess: (blob) =>
       _triggerBlobDownload(blob, `behavior_archaeology_${explorationId}.pdf`),
+    onError: () =>
+      toast.error('Failed to download Behaviour Archaeology report. Please try again.'),
   });
 };
 
@@ -401,6 +411,23 @@ export const useQualReportStatus = (
       interviewService.getQualReportStatus(workspaceId, explorationId),
     enabled: !!(workspaceId && explorationId),
     ...options,
+  });
+};
+
+// Share a qual report by emailing it as an attachment to the given recipient
+export const useShareQualReport = (workspaceId?: string, explorationId?: string) => {
+  return useMutation<{ message: string }, Error, { reportSlug: string; recipientEmail: string }>({
+    mutationFn: ({ reportSlug, recipientEmail }) =>
+      interviewService.shareQualReport(workspaceId, explorationId, reportSlug, recipientEmail),
+    onSuccess: () => toast.success('Report shared! The recipient will receive it by email shortly.'),
+    onError: (err: any) => {
+      const detail = err?.response?.data?.detail;
+      if (detail && typeof detail === 'string' && detail.includes('not ready')) {
+        toast.error('Report is not ready yet. Please generate it first.');
+      } else {
+        toast.error('Failed to share report. Please try again.');
+      }
+    },
   });
 };
 

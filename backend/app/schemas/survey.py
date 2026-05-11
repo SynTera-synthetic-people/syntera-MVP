@@ -26,5 +26,6 @@ class SurveySimulationOut(BaseModel):
     persona_id: str
     sample_size: int
     results: Dict[str, List[Dict]]
+    normalized_results: Optional[Dict] = None
     narrative: Optional[Dict] = None
     created_at: str

@@ -1,5 +1,6 @@
 import os
 import re
+import json
 from collections import OrderedDict
 from typing import List, Dict, Tuple, Any, Optional
 from PyPDF2 import PdfReader
@@ -216,6 +217,18 @@ def _parse_q_no(val: Any) -> Optional[int]:
         return None
 
 
+def _extract_optional_json(value: Any) -> Dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+            return parsed if isinstance(parsed, dict) else {}
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
 def convert_exploration_csv_to_sections(rows: List[Dict]) -> Dict:
     """
     Build sections from exploration CSV: group rows by Q No. (preferred) or question text.
@@ -245,6 +258,18 @@ def convert_exploration_csv_to_sections(rows: List[Dict]) -> Dict:
                 opt = str(rd.get(cand) or "").strip()
                 break
 
+        qtype = ""
+        for cand in ("question type", "question_type", "type"):
+            if cand in rd and str(rd.get(cand) or "").strip():
+                qtype = str(rd[cand]).strip()
+                break
+
+        config = {}
+        for cand in ("config", "question config", "schema"):
+            if cand in rd:
+                config = _extract_optional_json(rd.get(cand))
+                break
+
         if not qtext and not opt:
             continue
         if not qtext:
@@ -256,7 +281,7 @@ def convert_exploration_csv_to_sections(rows: List[Dict]) -> Dict:
             key = ("t", qtext)
 
         if key not in groups:
-            groups[key] = {"text": qtext, "options": []}
+            groups[key] = {"text": qtext, "options": [], "question_type": qtype or None, "config": config}
             order.append(key)
         elif qtext and groups[key]["text"] != qtext:
             # Same Q No. with conflicting wording — keep first title
@@ -276,7 +301,12 @@ def convert_exploration_csv_to_sections(rows: List[Dict]) -> Dict:
         for o in opts:
             if o not in seen:
                 seen.append(o)
-        questions.append({"text": text, "options": seen})
+        questions.append({
+            "text": text,
+            "options": seen,
+            "question_type": g.get("question_type"),
+            "config": g.get("config") or {},
+        })
 
     if not questions:
         raise ValueError(
@@ -301,6 +331,8 @@ def convert_table_to_sections(rows: List[Dict]):
 
         qtext = row.get("question") or row.get("Question") or ""
         opts = row.get("options") or row.get("Options") or ""
+        qtype = row.get("question_type") or row.get("Question Type") or row.get("type") or row.get("Type")
+        config = _extract_optional_json(row.get("config") or row.get("Config") or row.get("schema") or row.get("Schema"))
 
         if isinstance(opts, str):
             options = [o.strip() for o in re.split(r",|;|\|", opts) if o.strip()]
@@ -315,6 +347,8 @@ def convert_table_to_sections(rows: List[Dict]):
                 {
                     "text": qtext.strip(),
                     "options": options,
+                    "question_type": str(qtype).strip() if qtype else None,
+                    "config": config,
                 }
             )
 

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TbX, TbLoader } from 'react-icons/tb';
 import SpIcon from '../../../../../../SPIcon';
+import { useShareQualReport } from '../../../../../../../hooks/useInterview';
 import ShareInsightsModal from './ShareInsightModal';
 import './InsightViewerModal.css';
 
@@ -45,8 +46,16 @@ const CARD_META: Record<InsightCardId, { title: string; subtitle: string }> = {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
+const CARD_SLUG: Record<InsightCardId, string> = {
+  verbatim: 'transcripts',
+  decision: 'decision-intelligence',
+  behaviour: 'behavior-archaeology',
+};
+
 const InsightViewerModal: React.FC<InsightViewerModalProps> = ({
   cardId,
+  workspaceId,
+  objectiveId,
   verbatimPreviewData,
   verbatimLoading,
   downloadTranscriptsMutation,
@@ -58,6 +67,7 @@ const InsightViewerModal: React.FC<InsightViewerModalProps> = ({
 
   // ── Share modal state ─────────────────────────────────────────────────────
   const [shareOpen, setShareOpen] = useState(false);
+  const shareReportMutation = useShareQualReport(workspaceId, objectiveId);
   const activeMutation =
     cardId === 'verbatim'
       ? downloadTranscriptsMutation
@@ -74,8 +84,7 @@ const InsightViewerModal: React.FC<InsightViewerModalProps> = ({
   };
 
   const handleShareSend = (email: string) => {
-    // Share functionality — wire backend shareable link endpoint here
-    console.log('Sharing with:', email);
+    shareReportMutation.mutate({ reportSlug: CARD_SLUG[cardId], recipientEmail: email });
   };
 
   return (

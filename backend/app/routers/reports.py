@@ -12,8 +12,9 @@ import asyncio
 import os
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import Response
+from pydantic import BaseModel, EmailStr
 
 from app.models.user import User
 from app.routers.auth_dependencies import get_current_active_user
@@ -33,6 +34,7 @@ from app.utils.questionnaire_csv import (
     build_quant_transcripts_zip,
 )
 from app.services.persona import get_persona
+from app.utils.email_utils import send_share_report_email
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/explorations/{exploration_id}/reports",
@@ -62,6 +64,16 @@ QUAL_PREPARE_CONFIG = {
         "prefix": "qual_all_combined",
     },
 }
+QUAL_SHARE_CONFIG: dict[str, dict] = {
+    "transcripts": {"cache_key": QUAL_TRANSCRIPTS_CACHE_KEY, "label": "Interview Verbatim"},
+    "decision-intelligence": {"cache_key": QUAL_DI_CACHE_KEY, "label": "Decision Intelligence"},
+    "behavior-archaeology": {"cache_key": QUAL_BA_CACHE_KEY, "label": "Behaviour Archaeology"},
+    "all-combined": {"cache_key": QUAL_ALL_CACHE_KEY, "label": "All Combined Report"},
+}
+
+class ShareReportRequest(BaseModel):
+    recipient_email: EmailStr
+
 _qual_report_tasks: dict[tuple[str, str], asyncio.Task] = {}
 
 
@@ -168,6 +180,37 @@ async def prepare_qual_report(
 ):
     """Start qualitative report generation in the background and return immediately."""
     return await _ensure_qual_report_preparing(exploration_id, report_slug)
+
+
+@router.post("/qual/{report_slug}/share")
+async def share_qual_report(
+    workspace_id: str,
+    exploration_id: str,
+    report_slug: str,
+    body: ShareReportRequest,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_active_user),
+):
+    """Email a generated qualitative report as an attachment to the given recipient."""
+    config = QUAL_SHARE_CONFIG.get(report_slug)
+    if not config:
+        raise HTTPException(status_code=404, detail="Unsupported report type")
+
+    cached = await cache.get_cached_report(exploration_id, config["cache_key"])
+    if not cached or not cached.pdf_path or not os.path.exists(cached.pdf_path):
+        raise HTTPException(
+            status_code=404,
+            detail="Report is not ready yet. Please generate it first.",
+        )
+
+    background_tasks.add_task(
+        send_share_report_email,
+        recipient_email=str(body.recipient_email),
+        report_type=config["label"],
+        file_path=cached.pdf_path,
+        shared_by_email=current_user.email,
+    )
+    return {"message": "Report shared successfully"}
 
 
 @router.get("/qual/transcripts")

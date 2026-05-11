@@ -174,6 +174,85 @@ async def add_exploration_audience_type_column():
         """))
 
 
+async def add_questionnaire_engine_columns():
+    """Safe migration: add typed, config-driven questionnaire engine fields."""
+    async with async_engine.begin() as conn:
+        await conn.execute(text("""
+            ALTER TABLE questionnairesection
+            ADD COLUMN IF NOT EXISTS parent_section_id VARCHAR,
+            ADD COLUMN IF NOT EXISTS order_index INTEGER NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
+        """))
+        await conn.execute(text("""
+            ALTER TABLE questionnairequestion
+            ADD COLUMN IF NOT EXISTS question_key VARCHAR,
+            ADD COLUMN IF NOT EXISTS question_type VARCHAR NOT NULL DEFAULT 'single_select',
+            ADD COLUMN IF NOT EXISTS config JSONB NOT NULL DEFAULT '{}'::jsonb,
+            ADD COLUMN IF NOT EXISTS order_index INTEGER NOT NULL DEFAULT 0;
+        """))
+        await conn.execute(text("""
+            UPDATE questionnairequestion
+            SET question_key = id
+            WHERE question_key IS NULL OR TRIM(question_key) = '';
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS ix_questionnairesection_parent_section_id
+            ON questionnairesection (parent_section_id);
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS ix_questionnairesection_order_index
+            ON questionnairesection (order_index);
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS ix_questionnairequestion_question_key
+            ON questionnairequestion (question_key);
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS ix_questionnairequestion_question_type
+            ON questionnairequestion (question_type);
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS ix_questionnairequestion_order_index
+            ON questionnairequestion (order_index);
+        """))
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS questionnairequestionasset (
+                id VARCHAR PRIMARY KEY,
+                question_id VARCHAR NOT NULL REFERENCES questionnairequestion(id) ON DELETE CASCADE,
+                workspace_id VARCHAR NOT NULL REFERENCES workspace(id) ON DELETE CASCADE,
+                exploration_id VARCHAR NOT NULL REFERENCES explorations(id) ON DELETE CASCADE,
+                filename VARCHAR NOT NULL,
+                original_name VARCHAR NOT NULL,
+                content_type VARCHAR,
+                size INTEGER,
+                asset_type VARCHAR NOT NULL DEFAULT 'file',
+                metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+                uploaded_by VARCHAR NOT NULL REFERENCES "user"(id),
+                uploaded_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()
+            );
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS ix_questionnairequestionasset_question_id
+            ON questionnairequestionasset (question_id);
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS ix_questionnairequestionasset_workspace_id
+            ON questionnairequestionasset (workspace_id);
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS ix_questionnairequestionasset_exploration_id
+            ON questionnairequestionasset (exploration_id);
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS ix_questionnairequestionasset_asset_type
+            ON questionnairequestionasset (asset_type);
+        """))
+        await conn.execute(text("""
+            ALTER TABLE surveysimulation
+            ADD COLUMN IF NOT EXISTS normalized_results JSONB;
+        """))
+
+
 async def create_sync_schemas():
     """Create the 3 SyncDB PostgreSQL schemas and their tables (idempotent)."""
     async with async_engine.begin() as conn:

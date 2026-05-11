@@ -9,7 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import OPENAI_API_KEY, settings
 from openai import AsyncOpenAI
 from app.services.survey_simulation import _group_results_by_section, _fallback_simulation
-from app.utils.survey_results_normalize import build_normalized_survey_results
+from app.utils.survey_results_normalize import build_canonical_survey_results, build_normalized_survey_results
+from app.services.question_engine import analysis_options_for_question
 
 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
@@ -36,7 +37,13 @@ def _build_combined_simulation_prompt(research_desc: str, personas_list: List[Di
     qs_text = []
     for i, q in enumerate(questions, start=1):
         opts = q.get("options") or []
-        qs_text.append(f"{i}. QUESTION: {q.get('text')}\nOPTIONS: {json.dumps(opts)}")
+        q_meta = {
+            "question_id": q.get("question_key") or q.get("id") or f"Q{i}",
+            "type": q.get("question_type") or "single_select",
+            "config": q.get("config") or {},
+            "options": q.get("option_schema") or opts,
+        }
+        qs_text.append(f"{i}. QUESTION: {q.get('text')}\nSCHEMA: {json.dumps(q_meta, default=str)}")
     
     qs_joined = "\n\n".join(qs_text)
 
@@ -785,8 +792,16 @@ async def simulate_combined_and_store(
     for sec in questions_sections:
         for q in sec.get("questions", []):
             text = q.get("text") or ""
-            opts = q.get("options") or []
-            flat_questions.append({"text": text, "options": opts})
+            opts = q.get("options") or analysis_options_for_question(q)
+            flat_questions.append({
+                "id": q.get("id"),
+                "question_key": q.get("question_key") or q.get("id"),
+                "question_type": q.get("question_type") or "single_select",
+                "text": text,
+                "options": opts,
+                "option_schema": q.get("option_schema") or (q.get("config") or {}).get("options") or [],
+                "config": q.get("config") or {},
+            })
     
     if not flat_questions:
         raise ValueError("No questions provided to simulate")
@@ -904,6 +919,11 @@ You should provide the output based on that in a JSON format including Statistic
         flat_questions,
         total_sample_size,
     )
+    canonical_results = build_canonical_survey_results(
+        normalized_results,
+        flat_questions,
+        total_sample_size,
+    )
 
     # Group by sections
     grouped_output = _group_results_by_section(questions_sections, normalized_results)
@@ -937,6 +957,7 @@ You should provide the output based on that in a JSON format including Statistic
         total_sample_size=total_sample_size,  # Sum of all sample sizes
         simulation_source_id=simulation_id,
         results=normalized_results,
+        normalized_results=canonical_results,
         narrative=narrative,
         created_by=user_id,
         created_at=datetime.utcnow(),
@@ -956,6 +977,7 @@ You should provide the output based on that in a JSON format including Statistic
         "personas": narrative["personas"],
         "sections": grouped_output,
         "results": sim_obj.results,
+        "normalized_results": sim_obj.normalized_results,
         "narrative": sim_obj.narrative,
         "llm_source_explanation": llm_source_explanation,
         "created_at": sim_obj.created_at.isoformat()

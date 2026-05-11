@@ -117,6 +117,13 @@ export const useValidateTraits = () => {
   });
 };
 
+export const useRealtimePlausibility = (workspaceId, objectiveId) => {
+  return useMutation({
+    mutationFn: (manualPersonaPayload) =>
+      personaService.validatePersonaPlausibility(workspaceId, objectiveId, manualPersonaPayload),
+  });
+};
+
 export const usePersonaBuilder = (workspaceId, objectiveId) => {
   const personasQuery = usePersonas(workspaceId, objectiveId);
   const submitCompletePersonaMutation = useSubmitCompletePersona(workspaceId, objectiveId);

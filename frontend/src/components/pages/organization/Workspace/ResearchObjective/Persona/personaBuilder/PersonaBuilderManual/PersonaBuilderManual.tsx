@@ -9,7 +9,7 @@ import { TbLoader } from 'react-icons/tb';
 import SpIcon from '../../../../../../../SPIcon';
 import { useTheme } from '../../../../../../../../context/ThemeContext';
 import { useOmniWorkflow } from '../../../../../../../../hooks/useOmiWorkflow';
-import { usePersonaBuilder } from '../../../../../../../../hooks/usePersonaBuilder';
+import { usePersonaBuilder, useRealtimePlausibility } from '../../../../../../../../hooks/usePersonaBuilder';
 import { useUpdateExplorationMethod, useExploration } from '../../../../../../../../hooks/useExplorations';
 
 import type { PersonaFormData, MainCategory } from '../PersonaBuilderType';
@@ -20,13 +20,16 @@ import {
     isMultiSelectAttribute,
     traitNameMapping,
 } from '../data';
-import { transformFormDataToAPIPayload, validatePersonaData } from '../PersonaBuilderShared';
+import { buildManualPersonaPayload, validatePersonaData } from '../PersonaBuilderShared';
 
 import SubTabNavigation from './SubTabNavigation';
 import AttributeSelectionPanel from './AttributeSelectionPanel';
 import PersonaSummaryView from './PersonaSummaryView';
 import EditPersonaNameModal from './EditPersonaNameModal';
 import PersonaSearch from '../PersonaSearch';
+import PlausibilityCheckModal from '../components/PlausibilityCheckModal';
+import PlausibilityWarningStrip from '../components/PlausibilityWarningStrip';
+import type { PlausibilityWarning } from '../components/PlausibilityWarningStrip';
 
 import './PersonaBuilderManual.css';
 
@@ -69,6 +72,17 @@ const PersonaBuilderManual: React.FC = () => {
 
     const [completedSubTabs, setCompletedSubTabs] = useState<Set<string>>(new Set());
 
+    // Submit-time modal warnings
+    const [plausibilityWarnings, setPlausibilityWarnings] = useState<PlausibilityWarning[]>([]);
+    const [showPlausibilityModal, setShowPlausibilityModal] = useState(false);
+
+    // Real-time inline strip
+    const [realtimeWarnings, setRealtimeWarnings] = useState<PlausibilityWarning[]>([]);
+    const [stripDismissed, setStripDismissed] = useState(false);
+    const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const { mutateAsync: runPlausibilityCheck } = useRealtimePlausibility(workspaceId, objectiveId);
+
     // Flash-highlight state: briefly rings the sub-tab the search jumped to
     const [highlightedSubTab, setHighlightedSubTab] = useState<string | null>(null);
     const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -92,6 +106,32 @@ const PersonaBuilderManual: React.FC = () => {
             setActiveSubTab(items[0] ?? 'Age');
         }
     }, [activeCategory, getCurrentCategoryItems]);
+
+    // ── Real-time plausibility (debounced) ────────────────────────────────────
+    // Fire POST /validate 500ms after the last field change, but only once
+    // age + gender are filled (the two required fields for the backend schema).
+
+    useEffect(() => {
+        if (!formData.age || !formData.gender) return;
+
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+        debounceRef.current = setTimeout(async () => {
+            try {
+                const payload = buildManualPersonaPayload(formData);
+                type CheckFn = (p: Record<string, unknown>) => Promise<{ data?: { warnings?: PlausibilityWarning[] } }>;
+                const result = await (runPlausibilityCheck as unknown as CheckFn)(payload as Record<string, unknown>);
+                const warnings: PlausibilityWarning[] = result?.data?.warnings ?? [];
+                setRealtimeWarnings(warnings);
+                if (warnings.length > 0) setStripDismissed(false);
+            } catch {
+                // silently ignore network errors for real-time checks
+            }
+        }, 500);
+
+        return () => {
+            if (debounceRef.current) clearTimeout(debounceRef.current);
+        };
+    }, [formData]);
 
     const handleCategoryChange = (category: MainCategory) => {
         setActiveCategory(category);
@@ -202,7 +242,14 @@ const PersonaBuilderManual: React.FC = () => {
 
     // ── Submit ─────────────────────────────────────────────────────────────────
 
-    const handleCalibratePersona = () => {
+    const navigateAfterSubmit = () => {
+        navigate(
+            `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-generating`,
+            { state: { flow: 'manual' } }
+        );
+    };
+
+    const handleCalibratePersona = async () => {
         const validation = validatePersonaData(formData);
         if (!validation.isValid) {
             alert(`Please fill in the following required fields: ${validation.missingFields.join(', ')}`);
@@ -211,22 +258,24 @@ const PersonaBuilderManual: React.FC = () => {
 
         trigger({ stage: 'persona_builder', event: 'PERSONA_CREATION_STARTED', payload: {} });
 
-        const payload = transformFormDataToAPIPayload(
-            { ...formData, formativeExperience },
-            personaName,
-            objectiveId
-        );
+        const payload = buildManualPersonaPayload(formData, personaName, formativeExperience);
 
         try {
-            (submitCompletePersona as unknown as (p: Record<string, unknown>) => Promise<unknown>)(payload);
+            type SubmitFn = (p: Record<string, unknown>) => Promise<{
+                data?: { has_plausibility_warnings?: boolean; validation_warnings?: PlausibilityWarning[] };
+            }>;
+            const result = await (submitCompletePersona as unknown as SubmitFn)(payload);
+            const warnings = result?.data?.validation_warnings ?? [];
+            if (result?.data?.has_plausibility_warnings && warnings.length > 0) {
+                setPlausibilityWarnings(warnings);
+                setShowPlausibilityModal(true);
+                return;
+            }
         } catch (error) {
-            console.error('Failed to kick off persona creation:', error);
+            console.error('Failed to create persona draft:', error);
         }
 
-        navigate(
-            `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-generating`,
-            { state: { flow: 'manual' } }
-        );
+        navigateAfterSubmit();
     };
 
     // ── Navigation ────────────────────────────────────────────────────────────
@@ -385,6 +434,14 @@ const PersonaBuilderManual: React.FC = () => {
                     disabled={isSubmitting}
                 />
 
+                {/* ── Real-time plausibility strip ── */}
+                {!stripDismissed && realtimeWarnings.length > 0 && (
+                    <PlausibilityWarningStrip
+                        warnings={realtimeWarnings}
+                        onDismiss={() => setStripDismissed(true)}
+                    />
+                )}
+
                 {/* ── Main Card ── */}
                 <motion.div
                     initial={{ opacity: 0, y: 12 }}
@@ -465,6 +522,15 @@ const PersonaBuilderManual: React.FC = () => {
                     setShowEditNameModal(false);
                 }}
                 onClose={() => setShowEditNameModal(false)}
+            />
+
+            <PlausibilityCheckModal
+                show={showPlausibilityModal}
+                warnings={plausibilityWarnings as Parameters<typeof PlausibilityCheckModal>[0]['warnings']}
+                onContinue={() => {
+                    setShowPlausibilityModal(false);
+                    navigateAfterSubmit();
+                }}
             />
         </div>
     );

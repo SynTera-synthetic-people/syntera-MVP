@@ -69,6 +69,7 @@ async def get_simulation_results(
     stmt = (
         select(
             SurveySimulation.results,
+            SurveySimulation.normalized_results,
             SurveySimulation.simulation_result,
             SurveySimulation.narrative,
             SurveySimulation.total_sample_size,
@@ -85,6 +86,7 @@ async def get_simulation_results(
 
     return {
         "results": row.results,
+        "normalized_results": row.normalized_results,
         "simulation_result": row.simulation_result,
         "narrative": row.narrative,
         "total_sample_size": row.total_sample_size,

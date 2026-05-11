@@ -16,6 +16,7 @@ from app.db import (
     add_enterprise_columns,
     add_workspace_visibility_columns,
     add_exploration_audience_type_column,
+    add_questionnaire_engine_columns,
     create_report_cache_table,
     create_sync_schemas,
     add_syncdb_envelope_columns,
@@ -103,6 +104,7 @@ async def startup():
     await add_enterprise_columns()
     await add_workspace_visibility_columns()
     await add_exploration_audience_type_column()
+    await add_questionnaire_engine_columns()
     await create_report_cache_table()
     await create_sync_schemas()
     await add_syncdb_envelope_columns()
@@ -141,13 +143,13 @@ app.include_router(syncdb.router)
 #     "https://www.synthetic-people.ai",
 # ]
 
-cors = os.getenv("CORS_ORIGINS",  "https://staging-ui.synthetic-people.ai" )
-allow_origins = [x.strip() for x in cors.split(",") if x.strip()] 
+# cors = os.getenv("CORS_ORIGINS",  "https://staging-ui.synthetic-people.ai" )
+# allow_origins = [x.strip() for x in cors.split(",") if x.strip()] 
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allow_origins,
-    # allow_origins=["*"],
+    # allow_origins=allow_origins,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

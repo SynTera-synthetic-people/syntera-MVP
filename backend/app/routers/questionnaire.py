@@ -16,7 +16,8 @@ from app.schemas.response import SuccessResponse
 from app.schemas.questionnaire import (
     SectionCreate, SectionUpdate,
     QuestionCreate, QuestionUpdate,
-    QuestionnaireGenerateRequest
+    QuestionnaireGenerateRequest,
+    SectionReorderItem, QuestionReorderItem,
 )
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from app.db import get_session, async_engine
@@ -49,6 +50,7 @@ from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Form, Q
 from app.services import questionnaire as questionnaire_service
 from app.services import workspace as ws_service
 from app.utils.questionnaire_csv import questionnaire_sections_to_csv_bytes
+from app.services.question_engine import analysis_options_for_question, get_question_type_catalog
 
 
 router = APIRouter(
@@ -63,6 +65,63 @@ async def _ensure_workspace_member(workspace_id: str, current_user: User):
         raise HTTPException(
             403, ErrorResponse(status="error", message="Not a workspace member").dict()
         )
+
+
+@router.get("/question-types", response_model=SuccessResponse)
+async def list_question_types(
+    workspace_id: str,
+    exploration_id: str,
+    current_user: User = Depends(get_current_active_user),
+):
+    await _ensure_workspace_member(workspace_id, current_user)
+    return SuccessResponse(message="Question types fetched", data=get_question_type_catalog())
+
+
+@router.post("/questions/validate", response_model=SuccessResponse)
+async def validate_question(
+    workspace_id: str,
+    exploration_id: str,
+    payload: QuestionCreate,
+    current_user: User = Depends(get_current_active_user),
+):
+    await _ensure_workspace_member(workspace_id, current_user)
+    try:
+        data = await service.validate_question_payload(payload.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return SuccessResponse(message="Question payload is valid", data=data)
+
+
+@router.put("/sections/reorder", response_model=SuccessResponse)
+async def reorder_sections(
+    workspace_id: str,
+    exploration_id: str,
+    payload: list[SectionReorderItem],
+    current_user: User = Depends(get_current_active_user),
+):
+    await _ensure_workspace_member(workspace_id, current_user)
+    data = await service.reorder_sections(
+        workspace_id,
+        exploration_id,
+        [item.model_dump() for item in payload],
+    )
+    return SuccessResponse(message="Sections reordered", data=data)
+
+
+@router.put("/questions/reorder", response_model=SuccessResponse)
+async def reorder_questions(
+    workspace_id: str,
+    exploration_id: str,
+    payload: list[QuestionReorderItem],
+    current_user: User = Depends(get_current_active_user),
+):
+    await _ensure_workspace_member(workspace_id, current_user)
+    data = await service.reorder_questions(
+        workspace_id,
+        exploration_id,
+        [item.model_dump() for item in payload],
+    )
+    return SuccessResponse(message="Questions reordered", data=data)
 
 
 @router.post("/upload", response_model=SuccessResponse)
@@ -278,6 +337,9 @@ async def create_section(workspace_id: str, exploration_id: str, payload: Sectio
         payload.title,
         current_user.id,
         payload.simulation_id,
+        payload.parent_section_id,
+        payload.order_index,
+        payload.metadata,
     )
     return SuccessResponse(message="Section created", data=sec)
 
@@ -290,7 +352,15 @@ async def update_section(
     current_user: User = Depends(get_current_active_user)
 ):
     await _ensure_workspace_member(workspace_id, current_user)
-    sec = await service.update_section(section_id, workspace_id, exploration_id, payload.title)
+    sec = await service.update_section(
+        section_id,
+        workspace_id,
+        exploration_id,
+        payload.title,
+        payload.parent_section_id,
+        payload.order_index,
+        payload.metadata,
+    )
     if not sec:
         raise HTTPException(404, "Section not found")
     return SuccessResponse(message="Section updated", data=sec)
@@ -314,14 +384,21 @@ async def create_question(section_id: str, payload: QuestionCreate,
                           exploration_id: str,
                           current_user: User = Depends(get_current_active_user)):
     await _ensure_workspace_member(workspace_id, current_user)
-    q = await service.create_question(
-        section_id,
-        workspace_id,
-        exploration_id,
-        payload.text,
-        payload.options,
-        current_user.id
-    )
+    try:
+        q = await service.create_question(
+            section_id,
+            workspace_id,
+            exploration_id,
+            payload.text,
+            payload.options,
+            current_user.id,
+            payload.question_type,
+            payload.config,
+            payload.question_key,
+            payload.order_index,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     if not q:
         raise HTTPException(404, "Section not found")
     return SuccessResponse(message="Question created", data=q)
@@ -335,7 +412,20 @@ async def update_question(
     current_user: User = Depends(get_current_active_user)
 ):
     await _ensure_workspace_member(workspace_id, current_user)
-    q = await service.update_question(question_id, workspace_id, exploration_id, payload.text, payload.options)
+    try:
+        q = await service.update_question(
+            question_id,
+            workspace_id,
+            exploration_id,
+            payload.text,
+            payload.options,
+            payload.question_type,
+            payload.config,
+            payload.question_key,
+            payload.order_index,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     if not q:
         raise HTTPException(404, "Question not found")
     return SuccessResponse(message="Question updated", data=q)
@@ -352,6 +442,60 @@ async def delete_question(
     if not ok:
         raise HTTPException(404, "Question not found")
     return SuccessResponse(message="Question deleted", data=True)
+
+
+@router.post("/questions/{question_id}/assets", response_model=SuccessResponse)
+async def upload_question_asset(
+    workspace_id: str,
+    exploration_id: str,
+    question_id: str,
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_active_user),
+):
+    await _ensure_workspace_member(workspace_id, current_user)
+    try:
+        asset = await service.save_question_asset(
+            question_id,
+            workspace_id,
+            exploration_id,
+            file,
+            current_user.id,
+        )
+    except ValueError as exc:
+        msg = str(exc)
+        status_code = 413 if "size" in msg.lower() or "exceed" in msg.lower() else 422
+        raise HTTPException(status_code=status_code, detail=msg)
+    if not asset:
+        raise HTTPException(404, "Question not found")
+    return SuccessResponse(message="Question asset uploaded", data=asset)
+
+
+@router.get("/questions/{question_id}/assets", response_model=SuccessResponse)
+async def list_question_assets(
+    workspace_id: str,
+    exploration_id: str,
+    question_id: str,
+    current_user: User = Depends(get_current_active_user),
+):
+    await _ensure_workspace_member(workspace_id, current_user)
+    assets = await service.list_question_assets(question_id, workspace_id, exploration_id)
+    if assets is None:
+        raise HTTPException(404, "Question not found")
+    return SuccessResponse(message="Question assets fetched", data=assets)
+
+
+@router.delete("/questions/assets/{asset_id}", response_model=SuccessResponse)
+async def delete_question_asset(
+    workspace_id: str,
+    exploration_id: str,
+    asset_id: str,
+    current_user: User = Depends(get_current_active_user),
+):
+    await _ensure_workspace_member(workspace_id, current_user)
+    ok = await service.delete_question_asset(asset_id, workspace_id, exploration_id)
+    if not ok:
+        raise HTTPException(404, "Question asset not found")
+    return SuccessResponse(message="Question asset deleted", data=True)
 
 
 @router.get("/all", response_model=SuccessResponse)
@@ -390,6 +534,7 @@ async def simulate_survey(
                     "personas": (existing.narrative or {}).get("personas", []),
                     "sections": sections,
                     "results": existing.results,
+                    "normalized_results": existing.normalized_results,
                     "narrative": existing.narrative,
                     "created_at": existing.created_at.isoformat(),
                 },
@@ -409,8 +554,13 @@ async def simulate_survey(
             "title": sec.get("title"),
             "questions": [
                 {
+                    "id": q.get("id"),
+                    "question_key": q.get("question_key") or q.get("id"),
+                    "question_type": q.get("question_type") or "single_select",
                     "text": q.get("text"),
-                    "options": q.get("options") or []
+                    "options": q.get("options") or analysis_options_for_question(q),
+                    "option_schema": q.get("option_schema") or (q.get("config") or {}).get("options") or [],
+                    "config": q.get("config") or {},
                 } for q in sec.get("questions", [])
             ]
         })
@@ -477,6 +627,8 @@ async def build_survey_report_sections(sim) -> list:
     else:
         sections = await get_full_questionnaire(sim.workspace_id, sim.exploration_id)
     results_raw = parse_survey_results_field(sim.results)
+    canonical_results = sim.normalized_results if isinstance(getattr(sim, "normalized_results", None), dict) else {}
+    canonical_questions = canonical_results.get("questions", {}) if isinstance(canonical_results, dict) else {}
     if results_raw is None and isinstance(sim.results, dict):
         results_raw = sim.results
     if not isinstance(results_raw, dict):
@@ -487,6 +639,9 @@ async def build_survey_report_sections(sim) -> list:
         for q in sec["questions"]:
             qtext = q["text"]
             results = results_raw.get(qtext, [])
+            qkey = q.get("question_key") or q.get("id")
+            if not results and qkey in canonical_questions:
+                results = canonical_questions[qkey].get("results") or []
             formatted_results = [
                 {
                     "option": opt.get("option"),
@@ -495,7 +650,14 @@ async def build_survey_report_sections(sim) -> list:
                 }
                 for opt in results
             ]
-            qs.append({"question": qtext, "results": formatted_results})
+            qs.append({
+                "id": q.get("id"),
+                "question_key": q.get("question_key") or q.get("id"),
+                "question_type": q.get("question_type") or "single_select",
+                "question": qtext,
+                "config": q.get("config") or {},
+                "results": formatted_results,
+            })
         grouped.append({"title": sec["title"], "questions": qs})
     return grouped
 
@@ -530,6 +692,7 @@ async def get_survey_simulation_by_source(
             "sections": sections,
             "results": existing.results,
             "narrative": existing.narrative,
+            "normalized_results": existing.normalized_results,
             "created_at": existing.created_at.isoformat(),
         },
     )
@@ -577,6 +740,7 @@ async def preview_survey_report(
         "persona_sample_sizes": sim.persona_sample_sizes if hasattr(sim, 'persona_sample_sizes') else {},
         "research_objective": objective.description if objective and hasattr(objective, 'description') else "",
         "narrative": sim.narrative or {},
+        "normalized_results": sim.normalized_results or {},
         "sections": grouped,
         "summary": {
             "total_questions": sum(len(sec["questions"]) for sec in grouped),
