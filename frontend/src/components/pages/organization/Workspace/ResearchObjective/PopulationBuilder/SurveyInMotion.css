@@ -1,0 +1,152 @@
+/* ROOT */
+.sim-root {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    background: #0a0c10;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+/* HEADER */
+.sim-header {
+    flex-shrink: 0;
+    text-align: left;
+    padding: 28px 48px 0;
+    z-index: 10;
+}
+
+.sim-title {
+    font-size: 20px;
+    font-weight: 600;
+    color: #ffffff;
+    letter-spacing: -0.2px;
+    margin: 0 0 6px;
+}
+
+.sim-subtitle {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.40);
+    margin: 0;
+}
+
+/* GLOBE */
+.sim-globe-wrap {
+    flex: 1 1 0;
+    position: relative;
+    z-index: 1;
+    min-height: 0;
+    overflow: visible;
+}
+
+.sim-globe-wrap canvas {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+/* CARD AREA */
+.sim-card-area {
+    flex-shrink: 0;
+    display: flex;
+    justify-content: center;
+    padding: 12px 24px 20px;
+    z-index: 10;
+    position: relative;
+}
+
+/* STEP CARD */
+.sim-step-card {
+    width: 575px;
+    min-height: 186px;
+    display: grid;
+    grid-template-columns: 130px 1fr;
+    background: var(--T-Base-B1, #0E0F12);
+    border: 1px solid var(--T-GreyScale-Grey-700, #4F535F);
+    border-radius: 14px;
+    overflow: hidden;
+}
+
+/* Left column */
+.sim-card-left {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    border-right: 1px solid rgba(255, 255, 255, 0.06);
+    gap: 8px;
+}
+
+.sim-ring-wrap {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #1a1d2e;
+    position: relative;
+    flex-shrink: 0;
+}
+
+.sim-ring-svg {
+    position: absolute;
+    inset: 0;
+    width: 80px;
+    height: 80px;
+}
+
+.sim-omi-video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center 30%;
+    display: block;
+}
+
+.sim-step-label {
+    font-size: 13px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.45);
+    text-align: center;
+}
+
+/* Right column */
+.sim-card-right {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 24px;
+    gap: 8px;
+}
+
+.sim-step-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: #ffffff;
+    margin-bottom: 0;
+}
+
+.sim-step-sub {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.45);
+}
+
+.sim-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.28);
+    flex-shrink: 0;
+    animation: sim-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes sim-pulse {
+    0%, 100% { opacity: 0.25; }
+    50% { opacity: 1; }
+}

@@ -140,6 +140,51 @@
   margin: 0;
 }
 
+/* ── Warning icon + tooltip ── */
+.attribute-selection__warning-icon {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: default;
+  flex-shrink: 0;
+  color: #E52728;   /* ← add this */
+}
+
+.attribute-selection__warning-icon svg {
+  display: block;
+}
+
+.attribute-selection__tooltip {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #2a2d35;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 12.5px;
+  font-weight: 400;
+  line-height: 1.45;
+  padding: 8px 12px;
+  border-radius: 8px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 100;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.attribute-selection__tooltip-arrow {
+  position: absolute;
+  bottom: -5px;
+  left: 50%;                   
+  transform: translateX(-50%) rotate(45deg);
+  width: 8px;
+  height: 8px;
+  background: #2a2d35;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
 /* Geography dropdowns */
 .attribute-selection__geo-row {
   display: flex;

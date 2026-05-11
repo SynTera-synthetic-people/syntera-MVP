@@ -28,7 +28,6 @@ import PersonaSummaryView from './PersonaSummaryView';
 import EditPersonaNameModal from './EditPersonaNameModal';
 import PersonaSearch from '../PersonaSearch';
 import PlausibilityCheckModal from '../components/PlausibilityCheckModal';
-import PlausibilityWarningStrip from '../components/PlausibilityWarningStrip';
 import type { PlausibilityWarning } from '../components/PlausibilityWarningStrip';
 
 import './PersonaBuilderManual.css';
@@ -78,7 +77,6 @@ const PersonaBuilderManual: React.FC = () => {
 
     // Real-time inline strip
     const [realtimeWarnings, setRealtimeWarnings] = useState<PlausibilityWarning[]>([]);
-    const [stripDismissed, setStripDismissed] = useState(false);
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const { mutateAsync: runPlausibilityCheck } = useRealtimePlausibility(workspaceId, objectiveId);
@@ -122,7 +120,6 @@ const PersonaBuilderManual: React.FC = () => {
                 const result = await (runPlausibilityCheck as unknown as CheckFn)(payload as Record<string, unknown>);
                 const warnings: PlausibilityWarning[] = result?.data?.warnings ?? [];
                 setRealtimeWarnings(warnings);
-                if (warnings.length > 0) setStripDismissed(false);
             } catch {
                 // silently ignore network errors for real-time checks
             }
@@ -388,6 +385,31 @@ const PersonaBuilderManual: React.FC = () => {
         </div>
     );
 
+    // ── Resolve warning for the currently active sub-tab ─────────────────────
+    // Backend shape: { rule, severity, message, fields: string[] }
+    // e.g. fields: ["age_range", "income_range"]
+    const getActiveWarning = (): string | undefined => {
+        if (!realtimeWarnings.length) return undefined;
+
+        const subTab = activeSubTab.toLowerCase().replace(/\s+/g, '_');
+
+        const match = realtimeWarnings.find((w) => {
+            const raw = w as unknown as Record<string, unknown>;
+            const fields = raw.fields;
+            if (Array.isArray(fields)) {
+                const keyword = subTab.split('_')[0] ?? subTab;
+                return fields.some((f: unknown) =>
+                    typeof f === 'string' && f.toLowerCase().includes(keyword)
+                );
+            }
+            return false;
+        });
+
+        if (!match) return undefined;
+        const raw = match as unknown as Record<string, unknown>;
+        return (raw.message as string | undefined) ?? 'Please review this field.';
+    };
+
     const renderContent = () => {
         if (activeCategory === 'Formative Experience') {
             return (
@@ -409,11 +431,12 @@ const PersonaBuilderManual: React.FC = () => {
                     completedSubTabs={Array.from(completedSubTabs)}
                     highlightedSubTab={highlightedSubTab}
                 />
-                <AttributeSelectionPanel
+        <AttributeSelectionPanel
                     attributeName={activeSubTab}
                     currentValue={getCurrentAttributeValue()}
                     onSelect={(value) => handleAttributeSelect(activeSubTab, value)}
                     disabled={isSubmitting}
+                    {...(getActiveWarning() !== undefined ? { warning: getActiveWarning()! } : {})}
                 />
             </div>
         );
@@ -433,14 +456,6 @@ const PersonaBuilderManual: React.FC = () => {
                     onNavigate={handleSearchNavigate}
                     disabled={isSubmitting}
                 />
-
-                {/* ── Real-time plausibility strip ── */}
-                {!stripDismissed && realtimeWarnings.length > 0 && (
-                    <PlausibilityWarningStrip
-                        warnings={realtimeWarnings}
-                        onDismiss={() => setStripDismissed(true)}
-                    />
-                )}
 
                 {/* ── Main Card ── */}
                 <motion.div

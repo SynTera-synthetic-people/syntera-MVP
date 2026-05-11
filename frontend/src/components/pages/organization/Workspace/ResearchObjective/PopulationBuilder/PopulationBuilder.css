@@ -1,0 +1,7 @@
+/* ── PopulationBuilder root ───────────────────────────────────── */
+.pb-root {
+  position: relative;
+  height: 100vh;        
+  background:  var(--T-Base-B1, #0E0F12);
+  overflow:visible;
+}

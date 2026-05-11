@@ -3,9 +3,10 @@
 // Renders pills with "or + Add Custom", geography gets dropdowns
 // ══════════════════════════════════════════════════════════════════════════════
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TbPlus } from 'react-icons/tb';
+import SpIcon from '../../../../../../../SPIcon';
 import AttributePillButton from './AttributePillButton';
 import { getAttributeOptions, isMultiSelectAttribute } from '../data';
 import './AttributeSelectionPanel.css';
@@ -15,6 +16,7 @@ interface AttributeSelectionPanelProps {
   currentValue: string | string[] | undefined;
   onSelect: (value: string | string[]) => void;
   disabled?: boolean;
+  warning?: string;
 }
 
 const GEO_ATTRIBUTE = 'Geography';
@@ -24,9 +26,12 @@ const AttributeSelectionPanel: React.FC<AttributeSelectionPanelProps> = ({
   currentValue,
   onSelect,
   disabled = false,
+  warning,
 }) => {
   const [showCustomInput, setShowCustomInput] = useState(false);
   const [customValue, setCustomValue] = useState('');
+  const [showTooltip, setShowTooltip] = useState(false);
+  const tooltipRef = useRef<HTMLDivElement>(null);
 
   const options = getAttributeOptions(attributeName);
   const isMultiSelect = isMultiSelectAttribute(attributeName);
@@ -71,6 +76,31 @@ const AttributeSelectionPanel: React.FC<AttributeSelectionPanelProps> = ({
       <h3 className="attribute-selection__title">
         Select {attributeName}
         {isMultiSelect && <span className="attribute-selection__badge">Multiple</span>}
+        {warning && (
+          <span
+            className="attribute-selection__warning-icon"
+            onMouseEnter={() => setShowTooltip(true)}
+            onMouseLeave={() => setShowTooltip(false)}
+            aria-label={warning}
+          >
+            <SpIcon name="sp-Warning-Triangle_Warning" />
+            <AnimatePresence>
+              {showTooltip && (
+                <motion.div
+                  ref={tooltipRef}
+                  className="attribute-selection__tooltip"
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 4 }}
+                  transition={{ duration: 0.15 }}
+                >
+                  {warning}
+                  <span className="attribute-selection__tooltip-arrow" />
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </span>
+        )}
       </h3>
 
       {isGeo ? (

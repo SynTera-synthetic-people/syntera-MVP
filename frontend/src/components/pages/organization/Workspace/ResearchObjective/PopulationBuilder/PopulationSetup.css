@@ -1,0 +1,462 @@
+/* ═══════════════════════════════════════════════════════
+   PopulationSetup — Calibrate Your Population screen
+   ═══════════════════════════════════════════════════════ */
+
+.ps-root {
+  display: flex;
+  flex-direction: column;
+  padding: 32px 40px 40px;
+  background: #0d0f14;
+  gap: 12px;
+}
+
+/* ── Page header ─────────────────────────────────────── */
+.ps-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.ps-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.3px;
+  margin: 0 0 4px;
+}
+
+.ps-subtitle {
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.4);
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* ── Main card ───────────────────────────────────────── */
+.ps-card {
+    background: var(--T-Base-B3, #16181C);
+    border-radius: 24px;
+    padding: 22px 24px 20px;
+    min-height: 320px;    /* ADD — matches the fixed height in Figma */
+}
+/* ── Persona block header ────────────────────────────── */
+.ps-persona-block__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.ps-persona-block__num {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--T-Avatar-Base, #005D46);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* When count = 1 (initial), show blue */
+.ps-persona-block__num--initial {
+  background: #2563eb;
+}
+
+.ps-persona-block__label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.ps-persona-block__info {
+  color: rgba(255, 255, 255, 0.22);
+  cursor: pointer;
+}
+
+/* ── Column labels (once above all rows) ─────────────── */
+.ps-col-labels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 8px;
+  /* right col needs space for the remove button */
+  padding-right: 0;
+}
+
+.ps-col-label {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.45);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ps-field__req {
+  color: #ef4444;
+}
+
+.ps-field__info-icon {
+  color: rgba(255, 255, 255, 0.18);
+  flex-shrink: 0;
+}
+
+/* ── Persona entry row ───────────────────────────────── */
+.ps-persona-entry {
+  overflow: visible;
+}
+
+.ps-fields-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+/* ── Dropdown ────────────────────────────────────────── */
+.ps-dropdown {
+  position: relative;
+}
+
+.ps-dropdown__trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  background:var(--T-Base-B3, #16181C);
+  border: 1px solid var(--T-GreyScale-Grey-800, #393C45);
+  border-radius: 9px;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.18s;
+  text-align: left;
+  height: 42px;
+  box-sizing: border-box;
+}
+
+.ps-dropdown__trigger--filled {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.ps-dropdown__trigger:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.ps-dropdown__trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ps-dropdown__value {
+  overflow: visible;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.ps-dropdown__value--selected {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.ps-dropdown__chevron {
+  color: rgba(255, 255, 255, 0.28);
+  flex-shrink: 0;
+  transition: transform 0.2s;
+}
+
+.ps-dropdown__chevron--open {
+  transform: rotate(180deg);
+}
+
+.ps-dropdown__menu {
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 0;
+  right: 0;
+  background:  var(--T-Base-B1, #0E0F12);
+  border: 1px solid var(--T-Base-B4, #1E2126);
+  border-radius: 9px;
+  overflow: visible;
+  z-index: 50;
+  transform-origin: top;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+}
+
+.ps-dropdown__item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.65);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.ps-dropdown__item:last-child {
+  border-bottom: none;
+}
+
+.ps-dropdown__item:hover,
+.ps-dropdown__item--active {
+  background:  var(--T-Base-B4, #1E2126);
+  color: #ffffff;
+}
+
+.ps-dropdown__empty {
+  padding: 12px 14px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.28);
+  text-align: center;
+}
+
+/* ── Sample size row (input + remove btn) ────────────── */
+.ps-sample-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ps-sample-input {
+  flex: 1;
+  height: 42px;
+  padding: 0 14px;
+  background: var(--T-Base-B3, #16181C);
+  border:  1px solid var(--T-GreyScale-Grey-800, #393C45);
+  border-radius: 9px;
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.18s;
+  box-sizing: border-box;
+  -moz-appearance: textfield;
+}
+
+.ps-sample-input::-webkit-outer-spin-button,
+.ps-sample-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+}
+
+.ps-sample-input:focus {
+  border-color: #2563eb;
+}
+
+.ps-sample-input[readonly] {
+  color: rgba(255, 255, 255, 0.2);
+  cursor: default;
+}
+
+/* ── Per-row remove button ───────────────────────────── */
+.ps-persona-remove {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  color: rgba(255, 255, 255, 0.28);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.ps-persona-remove:hover {
+  background: rgba(239, 68, 68, 0.11);
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.28);
+}
+
+/* ── Card footer: Add button + View toggle ───────────── */
+.ps-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+  padding-top: 4px;
+}
+
+.ps-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: transparent;
+  border: 1px dashed rgba(255, 255, 255, 0.13);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: border-color 0.18s, color 0.18s, background 0.18s;
+}
+
+.ps-add-btn:hover {
+  border-color: rgba(37, 99, 235, 0.45);
+  color: #93c5fd;
+  background: rgba(37, 99, 235, 0.06);
+}
+
+.ps-view-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  background: transparent;
+  border: none;
+  color: #22c55e; /* green, matches Figma "View Less" */
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  margin-left: auto;
+  transition: opacity 0.18s;
+}
+
+.ps-view-toggle:hover {
+  opacity: 0.75;
+}
+
+/* ── Action row (Start Survey button) ────────────────── */
+.ps-action-row {
+  display: flex;
+  justify-content: flex-end;
+  padding: 2px 0;
+}
+
+.ps-start-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 22px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 13.5px;
+  font-weight: 600;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.18s, opacity 0.18s, transform 0.15s;
+  white-space: nowrap;
+}
+
+.ps-start-btn:hover:not(:disabled) {
+  background: #1d4ed8;
+  transform: translateY(-1px);
+}
+
+.ps-start-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.ps-start-btn__spinner {
+  width: 15px;
+  height: 15px;
+  animation: ps-spin 0.8s linear infinite;
+}
+
+@keyframes ps-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Omi step card ───────────────────────────────────── */
+.ps-omi-card {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  align-items: stretch;
+  background: var(--T-Base-B1, #0E0F12);
+  border: 1px solid var(--T-GreyScale-Grey-800, #393C45);
+  border-radius: 14px;
+  overflow: visible;
+  min-height: 130px;
+}
+
+/* Left column */
+.ps-omi-card__left {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 18px 12px;
+  border-right: 1px solid var(--T-GreyScale-Grey-700, #4F535F);
+}
+
+/* Arc ring wrapper — video sits absolutely centered inside */
+.ps-omi-arc-wrap {
+  position: relative;
+  width: 100px;
+  height: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ps-omi-arc {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.ps-omi-card__video {
+  width: 80px;
+  height: 80px;
+  border-radius: 80px;
+  object-fit: cover;
+  object-position: center top 30%;
+  background: #0f1117;
+  position: relative;
+  z-index: 1;
+}
+
+.ps-omi-card__step-label {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.35);
+  font-weight: 500;
+  text-align: center;
+}
+
+/* Right column */
+.ps-omi-card__content {
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 14px;
+}
+
+.ps-omi-card__step-text {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.72);
+  line-height: 1.55;
+}
+
+.ps-omi-card__dots {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.ps-omi-card__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+  transition: background 0.3s, transform 0.3s;
+  flex-shrink: 0;
+}
+
+.ps-omi-card__dot--active {
+  background: #2563eb;
+  transform: scale(1.3);
+}
