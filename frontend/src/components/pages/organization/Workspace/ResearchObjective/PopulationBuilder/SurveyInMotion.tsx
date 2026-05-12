@@ -62,7 +62,7 @@ const SURVEY_STEPS: SurveyStepData[] = [
 
 const TICK_MS = 2_800;
 
-const RING_RADIUS = 34;
+const RING_RADIUS = 43;
 const RING_CIRC = 2 * Math.PI * RING_RADIUS;
 
 const SurveyInMotion: React.FC<SurveyInMotionProps> = ({ onSurveyComplete }) => {
@@ -137,26 +137,28 @@ const SurveyInMotion: React.FC<SurveyInMotionProps> = ({ onSurveyComplete }) => 
           {/* Left: ring + Omi video */}
           <div className="sim-card-left">
             <div className="sim-ring-wrap">
-              <svg className="sim-ring-svg" viewBox="0 0 80 80">
-                <circle cx="40" cy="40" r={RING_RADIUS} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="4" />
+              <svg className="sim-ring-svg" viewBox="0 0 96 96">
+                <circle cx="48" cy="48" r={RING_RADIUS} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="3.5" />
                 <circle
-                  cx="40" cy="40" r={RING_RADIUS}
+                  cx="48" cy="48" r={RING_RADIUS}
                   fill="none"
-                  stroke="#2563eb"
-                  strokeWidth="4"
+                  stroke="#0E63EC"
+                  strokeWidth="3.5"
                   strokeLinecap="round"
                   strokeDasharray={RING_CIRC}
                   strokeDashoffset={offset}
-                  transform="rotate(-90 40 40)"
-                  style={{ transition: 'stroke-dashoffset 0.3s linear' }}
+                  transform="rotate(-90 48 48)"
+                  style={{ transition: 'stroke-dashoffset 0.7s ease' }}
                 />
               </svg>
-              <video
-                ref={videoRef}
-                src={OmiKeyboard}
-                autoPlay loop muted playsInline
-                className="sim-omi-video"
-              />
+              <div className="sim-omi-video-circle">
+                <video
+                  ref={videoRef}
+                  src={OmiKeyboard}
+                  autoPlay loop muted playsInline
+                  className="sim-omi-video"
+                />
+              </div>
             </div>
             <span className="sim-step-label">Step {currentStep + 1}/{SURVEY_STEPS.length}</span>
           </div>

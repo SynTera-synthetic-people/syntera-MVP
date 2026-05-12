@@ -149,11 +149,11 @@ interface ManageUsersModalProps {
 export const ManageUsersModal: React.FC<ManageUsersModalProps> = ({
   isOpen, onClose, workspaceId, workspaceName,
 }) => {
-  const [members, setMembers]       = useState<ModalMember[]>([]);
-  const [loading, setLoading]       = useState(false);
+  const [members, setMembers] = useState<ModalMember[]>([]);
+  const [loading, setLoading] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
-  const [saving, setSaving]         = useState(false);
-  const [error, setError]           = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     if (!isOpen || !workspaceId) return;
@@ -267,9 +267,9 @@ interface EditUserErrors {
 export const EditUserModal: React.FC<EditUserModalProps> = ({
   isOpen, onClose, user, onSave,
 }) => {
-  const [form, setForm]           = useState<EditUserData>({ id: '', firstName: '', lastName: '', email: '' });
-  const [errors, setErrors]       = useState<EditUserErrors>({});
-  const [saving, setSaving]       = useState(false);
+  const [form, setForm] = useState<EditUserData>({ id: '', firstName: '', lastName: '', email: '' });
+  const [errors, setErrors] = useState<EditUserErrors>({});
+  const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
 
   useEffect(() => {
@@ -286,8 +286,8 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
   const validate = (): boolean => {
     const next: EditUserErrors = {};
     if (!form.firstName.trim()) next.firstName = 'Required';
-    if (!form.lastName.trim())  next.lastName  = 'Required';
-    if (!form.email.trim())     next.email     = 'Required';
+    if (!form.lastName.trim()) next.lastName = 'Required';
+    if (!form.email.trim()) next.email = 'Required';
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email))
       next.email = 'Enter a valid email';
     setErrors(next);
@@ -355,11 +355,11 @@ const isValidEmail = (val: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val.trim
 export const ShareInvoiceModal: React.FC<ShareInvoiceModalProps> = ({
   isOpen, onClose, invoiceId, invoiceTitle, onSend,
 }) => {
-  const [inputVal, setInputVal]     = useState('');
-  const [emails, setEmails]         = useState<string[]>([]);
+  const [inputVal, setInputVal] = useState('');
+  const [emails, setEmails] = useState<string[]>([]);
   const [inputError, setInputError] = useState('');
-  const [sending, setSending]       = useState(false);
-  const [sendError, setSendError]   = useState('');
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -369,9 +369,9 @@ export const ShareInvoiceModal: React.FC<ShareInvoiceModalProps> = ({
   const addEmail = () => {
     const val = inputVal.trim();
     if (!val) return;
-    if (!isValidEmail(val))               { setInputError('Enter a valid email address.'); return; }
-    if (emails.includes(val))             { setInputError('This email is already added.'); return; }
-    if (emails.length >= MAX_RECIPIENTS)  { setInputError(`Maximum ${MAX_RECIPIENTS} recipients allowed.`); return; }
+    if (!isValidEmail(val)) { setInputError('Enter a valid email address.'); return; }
+    if (emails.includes(val)) { setInputError('This email is already added.'); return; }
+    if (emails.length >= MAX_RECIPIENTS) { setInputError(`Maximum ${MAX_RECIPIENTS} recipients allowed.`); return; }
     setEmails((prev) => [...prev, val]);
     setInputVal(''); setInputError('');
     inputRef.current?.focus();
@@ -456,7 +456,7 @@ export const DeleteWorkspaceModal: React.FC<DeleteWorkspaceModalProps> = ({
   isOpen, onClose, workspaceName, onConfirm,
 }) => {
   const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState('');
+  const [error, setError] = useState('');
 
   const handleDelete = async () => {
     setLoading(true); setError('');
@@ -503,7 +503,7 @@ export const RemoveUserModal: React.FC<RemoveUserModalProps> = ({
   isOpen, onClose, userName, onConfirm,
 }) => {
   const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState('');
+  const [error, setError] = useState('');
 
   const handleRemove = async () => {
     setLoading(true); setError('');
@@ -547,7 +547,7 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
   isOpen, onClose, onConfirm,
 }) => {
   const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState('');
+  const [error, setError] = useState('');
 
   const handleDelete = async () => {
     setLoading(true); setError('');
@@ -644,63 +644,82 @@ export const HowBillingWorksModal: React.FC<HowBillingWorksModalProps> = ({
   return (
     <div className="sm-overlay" onClick={onClose}>
       <div
-        className="sm-modal sm-modal--how-billing"
+        className="sm-modal sm-hbw-modal"
         style={{ maxWidth: 520 }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="sm-modal-header sm-modal-header--left">
-          <div className="sm-modal-titles sm-modal-titles--left">
-            <h2 className="sm-modal-title">How Billing Works</h2>
-            <p className="sm-modal-subtitle">
-              Understand how your usage is calculated and billed.
-            </p>
-          </div>
-          <button className="sm-close-btn" onClick={onClose} aria-label="Close">
-            <TbX size={18} />
-          </button>
-        </div>
+        <button className="sm-close-btn sm-hbw-close" onClick={onClose} aria-label="Close">
+          <TbX size={18} />
+        </button>
 
-        {/* Body */}
-        <div className="sm-modal-body sm-modal-body--billing">
-          <div className="sm-billing-section">
-            <h3 className="sm-billing-section-title">Exploration Used</h3>
-            <p className="sm-billing-section-desc">
-              Number of explorations executed in the selected billing period. Your plan includes a set
-              number of explorations per billing cycle. Usage resets at the start of each new period.
-            </p>
+        <div className="sm-hbw-body">
+          {/* Title */}
+          <h2 className="sm-hbw-title">How Billing Works</h2>
+
+          {/* Includes section */}
+          <div className="sm-hbw-section">
+            <p className="sm-hbw-section-heading">1 Exploration includes</p>
+            <ul className="sm-hbw-list">
+              <li>4 manual/OMI generate personas</li>
+              <li>Unlimited sample size</li>
+              <li>Unlimited conversations</li>
+              <li>Decision intelligence reports</li>
+              <li>Data playground and more</li>
+            </ul>
           </div>
 
-          <div className="sm-billing-divider" />
-
-          <div className="sm-billing-section">
-            <h3 className="sm-billing-section-title">Additional Personas</h3>
-            <p className="sm-billing-section-desc">
-              Each exploration includes 4 personas by default. Any personas added beyond that are
-              billed as additional personas — there is no cap, and they are billed as used.
-            </p>
+          {/* Pricing columns */}
+          <div className="sm-hbw-pricing-row">
+            <div className="sm-hbw-pricing-col">
+              <p className="sm-hbw-pricing-label">Explorations</p>
+              <p className="sm-hbw-pricing-sub">Add as many as you need</p>
+              <p className="sm-hbw-pricing-amount">
+                $2499 <span className="sm-hbw-pricing-unit">/ Exploration</span>
+              </p>
+            </div>
+            <div className="sm-hbw-pricing-divider" />
+            <div className="sm-hbw-pricing-col">
+              <p className="sm-hbw-pricing-label">Additional Personas</p>
+              <p className="sm-hbw-pricing-sub">Add as many as you need</p>
+              <p className="sm-hbw-pricing-amount">
+                $49 <span className="sm-hbw-pricing-unit">/ Additional Persona</span>
+              </p>
+            </div>
           </div>
 
-          <div className="sm-billing-divider" />
-
-          <div className="sm-billing-section">
-            <h3 className="sm-billing-section-title">Amount Payable</h3>
-            <p className="sm-billing-section-desc">
-              Total payable for the selected period based on usage before taxes. Taxes are calculated
-              at checkout based on your billing address and applicable regional rates.
-            </p>
+          {/* Summary card */}
+          <div className="sm-hbw-summary-card">
+            <p className="sm-hbw-summary-title">Summary (May 2026)</p>
+            <div className="sm-hbw-summary-rows">
+              <div className="sm-hbw-summary-row">
+                <span>Exploration (200 x #2,499)</span>
+                <span>$499,800</span>
+              </div>
+              <div className="sm-hbw-summary-row">
+                <span>Additional Personas (24 x $49)</span>
+                <span>$499,800</span>
+              </div>
+            </div>
+            <div className="sm-hbw-summary-divider" />
+            <div className="sm-hbw-summary-rows">
+              <div className="sm-hbw-summary-row sm-hbw-summary-row--muted">
+                <span>Subtotal</span>
+                <span>$6,176</span>
+              </div>
+              <div className="sm-hbw-summary-row sm-hbw-summary-row--muted">
+                <span>Tax (18%)</span>
+                <span>$1,111</span>
+              </div>
+            </div>
+            <div className="sm-hbw-summary-divider" />
+            <div className="sm-hbw-summary-row sm-hbw-summary-row--total">
+              <span>Total</span>
+              <span>$7,285</span>
+            </div>
           </div>
 
-          <div className="sm-billing-divider" />
-
-          <div className="sm-billing-section">
-            <h3 className="sm-billing-section-title">Usage Overview Chart</h3>
-            <p className="sm-billing-section-desc">
-              Monthly distribution of explorations (blue) and additional personas (pink) used across
-              the year. Switch between Monthly and Yearly views using the filter in the top-right of
-              the chart.
-            </p>
-          </div>
+          {/* CTA */}
+          <button className="sm-hbw-cta" onClick={onClose}>Ok, Got It</button>
         </div>
       </div>
     </div>
@@ -731,11 +750,11 @@ const QUERY_SUBJECTS = [
 export const SubmitQueryModal: React.FC<SubmitQueryModalProps> = ({
   isOpen, onClose, onSubmit,
 }) => {
-  const [subject, setSubject]         = useState('');
+  const [subject, setSubject] = useState('');
   const [description, setDescription] = useState('');
   const [subjectDropOpen, setSubjectDropOpen] = useState(false);
-  const [submitting, setSubmitting]   = useState(false);
-  const [errors, setErrors]           = useState<{ subject?: string; description?: string }>({});
+  const [submitting, setSubmitting] = useState(false);
+  const [errors, setErrors] = useState<{ subject?: string; description?: string }>({});
   const [submitError, setSubmitError] = useState('');
   const dropRef = useRef<HTMLDivElement>(null);
 
@@ -764,7 +783,7 @@ export const SubmitQueryModal: React.FC<SubmitQueryModalProps> = ({
 
   const validate = () => {
     const next: typeof errors = {};
-    if (!subject)          next.subject     = 'Please select a subject.';
+    if (!subject) next.subject = 'Please select a subject.';
     if (!description.trim()) next.description = 'Please enter a description.';
     setErrors(next);
     return Object.keys(next).length === 0;
@@ -908,11 +927,11 @@ const isValidBillingEmail = (val: string) =>
 export const ShareInvoiceBillingModal: React.FC<ShareInvoiceBillingModalProps> = ({
   isOpen, onClose, onSend,
 }) => {
-  const [inputVal, setInputVal]     = useState('');
-  const [emails, setEmails]         = useState<string[]>([]);
+  const [inputVal, setInputVal] = useState('');
+  const [emails, setEmails] = useState<string[]>([]);
   const [inputError, setInputError] = useState('');
-  const [sending, setSending]       = useState(false);
-  const [sendError, setSendError]   = useState('');
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -935,7 +954,7 @@ export const ShareInvoiceBillingModal: React.FC<ShareInvoiceBillingModalProps> =
     const val = inputVal.trim();
     if (!val) return;
     if (!isValidBillingEmail(val)) { setInputError('Enter a valid email address.'); return; }
-    if (emails.includes(val))      { setInputError('This email is already added.'); return; }
+    if (emails.includes(val)) { setInputError('This email is already added.'); return; }
     if (emails.length >= MAX_BILLING_RECIPIENTS) {
       setInputError(`Maximum ${MAX_BILLING_RECIPIENTS} recipients allowed.`);
       return;

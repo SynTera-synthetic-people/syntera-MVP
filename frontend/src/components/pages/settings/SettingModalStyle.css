@@ -22,8 +22,13 @@
 }
 
 @keyframes sm-overlay-in {
-  from { opacity: 0; }
-  to   { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 .sm-modal {
@@ -39,8 +44,15 @@
 }
 
 @keyframes sm-modal-in {
-  from { opacity: 0; transform: scale(0.96) translateY(10px); }
-  to   { opacity: 1; transform: scale(1)    translateY(0); }
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 /* ── Header ── */
@@ -99,6 +111,7 @@
   flex-shrink: 0;
   transition: background 0.15s, color 0.15s;
 }
+
 .sm-close-btn:hover {
   background: rgba(255, 255, 255, 0.07);
   color: #e5e7eb;
@@ -139,7 +152,12 @@
   border-radius: 50%;
   animation: sm-spin 0.8s linear infinite;
 }
-@keyframes sm-spin { to { transform: rotate(360deg); } }
+
+@keyframes sm-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 
 /* ── Empty ── */
 .sm-empty-text {
@@ -171,10 +189,12 @@
   align-self: center;
   min-width: 120px;
 }
+
 .sm-save-btn:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.12);
   color: #e5e7eb;
 }
+
 .sm-save-btn--full {
   width: 100%;
   align-self: stretch;
@@ -182,8 +202,16 @@
   border-color: #2563eb;
   color: #fff;
 }
-.sm-save-btn--full:hover:not(:disabled) { background: #1d4ed8; color: #fff; }
-.sm-save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.sm-save-btn--full:hover:not(:disabled) {
+  background: #1d4ed8;
+  color: #fff;
+}
+
+.sm-save-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
 .sm-send-btn {
   width: 100%;
@@ -198,8 +226,15 @@
   transition: background 0.15s;
   letter-spacing: 0.1px;
 }
-.sm-send-btn:hover:not(:disabled) { background: #1d4ed8; }
-.sm-send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.sm-send-btn:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.sm-send-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
 /* ════════════════════════════════════════════════════════════════
    1. MANAGE USERS MODAL
@@ -214,8 +249,15 @@
   scrollbar-width: thin;
   scrollbar-color: #2a2d35 transparent;
 }
-.sm-member-list::-webkit-scrollbar { width: 4px; }
-.sm-member-list::-webkit-scrollbar-thumb { background: #2a2d35; border-radius: 4px; }
+
+.sm-member-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.sm-member-list::-webkit-scrollbar-thumb {
+  background: #2a2d35;
+  border-radius: 4px;
+}
 
 .sm-member-row {
   display: flex;
@@ -225,7 +267,10 @@
   border-radius: 8px;
   transition: background 0.12s;
 }
-.sm-member-row:hover { background: rgba(255, 255, 255, 0.04); }
+
+.sm-member-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
 
 .sm-member-avatar {
   width: 32px;
@@ -268,6 +313,7 @@
   font-weight: 600;
   flex-shrink: 0;
 }
+
 .sm-member-badge--admin {
   background: rgba(255, 255, 255, 0.1);
   color: #d1d5db;
@@ -288,11 +334,16 @@
   flex-shrink: 0;
   transition: background 0.12s, color 0.12s;
 }
+
 .sm-member-remove-btn:hover:not(:disabled) {
   background: rgba(239, 68, 68, 0.1);
   color: #f87171;
 }
-.sm-member-remove-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.sm-member-remove-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
 
 /* ════════════════════════════════════════════════════════════════
    2. EDIT USER MODAL
@@ -303,13 +354,32 @@
   grid-template-columns: 1fr 1fr;
   gap: 12px;
 }
-@media (max-width: 420px) { .sm-form-row { grid-template-columns: 1fr; } }
 
-.sm-field { display: flex; flex-direction: column; gap: 5px; }
-.sm-field--full { grid-column: 1 / -1; }
+@media (max-width: 420px) {
+  .sm-form-row {
+    grid-template-columns: 1fr;
+  }
+}
 
-.sm-label { font-size: 12.5px; font-weight: 500; color: #d1d5db; }
-.sm-required { color: #f87171; }
+.sm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.sm-field--full {
+  grid-column: 1 / -1;
+}
+
+.sm-label {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #d1d5db;
+}
+
+.sm-required {
+  color: #f87171;
+}
 
 .sm-input {
   padding: 9px 13px;
@@ -323,18 +393,44 @@
   box-sizing: border-box;
   width: 100%;
 }
-.sm-input::placeholder { color: #4b5563; }
-.sm-input:focus         { border-color: #374151; }
-.sm-input--error        { border-color: #f87171 !important; }
-.sm-input--disabled     { background: #0a0c10; color: #6b7280; cursor: default; }
-.sm-field-error         { font-size: 11.5px; color: #f87171; margin: 0; }
+
+.sm-input::placeholder {
+  color: #4b5563;
+}
+
+.sm-input:focus {
+  border-color: #374151;
+}
+
+.sm-input--error {
+  border-color: #f87171 !important;
+}
+
+.sm-input--disabled {
+  background: #0a0c10;
+  color: #6b7280;
+  cursor: default;
+}
+
+.sm-field-error {
+  font-size: 11.5px;
+  color: #f87171;
+  margin: 0;
+}
 
 /* ════════════════════════════════════════════════════════════════
    3. SHARE INVOICE MODAL
 ════════════════════════════════════════════════════════════════ */
 
-.sm-email-input-row { display: flex; gap: 8px; align-items: center; }
-.sm-input--chip-input { flex: 1; }
+.sm-email-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.sm-input--chip-input {
+  flex: 1;
+}
 
 .sm-add-email-btn {
   display: flex;
@@ -350,10 +446,23 @@
   flex-shrink: 0;
   transition: background 0.15s, color 0.15s;
 }
-.sm-add-email-btn:hover:not(:disabled) { background: rgba(255,255,255,0.1); color: #e5e7eb; }
-.sm-add-email-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-.sm-chips-wrap { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.sm-add-email-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  color: #e5e7eb;
+}
+
+.sm-add-email-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.sm-chips-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
 
 .sm-chip {
   display: inline-flex;
@@ -389,9 +498,16 @@
   flex-shrink: 0;
   transition: color 0.12s;
 }
-.sm-chip-remove:hover { color: #f87171; }
 
-.sm-hint { font-size: 12px; color: #6b7280; margin: 4px 0 0; }
+.sm-chip-remove:hover {
+  color: #f87171;
+}
+
+.sm-hint {
+  font-size: 12px;
+  color: #6b7280;
+  margin: 4px 0 0;
+}
 
 /* ════════════════════════════════════════════════════════════════
    4–7. CONFIRM SHELL
@@ -429,7 +545,11 @@
   justify-content: center;
   transition: background 0.15s, color 0.15s;
 }
-.sm-confirm-close:hover { background: rgba(255,255,255,0.07); color: #e5e7eb; }
+
+.sm-confirm-close:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: #e5e7eb;
+}
 
 .sm-confirm-icon-wrap {
   width: 68px;
@@ -441,14 +561,48 @@
   margin-bottom: 4px;
   flex-shrink: 0;
 }
-.sm-confirm-icon-wrap--danger  { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.25); color: #ef4444; }
-.sm-confirm-icon-wrap--primary { background: rgba(37,99,235,0.15); border: 1px solid rgba(37,99,235,0.25); color: #3b82f6; }
 
-.sm-confirm-title   { font-size: 18px; font-weight: 700; color: #f3f4f6; margin: 0; letter-spacing: -0.2px; }
-.sm-confirm-subtitle { font-size: 13px; color: #9ca3af; margin: 0; line-height: 1.6; max-width: 260px; }
-.sm-confirm-inline-error { display: block; margin-top: 8px; font-size: 12px; color: #f87171; }
+.sm-confirm-icon-wrap--danger {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  color: #ef4444;
+}
 
-.sm-confirm-actions { display: flex; gap: 10px; width: 100%; margin-top: 4px; }
+.sm-confirm-icon-wrap--primary {
+  background: rgba(37, 99, 235, 0.15);
+  border: 1px solid rgba(37, 99, 235, 0.25);
+  color: #3b82f6;
+}
+
+.sm-confirm-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #f3f4f6;
+  margin: 0;
+  letter-spacing: -0.2px;
+}
+
+.sm-confirm-subtitle {
+  font-size: 13px;
+  color: #9ca3af;
+  margin: 0;
+  line-height: 1.6;
+  max-width: 260px;
+}
+
+.sm-confirm-inline-error {
+  display: block;
+  margin-top: 8px;
+  font-size: 12px;
+  color: #f87171;
+}
+
+.sm-confirm-actions {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  margin-top: 4px;
+}
 
 .sm-confirm-action-btn {
   flex: 1;
@@ -461,17 +615,33 @@
   transition: background 0.15s, opacity 0.15s;
   color: #fff;
 }
-.sm-confirm-action-btn--danger  { background: #ef4444; }
-.sm-confirm-action-btn--primary { background: #2563eb; }
-.sm-confirm-action-btn--danger:hover:not(:disabled)  { background: #dc2626; }
-.sm-confirm-action-btn--primary:hover:not(:disabled) { background: #1d4ed8; }
-.sm-confirm-action-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.sm-confirm-action-btn--danger {
+  background: #ef4444;
+}
+
+.sm-confirm-action-btn--primary {
+  background: #2563eb;
+}
+
+.sm-confirm-action-btn--danger:hover:not(:disabled) {
+  background: #dc2626;
+}
+
+.sm-confirm-action-btn--primary:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.sm-confirm-action-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
 
 .sm-confirm-cancel-btn {
   flex: 1;
   padding: 11px 0;
   border-radius: 10px;
-  border: 1.5px solid rgba(255,255,255,0.12);
+  border: 1.5px solid rgba(255, 255, 255, 0.12);
   background: transparent;
   color: #d1d5db;
   font-size: 14px;
@@ -479,47 +649,207 @@
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
 }
+
 .sm-confirm-cancel-btn:hover:not(:disabled) {
-  background: rgba(255,255,255,0.06);
-  border-color: rgba(255,255,255,0.22);
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.22);
 }
-.sm-confirm-cancel-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.sm-confirm-cancel-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
 
 /* ════════════════════════════════════════════════════════════════
-   8. HOW BILLING WORKS MODAL
+   8. HOW BILLING WORKS MODAL  (sm-hbw-*)
 ════════════════════════════════════════════════════════════════ */
 
-.sm-modal--how-billing {
-  /* inherits sm-modal base */
+.sm-hbw-modal {
+  background: #111318;
+  border-color: rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  position: relative;
+  scrollbar-width: thin;
+  scrollbar-color: #2a2d35 transparent;
 }
 
-.sm-modal-body--billing {
-  gap: 0;
-  padding-top: 16px;
+.sm-hbw-modal::-webkit-scrollbar {
+  width: 4px;
 }
 
-.sm-billing-section {
-  padding: 16px 0;
+.sm-hbw-modal::-webkit-scrollbar-thumb {
+  background: #2a2d35;
+  border-radius: 4px;
 }
 
-.sm-billing-section-title {
-  font-size: 14px;
+.sm-hbw-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 1;
+}
+
+.sm-hbw-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 28px 32px 24px;
+}
+
+.sm-hbw-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+  letter-spacing: -0.3px;
+  text-align: center;
+}
+
+/* Includes section */
+.sm-hbw-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sm-hbw-section-heading {
+  font-size: 15px;
   font-weight: 600;
   color: #f3f4f6;
-  margin: 0 0 6px;
-}
-
-.sm-billing-section-desc {
-  font-size: 13px;
-  color: #9ca3af;
-  line-height: 1.65;
   margin: 0;
 }
 
-.sm-billing-divider {
+.sm-hbw-list {
+  list-style: disc;
+  padding-left: 20px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sm-hbw-list li {
+  font-size: 13px;
+  color: #9ca3af;
+  line-height: 1.5;
+}
+
+/* Pricing row */
+.sm-hbw-pricing-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+}
+
+.sm-hbw-pricing-divider {
+  width: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+  margin: 0 28px;
+}
+
+.sm-hbw-pricing-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sm-hbw-pricing-label {
+  font-size: 15px;
+  font-weight: 600;
+  color: #f3f4f6;
+  margin: 0;
+}
+
+.sm-hbw-pricing-sub {
+  font-size: 12.5px;
+  color: #6b7280;
+  margin: 0 0 8px;
+}
+
+.sm-hbw-pricing-amount {
+  font-size: 26px;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+  letter-spacing: -0.5px;
+  line-height: 1.1;
+}
+
+.sm-hbw-pricing-unit {
+  font-size: 13px;
+  font-weight: 400;
+  color: #6b7280;
+  letter-spacing: 0;
+}
+
+/* Summary card */
+.sm-hbw-summary-card {
+  background: #1a1d24;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 14px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sm-hbw-summary-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #f3f4f6;
+  margin: 0;
+}
+
+.sm-hbw-summary-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sm-hbw-summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13.5px;
+  color: #d1d5db;
+}
+
+.sm-hbw-summary-row--muted {
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.sm-hbw-summary-row--total {
+  font-size: 16px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.sm-hbw-summary-divider {
   height: 1px;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+/* CTA button */
+.sm-hbw-cta {
   width: 100%;
+  padding: 15px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: transparent;
+  color: #e5e7eb;
+  font-size: 15px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.sm-hbw-cta:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.22);
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -580,18 +910,34 @@
   box-sizing: border-box;
   text-align: left;
 }
-.sm-query-select-btn:hover  { border-color: #374151; }
-.sm-query-select-btn--error { border-color: #f87171 !important; }
 
-.sm-query-select-placeholder { font-size: 13.5px; color: #4b5563; }
-.sm-query-select-value        { font-size: 13.5px; color: #e5e7eb; }
+.sm-query-select-btn:hover {
+  border-color: #374151;
+}
+
+.sm-query-select-btn--error {
+  border-color: #f87171 !important;
+}
+
+.sm-query-select-placeholder {
+  font-size: 13.5px;
+  color: #4b5563;
+}
+
+.sm-query-select-value {
+  font-size: 13.5px;
+  color: #e5e7eb;
+}
 
 .sm-query-chevron {
   color: #6b7280;
   transition: transform 0.2s ease;
   flex-shrink: 0;
 }
-.sm-query-chevron--open { transform: rotate(180deg); }
+
+.sm-query-chevron--open {
+  transform: rotate(180deg);
+}
 
 .sm-query-dropdown {
   position: absolute;
@@ -603,7 +949,7 @@
   border-radius: 8px;
   padding: 4px;
   z-index: 300;
-  box-shadow: 0 10px 28px rgba(0,0,0,0.6);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.6);
 }
 
 .sm-query-dropdown-item {
@@ -614,8 +960,15 @@
   cursor: pointer;
   transition: background 0.12s;
 }
-.sm-query-dropdown-item:hover           { background: rgba(255,255,255,0.06); }
-.sm-query-dropdown-item--active         { color: #60a5fa; background: rgba(59,130,246,0.08); }
+
+.sm-query-dropdown-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.sm-query-dropdown-item--active {
+  color: #60a5fa;
+  background: rgba(59, 130, 246, 0.08);
+}
 
 /* Character counter */
 .sm-query-counter {
@@ -642,9 +995,18 @@
   transition: border-color 0.15s;
   box-sizing: border-box;
 }
-.sm-query-textarea::placeholder { color: #4b5563; }
-.sm-query-textarea:focus         { border-color: #374151; }
-.sm-query-textarea--error        { border-color: #f87171 !important; }
+
+.sm-query-textarea::placeholder {
+  color: #4b5563;
+}
+
+.sm-query-textarea:focus {
+  border-color: #374151;
+}
+
+.sm-query-textarea--error {
+  border-color: #f87171 !important;
+}
 
 /* Query actions row */
 .sm-query-actions {
@@ -657,7 +1019,7 @@
   flex: 1;
   padding: 11px 0;
   border-radius: 10px;
-  border: 1.5px solid rgba(255,255,255,0.12);
+  border: 1.5px solid rgba(255, 255, 255, 0.12);
   background: transparent;
   color: #d1d5db;
   font-size: 14px;
@@ -665,11 +1027,16 @@
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
 }
+
 .sm-query-cancel-btn:hover:not(:disabled) {
-  background: rgba(255,255,255,0.05);
-  border-color: rgba(255,255,255,0.2);
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.2);
 }
-.sm-query-cancel-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.sm-query-cancel-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
 .sm-query-submit-btn {
   flex: 1.5;
@@ -684,8 +1051,15 @@
   transition: background 0.15s;
   letter-spacing: 0.1px;
 }
-.sm-query-submit-btn:hover:not(:disabled) { background: #1d4ed8; }
-.sm-query-submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.sm-query-submit-btn:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.sm-query-submit-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
 /* ════════════════════════════════════════════════════════════════
    10. SHARE INVOICE BILLING MODAL  (sm-sib-*)

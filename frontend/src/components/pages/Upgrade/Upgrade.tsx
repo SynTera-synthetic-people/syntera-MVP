@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { TbCheck, TbBuilding, TbRocket } from 'react-icons/tb';
+import SpIcon from '../../SPIcon';
 import { useDispatch, useSelector } from 'react-redux';
 import { toast } from 'react-toastify';
 import { updateUser } from '../../../redux/slices/authSlice';
@@ -25,19 +26,16 @@ interface RootState {
 // ── Feature lists ─────────────────────────────────────────────────────────────
 
 const EXPLORER_FEATURES = [
-  'Three Research Explorations',
-  'Two Recommended Personas / Manual creation',
+  'Three Research Exploration',
+  'Two Recommended Personas',
   'Qual and Quant Study',
-  'Unlimited Follow-up Conversations',
-  'Unlimited Sample Size in Quant',
-  'Download In-depth Report',
+  'Unlimited follow-up conversations',
+  'Download In-depth report',
   'Traceability Log',
 ];
 
 const ENTERPRISE_FEATURES = [
-  '10 Fixed research exploration: $299 / Each',
-  'Additional research exploration: $199 / each',
-  '4 Recommended personas/manual creation',
+  'Four Recommended personas/manual creation',
   'Qual and Quant study',
   'Unlimited follow-up conversations',
   'Unlimited sample size in quant',
@@ -185,7 +183,6 @@ const Upgrade: React.FC = () => {
             </div>
 
             <div className="up-card-header">
-              <TbRocket size={20} className="up-card-icon up-card-icon--blue" />
               <h3 className="up-card-title">
                 {isTrialCase ? 'Explorer Pack' : 'Renew Explorer Pack'}
               </h3>
@@ -215,8 +212,7 @@ const Upgrade: React.FC = () => {
           {/* ── Enterprise Pack ── */}
           <div className="up-card up-card--default">
             <div className="up-card-header">
-              <TbBuilding size={20} className="up-card-icon up-card-icon--muted" />
-              <h3 className="up-card-title">Enterprise Pack</h3>
+              <h3 className="up-card-title">Upgrade to Enterprise Pack</h3>
             </div>
             <p className="up-card-desc">
               For customer-obsessed teams running continuous behavioural intelligence
@@ -235,7 +231,7 @@ const Upgrade: React.FC = () => {
               className="up-cta-btn up-cta-btn--secondary"
               onClick={handleEnterpriseContact}
             >
-              <TbBuilding size={16} />
+              <SpIcon name="sp-Communication-Mail" size={16} />
               Contact Us
             </button>
           </div>

@@ -80,13 +80,14 @@ function generatePoints(): GlobePoint[] {
         const phi = Math.acos(1 - (2 * (i + 0.5)) / totalFaces);
         const rand = seededRandom(i * 7 + 3);
 
+        // AFTER — compress the whole range so no tier blows out
         let baseSize: number;
-        if (i < 5) baseSize = 42 + rand * 8;
-        else if (i < 8) baseSize = 34 + rand * 6;
-        else if (i < 25) baseSize = 24 + rand * 5;
-        else if (i < 80) baseSize = 14 + rand * 4;
-        else if (i < 180) baseSize = 9 + rand * 2;
-        else baseSize = 5 + rand * 1.5;
+        if (i < 5) baseSize = 22 + rand * 4;        
+        else if (i < 8) baseSize = 18 + rand * 3;   
+        else if (i < 25) baseSize = 14 + rand * 3;  
+        else if (i < 80) baseSize = 12 + rand * 3;  
+        else if (i < 180) baseSize = 9 + rand * 2;  
+        else baseSize = 4 + rand * 1.5;             
 
         points.push({
             phi,
