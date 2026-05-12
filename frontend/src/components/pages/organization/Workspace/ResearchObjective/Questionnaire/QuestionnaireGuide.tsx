@@ -275,7 +275,7 @@ const QuestionnaireGuide: React.FC<QuestionnaireGuideProps> = ({
             {/* ── Page header ── */}
             <div className="qdg-page-header">
                 <div>
-                    <h1 className="qdg-page-title">Discussion Guide</h1>
+                    <h1 className="qdg-page-title">Questionnaire</h1>
                     <p className="qdg-page-subtitle">
                         Structured to uncover behaviours, motivations, and decision triggers.
                     </p>

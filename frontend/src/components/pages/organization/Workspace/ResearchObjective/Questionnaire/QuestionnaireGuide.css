@@ -66,7 +66,7 @@
 /* ── Section ──────────────────────────────────────────────────────────────── */
 
 .qdg-section {
-    background:var(--T-Base-B2, #121317);
+    background: var(--T-Base-B2, #121317);
     border: 1px solid rgba(255, 255, 255, 0.055);
     border-radius: 12px;
     overflow: visible;
@@ -112,7 +112,7 @@
     color: #ffffff;
     font-size: 0.875rem;
     font-weight: 600;
-    font-family:  Inter;
+    font-family: Inter;
     padding: 3px 8px;
     outline: none;
 }
@@ -161,7 +161,7 @@
 }
 
 .qdg-section__icon-btn--danger:hover {
-    color:#E52728;
+    color: #E52728;
 }
 
 /* ── Questions list ───────────────────────────────────────────────────────── */
@@ -198,7 +198,7 @@
 }
 
 .qdg-question__num {
-    font-size:16px;
+    font-size: 16px;
     color: var(--T-Text-P, #D2D5DE);
     white-space: nowrap;
     font-weight: 500;
@@ -208,12 +208,13 @@
 }
 
 .qdg-question__text {
-    font-size:16px;
+    font-size: 16px;
     color: var(--T-Text-P, #D2D5DE);
     margin: 0;
     line-height: 1.45;
     max-width: 620px;
 }
+
 .qdg-question__actions {
     margin-left: auto;
     display: flex;
@@ -291,7 +292,7 @@
     display: inline-flex;
     align-items: center;
     padding: 3px 10px;
-    background:  var(--T-GreyScale-Grey-800, #393C45);
+    background: var(--T-GreyScale-Grey-800, #393C45);
     border-radius: 20px;
     font-size: 0.75rem;
     color: white;
@@ -302,7 +303,7 @@
     display: inline-flex;
     align-items: center;
     padding: 2px 8px;
-    background:  var(--T-GreyScale-Grey-800, #393C45);
+    background: var(--T-GreyScale-Grey-800, #393C45);
     border-radius: 20px;
     font-size: 0.6875rem;
     font-weight: 600;
@@ -316,7 +317,7 @@
     position: absolute;
     right: 0;
     top: calc(100% + 4px);
-    background:  var(--T-Base-B3, #16181C);
+    background: var(--T-Base-B3, #16181C);
     border-radius: 10px;
     min-width: 158px;
     z-index: 100;
@@ -335,7 +336,7 @@
     border: none;
     color: white;
     font-size: 0.8125rem;
-    font-family:  Inter;
+    font-family: Inter;
     font-weight: 500;
     cursor: pointer;
     border-radius: 7px;
@@ -369,7 +370,7 @@
     color: #37FFCE;
     font-size: 0.8125rem;
     /* 13px */
-    font-family:  Inter;
+    font-family: Inter;
     font-weight: 500;
     cursor: pointer;
     transition: color 0.13s;
@@ -391,7 +392,7 @@
     border-radius: var(--Radius-8px, 8px);
     color: white;
     font-size: 0.8125rem;
-    font-family:  Inter;
+    font-family: Inter;
     font-weight: 500;
     cursor: pointer;
     align-self: flex-start;
@@ -402,21 +403,15 @@
     color: rgba(255, 255, 255, 0.6);
 }
 
-/* ── Launch bar — fixed at bottom ─────────────────────────────────────────── */
+/* ── Launch bar —  at bottom ─────────────────────────────────────────── */
 
 .qdg-launch-bar {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
     display: flex;
     align-items: center;
     justify-content: flex-end;
     gap: 10px;
-    padding: 12px 28px;
-    background: #0E0F12;
-    border-top: 1px solid rgba(255, 255, 255, 0.07);
-    z-index: 50;
+    padding: 20px 0 0;
+    margin-top: auto;
 }
 
 .qdg-btn--outline {
@@ -431,7 +426,7 @@
     font-size: 0.8125rem;
     /* 13px */
     font-weight: 500;
-    font-family:  Inter;
+    font-family: Inter;
     cursor: pointer;
     transition: background 0.15s, border-color 0.15s;
     white-space: nowrap;
@@ -454,7 +449,7 @@
     font-size: 0.8125rem;
     /* 13px */
     font-weight: 600;
-    font-family:  Inter;
+    font-family: Inter;
     cursor: pointer;
     transition: background 0.15s;
 }
@@ -601,7 +596,7 @@
     border-radius: 8px;
     color: rgba(255, 255, 255, 0.6);
     font-size: 0.9rem;
-    font-family:  Inter;
+    font-family: Inter;
     cursor: pointer;
     transition: background 0.13s;
 }
@@ -619,7 +614,7 @@
     color: #ffffff;
     font-size: 0.9rem;
     font-weight: 600;
-    font-family:  Inter;
+    font-family: Inter;
     cursor: pointer;
     transition: background 0.13s, opacity 0.13s;
 }
@@ -660,7 +655,7 @@
     border-radius: 7px;
     color: rgba(255, 255, 255, 0.45);
     font-size: 0.875rem;
-    font-family:  Inter;
+    font-family: Inter;
     padding: 9px 12px;
     outline: none;
     transition: border-color 0.14s, color 0.14s;
@@ -687,7 +682,7 @@
     border-radius: 8px;
     color: #ffffff;
     font-size: 0.875rem;
-    font-family:  Inter;
+    font-family: Inter;
     line-height: 1.5;
     padding: 10px 12px 22px;
     resize: none;
@@ -718,7 +713,7 @@
     border-radius: 7px;
     color: #ffffff;
     font-size: 0.875rem;
-    font-family:  Inter;
+    font-family: Inter;
     padding: 8px 11px;
     outline: none;
     transition: border-color 0.13s;
@@ -749,7 +744,7 @@
     border-radius: 8px;
     color: rgba(255, 255, 255, 0.82);
     font-size: 0.875rem;
-    font-family:  Inter;
+    font-family: Inter;
     cursor: pointer;
     transition: background 0.13s, border-color 0.13s;
     box-sizing: border-box;
@@ -800,7 +795,7 @@
     font-size: 0.875rem;
     font-weight: 500;
     color: rgba(255, 255, 255, 0.78);
-    font-family:  Inter;
+    font-family: Inter;
     transition: background 0.11s;
     box-sizing: border-box;
 }
@@ -938,7 +933,7 @@
     border: none;
     color: #06A17B;
     font-size: 0.8125rem;
-    font-family:  Inter;
+    font-family: Inter;
     font-weight: 500;
     cursor: pointer;
     transition: opacity 0.13s;
@@ -957,7 +952,7 @@
     border: none;
     color: #06A17B;
     font-size: 0.8125rem;
-    font-family:  Inter;
+    font-family: Inter;
     font-weight: 500;
     cursor: pointer;
     transition: opacity 0.13s;
