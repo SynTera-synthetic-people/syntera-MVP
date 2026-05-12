@@ -893,7 +893,7 @@ Output should be in JSON format:
   "content_gathered": "List of research components gathered from the input.",
   "content_gathered_reason": "For each component gathered, one sentence explaining what was captured and from where.",
   "missing_components": "List of research components missing from the input.",
-  "questions": "List of probe questions used in the conversation, in the order asked. ONE question per item.",
+  "questions": "A single conversational question to ask the user next. Must be a plain string — NOT a list or array. One question only, written as natural flowing text.",
   "final_objective": "Full objective based on the conversation, built per Phase 4 logic, in one single paragraph."
 }}
  
