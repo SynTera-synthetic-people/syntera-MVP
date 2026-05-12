@@ -28,13 +28,21 @@
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background 0.15s ease, opacity 0.15s ease;
   margin-bottom: 2rem;
   align-self: flex-start;
 }
 
 .step-sidebar__back:hover {
   background: rgba(255, 255, 255, 0.08);
+}
+
+/* Disabled state — step not yet complete */
+.step-sidebar__back--disabled,
+.step-sidebar__back:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 /* ── Title ───────────────────────────────────────────────────────────────── */

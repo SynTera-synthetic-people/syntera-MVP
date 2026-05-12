@@ -80,14 +80,9 @@ function generatePoints(): GlobePoint[] {
         const phi = Math.acos(1 - (2 * (i + 0.5)) / totalFaces);
         const rand = seededRandom(i * 7 + 3);
 
-        // AFTER — compress the whole range so no tier blows out
-        let baseSize: number;
-        if (i < 5) baseSize = 22 + rand * 4;        
-        else if (i < 8) baseSize = 18 + rand * 3;   
-        else if (i < 25) baseSize = 14 + rand * 3;  
-        else if (i < 80) baseSize = 12 + rand * 3;  
-        else if (i < 180) baseSize = 9 + rand * 2;  
-        else baseSize = 4 + rand * 1.5;             
+        // FIX: uniform size for all faces — slight random variance for a natural feel,
+        // no index-based tiers that made top faces giant and bottom faces tiny.
+        const baseSize = 11 + rand * 2.5;
 
         points.push({
             phi,
@@ -234,7 +229,7 @@ export default function FullGlobe() {
             const sinT = Math.sin(tilt);
             const cx = w / 2;
             const cy = h / 2;
-            const radius = Math.min(w, h) * 0.50;
+            const radius = Math.min(w, h) * 0.53;
             const mx = mouseRef.current.x;
             const my = mouseRef.current.y;
 
@@ -540,7 +535,7 @@ export default function FullGlobe() {
 
             const hasActiveCallout = !!activeCalloutRef.current;
             if (!isHoveringAny && !hasActiveCallout) {
-                rotationRef.current += 0.00090;
+                rotationRef.current += 0.002;
             }
 
             canvas.style.cursor = isHoveringAny ? 'pointer' : 'default';

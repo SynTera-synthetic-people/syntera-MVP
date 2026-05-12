@@ -102,9 +102,15 @@ const getActiveQualSubStep = (pathname: string, currentId?: string): number => {
   return 0;
 };
 
+// FIX: check localStorage so the active sub-step advances correctly as the user
+// progresses through Population Calibration → Survey Execution → Insights.
 const getActiveQuantSubStep = (pathname: string, currentId?: string): number => {
   if (pathname.includes("rebuttal-mode")) return 4;
-  if (pathname.includes("survey-results")) return 3;
+  if (pathname.includes("survey-results")) {
+    // If survey is already complete (sub3 written), highlight Insights (4)
+    if (currentId && localStorage.getItem(`quant_sub3_${currentId}`)) return 4;
+    return 3;
+  }
   if (pathname.includes("population-builder")) {
     if (currentId && localStorage.getItem(`quant_sub3_${currentId}`)) return 4;
     if (currentId && localStorage.getItem(`quant_sub2_${currentId}`)) return 3;
@@ -133,10 +139,23 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
   const currentId = explorationId || objectiveId;
   const activeStep = getActiveStep(pathname);
   const activeQualSubStep = getActiveQualSubStep(pathname, currentId);
-  const activeQuantSubStep = getActiveQuantSubStep(pathname);
+  // FIX: pass currentId so localStorage keys can be resolved
+  const activeQuantSubStep = getActiveQuantSubStep(pathname, currentId);
 
   const lsStep1Done = !!currentId && !!localStorage.getItem(`step1_done_${currentId}`);
   const lsStep2Done = !!currentId && !!localStorage.getItem(`step2_done_${currentId}`);
+
+  // ── Back-button gate ────────────────────────────────────────────────────────
+  // Back is only enabled once the user has fully completed the active step
+  // (including all its sub-steps). While any step or sub-step is still in
+  // progress the button is disabled so users cannot abandon mid-flow.
+  //
+  // Evaluated lazily here (before isStepCompleted is defined) by inlining the
+  // same LS reads — isStepCompleted is called below after its definition.
+  // We'll set this after the helpers are declared; use a ref-style sentinel
+  // so the value is available in JSX. Actual assignment is below.
+  // (Declared with let so the helper functions below can assign it.)
+  let isBackEnabled = false;
 
   // ── Completion helpers ──────────────────────────────────────────────────────
 
@@ -149,8 +168,21 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
     return false;
   };
 
-  const isQuantSubStepCompleted = (n: number): boolean =>
-    completedQuantSubSteps.includes(n);
+  // FIX: mirror isQualSubStepCompleted — read from localStorage using the keys
+  // that each component actually writes:
+  //   Sub 1 (Questionnaire Design)   → Questionnaire.tsx writes `quantitative_sub1_`
+  //   Sub 2 (Population Calibration) → PopulationBuilder.tsx writes `quant_sub2_`
+  //   Sub 3 (Survey Execution)       → PopulationBuilder.tsx writes `quant_sub3_`
+  //   Sub 4 (Insights Generation)    → driven by navigation to rebuttal-mode; no
+  //                                    dedicated LS key, so rely on prop only.
+  const isQuantSubStepCompleted = (n: number): boolean => {
+    if (completedQuantSubSteps.includes(n)) return true;
+    if (!currentId) return false;
+    if (n === 1) return !!localStorage.getItem(`quantitative_sub1_${currentId}`);
+    if (n === 2) return !!localStorage.getItem(`quant_sub2_${currentId}`);
+    if (n === 3) return !!localStorage.getItem(`quant_sub3_${currentId}`);
+    return false;
+  };
 
   const isStepCompleted = (stepNumber: number): boolean => {
     if (stepNumber === 1) return lsStep1Done || completedSteps.includes(1);
@@ -167,14 +199,18 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
     }
     if (stepNumber === 4) {
       return (
-        completedQuantSubSteps.includes(1) &&
-        completedQuantSubSteps.includes(2) &&
-        completedQuantSubSteps.includes(3) &&
-        completedQuantSubSteps.includes(4)
+        isQuantSubStepCompleted(1) &&
+        isQuantSubStepCompleted(2) &&
+        isQuantSubStepCompleted(3) &&
+        isQuantSubStepCompleted(4)
       );
     }
     return completedSteps.includes(stepNumber);
   };
+
+  // Assign back-button gate now that isStepCompleted is available.
+  // The button is enabled only when the user has fully finished the active step.
+  isBackEnabled = isStepCompleted(activeStep);
 
   // ── Navigation ──────────────────────────────────────────────────────────────
 
@@ -227,7 +263,16 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
   return (
     <aside className="step-sidebar">
 
-      <button className="step-sidebar__back" onClick={handleBack}>
+      <button
+        className={[
+          "step-sidebar__back",
+          !isBackEnabled ? "step-sidebar__back--disabled" : "",
+        ].join(" ")}
+        onClick={handleBack}
+        disabled={!isBackEnabled}
+        aria-disabled={!isBackEnabled}
+        title={!isBackEnabled ? "Complete the current step to go back" : undefined}
+      >
         <SpIcon name="sp-Arrow-Arrow_Left_SM" />
         <span>Back</span>
       </button>
