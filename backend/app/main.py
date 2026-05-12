@@ -9,30 +9,15 @@ from fastapi.requests import Request
 from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.db import (
-    init_db,
-    add_is_active_column,
-    add_trial_columns,
-    add_enterprise_columns,
-    add_workspace_visibility_columns,
-    add_exploration_audience_type_column,
-    add_questionnaire_engine_columns,
-    create_report_cache_table,
-    create_sync_schemas,
-    add_syncdb_envelope_columns,
-    migrate_source_document_file_storage,
-    migrate_source_content_json,
-    add_profile_columns,
-    add_exploration_tracking_columns,
-    add_persona_calibration_column,
-    add_persona_lineage_columns,
-    add_persona_status_column,
-)
+from app.db import async_session
+from app.migrations.startup import run_startup_migrations
 from app.routers import (auth, orgs, workspace, research_objectives, personas, interview,
                          population, questionnaire, rebuttal, traceability, omi, exploration,
-                         omi_workflow, admin, enterprise, syncdb)
+                         omi_workflow, admin, enterprise, syncdb, billing, product_state)
+from app.routers import settings as settings_router
 from app.routers import reports as reports_router_module
 from app.schemas.response import ErrorResponse
+from app.services.billing_service import seed_subscription_plans
 from app.utils.create_superadmin import ensure_superadmin_exists
 
 
@@ -53,6 +38,7 @@ def _configure_logging() -> None:
 _configure_logging()
 
 app = FastAPI(title="Synthetic People")
+
 
 @app.get("/health")
 def health():
@@ -95,27 +81,15 @@ async def custom_http_exception_handler(request: Request, exc: HTTPException):
         content=payload.dict()
     )
 
+
 @app.on_event("startup")
 async def startup():
-    await init_db()
-    await migrate_source_content_json()
-    await add_is_active_column()
-    await add_trial_columns()
-    await add_enterprise_columns()
-    await add_workspace_visibility_columns()
-    await add_exploration_audience_type_column()
-    await add_questionnaire_engine_columns()
-    await create_report_cache_table()
-    await create_sync_schemas()
-    await add_syncdb_envelope_columns()
-    await add_profile_columns()
-    await add_exploration_tracking_columns()
-    await add_persona_calibration_column()
-    await add_persona_lineage_columns()
-    await add_persona_status_column()
+    await run_startup_migrations()
     await ensure_superadmin_exists()
-    
-    await migrate_source_document_file_storage()
+    # Seed plan catalog after billing tables and indexes are guaranteed.
+    async with async_session() as _seed_session:
+        await seed_subscription_plans(_seed_session)
+
 
 app.include_router(auth.router)
 app.include_router(orgs.router)
@@ -134,6 +108,9 @@ app.include_router(admin.router)
 app.include_router(enterprise.router)
 app.include_router(reports_router_module.router)
 app.include_router(syncdb.router)
+app.include_router(billing.router)
+app.include_router(settings_router.router)
+app.include_router(product_state.router)
 
 # default_cors_origins = [
 #     "http://localhost:5173",
@@ -143,13 +120,13 @@ app.include_router(syncdb.router)
 #     "https://www.synthetic-people.ai",
 # ]
 
-cors = os.getenv("CORS_ORIGINS",  "https://staging-ui.synthetic-people.ai" )
-allow_origins = [x.strip() for x in cors.split(",") if x.strip()] 
+# cors = os.getenv("CORS_ORIGINS", "https://staging-ui.synthetic-people.ai")
+# allow_origins = [x.strip() for x in cors.split(",") if x.strip()]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allow_origins,
-    # allow_origins=["*"],
+    # allow_origins=allow_origins,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

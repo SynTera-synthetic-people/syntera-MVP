@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_session
@@ -22,6 +23,7 @@ from app.services.exploration import (
 )
 from app.models.user import User
 from app.routers.auth_dependencies import get_current_active_user
+from app.services.product_state import compute_user_product_state
 
 router = APIRouter(prefix="/explorations", tags=["Explorations"])
 
@@ -47,22 +49,26 @@ async def create(
             current_user=current_user,
         )
     except TrialLimitReachedException:
+        product_state = await compute_user_product_state(session, current_user)
         return JSONResponse(
             status_code=403,
-            content={
+            content=jsonable_encoder({
                 "status": "error",
                 "message": "Trial limit reached. Upgrade your plan to continue.",
                 "upgrade_required": True,
-            },
+                "product_state": product_state,
+            }),
         )
     except PlanLimitReachedException:
+        product_state = await compute_user_product_state(session, current_user)
         return JSONResponse(
             status_code=403,
-            content={
+            content=jsonable_encoder({
                 "status": "error",
                 "message": "Exploration limit reached for your current plan. Please contact support to purchase additional explorations.",
                 "upgrade_required": True,
-            },
+                "product_state": product_state,
+            }),
         )
 
 
@@ -72,7 +78,7 @@ async def get_all(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_active_user),
 ):
-    return await get_explorations_by_workspace(session, workspace_id)
+    return await get_explorations_by_workspace(session, workspace_id, current_user=current_user)
 
 
 @router.get("/{exploration_id}", response_model=ExplorationOut)

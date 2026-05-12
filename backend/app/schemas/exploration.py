@@ -1,7 +1,7 @@
 from pydantic import BaseModel, ConfigDict, Field
 from enum import Enum
 from pydantic import BaseModel, Field, validator
-from typing import Literal, Optional
+from typing import Any, Dict, Literal, Optional
 from datetime import datetime
 
 
@@ -53,6 +53,7 @@ class ExplorationOut(BaseModel):
     qual_step: Optional[str] = None
     # Sub-step within Step 4 quantitative flow: "questionnaire" | "population" | "survey" | "insights"
     quant_step: Optional[str] = None
+    access: Optional[Dict[str, Any]] = None
 
     @validator("status", always=True, pre=False)
     def compute_status(cls, v, values):

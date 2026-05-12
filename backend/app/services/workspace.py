@@ -217,6 +217,10 @@ async def get_workspace_bootstrap(
     session: AsyncSession,
     user: User,
 ) -> dict:
+    from app.services.product_state import compute_user_product_state
+
+    product_state = await compute_user_product_state(session, user)
+
     if user.role == "super_admin":
         return {
             "landing_type": "admin_dashboard",
@@ -224,6 +228,9 @@ async def get_workspace_bootstrap(
             "default_workspace_id": None,
             "has_accessible_workspaces": False,
             "can_create_workspace": False,
+            "workspace_locked": False,
+            "read_only_access": False,
+            "workspace_capabilities": product_state["actions"],
         }
 
     accessible_workspaces = await list_accessible_workspaces(
@@ -242,7 +249,10 @@ async def get_workspace_bootstrap(
             "preferred_workspace_id": preferred_workspace_id,
             "default_workspace_id": None,
             "has_accessible_workspaces": bool(accessible_workspaces),
-            "can_create_workspace": user.role == "enterprise_admin",
+            "can_create_workspace": product_state["actions"]["can_create_workspace"],
+            "workspace_locked": product_state["flags"]["workspace_locked"],
+            "read_only_access": product_state["flags"]["read_only_access"],
+            "workspace_capabilities": product_state["actions"],
         }
 
     if user.account_tier == "tier1":
@@ -254,7 +264,10 @@ async def get_workspace_bootstrap(
             "preferred_workspace_id": preferred_workspace_id,
             "default_workspace_id": preferred_workspace_id,
             "has_accessible_workspaces": True,
-            "can_create_workspace": True,
+            "can_create_workspace": product_state["actions"]["can_create_workspace"],
+            "workspace_locked": product_state["flags"]["workspace_locked"],
+            "read_only_access": product_state["flags"]["read_only_access"],
+            "workspace_capabilities": product_state["actions"],
         }
 
     # free trial — always ensure personal workspace exists
@@ -266,7 +279,10 @@ async def get_workspace_bootstrap(
         "preferred_workspace_id": preferred_workspace_id,
         "default_workspace_id": preferred_workspace_id,
         "has_accessible_workspaces": True,
-        "can_create_workspace": False,
+        "can_create_workspace": product_state["actions"]["can_create_workspace"],
+        "workspace_locked": product_state["flags"]["workspace_locked"],
+        "read_only_access": product_state["flags"]["read_only_access"],
+        "workspace_capabilities": product_state["actions"],
     }
 
 
@@ -591,6 +607,10 @@ async def list_accessible_workspaces_with_members(
             }
         )
 
+    from app.services.product_state import compute_user_product_state
+
+    product_state = await compute_user_product_state(session, user)
+
     result = []
     for ws in workspaces:
         result.append(
@@ -603,6 +623,15 @@ async def list_accessible_workspaces_with_members(
                 "is_hidden": getattr(ws, "is_hidden", False),
                 "is_default_personal": getattr(ws, "is_default_personal", False),
                 "users": members_by_workspace.get(ws.id, []),
+                "access": {
+                    "workspace_locked": product_state["flags"]["workspace_locked"],
+                    "read_only_access": product_state["flags"]["read_only_access"],
+                    "can_create_exploration": product_state["actions"]["can_create_exploration"],
+                    "can_run_behavioral_simulation": product_state["actions"]["can_run_behavioral_simulation"],
+                    "can_view_reports": product_state["actions"]["can_view_reports"],
+                    "can_view_traceability": product_state["actions"]["can_view_traceability"],
+                    "restrictions": product_state["restrictions"],
+                },
             }
         )
     return result

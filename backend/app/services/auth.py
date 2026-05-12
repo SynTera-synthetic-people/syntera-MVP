@@ -146,13 +146,34 @@ async def reset_password(token: str, new_password: str) -> bool:
 async def upgrade_to_tier1(session: AsyncSession, user: User) -> User:
     """
     Upgrade a free/trial user to Explorer Pack (tier1).
-    Resets exploration_count to 0 and sets the tier1 limit.
+
+    Resets exploration_count, sets account_tier, and writes a UserSubscription
+    row so the billing layer stays in sync. Both writes are committed atomically.
     """
+    from app.models.billing import SubscriptionPlan
+    from app.services.billing_service import create_subscription, get_user_subscription
+
     user.account_tier = "tier1"
     user.is_trial = False
     user.trial_exploration_limit = settings.TIER1_EXPLORATION_LIMIT
     user.exploration_count = 0
     session.add(user)
+
+    existing_sub = await get_user_subscription(session, user)
+    existing_plan = (
+        await session.get(SubscriptionPlan, existing_sub.plan_id)
+        if existing_sub
+        else None
+    )
+    has_active_explorer_subscription = (
+        existing_sub is not None
+        and existing_plan is not None
+        and existing_plan.slug == "explorer"
+        and existing_sub.status in ("active", "trialing")
+    )
+    if not has_active_explorer_subscription:
+        await create_subscription(session, user, plan_slug="explorer")
+
     await session.commit()
     await session.refresh(user)
     logger.info("User upgraded to tier1", extra={"user_id": user.id})

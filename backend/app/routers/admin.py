@@ -1,10 +1,11 @@
 import logging
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.db import get_session
+from app.core.permissions import require_sp_admin
 from app.models.user import User
 from app.routers.auth_dependencies import get_current_active_user
 from app.schemas.admin import AdminCreateUserIn, AdminUpdateUserIn, AdminUserDetailOut
@@ -12,7 +13,6 @@ from app.schemas.response import SuccessResponse
 from app.services import admin_service
 from app.services.admin_service import (
     list_users,
-    get_user_stats,
     update_user_active_status,
     get_date_range,
     users_monthly_count,
@@ -26,21 +26,12 @@ from app.services.admin_service import (
     delete_user_by_admin,
     reset_user_password_by_admin,
 )
-from app.services import workspace as ws_service
 from app.utils.email_utils import send_welcome_email
 from datetime import date
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
-
-
-def _require_admin(current_user: User) -> None:
-    """Guard: only super_admin may call these endpoints."""
-    if current_user.role != "super_admin":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
-
-
 
 
 @router.get("", response_model=SuccessResponse)
@@ -50,8 +41,7 @@ async def super_admin_dashboard(
     session = Depends(get_session),
     current_user: User = Depends(get_current_active_user),
 ):
-    # if current_user.role != "super_admin":
-    #     raise HTTPException(403, "Forbidden")
+    require_sp_admin(current_user)
 
     start, end = get_date_range(start_date, end_date)
 
@@ -84,11 +74,7 @@ async def toggle_user_active_status(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_active_user),
 ):
-    if current_user.role != "super_admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Forbidden"
-        )
+    require_sp_admin(current_user)
 
     user = await update_user_active_status(
         session=session,
@@ -110,8 +96,7 @@ async def get_users(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_active_user),
 ):
-    if current_user.role != "super_admin":
-        raise HTTPException(status_code=403, detail="Forbidden")
+    require_sp_admin(current_user)
 
     users = await list_users(session)
 
@@ -127,8 +112,7 @@ async def get_user_stats(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_active_user),
 ):
-    if current_user.role != "super_admin":
-        raise HTTPException(status_code=403, detail="Forbidden")
+    require_sp_admin(current_user)
 
     counts = await admin_service.get_user_counts(
         session=session,
@@ -171,7 +155,7 @@ async def admin_create_user(
 
     Credentials are delivered ONLY via email. Never returned in response.
     """
-    _require_admin(current_user)
+    require_sp_admin(current_user)
     user, temp_password = await create_user_by_admin(session, payload)
     background_tasks.add_task(send_welcome_email, user.email, temp_password)
     logger.info(
@@ -196,7 +180,7 @@ async def admin_get_user_detail(
     current_user: User = Depends(get_current_active_user),
 ):
     """Fetch a single user's full profile including trial state."""
-    _require_admin(current_user)
+    require_sp_admin(current_user)
     result = await session.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
@@ -215,7 +199,7 @@ async def admin_update_user(
     current_user: User = Depends(get_current_active_user),
 ):
     """Update a user's profile or trial settings (partial update)."""
-    _require_admin(current_user)
+    require_sp_admin(current_user)
     user = await update_user_by_admin(session, user_id, payload)
     return SuccessResponse(
         message="User updated successfully.",
@@ -230,7 +214,7 @@ async def admin_deactivate_user(
     current_user: User = Depends(get_current_active_user),
 ):
     """Deactivate a user account (sets is_active=False)."""
-    _require_admin(current_user)
+    require_sp_admin(current_user)
     user = await update_user_active_status(session=session, user_id=user_id, is_active=False)
     logger.info("Admin deactivated user", extra={"admin_id": current_user.id, "user_id": user_id})
     return SuccessResponse(
@@ -246,7 +230,7 @@ async def admin_delete_user(
     current_user: User = Depends(get_current_active_user),
 ):
     """Hard-delete a user. This action is irreversible."""
-    _require_admin(current_user)
+    require_sp_admin(current_user)
     await delete_user_by_admin(session, user_id)
 
 
@@ -262,7 +246,7 @@ async def admin_reset_password(
 
     Credentials are delivered ONLY via email. Never returned in response.
     """
-    _require_admin(current_user)
+    require_sp_admin(current_user)
     result = await session.execute(select(User).where(User.id == user_id))
     target_user = result.scalar_one_or_none()
     if not target_user:

@@ -17,6 +17,7 @@ from app.utils.email_utils import send_verification_email, send_reset_password_e
 from app.services import auth as auth_service
 from app.services import workspace as workspace_service
 from app.services.auth import upgrade_to_tier1, update_profile, delete_account
+from app.services.product_state import compute_user_product_state
 from app.routers.auth_dependencies import get_current_active_user
 from app.models.user import User
 from app.schemas.response import SuccessResponse, ErrorResponse
@@ -131,6 +132,7 @@ async def login(payload: LoginIn,  session: AsyncSession = Depends(get_session),
         role=user.role
     )
     bootstrap = await workspace_service.get_workspace_bootstrap(session, user)
+    product_state = await compute_user_product_state(session, user)
 
     return SuccessResponse(
         message="Login successful",
@@ -143,6 +145,7 @@ async def login(payload: LoginIn,  session: AsyncSession = Depends(get_session),
             "must_change_password": user.must_change_password,
             "access_token": token,
             "token_type": "bearer",
+            "product_state": product_state,
             **bootstrap,
         }
     )
@@ -154,6 +157,7 @@ async def get_current_user(
     session: AsyncSession = Depends(get_session),
 ):
     bootstrap = await workspace_service.get_workspace_bootstrap(session, current_user)
+    product_state = await compute_user_product_state(session, current_user)
 
     return SuccessResponse(
         message="User profile fetched successfully",
@@ -174,8 +178,28 @@ async def get_current_user(
             "trial_exploration_limit": current_user.trial_exploration_limit,
             "must_change_password": current_user.must_change_password,
             "created_at": current_user.created_at,
+            "product_state": product_state,
             **bootstrap,
         }
+    )
+
+
+@router.post("/logout", response_model=SuccessResponse)
+async def logout(
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Acknowledge logout for the current stateless JWT session.
+
+    The frontend should discard the bearer token. Server-side token revocation
+    can be added later with a token blacklist/session table.
+    """
+    return SuccessResponse(
+        message="Logout successful.",
+        data={
+            "token_invalidated": False,
+            "client_should_discard_token": True,
+        },
     )
 
 

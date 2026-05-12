@@ -15,9 +15,10 @@ All endpoints require authentication. Role checks are enforced inline.
 """
 import logging
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.permissions import require_enterprise_admin_or_sp, require_sp_admin
 from app.db import get_session
 from app.models.user import User
 from app.routers.auth_dependencies import get_current_active_user
@@ -29,34 +30,13 @@ from app.schemas.enterprise import (
     EnterpriseUpdateLimitIn,
 )
 from app.schemas.response import SuccessResponse
+from app.schemas.settings import OrgProfileIn, OrgProfileOut, OrgSettingsIn
 from app.services import enterprise_service
+from app.services import settings_service
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/enterprise", tags=["Enterprise"])
-
-
-# ---------------------------------------------------------------------------
-# Internal guards
-# ---------------------------------------------------------------------------
-
-def _require_sp_admin(current_user: User) -> None:
-    """Only the platform super_admin may call this."""
-    if current_user.role != "super_admin":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
-
-
-def _require_enterprise_admin_or_sp(current_user: User, org_id: str) -> None:
-    """
-    Allow if:
-      - platform super_admin, OR
-      - enterprise_admin whose organization_id matches org_id.
-    """
-    if current_user.role == "super_admin":
-        return
-    if current_user.role == "enterprise_admin" and current_user.organization_id == org_id:
-        return
-    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
 
 # ---------------------------------------------------------------------------
@@ -76,7 +56,7 @@ async def provision_enterprise_org(
     Sends credentials to the enterprise admin via email.
     SP admin / internal admin only.
     """
-    _require_sp_admin(current_user)
+    require_sp_admin(current_user)
 
     org, admin_user, temp_password = await enterprise_service.provision_enterprise_org(
         session=session,
@@ -114,7 +94,7 @@ async def list_enterprise_orgs(
     current_user: User = Depends(get_current_active_user),
 ):
     """List all enterprise organisations. SP admin / internal admin only."""
-    _require_sp_admin(current_user)
+    require_sp_admin(current_user)
     orgs = await enterprise_service.list_enterprise_orgs(session)
     return SuccessResponse(
         message="Enterprise organisations fetched successfully",
@@ -129,7 +109,7 @@ async def get_enterprise_org(
     current_user: User = Depends(get_current_active_user),
 ):
     """Fetch details of a specific enterprise org."""
-    _require_enterprise_admin_or_sp(current_user, org_id)
+    require_enterprise_admin_or_sp(current_user, org_id)
     org = await enterprise_service.get_enterprise_org(session, org_id)
     return SuccessResponse(
         message="Enterprise organisation fetched successfully",
@@ -145,7 +125,7 @@ async def update_org_exploration_limit(
     current_user: User = Depends(get_current_active_user),
 ):
     """Adjust an enterprise org's exploration quota. SP admin / internal admin only."""
-    _require_sp_admin(current_user)
+    require_sp_admin(current_user)
     org = await enterprise_service.update_enterprise_org_limit(
         session=session,
         org_id=org_id,
@@ -183,7 +163,7 @@ async def add_enterprise_member(
     Enterprise admin (of this org) or SP admin only.
     Sends login credentials to the new user via email.
     """
-    _require_enterprise_admin_or_sp(current_user, org_id)
+    require_enterprise_admin_or_sp(current_user, org_id)
 
     user, temp_password = await enterprise_service.add_enterprise_member(
         session=session,
@@ -217,7 +197,7 @@ async def list_enterprise_members(
     current_user: User = Depends(get_current_active_user),
 ):
     """List all members of an enterprise org."""
-    _require_enterprise_admin_or_sp(current_user, org_id)
+    require_enterprise_admin_or_sp(current_user, org_id)
     members = await enterprise_service.list_enterprise_members(session, org_id)
     return SuccessResponse(
         message="Enterprise members fetched successfully",
@@ -238,7 +218,7 @@ async def remove_enterprise_member(
     Unlinks the user (sets organization_id=None, reverts to free tier).
     Does NOT hard-delete the user account.
     """
-    _require_enterprise_admin_or_sp(current_user, org_id)
+    require_enterprise_admin_or_sp(current_user, org_id)
     await enterprise_service.remove_enterprise_member(
         session=session,
         org_id=org_id,
@@ -268,7 +248,7 @@ async def list_org_explorations(
     Provides the cross-workspace view that enterprise admins need.
     SP admin and enterprise_admin (own org) only.
     """
-    _require_enterprise_admin_or_sp(current_user, org_id)
+    require_enterprise_admin_or_sp(current_user, org_id)
     explorations = await enterprise_service.list_enterprise_explorations(session, org_id)
     return SuccessResponse(
         message="Enterprise explorations fetched successfully",
@@ -287,4 +267,118 @@ async def list_org_explorations(
             }
             for e in explorations
         ],
+    )
+
+
+# ---------------------------------------------------------------------------
+# Org profile management
+# ---------------------------------------------------------------------------
+
+@router.get("/organizations/{org_id}/profile", response_model=SuccessResponse)
+async def get_org_profile(
+    org_id: str,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Fetch the enterprise org's extended profile (name, logo, domain, industry)."""
+    require_enterprise_admin_or_sp(current_user, org_id)
+    org = await enterprise_service.get_enterprise_org(session, org_id)
+    return SuccessResponse(
+        message="Organisation profile fetched successfully",
+        data=OrgProfileOut.model_validate(org).model_dump(),
+    )
+
+
+@router.patch("/organizations/{org_id}/profile", response_model=SuccessResponse)
+async def update_org_profile(
+    org_id: str,
+    payload: OrgProfileIn,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Update the enterprise org's profile fields.
+
+    All fields are optional. Only non-None values are written.
+    SP admin and enterprise_admin (own org) only.
+    """
+    require_enterprise_admin_or_sp(current_user, org_id)
+
+    if all(v is None for v in payload.model_dump().values()):
+        raise HTTPException(status_code=400, detail="No profile fields provided to update.")
+
+    org = await enterprise_service.get_enterprise_org(session, org_id)
+
+    update_fields = payload.model_dump(exclude_none=True)
+    for field, value in update_fields.items():
+        if hasattr(org, field):
+            setattr(org, field, value)
+
+    session.add(org)
+    await session.commit()
+    await session.refresh(org)
+
+    logger.info("Org profile updated", extra={"org_id": org_id, "by": current_user.id})
+    return SuccessResponse(
+        message="Organisation profile updated successfully",
+        data=OrgProfileOut.model_validate(org).model_dump(),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Org settings management
+# ---------------------------------------------------------------------------
+
+@router.get("/organizations/{org_id}/settings", response_model=SuccessResponse)
+async def get_org_settings(
+    org_id: str,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Fetch the enterprise org's operational settings."""
+    require_enterprise_admin_or_sp(current_user, org_id)
+    # Validate org exists
+    await enterprise_service.get_enterprise_org(session, org_id)
+    org_settings = await settings_service.get_or_create_org_settings(session, org_id)
+    return SuccessResponse(
+        message="Organisation settings fetched successfully",
+        data=settings_service.parse_org_settings(org_settings),
+    )
+
+
+@router.patch("/organizations/{org_id}/settings", response_model=SuccessResponse)
+async def update_org_settings(
+    org_id: str,
+    payload: OrgSettingsIn,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Update enterprise org operational settings.
+
+    SP admin and enterprise_admin (own org) only.
+    """
+    require_enterprise_admin_or_sp(current_user, org_id)
+
+    if all(v is None for v in payload.model_dump().values()):
+        raise HTTPException(status_code=400, detail="No settings fields provided to update.")
+
+    # Validate org exists
+    await enterprise_service.get_enterprise_org(session, org_id)
+
+    try:
+        org_settings = await settings_service.update_org_settings(
+            session,
+            org_id,
+            allowed_email_domains=payload.allowed_email_domains,
+            default_member_role=payload.default_member_role,
+            enforce_sso=payload.enforce_sso,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    logger.info("Org settings updated", extra={"org_id": org_id, "by": current_user.id})
+    return SuccessResponse(
+        message="Organisation settings updated successfully",
+        data=settings_service.parse_org_settings(org_settings),
     )

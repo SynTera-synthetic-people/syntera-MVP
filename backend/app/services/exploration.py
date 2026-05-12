@@ -209,6 +209,7 @@ def _ready_persona_clause():
 async def get_explorations_by_workspace(
     session: AsyncSession,
     workspace_id: str,
+    current_user: Optional[User] = None,
 ) -> list[dict]:
     stmt = select(Exploration).where(
         Exploration.workspace_id == workspace_id,
@@ -275,6 +276,21 @@ async def get_explorations_by_workspace(
     )
     has_survey: set[str] = {row[0] for row in survey_rows.all()}
 
+    access_state = None
+    if current_user is not None:
+        from app.services.product_state import compute_user_product_state
+
+        product_state = await compute_user_product_state(session, current_user)
+        access_state = {
+            "workspace_locked": product_state["flags"]["workspace_locked"],
+            "read_only_access": product_state["flags"]["read_only_access"],
+            "can_create_exploration": product_state["actions"]["can_create_exploration"],
+            "can_run_behavioral_simulation": product_state["actions"]["can_run_behavioral_simulation"],
+            "can_view_reports": product_state["actions"]["can_view_reports"],
+            "can_view_traceability": product_state["actions"]["can_view_traceability"],
+            "restrictions": product_state["restrictions"],
+        }
+
     return [
         {
             "id": e.id,
@@ -303,12 +319,17 @@ async def get_explorations_by_workspace(
                 )
                 if e.is_quantitative else None
             ),
+            "access": access_state,
         }
         for e in explorations
     ]
 
 
-async def get_exploration_enriched(session: AsyncSession, exploration_id: str) -> dict | None:
+async def get_exploration_enriched(
+    session: AsyncSession,
+    exploration_id: str,
+    current_user: Optional[User] = None,
+) -> dict | None:
     """Single-fetch equivalent of get_explorations_by_workspace — returns granular current_step."""
     e = await get_exploration(session, exploration_id)
     if not e:
@@ -364,6 +385,21 @@ async def get_exploration_enriched(session: AsyncSession, exploration_id: str) -
     )
     has_survey = sv_r.scalar() is not None
 
+    access_state = None
+    if current_user is not None:
+        from app.services.product_state import compute_user_product_state
+
+        product_state = await compute_user_product_state(session, current_user)
+        access_state = {
+            "workspace_locked": product_state["flags"]["workspace_locked"],
+            "read_only_access": product_state["flags"]["read_only_access"],
+            "can_create_exploration": product_state["actions"]["can_create_exploration"],
+            "can_run_behavioral_simulation": product_state["actions"]["can_run_behavioral_simulation"],
+            "can_view_reports": product_state["actions"]["can_view_reports"],
+            "can_view_traceability": product_state["actions"]["can_view_traceability"],
+            "restrictions": product_state["restrictions"],
+        }
+
     return {
         "id": e.id,
         "workspace_id": e.workspace_id,
@@ -385,6 +421,7 @@ async def get_exploration_enriched(session: AsyncSession, exploration_id: str) -
             _compute_quant_step_from_flags(has_questionnaire, has_population, has_survey)
             if e.is_quantitative else None
         ),
+        "access": access_state,
     }
 
 

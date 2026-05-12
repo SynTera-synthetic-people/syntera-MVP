@@ -39,9 +39,14 @@ class User(SQLModel, table=True):
     phone: Optional[str] = Field(default=None)
     avatar_url: Optional[str] = Field(default=None)
 
+    # Trial expiry — set when a time-boxed trial begins (null = no expiry enforced)
+    trial_expires_at: Optional[datetime] = Field(default=None)
+
     # Soft-delete fields
     is_deleted: bool = Field(default=False)
     deleted_at: Optional[datetime] = Field(default=None)
+    # ID of the admin who deleted this account (null for self-deletion)
+    deleted_by: Optional[str] = Field(default=None, foreign_key="user.id")
 
     created_at: datetime = Field(default_factory=datetime.utcnow)
     last_activity_at: Optional[datetime] = None
