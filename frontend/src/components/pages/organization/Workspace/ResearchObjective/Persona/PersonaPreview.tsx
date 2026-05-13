@@ -611,7 +611,6 @@ const PersonaPreview: React.FC = () => {
   };
 
   // ── Derive display count for calibration cards from API data ──────────────
-  // Use first breakdown entry count if available, else finalScore formatted
   const getCalibCount = (key: string): string => {
     const entry = breakdownEntries.find(e =>
       e.label.toLowerCase().includes(key.toLowerCase())
@@ -621,7 +620,6 @@ const PersonaPreview: React.FC = () => {
         ? entry.score.toLocaleString('en-IN')
         : `${Math.round(entry.score * 100)}%`;
     }
-    // Default display number from Figma
     return '1,23,456';
   };
 
@@ -825,22 +823,22 @@ const PersonaPreview: React.FC = () => {
               <div className="pp-psychometric">
                 {(barriersList.length > 0 || triggersList.length > 0) ? (
                   <div className="pp-two-col">
-                    {barriersList.length > 0 && (
-                      <div className="pp-list-card pp-list-card--green">
-                        <h4 className="pp-list-card-title">Primary Barriers</h4>
+                    {triggersList.length > 0 && (
+                      <div className="pp-list-card">
+                        <h4 className="pp-list-card-title">Key Triggers</h4>
                         <ul>
-                          {barriersList.map((item, i) => (
-                            <li key={i} className="pp-list-item">• {item}</li>
+                          {triggersList.map((item, i) => (
+                            <li key={i} className="pp-list-item">{item}</li>
                           ))}
                         </ul>
                       </div>
                     )}
-                    {triggersList.length > 0 && (
-                      <div className="pp-list-card pp-list-card--amber">
-                        <h4 className="pp-list-card-title">Key Triggers</h4>
+                    {barriersList.length > 0 && (
+                      <div className="pp-list-card">
+                        <h4 className="pp-list-card-title">Primary Barriers</h4>
                         <ul>
-                          {triggersList.map((item, i) => (
-                            <li key={i} className="pp-list-item">• {item}</li>
+                          {barriersList.map((item, i) => (
+                            <li key={i} className="pp-list-item">{item}</li>
                           ))}
                         </ul>
                       </div>
@@ -865,16 +863,13 @@ const PersonaPreview: React.FC = () => {
               </div>
             )}
 
-            {/* ══════════════════════════════════════════════════════════
-                ── Calibration Breakdown ── NEW FIGMA-ACCURATE DESIGN ──
-            ══════════════════════════════════════════════════════════ */}
+            {/* ── Calibration Breakdown ── */}
             {activeTab === 'calibration' && (
               <div className="pp-calib-grid">
 
                 {/* ── LEFT COLUMN ── */}
                 <div className="pp-calib-col">
 
-                  {/* Card 1: Real Actions Signal */}
                   <CalibCard
                     title="Real Actions Signal"
                     subtitle="Anchored in real people's action patterns, not self-reported opinions."
@@ -886,7 +881,6 @@ const PersonaPreview: React.FC = () => {
                     ]}
                   />
 
-                  {/* Card 2: Validated Studies */}
                   <CalibCard
                     title="Validated Studies"
                     subtitle="Calibrated against credible consumer and behavioural studies."
@@ -902,7 +896,6 @@ const PersonaPreview: React.FC = () => {
                 {/* ── RIGHT COLUMN ── */}
                 <div className="pp-calib-col">
 
-                  {/* Card 3: Emotional & Neural Layers */}
                   <CalibCard
                     title="Emotional & Neural Layers"
                     subtitle="Models emotional responses that shape decisions before rationalization appears."
@@ -914,7 +907,6 @@ const PersonaPreview: React.FC = () => {
                     ]}
                   />
 
-                  {/* Card 4: Multiple-platform Conversation */}
                   <CalibCard
                     title="Multiple-platform Conversation"
                     subtitle="Calibrated against credible consumer and behavioural studies."
@@ -945,23 +937,30 @@ const PersonaPreview: React.FC = () => {
         </AnimatePresence>
       </div>
 
-      {/* ── Bottom nav ── */}
-      <div className="pp-bottom-nav">
-        <button
-          className="pp-nav-arrow"
-          disabled={!prevPersona}
-          onClick={() => prevPersona && navigateToPersona(String((prevPersona as Record<string, unknown>).id))}
-        >
-          <TbArrowLeft size={18} />
-        </button>
-        <button
-          className="pp-nav-arrow"
-          disabled={!nextPersona}
-          onClick={() => nextPersona && navigateToPersona(String((nextPersona as Record<string, unknown>).id))}
-        >
-          <TbArrowRight size={18} />
-        </button>
-      </div>
+      {/* ── Bottom nav — cycles through tabs ── */}
+      {(() => {
+        const tabIndex = TABS.findIndex(t => t.key === activeTab);
+        const hasPrev = tabIndex > 0;
+        const hasNext = tabIndex < TABS.length - 1;
+        return (
+          <div className="pp-bottom-nav">
+            <button
+              className="pp-nav-arrow"
+              disabled={!hasPrev}
+              onClick={() => hasPrev && setActiveTab(TABS[tabIndex - 1]!.key)}
+            >
+              <TbArrowLeft size={18} />
+            </button>
+            <button
+              className="pp-nav-arrow"
+              disabled={!hasNext}
+              onClick={() => hasNext && setActiveTab(TABS[tabIndex + 1]!.key)}
+            >
+              <TbArrowRight size={18} />
+            </button>
+          </div>
+        );
+      })()}
 
     </div>
   );
