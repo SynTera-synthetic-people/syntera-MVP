@@ -4,30 +4,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   TbArrowLeft,
   TbArrowRight,
-  TbTrash,
-  TbLoader,
-  TbAlertCircle,
-  TbReceipt,
-  TbCursorText,
-  TbRoute,
-  TbLayoutGrid,
-  TbLink,
-  TbWorld,
-  TbBrain,
-  TbEye,
-  TbHeartbeat,
-  TbActivity,
-  TbMoodSmile,
-  TbAtom,
-  TbMicroscope,
-  TbBook,
-  TbSpeakerphone,
-  TbUsers,
-  TbSearch,
-  TbPencil,
-  TbBolt,
-  TbChartBar,
-  TbWifi,
 } from 'react-icons/tb';
 import {
   SiLinkedin,
@@ -109,66 +85,66 @@ interface CalibParamItem {
 }
 
 const REAL_ACTIONS_PARAMS: CalibParamItem[] = [
-  { icon: <TbReceipt size={14} />,     label: 'Purchase & Transaction Receipts' },
-  { icon: <TbCursorText size={14} />,  label: 'Click intent' },
-  { icon: <TbRoute size={14} />,       label: 'Interaction Trails' },
-  { icon: <TbLayoutGrid size={14} />,  label: 'Feature Usage' },
-  { icon: <TbLink size={14} />,        label: 'Engagement Channel' },
-  { icon: <TbWorld size={14} />,       label: 'Online Browsing Patterns' },
+  { icon: <SpIcon name="sp-File-File_Document" size={14} />, label: 'Purchase & Transaction Receipts' },
+  { icon: <SpIcon name="sp-Navigation-Navigation" size={14} />, label: 'Click intent' },
+  { icon: <SpIcon name="sp-Edit-Copy" size={14} />, label: 'Interaction Trails' },
+  { icon: <SpIcon name="sp-Other-Dashboard" size={14} />, label: 'Feature Usage' },
+  { icon: <SpIcon name="sp-Edit-Path" size={14} />, label: 'Engagement Channel' },
+  { icon: <SpIcon name="sp-Navigation-Globe" size={14} />, label: 'Online Browsing Patterns' },
 ];
 
 const REAL_ACTIONS_TECHNIQUES: CalibParamItem[] = [
-  { icon: <TbReceipt size={14} />,     label: 'Purchase & Transaction Receipts' },
-  { icon: <TbCursorText size={14} />,  label: 'Click intent' },
-  { icon: <TbRoute size={14} />,       label: 'Interaction Trails' },
-  { icon: <TbWorld size={14} />,       label: 'Online Browsing Patterns' },
-  { icon: <TbLayoutGrid size={14} />,  label: 'Feature Usage' },
-  { icon: <TbLink size={14} />,        label: 'Engagement Channel' },
+  { icon: <SpIcon name="sp-File-File_Document" size={14} />, label: 'Purchase & Transaction Receipts' },
+  { icon: <SpIcon name="sp-Navigation-Navigation" size={14} />, label: 'Click intent' },
+  { icon: <SpIcon name="sp-Edit-Copy" size={14} />, label: 'Interaction Trails' },
+  { icon: <SpIcon name="sp-Navigation-Globe" size={14} />, label: 'Online Browsing Patterns' },
+  { icon: <SpIcon name="sp-Other-Dashboard" size={14} />, label: 'Feature Usage' },
+  { icon: <SpIcon name="sp-Edit-Path" size={14} />, label: 'Engagement Channel' },
 ];
 
 const EMOTIONAL_PARAMS: CalibParamItem[] = [
-  { icon: <TbBrain size={14} />,       label: 'Cognitive Load and Decision Tension' },
-  { icon: <TbMoodSmile size={14} />,   label: 'Subconscious Bias and Emotional Friction' },
-  { icon: <TbAtom size={14} />,        label: 'Regret Anticipation & Risk Perception' },
-  { icon: <TbLayoutGrid size={14} />,  label: 'Affective Response Modelling' },
+  { icon: <SpIcon name="sp-Environment-Puzzle" size={14} />, label: 'Cognitive Load and Decision Tension' },
+  { icon: <SpIcon name="sp-Edit-Copy" size={14} />, label: 'Subconscious Bias and Emotional Friction' },
+  { icon: <SpIcon name="sp-Navigation-Navigation" size={14} />, label: 'Regret Anticipation & Risk Perception' },
+  { icon: <SpIcon name="sp-Other-Dashboard" size={14} />, label: 'Affective Response Modelling' },
 ];
 
 const EMOTIONAL_TECH: CalibParamItem[] = [
-  { icon: <TbEye size={14} />,         label: 'EOG (Eye Tracking)' },
-  { icon: <TbHeartbeat size={14} />,   label: 'ECG (Electrocardiogram)' },
-  { icon: <TbActivity size={14} />,    label: 'GSR (Galvanic Skin Response)' },
-  { icon: <TbBolt size={14} />,        label: 'EMG (Electromyography)' },
-  { icon: <TbMicroscope size={14} />,  label: 'PSG (Polysomnography)' },
-  { icon: <TbWorld size={14} />,       label: 'ERP (Event-Related Potential)' },
+  { icon: <SpIcon name="sp-Edit-Show" size={14} />, label: 'EOG (Eye Tracking)' },
+  { icon: <SpIcon name="sp-Interface-Option" size={14} />, label: 'ECG (Electrocardiogram)' },
+  { icon: <SpIcon name="sp-Other-Dashboard" size={14} />, label: 'GSR (Galvanic Skin Response)' },
+  { icon: <SpIcon name="sp-File-File_Document" size={14} />, label: 'EMG (Electromyography)' },
+  { icon: <SpIcon name="sp-Edit-Path" size={14} />, label: 'PSG (Polysomnography)' },
+  { icon: <SpIcon name="sp-Navigation-Globe" size={14} />, label: 'ERP (Event-Related Potential)' },
 ];
 
 const VALIDATED_TECH: CalibParamItem[] = [
-  { icon: <TbUsers size={14} />,       label: 'FGDs' },
-  { icon: <TbSearch size={14} />,      label: 'Survey' },
-  { icon: <TbChartBar size={14} />,    label: 'Longitudinal Studies' },
-  { icon: <TbWorld size={14} />,       label: 'Academic behaviour science benchmark' },
-  { icon: <TbLink size={14} />,        label: 'CATI interviews and ethnographic research' },
-  { icon: <TbBook size={14} />,        label: 'Thought Leaderships, White papers, Articles' },
+  { icon: <SpIcon name="sp-Edit-Copy" size={14} />, label: 'FGDs' },
+  { icon: <SpIcon name="sp-Navigation-Navigation" size={14} />, label: 'Survey' },
+  { icon: <SpIcon name="sp-Other-Dashboard" size={14} />, label: 'Longitudinal Studies' },
+  { icon: <SpIcon name="sp-Navigation-Globe" size={14} />, label: 'Academic behaviour science benchmark' },
+  { icon: <SpIcon name="sp-Edit-Path" size={14} />, label: 'CATI interviews and ethnographic research' },
+  { icon: <SpIcon name="sp-File-File_Document" size={14} />, label: 'Thought Leaderships, White papers, Articles' },
 ];
 
 const MULTIPLATFORM_ATTRS: CalibParamItem[] = [
-  { icon: <TbSpeakerphone size={14} />, label: 'Volume' },
-  { icon: <TbActivity size={14} />,     label: 'Recency' },
-  { icon: <TbSearch size={14} />,       label: 'RO Alignment' },
-  { icon: <TbWifi size={14} />,         label: 'Source Diversity' },
-  { icon: <TbBolt size={14} />,         label: 'Signal Clarity' },
+  { icon: <SpIcon name="sp-Media-Volume_Min" size={14} />, label: 'Volume' },
+  { icon: <SpIcon name="sp-Edit-Copy" size={14} />, label: 'Recency' },
+  { icon: <SpIcon name="sp-Navigation-Globe" size={14} />, label: 'RO Alignment' },
+  { icon: <SpIcon name="sp-Navigation-Navigation" size={14} />, label: 'Source Diversity' },
+  { icon: <SpIcon name="sp-System-Wifi_High" size={14} />, label: 'Signal Clarity' },
 ];
 
 // Platform icons row
 const PLATFORM_ICONS = [
-  { icon: <SiLinkedin size={18} />,      key: 'linkedin' },
-  { icon: <SiQuora size={18} />,         key: 'quora' },
+  { icon: <SiLinkedin size={18} />, key: 'linkedin' },
+  { icon: <SiQuora size={18} />, key: 'quora' },
   { icon: <MdOutlinePublic size={18} />, key: 'public' },
-  { icon: <SiX size={18} />,             key: 'x' },
-  { icon: <SiYoutube size={18} />,       key: 'youtube' },
-  { icon: <SiInstagram size={18} />,     key: 'instagram' },
-  { icon: <SiReddit size={18} />,        key: 'reddit' },
-  { icon: <MdStarRate size={18} />,      key: 'reviews' },
+  { icon: <SiX size={18} />, key: 'x' },
+  { icon: <SiYoutube size={18} />, key: 'youtube' },
+  { icon: <SiInstagram size={18} />, key: 'instagram' },
+  { icon: <SiReddit size={18} />, key: 'reddit' },
+  { icon: <MdStarRate size={18} />, key: 'reviews' },
 ];
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -288,6 +264,25 @@ const flatten = (obj: unknown): string[] => {
 
 const confColor = (score: number) =>
   score >= 80 ? '#22c55e' : score >= 60 ? '#f59e0b' : '#ef4444';
+
+// Renders text that may contain markdown links [label](url) as clickable <a> tags
+const renderWithLinks = (text: string): React.ReactNode => {
+  const parts: React.ReactNode[] = [];
+  const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
+  let lastIndex = 0;
+  let match;
+  while ((match = linkRegex.exec(text)) !== null) {
+    if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+    parts.push(
+      <a key={match.index} href={match[2]} target="_blank" rel="noopener noreferrer" className="pp-inline-link">
+        {match[1]}
+      </a>
+    );
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+  return parts.length === 0 ? text : <>{parts}</>;
+};
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
 
@@ -556,14 +551,33 @@ const PersonaPreview: React.FC = () => {
     {}
   ) as Record<string, unknown>;
 
+  // Shape 1: ocean_profile.scores  →  { openness: 0.78, ... }
   const oceanScores = (oceanProfile?.scores ?? {}) as Record<string, number>;
 
+  // Shape 2: ocean_profile.traits  →  [{ name, score, level, description, interpretation }, ...]
+  const oceanTraits = (oceanProfile?.traits ?? []) as Array<{
+    name: string;
+    score: number;
+    level?: string;
+    description?: string;
+    interpretation?: string;
+  }>;
+
+  // Resolve to a single scores map, preferring Shape 1, falling back to Shape 2
+  const resolvedOceanScores: Record<string, number> =
+    Object.keys(oceanScores).length > 0
+      ? oceanScores
+      : Object.fromEntries(oceanTraits.map(t => [t.name.toLowerCase(), t.score]));
+
+  // Summary text that sometimes comes on the profile object
+  const oceanSummary = (oceanProfile?.summary ?? oceanProfile?.description ?? '') as string;
+
   const radarData = [
-    { subject: 'Openness', A: oceanScores.openness ?? 0, fullMark: 1 },
-    { subject: 'Conscientiousness', A: oceanScores.conscientiousness ?? 0, fullMark: 1 },
-    { subject: 'Extraversion', A: oceanScores.extraversion ?? 0, fullMark: 1 },
-    { subject: 'Agreeableness', A: oceanScores.agreeableness ?? 0, fullMark: 1 },
-    { subject: 'Neuroticism', A: oceanScores.neuroticism ?? 0, fullMark: 1 },
+    { subject: 'Openness',          A: resolvedOceanScores.openness          ?? 0, fullMark: 1 },
+    { subject: 'Conscientiousness', A: resolvedOceanScores.conscientiousness ?? 0, fullMark: 1 },
+    { subject: 'Extraversion',      A: resolvedOceanScores.extraversion      ?? 0, fullMark: 1 },
+    { subject: 'Agreeableness',     A: resolvedOceanScores.agreeableness     ?? 0, fullMark: 1 },
+    { subject: 'Neuroticism',       A: resolvedOceanScores.neuroticism       ?? 0, fullMark: 1 },
   ];
 
   const barriersList = flatten(mergedTraits.barriers_pain_points);
@@ -775,41 +789,72 @@ const PersonaPreview: React.FC = () => {
             {/* ── Ocean Personality Profile ── */}
             {activeTab === 'ocean' && (
               <div className="pp-ocean">
-                {Object.keys(oceanScores).length > 0 ? (
+                {Object.keys(resolvedOceanScores).length > 0 ? (
                   <>
-                    <div className="pp-radar-wrap">
-                      <ResponsiveContainer width="100%" height={280}>
-                        <RadarChart cx="50%" cy="50%" outerRadius="75%" data={radarData}>
-                          <PolarGrid stroke={theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'} />
-                          <PolarAngleAxis
-                            dataKey="subject"
-                            tick={{ fill: theme === 'dark' ? '#9ca3af' : '#6b7280', fontSize: 12, fontWeight: 600 }}
-                          />
-                          <PolarRadiusAxis
-                            angle={30} domain={[0, 1]} tickCount={6}
-                            tick={{ fill: theme === 'dark' ? '#6b7280' : '#9ca3af', fontSize: 10 }}
-                          />
-                          <Radar name={personaName} dataKey="A" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.45} strokeWidth={2} />
-                        </RadarChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <div className="pp-ocean-scores">
-                      {Object.entries(oceanScores).map(([trait, score]) => (
-                        <div key={trait} className="pp-ocean-row">
-                          <span className="pp-ocean-label">{trait.charAt(0).toUpperCase() + trait.slice(1)}</span>
-                          <div className="pp-ocean-bar-wrap">
-                            <div className="pp-ocean-bar-track">
-                              <motion.div
-                                className="pp-ocean-bar-fill"
-                                initial={{ width: 0 }}
-                                animate={{ width: `${score * 100}%` }}
-                                transition={{ duration: 1, ease: 'easeOut' }}
-                              />
+                    {/* Optional summary paragraph */}
+                    {oceanSummary && (
+                      <p className="pp-ocean-summary">{oceanSummary}</p>
+                    )}
+
+                    <div className="pp-ocean-body">
+                      {/* Radar chart */}
+                      <div className="pp-radar-wrap">
+                        <ResponsiveContainer width="100%" height={280}>
+                          <RadarChart cx="50%" cy="50%" outerRadius="75%" data={radarData}>
+                            <PolarGrid stroke={theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'} />
+                            <PolarAngleAxis
+                              dataKey="subject"
+                              tick={{ fill: theme === 'dark' ? '#9ca3af' : '#6b7280', fontSize: 12, fontWeight: 600 }}
+                            />
+                            <PolarRadiusAxis
+                              angle={30} domain={[0, 1]} tickCount={6}
+                              tick={{ fill: theme === 'dark' ? '#6b7280' : '#9ca3af', fontSize: 10 }}
+                            />
+                            <Radar
+                              name={personaName} dataKey="A"
+                              stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.45} strokeWidth={2}
+                            />
+                          </RadarChart>
+                        </ResponsiveContainer>
+                      </div>
+
+                      {/* Score interpretation cards grid */}
+                      <div className="pp-ocean-interp-grid">
+                        {Object.entries(resolvedOceanScores).map(([trait, score]) => {
+                          const detail = oceanTraits.find(
+                            t => t.name.toLowerCase() === trait.toLowerCase()
+                          );
+                          const pct = Math.round(score * 100);
+                          const traitLabel = trait.charAt(0).toUpperCase() + trait.slice(1);
+                          return (
+                            <div key={trait} className="pp-ocean-interp-card">
+                              <div className="pp-ocean-interp-header">
+                                <span className="pp-ocean-interp-name">
+                                  {traitLabel} — {pct}%
+                                </span>
+                                {detail?.level && (
+                                  <span className="pp-ocean-interp-level">
+                                    {detail.level} (Score: {score.toFixed(2)}/1)
+                                  </span>
+                                )}
+                              </div>
+                              <div className="pp-ocean-bar-track">
+                                <motion.div
+                                  className="pp-ocean-bar-fill"
+                                  initial={{ width: 0 }}
+                                  animate={{ width: `${pct}%` }}
+                                  transition={{ duration: 1, ease: 'easeOut' }}
+                                />
+                              </div>
+                              {(detail?.description ?? detail?.interpretation) && (
+                                <p className="pp-ocean-interp-desc">
+                                  {detail?.description ?? detail?.interpretation}
+                                </p>
+                              )}
                             </div>
-                            <span className="pp-ocean-pct">{Math.round(score * 100)}%</span>
-                          </div>
-                        </div>
-                      ))}
+                          );
+                        })}
+                      </div>
                     </div>
                   </>
                 ) : (
@@ -828,7 +873,7 @@ const PersonaPreview: React.FC = () => {
                         <h4 className="pp-list-card-title">Key Triggers</h4>
                         <ul>
                           {triggersList.map((item, i) => (
-                            <li key={i} className="pp-list-item">{item}</li>
+                            <li key={i} className="pp-list-item">{renderWithLinks(item)}</li>
                           ))}
                         </ul>
                       </div>
@@ -838,7 +883,7 @@ const PersonaPreview: React.FC = () => {
                         <h4 className="pp-list-card-title">Primary Barriers</h4>
                         <ul>
                           {barriersList.map((item, i) => (
-                            <li key={i} className="pp-list-item">{item}</li>
+                            <li key={i} className="pp-list-item">{renderWithLinks(item)}</li>
                           ))}
                         </ul>
                       </div>
@@ -877,7 +922,7 @@ const PersonaPreview: React.FC = () => {
                     countLabel="People analysed"
                     sections={[
                       { heading: 'Parameter Integrated', items: REAL_ACTIONS_PARAMS },
-                      { heading: 'Technique Used',       items: REAL_ACTIONS_TECHNIQUES },
+                      { heading: 'Technique Used', items: REAL_ACTIONS_TECHNIQUES },
                     ]}
                   />
 
@@ -903,7 +948,7 @@ const PersonaPreview: React.FC = () => {
                     countLabel="Total Emotional & Neural Parameters Analysed:"
                     sections={[
                       { heading: 'Parameter Integrated', items: EMOTIONAL_PARAMS },
-                      { heading: 'Technology Used',      items: EMOTIONAL_TECH },
+                      { heading: 'Technology Used', items: EMOTIONAL_TECH },
                     ]}
                   />
 

@@ -267,19 +267,96 @@
 .pp-trait-value { font-size: 13px; font-weight: 600; color: #f1f5f9; line-height: 1.5; }
 
 /* ── OCEAN ─────────────────────────────────────────────────────── */
-.pp-ocean { display: flex; flex-direction: column; gap: 24px; }
-@media (min-width: 900px) { .pp-ocean { flex-direction: row; align-items: flex-start; } }
-.pp-radar-wrap { width: 280px; height: 280px; flex-shrink: 0; }
-.pp-ocean-scores { flex: 1; display: flex; flex-direction: column; gap: 12px; }
-.pp-ocean-row { display: flex; flex-direction: column; gap: 4px; }
-.pp-ocean-label {
-  font-size: 11px; font-weight: 700; color: #64748b;
-  text-transform: uppercase; letter-spacing: 0.05em;
+.pp-ocean {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
-.pp-ocean-bar-wrap { display: flex; align-items: center; gap: 10px; }
-.pp-ocean-bar-track { flex: 1; height: 6px; border-radius: 99px; background: rgba(255,255,255,0.07); overflow: hidden; }
-.pp-ocean-bar-fill { height: 100%; border-radius: 99px; background: linear-gradient(90deg, #3b82f6, #6366f1); }
-.pp-ocean-pct { font-size: 11px; font-weight: 700; color: #60a5fa; width: 34px; text-align: right; }
+
+/* Optional summary paragraph above the chart+grid */
+.pp-ocean-summary {
+  font-size: 14px;
+  color: #94a3b8;
+  line-height: 1.7;
+  margin: 0;
+}
+
+/* Row that holds radar on the left + interpretation grid on the right */
+.pp-ocean-body {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+@media (min-width: 900px) {
+  .pp-ocean-body {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+}
+
+.pp-radar-wrap { width: 280px; height: 280px; flex-shrink: 0; }
+
+/* ── Score interpretation grid (2-col cards) ─────────────────── */
+.pp-ocean-interp-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-content: start;
+}
+@media (max-width: 700px) {
+  .pp-ocean-interp-grid { grid-template-columns: 1fr; }
+}
+
+.pp-ocean-interp-card {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pp-ocean-interp-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pp-ocean-interp-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: #f1f5f9;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.pp-ocean-interp-level {
+  font-size: 11px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+/* Shared bar styles used by both old scores list and new interp cards */
+.pp-ocean-bar-track {
+  height: 6px;
+  border-radius: 99px;
+  background: rgba(255,255,255,0.07);
+  overflow: hidden;
+}
+.pp-ocean-bar-fill {
+  height: 100%;
+  border-radius: 99px;
+  background: linear-gradient(90deg, #3b82f6, #6366f1);
+}
+
+.pp-ocean-interp-desc {
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.55;
+  margin: 0;
+}
 
 /* ── Psychometric ─────────────────────────────────────────────── */
 .pp-psychometric { display: flex; flex-direction: column; gap: 32px; }
@@ -309,6 +386,19 @@
 .pp-evidence-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .pp-evidence-item { display: flex; justify-content: space-between; font-size: 12px; color: #94a3b8; }
 .pp-evidence-count { font-weight: 700; color: #60a5fa; font-variant-numeric: tabular-nums; }
+
+/* ── Inline citation links (markdown [label](url) rendered in list items) ── */
+.pp-inline-link {
+  color: #37FFCE;
+  text-decoration: none;
+  font-size: inherit;
+  font-weight: 500;
+  transition: color 0.15s, text-decoration 0.15s;
+}
+.pp-inline-link:hover {
+  color: #93c5fd;
+  text-decoration: underline;
+}
 
 /* ════════════════════════════════════════════════════════════════
    CALIBRATION BREAKDOWN  —  NEW FIGMA-ACCURATE STYLES
@@ -551,4 +641,16 @@
   .pp-calib-param-label { color: #334155; }
   .pp-calib-card-count-label { color: #94a3b8; }
   .pp-calib-platform-icon { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.08); color: #64748b; }
+
+  /* Ocean light mode */
+  .pp-ocean-summary { color: #475569; }
+  .pp-ocean-interp-card { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.07); }
+  .pp-ocean-interp-name { color: #0f172a; }
+  .pp-ocean-interp-level { color: #94a3b8; }
+  .pp-ocean-bar-track { background: rgba(0,0,0,0.07); }
+  .pp-ocean-interp-desc { color: #64748b; }
+
+  /* Inline link light mode */
+  .pp-inline-link { color: #2563eb; }
+  .pp-inline-link:hover { color: #1d4ed8; }
 }
