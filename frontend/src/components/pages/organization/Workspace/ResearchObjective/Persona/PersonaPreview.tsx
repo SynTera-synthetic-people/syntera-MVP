@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   TbArrowLeft,
   TbArrowRight,
+  TbLoader,
 } from 'react-icons/tb';
 import {
   SiLinkedin,
@@ -301,7 +302,7 @@ const LoadingPage: React.FC = () => (
 
 const ErrorPage: React.FC<{ onBack: () => void }> = ({ onBack }) => (
   <div className="pp-center-page">
-    <TbAlertCircle size={48} style={{ color: '#ef4444', marginBottom: 12 }} />
+    <SpIcon name="sp-Warning-Circle_Warning" size={48} style={{ color: '#ef4444', marginBottom: 12 }} />
     <p style={{ color: '#ef4444', marginBottom: 16 }}>Failed to load persona preview</p>
     <button className="pp-back-btn" onClick={onBack}>Go Back</button>
   </div>
