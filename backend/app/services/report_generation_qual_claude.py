@@ -40,6 +40,7 @@ load_dotenv()
 
 
 UPLOAD_DIR = "uploads/research"
+REPORT_LLM_TIMEOUT_SECONDS = int(os.getenv("REPORT_LLM_TIMEOUT_SECONDS", "900"))
 
 current_date = datetime.today().strftime("%B %d, %Y")
 BIG_BEHAVIORAL_PROMPT = f"""
@@ -691,7 +692,7 @@ REPORT_REQUIRED_SECTIONS = {
         ("Studied Personas", r"\bstudied personas\b"),
         ("Verbatim", r"\bverbatim\b"),
         ("Research Methodology", r"\bresearch methodology\b"),
-        ("Limitations & Transparency", r"\blimitations\s*&\s*transparency\b"),
+        ("Limitations and Transparency", r"\blimitations\s*(?:&|and)\s*transparency\b"),
     ],
     "DECISION_INTELLIGENCE": [
         ("Research Objective", r"\bresearch objective\b"),
@@ -701,7 +702,7 @@ REPORT_REQUIRED_SECTIONS = {
         ("Whitespace Analysis", r"\bwhitespace analysis\b"),
         ("Competitor Analysis", r"\bcompetitor analysis\b"),
         ("Research Methodology", r"\bresearch methodology\b"),
-        ("Limitations & Transparency", r"\blimitations\s*&\s*transparency\b"),
+        ("Limitations and Transparency", r"\blimitations\s*(?:&|and)\s*transparency\b"),
     ],
     "BEHAVIORAL_ARCHAEOLOGY": [
         ("Research Objective", r"\bresearch objective\b"),
@@ -709,7 +710,7 @@ REPORT_REQUIRED_SECTIONS = {
         ("Human Themes Overview", r"\bhuman themes overview\b"),
         ("Behavioural Depth Analysis", r"\bbehavio[u]?ral depth analysis\b"),
         ("Research Methodology", r"\bresearch methodology\b"),
-        ("Limitations & Transparency", r"\blimitations\s*&\s*transparency\b"),
+        ("Limitations and Transparency", r"\blimitations\s*(?:&|and)\s*transparency\b"),
     ],
 }
 
@@ -729,6 +730,14 @@ REPORT_OPTIONAL_SUBSECTIONS = {
 
 def _normalize_whitespace(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
+
+
+def _strip_table_of_contents(md_content: str) -> str:
+    toc_pattern = re.compile(
+        r"(?is)^#{1,6}\s*table of contents?\s*$.*?(?=^#{1,6}\s+|\Z)",
+        re.MULTILINE,
+    )
+    return toc_pattern.sub("", md_content)
 
 
 def _extract_markdown_headings(md_content: str) -> List[str]:
@@ -759,7 +768,7 @@ def _extract_markdown_headings(md_content: str) -> List[str]:
 
 
 def _find_missing_sections(md_content: str, cta: str) -> List[str]:
-    normalized = _normalize_whitespace(md_content).lower()
+    normalized = _normalize_whitespace(_strip_table_of_contents(md_content)).lower()
     missing: List[str] = []
 
     for label, pattern in REPORT_REQUIRED_SECTIONS.get(cta, []):
@@ -767,6 +776,71 @@ def _find_missing_sections(md_content: str, cta: str) -> List[str]:
             missing.append(label)
 
     return missing
+
+
+def _fallback_research_methodology(cta: str) -> str:
+    cta_name = cta.replace("_", " ").title()
+    if cta == "BEHAVIORAL_ARCHAEOLOGY":
+        focus = (
+            "The analysis prioritizes contradiction detection, bias mapping, emotional architecture, "
+            "ritual decoding, and latent motivation signals across persona responses."
+        )
+    elif cta == "DECISION_INTELLIGENCE":
+        focus = (
+            "The analysis prioritizes strategic synthesis, decision risk, whitespace identification, "
+            "competitive psychology, and evidence-backed implications."
+        )
+    else:
+        focus = (
+            "The transcript export preserves the generated question-and-answer flow while retaining "
+            "persona context, response quality, and independence signals."
+        )
+
+    return f"""## Research Methodology
+
+This {cta_name} report was generated from the qualitative interview dataset, persona profiles, and the stated research objective in Synthetic People AI. {focus} Findings are treated as directional synthetic research outputs: they are useful for pattern recognition, hypothesis formation, and decision preparation, but they should be validated before high-stakes execution.
+
+Note: Well-known brands or categories may have significant representation in publicly available data and discourse. The behavioral framework and persona architecture generate responses grounded in psychographic profiles rather than averaged public sentiment. For high-stakes strategic decisions, directional validation with primary consumer data is recommended to confirm key findings.
+"""
+
+
+def _fallback_limitations_and_transparency() -> str:
+    return """## Limitations and Transparency
+
+### 1. Critical Honesty About Synthetic Personas
+
+Synthetic personas can surface hidden motivations, identify say-do gaps, generate testable hypotheses, and provide strategic direction. They cannot prove market size, validate messaging, confirm price elasticity, or replace pilots with real consumers.
+
+Recommended validation path:
+
+- Month 1 to 2: Validate the strongest hypotheses through targeted quantitative research with the intended audience.
+- Month 3 to 4: Run controlled pilots or concept tests against the highest-priority decision areas.
+- Month 5 to 6: Use A/B or messaging validation to compare the strongest territories and claims.
+- Month 7 onwards: Scale only the findings that survive primary validation and commercial testing.
+
+### 2. Metadata Standards
+
+Quality Score (0 to 1) reflects conversational depth, emotional specificity, and narrative coherence. Independence Score (0 to 1) reflects original thinking versus prompt conformity. Opinion Diversity Index captures agreement and disagreement across personas. Emotional Intensity captures strength of activation. Behavioral Contradiction Flag identifies meaningful say-do gaps.
+
+### 3. Final Principle
+
+This report does not just tell you what synthetic respondents said; it reveals which tensions are worth validating next. Standard research would treat the output as a finished answer. This report says: use the strongest patterns as a decision map, then pressure-test them with real-world evidence.
+"""
+
+
+def _append_supported_missing_sections(md_content: str, cta: str, missing_sections: List[str]) -> tuple[str, List[str]]:
+    appenders = {
+        "Research Methodology": lambda: _fallback_research_methodology(cta),
+        "Limitations and Transparency": _fallback_limitations_and_transparency,
+    }
+    appendable = [label for label in missing_sections if label in appenders]
+    if not appendable:
+        return md_content, missing_sections
+
+    blocks = [appenders[label]() for label in appendable]
+    repaired = f"{md_content.rstrip()}\n\n" + "\n\n".join(block.strip() for block in blocks) + "\n"
+    # Claude can truncate tail sections; deterministic shared sections keep downloads reliable.
+    return repaired, _find_missing_sections(repaired, cta)
 
 
 def _build_toc_markdown(cta: str, headings: List[str]) -> str:
@@ -828,10 +902,15 @@ async def _generate_report_markdown_once(
     payload: Dict[str, Any],
     system_prompt: str,
 ) -> str:
-    response = await call_anthropic(
-        payload=payload,
-        system_prompt=system_prompt
-    )
+    try:
+        response = await asyncio.wait_for(
+            call_anthropic(payload=payload, system_prompt=system_prompt),
+            timeout=REPORT_LLM_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError as exc:
+        raise TimeoutError(
+            f"Report LLM generation timed out after {REPORT_LLM_TIMEOUT_SECONDS} seconds"
+        ) from exc
 
     md = response.content[0].text.strip()
     if not md:
@@ -995,6 +1074,8 @@ async def generate_report_markdown(
     md = _synchronize_toc(md, cta)
 
     missing_sections = _find_missing_sections(md, cta)
+    md, missing_sections = _append_supported_missing_sections(md, cta, missing_sections)
+    md = _synchronize_toc(md, cta)
     if not missing_sections:
         return md
 
@@ -1020,6 +1101,12 @@ async def generate_report_markdown(
     repaired_md = _synchronize_toc(repaired_md, cta)
 
     repaired_missing_sections = _find_missing_sections(repaired_md, cta)
+    repaired_md, repaired_missing_sections = _append_supported_missing_sections(
+        repaired_md,
+        cta,
+        repaired_missing_sections,
+    )
+    repaired_md = _synchronize_toc(repaired_md, cta)
     if repaired_missing_sections:
         raise ValueError(
             "Generated report is incomplete after retry. Missing required sections: "

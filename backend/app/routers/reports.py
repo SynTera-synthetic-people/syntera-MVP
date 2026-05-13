@@ -10,6 +10,7 @@ URL pattern:
 """
 import asyncio
 import os
+from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -43,6 +44,7 @@ QUAL_TRANSCRIPTS_CACHE_KEY = "TRANSCRIPTS_QA_DOCX_V3"
 QUAL_DI_CACHE_KEY = "DECISION_INTELLIGENCE_V8"
 QUAL_BA_CACHE_KEY = "BEHAVIORAL_ARCHAEOLOGY_V8"
 QUAL_ALL_CACHE_KEY = "ALL_COMBINED_V4"
+QUANT_TRANSCRIPTS_CACHE_KEY = "TRANSCRIPTS"
 QUANT_DI_CACHE_KEY = "DECISION_INTELLIGENCE_V2"
 QUANT_BA_CACHE_KEY = "BEHAVIORAL_ARCHAEOLOGY_V2"
 QUAL_PREPARE_CONFIG = {
@@ -62,6 +64,7 @@ QUAL_PREPARE_CONFIG = {
         "prefix": "qual_all_combined",
     },
 }
+QUAL_PENDING_STALE_SECONDS = int(os.getenv("QUAL_REPORT_PENDING_STALE_SECONDS", "1800"))
 _qual_report_tasks: dict[tuple[str, str], asyncio.Task] = {}
 
 
@@ -76,6 +79,21 @@ def _write_file(path: str, content: bytes) -> None:
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     with open(path, "wb") as f:
         f.write(content)
+
+
+def _cached_file_ready(cached) -> bool:
+    return bool(cached and cached.pdf_path and os.path.exists(cached.pdf_path))
+
+
+def _is_stale_pending_report(report) -> bool:
+    if not report or report.status != "pending" or not report.created_at:
+        return False
+
+    created_at = report.created_at
+    if getattr(created_at, "tzinfo", None) is not None:
+        created_at = created_at.replace(tzinfo=None)
+
+    return datetime.utcnow() - created_at > timedelta(seconds=QUAL_PENDING_STALE_SECONDS)
 
 
 async def _personas_for_simulation(simulation_id: str):
@@ -132,7 +150,7 @@ async def _ensure_qual_report_preparing(
 
     cache_key = config["cache_key"]
     cached = await cache.get_cached_report(exploration_id, cache_key)
-    if cached and cached.pdf_path and os.path.exists(cached.pdf_path):
+    if _cached_file_ready(cached):
         return {"status": "done", "available": True}
 
     task_key = _qual_task_key(exploration_id, cache_key)
@@ -297,8 +315,8 @@ async def quant_transcripts(
     simulation_id is the SURVEY simulation ID.
     Population sim is resolved via simulation_source_id for the questionnaire lookup.
     """
-    cached = await cache.get_cached_report(exploration_id, "TRANSCRIPTS", simulation_id)
-    if cached and cached.pdf_path and os.path.exists(cached.pdf_path):
+    cached = await cache.get_cached_report(exploration_id, QUANT_TRANSCRIPTS_CACHE_KEY, simulation_id)
+    if _cached_file_ready(cached):
         content = _read_file(cached.pdf_path)
     else:
         survey_sim = await get_survey_simulation_by_id(simulation_id)
@@ -342,7 +360,7 @@ async def quant_transcripts(
 
         path = generate_pdf_path(prefix="quant_transcripts").replace(".pdf", ".zip")
         _write_file(path, content)
-        await cache.store_report_cache(exploration_id, "TRANSCRIPTS", path, "quant", simulation_id)
+        await cache.store_report_cache(exploration_id, QUANT_TRANSCRIPTS_CACHE_KEY, path, "quant", simulation_id)
 
     return Response(
         content=content,
@@ -360,7 +378,7 @@ async def quant_decision_intelligence(
 ):
     """Decision Intelligence PDF for quantitative survey."""
     cached = await cache.get_cached_report(exploration_id, QUANT_DI_CACHE_KEY, simulation_id)
-    if cached and cached.pdf_path and os.path.exists(cached.pdf_path):
+    if _cached_file_ready(cached):
         content = _read_file(cached.pdf_path)
     else:
         personas = await _personas_for_simulation(simulation_id)
@@ -386,7 +404,7 @@ async def quant_behavior_archaeology(
 ):
     """Behavior Archaeology PDF for quantitative survey."""
     cached = await cache.get_cached_report(exploration_id, QUANT_BA_CACHE_KEY, simulation_id)
-    if cached and cached.pdf_path and os.path.exists(cached.pdf_path):
+    if _cached_file_ready(cached):
         content = _read_file(cached.pdf_path)
     else:
         personas = await _personas_for_simulation(simulation_id)
@@ -419,7 +437,7 @@ async def report_status(
         "BEHAVIORAL_ARCHAEOLOGY": QUAL_BA_CACHE_KEY,
     }
     quant_ctas = {
-        "CSV_DATA": "CSV_DATA",
+        "CSV_DATA": QUANT_TRANSCRIPTS_CACHE_KEY,
         "DECISION_INTELLIGENCE": QUANT_DI_CACHE_KEY,
         "BEHAVIORAL_ARCHAEOLOGY": QUANT_BA_CACHE_KEY,
     }
@@ -428,15 +446,30 @@ async def report_status(
     for public_cta, cache_cta in qual_ctas.items():
         cached = await cache.get_cached_report(exploration_id, cache_cta)
         latest = await cache.get_latest_report(exploration_id, cache_cta)
-        status = "done" if cached else "idle"
+        available = _cached_file_ready(cached)
+        status = "done" if available else "idle"
         error_message = None
-        if not cached and latest and latest.status in {"pending", "failed"}:
-            status = latest.status
-            error_message = latest.error_message
+        if not available and latest:
+            if _is_stale_pending_report(latest):
+                error_message = "Report generation timed out. Please retry."
+                task = _qual_report_tasks.get(_qual_task_key(exploration_id, cache_cta))
+                if task and not task.done():
+                    task.cancel()
+                latest = await cache.set_report_status(
+                    exploration_id=exploration_id,
+                    cta_type=cache_cta,
+                    report_type="qual",
+                    status="failed",
+                    error_message=error_message,
+                )
+                status = latest.status
+            elif latest.status in {"pending", "failed"}:
+                status = latest.status
+                error_message = latest.error_message
         result["qual"][public_cta] = {
-            "available": cached is not None,
-            "generated_at": cached.created_at.isoformat() if cached else None,
-            "expires_at": cached.expires_at.isoformat() if cached else None,
+            "available": available,
+            "generated_at": cached.created_at.isoformat() if available else None,
+            "expires_at": cached.expires_at.isoformat() if available and cached.expires_at else None,
             "status": status,
             "error_message": error_message,
         }
@@ -444,10 +477,11 @@ async def report_status(
     if simulation_id:
         for public_cta, cache_cta in quant_ctas.items():
             cached = await cache.get_cached_report(exploration_id, cache_cta, simulation_id)
+            available = _cached_file_ready(cached)
             result["quant"][public_cta] = {
-                "available": cached is not None,
-                "generated_at": cached.created_at.isoformat() if cached else None,
-                "expires_at": cached.expires_at.isoformat() if cached else None,
+                "available": available,
+                "generated_at": cached.created_at.isoformat() if available else None,
+                "expires_at": cached.expires_at.isoformat() if available and cached.expires_at else None,
             }
 
     return result

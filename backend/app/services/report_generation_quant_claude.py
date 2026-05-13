@@ -24,6 +24,8 @@ from app.utils.anthropic_client import get_async_anthropic_client
 
 load_dotenv()
 
+QUANT_REPORT_LLM_TIMEOUT_SECONDS = int(os.getenv("QUANT_REPORT_LLM_TIMEOUT_SECONDS", "900"))
+
 _REPORT_CSS_PATH = (
     pathlib.Path(__file__).resolve().parent.parent / "css" / "report_generation.css"
 )
@@ -32,6 +34,52 @@ _QUANT_REPORT_CSS_PATH = (
 )
 
 upload_dir = "./reports"
+
+QUANT_REQUIRED_SECTIONS = {
+    "DECISION_INTELLIGENCE": [
+        ("The Decision at Stake", r"\b(?:di-?1|section\s+di-?1)?[\s:.\-]*the decision at stake\b"),
+        ("What the Data Proves", r"\b(?:di-?2|section\s+di-?2)?[\s:.\-]*what the data proves\b"),
+        ("The Persona Face-Off", r"\b(?:di-?3|section\s+di-?3)?[\s:.\-]*the persona face[-\s]?off\b"),
+        ("Where to Focus", r"\b(?:di-?4|section\s+di-?4)?[\s:.\-]*where to focus\b"),
+        ("The Price Story", r"\b(?:di-?5|section\s+di-?5)?[\s:.\-]*the price story\b"),
+        ("What Could Go Wrong", r"\b(?:di-?6|section\s+di-?6)?[\s:.\-]*what could go wrong\b"),
+        ("What to Do Now", r"\b(?:di-?7|section\s+di-?7)?[\s:.\-]*what to do now\b"),
+    ],
+    "BEHAVIORAL_ARCHAEOLOGY": [
+        ("The Say-Do Gap", r"\b(?:ba-?1|section\s+ba-?1)?[\s:.\-]*the say[-\s/]?do gap\b"),
+        ("The Bias Landscape", r"\b(?:ba-?2|section\s+ba-?2)?[\s:.\-]*the bias landscape\b"),
+        ("The Emotional Architecture", r"\b(?:ba-?3|section\s+ba-?3)?[\s:.\-]*the emotional architecture\b"),
+        ("Where Words and Actions Collide", r"\b(?:ba-?4|section\s+ba-?4)?[\s:.\-]*where words and actions collide\b"),
+        ("The Ritual Audit", r"\b(?:ba-?5|section\s+ba-?5)?[\s:.\-]*the ritual audit\b"),
+        ("The White Spaces", r"\b(?:ba-?6|section\s+ba-?6)?[\s:.\-]*the white spaces\b"),
+        ("What Actually Drives the Decision", r"\b(?:ba-?7|section\s+ba-?7)?[\s:.\-]*what actually drives the decision\b"),
+        ("The Friction Points", r"\b(?:ba-?8|section\s+ba-?8)?[\s:.\-]*the friction points\b"),
+        ("What Surprised Us", r"\b(?:ba-?9|section\s+ba-?9)?[\s:.\-]*what surprised us\b"),
+        ("How They Decide", r"\b(?:ba-?10|section\s+ba-?10)?[\s:.\-]*how they decide\b"),
+        ("The Archaeological Synthesis", r"\b(?:ba-?11|section\s+ba-?11)?[\s:.\-]*the archaeological synthesis\b"),
+    ],
+}
+
+
+def _normalize_whitespace(value: str) -> str:
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def _strip_table_of_contents(md_content: str) -> str:
+    toc_pattern = re.compile(
+        r"(?is)^#{1,6}\s*table of contents?\s*$.*?(?=^#{1,6}\s+|\Z)",
+        re.MULTILINE,
+    )
+    return toc_pattern.sub("", md_content)
+
+
+def _find_missing_sections(md_content: str, cta: str) -> List[str]:
+    normalized = _normalize_whitespace(_strip_table_of_contents(md_content)).lower()
+    missing: List[str] = []
+    for label, pattern in QUANT_REQUIRED_SECTIONS.get(cta, []):
+        if not re.search(pattern, normalized, flags=re.IGNORECASE):
+            missing.append(label)
+    return missing
 
 
 def generate_pdf_path(prefix: str = "report") -> str:
@@ -59,6 +107,52 @@ async def call_anthropic(
         ],
     ) as stream:
         return await stream.get_final_message()
+
+
+async def _generate_report_markdown_once(user_message_content: str) -> str:
+    try:
+        response = await asyncio.wait_for(
+            call_anthropic(user_message_content),
+            timeout=QUANT_REPORT_LLM_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError as exc:
+        raise TimeoutError(
+            f"Quant report LLM generation timed out after {QUANT_REPORT_LLM_TIMEOUT_SECONDS} seconds"
+        ) from exc
+
+    md = response.content[0].text.strip()
+    if not md:
+        raise ValueError("Empty response from Claude")
+
+    return md
+
+
+async def _generate_validated_report_markdown(user_message_content: str, cta: str) -> str:
+    md = await _generate_report_markdown_once(user_message_content)
+    missing_sections = _find_missing_sections(md, cta)
+    if not missing_sections:
+        return md
+
+    repair_prompt = (
+        f"{user_message_content}\n\n"
+        "REPAIR MODE:\n"
+        "- Rewrite the full quantitative report from scratch in markdown.\n"
+        "- The previous draft omitted mandatory sections.\n"
+        f"- Missing sections that MUST appear in the final report: {', '.join(missing_sections)}.\n"
+        "- Keep the same CTA. Do not include content from other CTAs.\n"
+        "- If token budget gets tight, shorten examples and explanations, but do not omit mandatory sections.\n"
+        "- Return only the corrected final markdown report."
+    )
+
+    repaired_md = await _generate_report_markdown_once(repair_prompt)
+    repaired_missing_sections = _find_missing_sections(repaired_md, cta)
+    if repaired_missing_sections:
+        raise ValueError(
+            "Generated quant report is incomplete after retry. Missing required sections: "
+            + ", ".join(repaired_missing_sections)
+        )
+
+    return repaired_md
 
 
 async def get_simulation_results(
@@ -316,12 +410,7 @@ async def generate_md_report(exploration_id: str, sim_id: str, persona_details: 
         payload, ensure_ascii=False, default=str
     )
 
-    response = await call_anthropic(user_message_content)
-
-    md = response.content[0].text.strip()
-
-    if not md:
-        raise ValueError("Empty response from Claude")
+    md = await _generate_validated_report_markdown(user_message_content, cta)
 
     output_pdf_path = generate_pdf_path(prefix="quant_survey")
     css_path = (
