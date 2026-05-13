@@ -52,7 +52,7 @@ interface TypeMeta {
   instructionPlaceholder: string;
 }
 
-const TYPE_META: Record<QuestionType, TypeMeta> = {
+export const TYPE_META: Record<QuestionType, TypeMeta> = {
   text:               { label: 'Text',                         tooltip: 'Open-ended text response. Participants answer in their own words.', instructionPlaceholder: 'Please be as precise as possible' },
   essay:              { label: 'Essay',                        tooltip: 'Long-form open-ended response for detailed answers.', instructionPlaceholder: 'Please be as detailed as possible' },
   number:             { label: 'Number (Integer and Float)',   tooltip: 'Participants enter a numeric value.', instructionPlaceholder: 'Please enter a numeric value only' },

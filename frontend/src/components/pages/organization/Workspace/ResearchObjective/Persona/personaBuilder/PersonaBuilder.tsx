@@ -175,6 +175,35 @@ const DownloadPersonaCardModal: React.FC<DownloadPersonaCardModalProps> = ({
               })}
             </div>
 
+            {/* ── Select all row ── */}
+            <div className="pb-download-divider" />
+            <button
+              className="pb-select-all-row"
+              onClick={() => {
+                if (selectedIds.length === personas.length) {
+                  setSelectedIds([]);
+                } else {
+                  setSelectedIds(personas.map(p => p.id));
+                }
+              }}
+            >
+              <span
+                className={`pb-select-all-cb${selectedIds.length === personas.length
+                    ? ' pb-select-all-cb--checked'
+                    : selectedIds.length > 0
+                      ? ' pb-select-all-cb--indeterminate'
+                      : ''
+                  }`}
+              >
+                {selectedIds.length === personas.length && <TbCheck size={12} />}
+                {selectedIds.length > 0 && selectedIds.length < personas.length && <TbMinus size={12} />}
+              </span>
+              <span className="pb-select-all-label">Select all</span>
+              <span className="pb-select-all-count">
+                {selectedIds.length} of {personas.length} selected
+              </span>
+            </button>
+
             <div className="pb-modal-actions pb-download-actions">
               <button className="pb-modal-cancel-btn" onClick={onClose}>
                 Cancel
@@ -1712,52 +1741,52 @@ const PersonaBuilder: React.FC = () => {
 
   // ── Grid view ───────────────────────────────────────────────────────────────
 
-if (showGrid) {
-  return (
-    <>
-      <PersonasReadyGrid
-        savedPersonas={savedPersonasFromAPI}
-        onPersonaClick={handleGridPersonaClick}
-        onCreateNew={handleGridCreateNew}
-        onExplorationMethod={handleDiscussionGuidelines}
-        onDownload={() => setShowDownloadModal(true)}   // ← changed
-        isLoadingMethod={updateExplorationMethodMutation.isPending}
-        onViewPersona={handleViewPersona}
-        onReplicatePersona={handleReplicatePersona}
-        onReplicateGroup={handleReplicateGroup}
-        onDeletePersona={handleDeletePersona}
-      />
+  if (showGrid) {
+    return (
+      <>
+        <PersonasReadyGrid
+          savedPersonas={savedPersonasFromAPI}
+          onPersonaClick={handleGridPersonaClick}
+          onCreateNew={handleGridCreateNew}
+          onExplorationMethod={handleDiscussionGuidelines}
+          onDownload={() => setShowDownloadModal(true)}   // ← changed
+          isLoadingMethod={updateExplorationMethodMutation.isPending}
+          onViewPersona={handleViewPersona}
+          onReplicatePersona={handleReplicatePersona}
+          onReplicateGroup={handleReplicateGroup}
+          onDeletePersona={handleDeletePersona}
+        />
 
-      <AddNewPersonaModal
-        show={showAddNewPersonaModal}
-        onClose={() => setShowAddNewPersonaModal(false)}
-        onConfirm={handleAddNewPersonaConfirm}
-      />
+        <AddNewPersonaModal
+          show={showAddNewPersonaModal}
+          onClose={() => setShowAddNewPersonaModal(false)}
+          onConfirm={handleAddNewPersonaConfirm}
+        />
 
-      <ReplicatePersonaModal
-        show={showReplicateModal}
-        personas={savedPersonasFromAPI}
-        onClose={() => { setShowReplicateModal(false); setReplicatePreSelectedPersona(null); }}
-        onConfirm={handleReplicateConfirm}
-        isLoading={isReplicating}
-        preSelectedPersona={replicatePreSelectedPersona}
-      />
+        <ReplicatePersonaModal
+          show={showReplicateModal}
+          personas={savedPersonasFromAPI}
+          onClose={() => { setShowReplicateModal(false); setReplicatePreSelectedPersona(null); }}
+          onConfirm={handleReplicateConfirm}
+          isLoading={isReplicating}
+          preSelectedPersona={replicatePreSelectedPersona}
+        />
 
-      {/* ── Download modal ── */}
-      <DownloadPersonaCardModal
-        show={showDownloadModal}
-        personas={savedPersonasFromAPI}
-        onClose={() => setShowDownloadModal(false)}
-        onDownload={handleDownloadPersonaCards}
-      />
+        {/* ── Download modal ── */}
+        <DownloadPersonaCardModal
+          show={showDownloadModal}
+          personas={savedPersonasFromAPI}
+          onClose={() => setShowDownloadModal(false)}
+          onDownload={handleDownloadPersonaCards}
+        />
 
-      {/* ── Download success toast ── */}
-      {showDownloadToast && (
-        <DownloadSuccessToast onClose={() => setShowDownloadToast(false)} />
-      )}
-    </>
-  );
-}
+        {/* ── Download success toast ── */}
+        {showDownloadToast && (
+          <DownloadSuccessToast onClose={() => setShowDownloadToast(false)} />
+        )}
+      </>
+    );
+  }
 
   // ── Trait builder view ──────────────────────────────────────────────────────
 

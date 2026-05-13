@@ -775,6 +775,59 @@
   scrollbar-width: none;
 }
 .pb-download-persona-list::-webkit-scrollbar { display: none; }
+.pb-download-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 4px 0 8px;
+}
+
+.pb-select-all-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 0 16px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.pb-select-all-cb {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1.5px solid rgba(255, 255, 255, 0.22);
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #fff;
+  transition: all 0.15s;
+}
+.pb-select-all-cb--checked {
+  background: #24E5B6;
+  border-color: #24E5B6;
+}
+.pb-select-all-cb--indeterminate {
+  background: rgba(36, 229, 182, 0.2);
+  border-color: #24E5B6;
+  color: #24E5B6;
+}
+
+.pb-select-all-label {
+  color: #e2e8f0;
+  font-size: 13px;
+  font-weight: 500;
+  user-select: none;
+}
+
+.pb-select-all-count {
+  color: #64748b;
+  font-size: 12px;
+  margin-left: auto;
+}
 
 .pb-download-persona-row {
   width: 100%;

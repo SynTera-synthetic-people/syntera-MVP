@@ -6,7 +6,7 @@ import {
     TbChevronDown, TbDownload, TbSend, TbInfoCircle, TbArrowNarrowRight,
 } from 'react-icons/tb';
 import SpIcon from '../../../../../SPIcon';
-import QuestionModal, { defaultQuestion } from './QuestionModal';
+import QuestionModal, { defaultQuestion, TYPE_META } from './QuestionModal';
 import type { Question } from './QuestionModal';
 import './QuestionnaireGuide.css';
 
@@ -364,7 +364,9 @@ const QuestionnaireGuide: React.FC<QuestionnaireGuideProps> = ({
 
                                             <p className="qdg-question__text">{q.text}</p>
 
-                                            <span className="qdg-video-badge">Video</span>
+                                            <span className={`qdg-video-badge qdg-video-badge--${q.type}`}>
+                                                {TYPE_META[q.type]?.label ?? q.type}
+                                            </span>
 
                                             <div className="qdg-question__actions">
                                                 <div className="qdg-q-menu-wrap">
