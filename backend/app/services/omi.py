@@ -543,6 +543,8 @@ async def chat_with_omi(
         )
 
         questions = analysis.get("questions", "")
+        if isinstance(questions, list):
+            questions = " ".join(questions)
 
         missing = analysis.get("missing", [])
 
