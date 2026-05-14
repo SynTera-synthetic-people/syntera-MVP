@@ -1,10 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-    TbX, TbTrash, TbPencil,
-    TbPlus, TbDotsVertical, TbGripVertical, TbCheck,
-    TbChevronDown, TbDownload, TbSend, TbInfoCircle, TbArrowNarrowRight,
-} from 'react-icons/tb';
+import {TbX} from 'react-icons/tb';
 import SpIcon from '../../../../../SPIcon';
 import QuestionModal, { defaultQuestion, TYPE_META } from './QuestionModal';
 import type { Question } from './QuestionModal';
