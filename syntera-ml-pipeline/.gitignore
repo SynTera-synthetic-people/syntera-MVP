@@ -1,0 +1,15 @@
+# ML Models (too large for git)
+models/saved/*.joblib
+models/saved/*.pkl
+data/*.csv
+data/*.parquet
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.env
+
+# Logs
+logs/
+*.log
