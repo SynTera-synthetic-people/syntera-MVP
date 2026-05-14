@@ -15,18 +15,24 @@ PyJWT
 pydantic-settings
 aiofiles
 python-multipart
-openai
 reportlab
 pytesseract
 PyPDF2
 pdf2image
 python-docx
 pandas
+numpy
 openpyxl
+# ML pipeline
+scikit-learn
+xgboost
+lightgbm
+catboost
+joblib
 xhtml2pdf>=0.2.15
 Markdown==3.10.2
 anthropic==0.79.0
 boto3
 qdrant-client==1.7.0
-openai==1.12.0
+openai>=1.52.0
 tqdm==4.66.1

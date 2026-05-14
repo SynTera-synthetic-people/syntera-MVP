@@ -307,43 +307,14 @@ def extract_actions_data(domain=None, limit=None):
     print(f"   Users: {df['subject_key'].nunique():,}")
     print(f"   Domains: {df['domain'].unique().tolist()}")
     print(f"   Platforms: {df['platform'].unique().tolist()}")
-    
+
     if len(df) > 0:
         print(f"   Date range: {df['transaction_date'].min()} to {df['transaction_date'].max()}")
         print(f"\nTransactions by domain:")
         domain_counts = df.groupby('domain').size()
         for domain, count in domain_counts.items():
             print(f"   {domain}: {count:,} transactions")
-    
-    return df
-    
-    if domain:
-        query += f" AND data->>'domain' = '{domain}'"
-    
-    query += " ORDER BY subject_key, transaction_date"
-    
-    if limit:
-        query += f" LIMIT {limit}"
-    
-    print(f"\n{'='*60}")
-    print(f"Extracting Actions Data from sync_action.record")
-    print(f"{'='*60}")
-    
-    df = pd.read_sql(query, engine)
-    
-    # Convert transaction_date to datetime
-    df['transaction_date'] = pd.to_datetime(df['transaction_date'], errors='coerce')
-    
-    # Drop rows with null dates or amounts
-    df = df.dropna(subset=['transaction_date', 'transaction_amount'])
-    
-    print(f"✅ Extracted {len(df):,} transactions")
-    print(f"   Users: {df['subject_key'].nunique():,}")
-    print(f"   Domains: {df['domain'].unique().tolist()}")
-    
-    if len(df) > 0:
-        print(f"   Date range: {df['transaction_date'].min()} to {df['transaction_date'].max()}")
-    
+
     return df
 
 
@@ -436,8 +407,9 @@ def build_feature_dataset(actions_df, min_transactions=5, output_file='data/feat
         print("\n⚠️  No features extracted! Check your data.")
         return features_df
     
-    # Save to data folder
+    # Save to data folder (create if missing)
     output_path = os.path.join(os.path.dirname(__file__), '..', output_file)
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
     features_df.to_csv(output_path, index=False)
     
     print(f"\n{'='*60}")

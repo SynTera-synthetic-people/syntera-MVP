@@ -103,9 +103,9 @@ async def query_insights(request: QueryRequest):
                 )
 
             try:
-                ml_result = predict_user_behavior(request.user_id, domain)
-            except NotImplementedError as e:
-                raise HTTPException(status_code=501, detail=str(e))
+                ml_result = await predict_user_behavior(request.user_id, domain)
+            except ValueError as e:
+                raise HTTPException(status_code=404, detail=str(e))
 
             return InsightsResponse(
                 query=request.query,

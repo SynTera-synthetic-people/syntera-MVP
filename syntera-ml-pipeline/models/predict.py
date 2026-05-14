@@ -64,9 +64,10 @@ class MLPredictor:
         Returns:
             Dict with prediction, confidence, explanation, base_predictions
         """
-        # Convert to array in correct order
-        X = np.array([[features_dict[col] for col in self.feature_columns]])
-        
+        # Convert to DataFrame to preserve feature names (avoids LightGBM warning)
+        X = pd.DataFrame([[features_dict[col] for col in self.feature_columns]],
+                         columns=self.feature_columns)
+
         # Get base model predictions
         base_predictions = {}
         for name, model in self.base_models.items():
@@ -195,7 +196,7 @@ if __name__ == "__main__":
             # Make prediction
             result = predictor.predict(feature_dict)
             
-            print(f"\nUser: {sample['user_id']}")
+            print(f"\nUser: {sample['subject_key']}")
             print(f"Actual transactions: {sample['total_transactions']}")
             print("\n" + result['explanation'])
             

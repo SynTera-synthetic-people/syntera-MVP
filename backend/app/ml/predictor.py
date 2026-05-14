@@ -101,7 +101,7 @@ def predict_from_features(domain: str, features_dict: dict) -> dict:
     }
 
 
-def predict_user_behavior(user_id: str, domain: str | None) -> dict:
+async def predict_user_behavior(user_id: str, domain: str | None) -> dict:
     """
     High-level entry point for the insights router.
 
@@ -126,14 +126,9 @@ def predict_user_behavior(user_id: str, domain: str | None) -> dict:
             f"Pass one of: {', '.join(sorted(VALID_DOMAINS))}"
         )
 
-    # TODO: replace with real DB feature fetch
-    # from app.ml.feature_fetch import get_user_features
-    # features = await get_user_features(user_id, resolved_domain)
-    raise NotImplementedError(
-        "DB feature extraction not yet integrated. "
-        "Call predict_from_features() with a pre-built feature dict, "
-        "or wait for feature_fetch.py to be wired."
-    )
+    from app.ml.feature_fetch import get_user_features
+    features = await get_user_features(user_id, resolved_domain)
+    return predict_from_features(resolved_domain, features)
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
