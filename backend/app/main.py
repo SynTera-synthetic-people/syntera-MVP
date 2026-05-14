@@ -1,7 +1,7 @@
 import json
 import logging
 import os
-
+from app.routers import insights
 from fastapi import FastAPI
 from fastapi import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -111,6 +111,7 @@ app.include_router(syncdb.router)
 app.include_router(billing.router)
 app.include_router(settings_router.router)
 app.include_router(product_state.router)
+app.include_router(insights.router)
 
 # default_cors_origins = [
 #     "http://localhost:5173",
@@ -126,7 +127,7 @@ allow_origins = [x.strip() for x in cors.split(",") if x.strip()]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allow_origins,
-    # allow_origins=["*"],
+    #allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
