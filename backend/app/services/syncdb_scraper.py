@@ -24,7 +24,7 @@ import time
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import Any, Optional
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
 import httpx
 from sqlalchemy import text
@@ -33,8 +33,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.syncdb_constants import PERMANENTLY_BLOCKED_DOMAINS
 from app.services.syncdb_source import (
     DATA_TYPE_SCRAPED,
-    _MAX_SCRAPED_CONTENT_LENGTH,
-    _SOFT_MAX_SCRAPED_CHUNKS,
     _clean_extracted_text,
     _extract_readable_webpage_text,
     _extract_readable_webpage_text_relaxed,
@@ -90,7 +88,6 @@ _RETRY_LIMIT = _env_int("SYNCDB_SCRAPER_RETRY_LIMIT", 5)
 _MAX_CONTENT_BYTES = _env_int("SYNCDB_SCRAPER_MAX_CONTENT_BYTES", 104_857_600)
 _ENABLE_DYNAMIC_SCRAPING = _env_bool("SYNCDB_ENABLE_DYNAMIC_SCRAPING", True)
 
-_MIN_CLEANED_CHARS = _env_int("SYNCDB_SCRAPER_MIN_CLEANED_CHARS", 100)
 _DYNAMIC_FALLBACK_CHARS = _env_int("SYNCDB_SCRAPER_DYNAMIC_FALLBACK_CHARS", 200)
 _DYNAMIC_RAW_BYTES_THRESHOLD = _env_int("SYNCDB_SCRAPER_DYNAMIC_RAW_BYTES_THRESHOLD", 50_000)
 _DYNAMIC_MIN_EXTRACTION_EFFICIENCY = float(
@@ -115,6 +112,28 @@ _PLAYWRIGHT_EXECUTABLE_PATH = os.getenv("SYNCDB_PLAYWRIGHT_EXECUTABLE_PATH", "")
 _SKIP_LOW_VALUE_URLS = _env_bool("SYNCDB_SKIP_LOW_VALUE_URLS", True)
 _FAILED_URLS_JSONL_PATH = os.getenv("SYNCDB_FAILED_URLS_JSONL", "").strip()
 _LOW_QUALITY_SCORE_THRESHOLD = float(os.getenv("SYNCDB_LOW_QUALITY_SCORE_THRESHOLD", "0.25"))
+
+# Depth-1 crawl only: seed pages can enqueue same-domain children once.
+MAX_DEPTH = 1
+_MAX_CRAWL_DEPTH = MAX_DEPTH
+_MAX_CHILD_LINKS_PER_PAGE = _env_int("SYNCDB_SCRAPER_MAX_CHILD_LINKS_PER_PAGE", 25)
+_MAX_TOTAL_CRAWLED_URLS = _env_int("SYNCDB_SCRAPER_MAX_TOTAL_CRAWLED_URLS", 2000)
+_MAX_DISCOVERED_CHILD_URLS = _env_int("SYNCDB_SCRAPER_MAX_DISCOVERED_CHILD_URLS", 100)
+_ENFORCE_CHILD_ROOT_SCOPE = _env_bool("SYNCDB_ENFORCE_CHILD_ROOT_SCOPE", False)
+
+_TRACKING_QUERY_PARAMS = frozenset({
+    "fbclid",
+    "gclid",
+    "gmbsrc",
+    "icid",
+    "linkclickid",
+    "mc_cid",
+    "mc_eid",
+    "marketo",
+    "skiplandingpage",
+    "skippageslist",
+})
+_LOCALE_QUERY_PARAMS = frozenset({"hl", "l", "lang", "locale"})
 
 _URL_COLUMN = "Source Link"
 _VALID_COLUMN = "URL Valid"
@@ -146,6 +165,82 @@ _LOW_VALUE_URL_RE = re.compile(
     r"|/sitemap(\.xml)?(/|$)"          # sitemaps
     r"|robots\.txt"                    # robots.txt
 )
+
+_REJECTED_CHILD_URL_EXTENSIONS = (
+    ".7z",
+    ".avi",
+    ".css",
+    ".csv",
+    ".doc",
+    ".docx",
+    ".eot",
+    ".gif",
+    ".gz",
+    ".ico",
+    ".jpeg",
+    ".jpg",
+    ".js",
+    ".json",
+    ".map",
+    ".mjs",
+    ".mov",
+    ".mp3",
+    ".mp4",
+    ".pdf",
+    ".png",
+    ".ppt",
+    ".pptx",
+    ".rar",
+    ".svg",
+    ".tar",
+    ".ttf",
+    ".webm",
+    ".webp",
+    ".woff",
+    ".woff2",
+    ".xls",
+    ".xlsx",
+    ".zip",
+)
+
+_REJECTED_CHILD_PATH_MARKERS = (
+    "/auth",
+    "/cart",
+    "/carts",
+    "/checkout",
+    "/contact",
+    "/contact-us",
+    "/forum",
+    "/join",
+    "/join-us",
+    "/login",
+    "/logout",
+    "/newsletter",
+    "/privacy",
+    "/register",
+    "/search",
+    "/sign-in",
+    "/sign-out",
+    "/signin",
+    "/signout",
+    "/signup",
+    "/shop",
+    "/terms",
+    "/top-ten",
+)
+
+_CHILD_COLLECTION_SEGMENTS = frozenset({
+    "analysis",
+    "articles",
+    "data-center",
+    "insights",
+    "library",
+    "publications",
+    "reports",
+    "resources",
+    "research",
+    "topics",
+})
 
 _USER_AGENTS = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -268,6 +363,9 @@ class URLScrapeLog:
     quality_label: str = "unknown"
     dynamic_used: bool = False
     dynamic_success: bool = False
+    crawl_depth: int = 0
+    parent_url: Optional[str] = None
+    root_url: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
         total_time_ms = self.total_time_ms or self.time_taken_ms
@@ -289,6 +387,9 @@ class URLScrapeLog:
             "quality_label": self.quality_label,
             "dynamic_used": self.dynamic_used,
             "dynamic_success": self.dynamic_success,
+            "crawl_depth": self.crawl_depth,
+            "parent_url": self.parent_url,
+            "root_url": self.root_url,
         }
 
 
@@ -481,6 +582,10 @@ class _FetchResult:
     dynamic_success: bool = False
     content_quality_score: float = 0.0
     quality_label: str = "unknown"
+    raw_html: Optional[str] = None
+    crawl_depth: int = 0
+    parent_url: Optional[str] = None
+    root_url: Optional[str] = None
 
 
 @dataclass
@@ -490,6 +595,14 @@ class _RawFetch:
     raw_content_length: int
     method_used: str
     raw_html: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class _CrawlItem:
+    url: str
+    depth: int = 0
+    parent_url: Optional[str] = None
+    root_url: Optional[str] = None
 
 
 class _DomainRateLimiter:
@@ -614,6 +727,7 @@ class _DynamicScraper:
                     http_status=response.status if response else None,
                     raw_content_length=len(html.encode("utf-8", errors="ignore")),
                     method_used="playwright",
+                    raw_html=html,
                 )
             finally:
                 await page.close()
@@ -900,6 +1014,7 @@ def _fetch_dynamic_sync(url: str, attempt: int = 0) -> _RawFetch:
                         http_status=response.status if response else None,
                         raw_content_length=len(html.encode("utf-8", errors="ignore")),
                         method_used="playwright",
+                        raw_html=html,
                     )
                 finally:
                     page.close()
@@ -952,6 +1067,133 @@ def _detect_tabular_columns(chunks: list[dict]) -> set[str]:
 
 def _is_pdf_url(url: str) -> bool:
     return bool(url and url.lower().split("?")[0].endswith(".pdf"))
+
+
+def _normalize_url(url: str) -> str:
+    value = (url or "").strip()
+    if not value:
+        return ""
+
+    parsed = urlparse(value)
+    if not parsed.scheme:
+        return value.rstrip("/")
+
+    scheme = parsed.scheme.lower()
+    hostname = (parsed.hostname or "").lower()
+    if not hostname:
+        return value.rstrip("/")
+
+    netloc = hostname
+    if parsed.port and not (
+        (scheme == "http" and parsed.port == 80)
+        or (scheme == "https" and parsed.port == 443)
+    ):
+        netloc = f"{hostname}:{parsed.port}"
+
+    path = re.sub(r"/{2,}", "/", parsed.path or "")
+    if path == "/":
+        path = ""
+    elif path.endswith("/"):
+        path = path.rstrip("/")
+
+    query_items = []
+    for key, item_value in parse_qsl(parsed.query, keep_blank_values=True):
+        normalized_key = key.lower()
+        if normalized_key.startswith("utm_") or normalized_key in _TRACKING_QUERY_PARAMS:
+            continue
+        query_items.append((key, item_value))
+
+    return urlunparse((scheme, netloc, path, "", urlencode(query_items, doseq=True), ""))
+
+
+def _canonical_hostname(url: str) -> str:
+    parsed = urlparse(url or "")
+    return (parsed.hostname or "").lower().removeprefix("www.")
+
+
+def _path_segments(url: str) -> list[str]:
+    parsed = urlparse(url or "")
+    return [segment.lower() for segment in (parsed.path or "").split("/") if segment]
+
+
+def _child_matches_root_scope(root_url: str, candidate_url: str) -> bool:
+    root_segments = _path_segments(root_url)
+    candidate_segments = _path_segments(candidate_url)
+    if not candidate_segments:
+        return False
+
+    for index, segment in enumerate(root_segments):
+        if segment in _CHILD_COLLECTION_SEGMENTS:
+            root_scope = root_segments[: index + 1]
+            return candidate_segments[: len(root_scope)] == root_scope
+
+    return True
+
+
+def _is_valid_internal_link(root_url: str, candidate_url: str) -> bool:
+    candidate = (candidate_url or "").strip()
+    if not candidate:
+        return False
+
+    parsed = urlparse(candidate)
+    scheme = (parsed.scheme or "").lower()
+    if scheme not in {"http", "https"}:
+        return False
+
+    if not parsed.hostname or _canonical_hostname(root_url) != _canonical_hostname(candidate):
+        return False
+
+    path = (parsed.path or "").lower()
+    if not path or path == "/" or path.endswith("/index.html"):
+        return False
+    if path.endswith(_REJECTED_CHILD_URL_EXTENSIONS):
+        return False
+    if any(marker in path for marker in _REJECTED_CHILD_PATH_MARKERS):
+        return False
+    query_keys = {key.lower() for key, _ in parse_qsl(parsed.query, keep_blank_values=True)}
+    if query_keys & _LOCALE_QUERY_PARAMS:
+        return False
+    if _ENFORCE_CHILD_ROOT_SCOPE and not _child_matches_root_scope(root_url, candidate):
+        return False
+
+    return True
+
+
+def _extract_internal_links(parent_url: str, html: Optional[str], root_url: str) -> list[str]:
+    if not html:
+        return []
+
+    try:
+        from bs4 import BeautifulSoup
+    except ImportError:
+        logger.warning("Child link extraction skipped - BeautifulSoup unavailable | url=%s", parent_url)
+        return []
+
+    links: list[str] = []
+    seen: set[str] = set()
+    soup = BeautifulSoup(html, "html.parser")
+    parent_normalized = _normalize_url(parent_url)
+
+    for anchor in soup.find_all("a", href=True):
+        raw_href = str(anchor.get("href") or "").strip()
+        if not raw_href:
+            continue
+
+        normalized_url = _normalize_url(urljoin(parent_url, raw_href))
+        if (
+            not normalized_url
+            or normalized_url == parent_normalized
+            or normalized_url in seen
+            or not _is_valid_internal_link(root_url, normalized_url)
+        ):
+            continue
+
+        seen.add(normalized_url)
+        links.append(normalized_url)
+        if len(links) >= _MAX_CHILD_LINKS_PER_PAGE:
+            break
+
+    return links
 
 
 def _extract_urls_from_xlsx_chunks(chunks: list[dict]) -> list[str]:
@@ -1632,6 +1874,8 @@ async def _scrape_url_pipeline(
             last_raw_length = raw.raw_content_length
             last_cleaned_length = cleaned_length
             method_used = raw.method_used
+            if method_used == "playwright":
+                dynamic_used = True
 
             if last_status in NO_RETRY_HTTP_STATUSES:
                 last_error = f"HTTP {last_status} - non-retryable"
@@ -1727,12 +1971,12 @@ async def _scrape_url_pipeline(
                     cleaned_length = relaxed_len
                     last_cleaned_length = relaxed_len
 
-            if cleaned_length < _MIN_CLEANED_CHARS:
-                # Content too short after all fallbacks — no retry; network retries
+            if cleaned_length <= 0:
+                # Empty content after all fallbacks - no retry; network retries
                 # would return the same page. Record as permanent content failure.
-                last_error = f"Cleaned content too short ({cleaned_length} chars)"
+                last_error = "Cleaned content empty (0 chars)"
                 logger.warning(
-                    "syncdb_scrape_url content_too_short | url=%s | cleaned=%d | "
+                    "syncdb_scrape_url content_empty | url=%s | cleaned=%d | "
                     "dynamic_used=%s | dynamic_success=%s | raw=%d",
                     url, cleaned_length, dynamic_used, dynamic_success, last_raw_length,
                 )
@@ -1762,9 +2006,10 @@ async def _scrape_url_pipeline(
                 retry_count=retry_count,
                 time_taken_ms=_elapsed_ms(started),
                 dynamic_used=dynamic_used,
-                dynamic_success=dynamic_success,
+                dynamic_success=dynamic_success or method_used == "playwright",
                 content_quality_score=quality_score,
                 quality_label=quality_label,
+                raw_html=raw.raw_html,
                 status="success",
             )
 
@@ -1912,38 +2157,66 @@ def _elapsed_ms(started: float) -> int:
 
 async def _scrape_batch(
     client: httpx.AsyncClient,
-    urls: list[str],
+    crawl_items: list[_CrawlItem],
     *,
     max_concurrent: int,
     dynamic_scraper: _DynamicScraper,
     rate_limiter: _DomainRateLimiter,
 ) -> list[_FetchResult]:
-    queue: asyncio.Queue[str] = asyncio.Queue()
+    queue: asyncio.Queue[_CrawlItem] = asyncio.Queue()
     results: list[_FetchResult] = []
     result_lock = asyncio.Lock()
 
-    for url in urls:
-        queue.put_nowait(url)
+    for item in crawl_items:
+        queue.put_nowait(item)
 
     async def worker() -> None:
         while True:
             try:
-                url = queue.get_nowait()
+                item = queue.get_nowait()
             except asyncio.QueueEmpty:
                 return
             try:
-                result = await _scrape_url_pipeline(client, url, rate_limiter, dynamic_scraper)
+                result = await _scrape_url_pipeline(client, item.url, rate_limiter, dynamic_scraper)
+                result.crawl_depth = item.depth
+                result.parent_url = item.parent_url
+                result.root_url = item.root_url or item.url
+            except Exception as exc:
+                result = _FetchResult(
+                    url=item.url,
+                    error=str(exc)[:200] or type(exc).__name__,
+                    status="failed",
+                    crawl_depth=item.depth,
+                    parent_url=item.parent_url,
+                    root_url=item.root_url or item.url,
+                )
+                logger.exception("Scrape worker failed unexpectedly | url=%s", item.url)
+            finally:
                 async with result_lock:
                     results.append(result)
-            finally:
                 queue.task_done()
 
-    worker_count = min(max(max_concurrent, 1), len(urls))
+    worker_count = min(max(max_concurrent, 1), len(crawl_items))
+    if worker_count == 0:
+        return []
+
     workers = [asyncio.create_task(worker()) for _ in range(worker_count)]
     await queue.join()
     await asyncio.gather(*workers, return_exceptions=True)
     results_by_url = {result.url: result for result in results}
-    return [results_by_url.get(url, _FetchResult(url=url, error="Worker did not return result")) for url in urls]
+    return [
+        results_by_url.get(
+            item.url,
+            _FetchResult(
+                url=item.url,
+                error="Worker did not return result",
+                crawl_depth=item.depth,
+                parent_url=item.parent_url,
+                root_url=item.root_url or item.url,
+            ),
+        )
+        for item in crawl_items
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -1957,6 +2230,7 @@ async def _register_url_document(
     domain: Optional[str],
     exploration_id: Optional[str],
     user_id: str,
+    metadata: Optional[dict[str, Any]] = None,
 ) -> str:
     doc_id = generate_id()
     await db.execute(
@@ -1964,11 +2238,11 @@ async def _register_url_document(
             INSERT INTO sync_source.document
                 (id, title, source_type, source_url,
                  file_data, file_name,
-                 domain, exploration_id, uploaded_by, is_processed)
+                 domain, exploration_id, uploaded_by, is_processed, metadata)
             VALUES
                 (:id, :title, 'url', :url,
                  NULL, NULL,
-                 :domain, :exploration_id, :uploaded_by, FALSE)
+                 :domain, :exploration_id, :uploaded_by, FALSE, CAST(:metadata AS JSONB))
         """),
         {
             "id": doc_id,
@@ -1977,6 +2251,7 @@ async def _register_url_document(
             "domain": domain,
             "exploration_id": exploration_id,
             "uploaded_by": user_id,
+            "metadata": json.dumps(metadata or {}, ensure_ascii=False),
         },
     )
     return doc_id
@@ -1992,8 +2267,8 @@ async def _save_scraped_chunks(
         document_id,
         raw_text,
         data_type=DATA_TYPE_SCRAPED,
-        max_content_length=_MAX_SCRAPED_CONTENT_LENGTH,
-        soft_max_chunks=_SOFT_MAX_SCRAPED_CHUNKS,
+        max_content_length=None,
+        soft_max_chunks=None,
     )
 
 
@@ -2013,15 +2288,22 @@ async def _save_successful_result(
         raise ValueError("Empty text after fetch")
 
     cleaned_length = len(clean_text(result.text))
-    if cleaned_length < _MIN_CLEANED_CHARS:
-        raise ValueError(f"Cleaned content too short ({cleaned_length} chars)")
+    if cleaned_length <= 0:
+        raise ValueError("Cleaned content empty (0 chars)")
 
+    crawl_metadata = {
+        "source_url": result.url,
+        "parent_url": result.parent_url,
+        "root_url": result.root_url or result.url,
+        "crawl_depth": result.crawl_depth,
+    }
     doc_id = await _register_url_document(
         db,
         url=result.url,
         domain=domain,
         exploration_id=exploration_id,
         user_id=user_id,
+        metadata=crawl_metadata,
     )
     chunks_created, chunk_plan = await save_chunks(db, doc_id, result.text)
     if chunks_created == 0:
@@ -2053,18 +2335,44 @@ async def scrape_and_save_source_links(
         logger.info("No chunks provided to scrape_and_save_source_links.")
         return ScrapeReport(total_attempted=0)
 
-    urls = _extract_urls_from_xlsx_chunks(xlsx_chunks)
-    report = ScrapeReport(total_attempted=len(urls))
-    if not urls:
+    seed_urls = _extract_urls_from_xlsx_chunks(xlsx_chunks)
+    crawl_items: list[_CrawlItem] = []
+    visited_urls: set[str] = set()
+
+    for seed_url in seed_urls:
+        normalized_url = _normalize_url(seed_url)
+        if not normalized_url or normalized_url in visited_urls:
+            continue
+        visited_urls.add(normalized_url)
+        crawl_items.append(_CrawlItem(url=normalized_url, depth=0, root_url=normalized_url))
+
+    report = ScrapeReport(total_attempted=len(crawl_items))
+    if not crawl_items:
         logger.info("No valid Source Link URLs found in chunks.")
         return report
 
     max_concurrent = min(max(max_concurrent, 1), _MAX_CONCURRENT)
-    total_batches = (len(urls) + _FETCH_BATCH - 1) // _FETCH_BATCH
+    total_batches = (len(crawl_items) + _FETCH_BATCH - 1) // _FETCH_BATCH
+    # Seed URLs are user-provided and should not be dropped by child-crawl caps.
+    child_url_budget = _MAX_DISCOVERED_CHILD_URLS
+    if _MAX_TOTAL_CRAWLED_URLS > 0:
+        child_url_budget = min(
+            child_url_budget,
+            max(_MAX_TOTAL_CRAWLED_URLS - len(crawl_items), 0),
+        )
+    discovered_child_urls = 0
     logger.info(
-        "Scrape started | total_urls=%d | concurrency=%d | dynamic_concurrency=%d | "
-        "batches=%d | dynamic_enabled=%s | domain=%s",
-        len(urls),
+        "Scrape started | seed_urls=%d | queued_urls=%d | max_depth=%d | "
+        "max_child_links_per_page=%d | max_discovered_child_urls=%d | "
+        "max_total_crawled_urls=%d | child_url_budget=%d | concurrency=%d | "
+        "dynamic_concurrency=%d | batches=%d | dynamic_enabled=%s | domain=%s",
+        len(seed_urls),
+        len(crawl_items),
+        _MAX_CRAWL_DEPTH,
+        _MAX_CHILD_LINKS_PER_PAGE,
+        _MAX_DISCOVERED_CHILD_URLS,
+        _MAX_TOTAL_CRAWLED_URLS,
+        child_url_budget,
         max_concurrent,
         _MAX_DYNAMIC_CONCURRENT,
         total_batches,
@@ -2088,14 +2396,24 @@ async def scrape_and_save_source_links(
                 max_keepalive_connections=max_concurrent,
             ),
         ) as client:
-        for batch_start in range(0, len(urls), _FETCH_BATCH):
-            batch_urls = urls[batch_start : batch_start + _FETCH_BATCH]
-            batch_num = batch_start // _FETCH_BATCH + 1
-            logger.info("Batch %d/%d fetching | urls=%d", batch_num, total_batches, len(batch_urls))
+        cursor = 0
+        batch_num = 0
+        while cursor < len(crawl_items):
+            batch_items = crawl_items[cursor : cursor + _FETCH_BATCH]
+            cursor += len(batch_items)
+            batch_num += 1
+            total_batches = (len(crawl_items) + _FETCH_BATCH - 1) // _FETCH_BATCH
+            logger.info(
+                "Batch %d/%d fetching | urls=%d | queued_total=%d",
+                batch_num,
+                total_batches,
+                len(batch_items),
+                len(crawl_items),
+            )
 
             fetch_results = await _scrape_batch(
                 client,
-                batch_urls,
+                batch_items,
                 max_concurrent=max_concurrent,
                 dynamic_scraper=dynamic_scraper,
                 rate_limiter=rate_limiter,
@@ -2106,6 +2424,7 @@ async def scrape_and_save_source_links(
             batch_skipped = 0
             batch_low_quality = 0
             batch_dynamic_used = 0
+            batch_children_queued = 0
             for result in fetch_results:
                 event = URLScrapeLog(
                     url=result.url,
@@ -2126,6 +2445,9 @@ async def scrape_and_save_source_links(
                     quality_label=result.quality_label,
                     dynamic_used=result.dynamic_used,
                     dynamic_success=result.dynamic_success,
+                    crawl_depth=result.crawl_depth,
+                    parent_url=result.parent_url,
+                    root_url=result.root_url,
                 )
                 if result.dynamic_used:
                     batch_dynamic_used += 1
@@ -2217,6 +2539,37 @@ async def scrape_and_save_source_links(
                     report.add_success()
                     batch_ok += 1
                     log_metrics(logging.INFO, event)
+
+                    if result.crawl_depth < _MAX_CRAWL_DEPTH:
+                        root_url = result.root_url or result.url
+                        child_links = _extract_internal_links(result.url, result.raw_html, root_url)
+                        queued_for_parent = 0
+                        for child_url in child_links:
+                            if discovered_child_urls >= child_url_budget:
+                                break
+                            if child_url in visited_urls:
+                                continue
+                            visited_urls.add(child_url)
+                            discovered_child_urls += 1
+                            crawl_items.append(
+                                _CrawlItem(
+                                    url=child_url,
+                                    depth=result.crawl_depth + 1,
+                                    parent_url=result.url,
+                                    root_url=root_url,
+                                )
+                            )
+                            report.total_attempted += 1
+                            queued_for_parent += 1
+
+                        batch_children_queued += queued_for_parent
+                        if queued_for_parent:
+                            logger.info(
+                                "Queued same-domain child links | parent_url=%s | queued=%d | depth=%d",
+                                result.url,
+                                queued_for_parent,
+                                result.crawl_depth + 1,
+                            )
                 except Exception as exc:
                     await db.rollback()
                     reason = f"DB/pipeline error: {str(exc)[:180]}"
@@ -2246,7 +2599,7 @@ async def scrape_and_save_source_links(
 
             logger.info(
                 "Batch %d/%d complete | succeeded=%d | failed=%d | skipped=%d | "
-                "low_quality=%d | dynamic_used=%d | running_total=%d/%d",
+                "low_quality=%d | dynamic_used=%d | children_queued=%d | running_total=%d/%d",
                 batch_num,
                 total_batches,
                 batch_ok,
@@ -2254,6 +2607,7 @@ async def scrape_and_save_source_links(
                 batch_skipped,
                 batch_low_quality,
                 batch_dynamic_used,
+                batch_children_queued,
                 report.total_succeeded + report.total_failed + report.skipped_blocklisted + report.skipped_low_value,
                 report.total_attempted,
             )
