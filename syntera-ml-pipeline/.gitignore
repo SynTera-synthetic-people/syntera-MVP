@@ -1,6 +1,6 @@
 # ML Models (too large for git)
-models/saved/*.joblib
-models/saved/*.pkl
+**/*.joblib
+**/*.pkl
 data/*.csv
 data/*.parquet
 

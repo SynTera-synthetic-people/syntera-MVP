@@ -8,6 +8,7 @@ import time
 
 from app.services.query_router import route_query, QueryType
 from app.rag.test_rag import generate_answer
+from app.ml.predictor import predict_user_behavior, VALID_DOMAINS
 
 router = APIRouter(prefix="/insights", tags=["insights"])
 
@@ -83,27 +84,35 @@ async def query_insights(request: QueryRequest):
                 processing_time=time.time() - start_time
             )
         
-        # ML Path (placeholder for now - TODO: integrate ML models)
+        # ML Path
         else:
             print(f"🤖 Routing to ML: {request.query}")
-            
+
             if not request.user_id:
                 raise HTTPException(
                     status_code=400,
                     detail="user_id required for ML predictions"
                 )
-            
-            # TODO: Call actual ML prediction
-            # from app.ml.predict import predict_user_behavior
-            # ml_result = predict_user_behavior(request.user_id, request.domain)
-            
-            # Placeholder response
+
+            domain = (request.domain or "").lower() or None
+            if domain not in VALID_DOMAINS:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"A valid domain is required for ML predictions. "
+                           f"Pass one of: {', '.join(sorted(VALID_DOMAINS))}"
+                )
+
+            try:
+                ml_result = predict_user_behavior(request.user_id, domain)
+            except NotImplementedError as e:
+                raise HTTPException(status_code=501, detail=str(e))
+
             return InsightsResponse(
                 query=request.query,
                 route="ml",
-                answer=f"ML prediction for user {request.user_id}: Based on behavioral patterns, the user will likely order 2-3 times next week with 82% confidence. (Note: This is a placeholder - ML integration pending)",
-                prediction=2.5,
-                confidence=0.82,
+                answer=ml_result["explanation"],
+                prediction=ml_result["prediction"],
+                confidence=ml_result["confidence"],
                 processing_time=time.time() - start_time
             )
             
@@ -120,10 +129,16 @@ async def health_check():
     """
     Check system health
     """
+    from app.ml.predictor import MODELS_SAVED_DIR
+    import os
+    ml_ready = os.path.isdir(MODELS_SAVED_DIR) and any(
+        f.endswith(".joblib") for f in os.listdir(MODELS_SAVED_DIR)
+    )
     return {
         "status": "healthy",
         "rag_available": True,
-        "ml_available": False,  # TODO: Change to True when ML integrated
+        "ml_available": ml_ready,
+        "ml_note": "DB feature extraction pending — models loaded, predictions need user features",
         "timestamp": time.time()
     }
 
