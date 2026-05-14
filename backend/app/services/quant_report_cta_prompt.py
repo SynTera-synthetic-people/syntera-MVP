@@ -432,7 +432,7 @@ Write like a senior researcher explaining findings to a brand manager over coffe
 # 5. CTA 3: BEHAVIORAL ARCHAEOLOGY OUTPUT (NARRATIVE)
 When the user clicks the BEHAVIORAL_ARCHAEOLOGY CTA, generate a behavioral excavation narrative that reveals what the numbers hide — told through human stories, not statistical outputs.
 5.1 Output Architecture
-The Behavioral Archaeology output follows a strict 10-section narrative structure. Every section is mandatory. Every section is a story, not a data table.
+The Behavioral Archaeology output follows a strict 11-section narrative structure. Every section is mandatory. Every section is a story, not a data table.
 LANGUAGE REGISTER CONTROL (ANTI-JARGON, applies to ALL BA sections): Same rules as DI. Write like a senior researcher, not a consultant. Plain language. No jargon. Every insight must pass the “would a product manager immediately know what to do?” test. Banned phrases apply here too. Sentence length: average 15-20 words, max 30.
 ---
 ### Section BA-1: The Say-Do Gap

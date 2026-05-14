@@ -82,6 +82,15 @@ const AllInterviewsPreviewModal = ({
     refetchReportStatus();
   };
 
+  const handleDownloadTranscripts = async () => {
+    try {
+      await transcriptsMutation.mutateAsync();
+    } catch (downloadError) {
+      const detail = await getAxiosErrorMessage(downloadError, 'Failed to download transcripts. Please try again.');
+      window.alert(detail);
+    }
+  };
+
   const toggleSection = (sectionIndex) => {
     setExpandedSections((prev) => ({
       ...prev,
@@ -262,7 +271,7 @@ const AllInterviewsPreviewModal = ({
             </div>
             <div className="flex items-center gap-2 flex-wrap justify-end">
               <button
-                onClick={() => transcriptsMutation.mutate()}
+                onClick={handleDownloadTranscripts}
                 disabled={!previewData?.data || transcriptsMutation.isPending}
                 className="flex items-center gap-2 px-3 py-2 border border-cyan-500 text-cyan-600 dark:text-cyan-400 rounded-lg font-medium text-sm hover:bg-cyan-50 dark:hover:bg-cyan-900/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
