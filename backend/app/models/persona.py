@@ -90,3 +90,7 @@ class Persona(SQLModel, table=True):
     # Lifecycle: "draft" (traits only, no AI) | "calibrated" (AI-enriched)
     # None means existing/legacy calibrated personas
     calibration_status: Optional[str] = Field(default=None)
+
+    # Action-data linkage for ML ground-truth in reports
+    subject_key: Optional[str] = Field(default=None)   # SHA-256 from sync_action.record
+    ml_domain: Optional[str] = Field(default=None)     # ecom | food | mobility | finance

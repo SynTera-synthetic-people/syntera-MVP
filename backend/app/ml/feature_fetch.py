@@ -30,10 +30,33 @@ DOMAIN_PLATFORMS = {
     "mobility": ("uber", "ola"),
 }
 
+# source_category values inside data->payload->>'source_category'
+DOMAIN_CATEGORIES = {
+    "ecom":     ("ecommerce", "e-commerce", "shopping", "retail"),
+    "finance":  ("financial", "finance", "banking", "payment"),
+    "food":     ("food", "food_delivery", "food delivery", "restaurant"),
+    "mobility": ("mobility", "ride", "ride_sharing", "ride-sharing", "transport"),
+}
+
+
+def _domain_filter_sql(domain: str) -> tuple[str, list[str]]:
+    """
+    Return (sql_fragment, values_list) that matches records belonging to a domain
+    via EITHER source_name (platform list) OR source_category (category list).
+    """
+    platforms = DOMAIN_PLATFORMS[domain]
+    categories = DOMAIN_CATEGORIES[domain]
+    all_values = list(platforms) + list(categories)
+    placeholders = ", ".join(f"'{v}'" for v in all_values)
+    sql = f"""(
+        LOWER(data->'payload'->>'source_name')     IN ({placeholders})
+        OR LOWER(data->'payload'->>'source_category') IN ({placeholders})
+    )"""
+    return sql, all_values
+
 
 def _fetch_transactions(subject_key: str, domain: str) -> pd.DataFrame:
-    platforms = DOMAIN_PLATFORMS[domain]
-    placeholders = ", ".join(f"'{p}'" for p in platforms)
+    domain_filter, _ = _domain_filter_sql(domain)
 
     query = text(f"""
         SELECT
@@ -59,7 +82,7 @@ def _fetch_transactions(subject_key: str, domain: str) -> pd.DataFrame:
             CAST(COALESCE(data->'payload'->>'deliveryFee', '0') AS float) AS discount_applied
         FROM sync_action.record
         WHERE subject_key = :subject_key
-          AND LOWER(data->'payload'->>'source_name') IN ({placeholders})
+          AND {domain_filter}
     """)
 
     with _get_engine().connect() as conn:
@@ -151,13 +174,7 @@ def _get_features_sync(subject_key: str, domain: str) -> dict:
 
     if len(df) == 0:
         raise ValueError(
-            f"No transactions found for subject_key='{subject_key}' in domain='{domain}'. "
-            f"Make sure the subject_key is correct and data has been synced."
-        )
-    if len(df) < 5:
-        raise ValueError(
-            f"Only {len(df)} transactions found for this user in domain='{domain}'. "
-            f"Minimum 5 required for a reliable prediction."
+            f"No transactions found for subject_key='{subject_key}' in domain='{domain}'."
         )
 
     return _compute_features(df, subject_key, domain)
@@ -169,3 +186,71 @@ async def get_user_features(subject_key: str, domain: str) -> dict:
     so the FastAPI event loop is not blocked.
     """
     return await asyncio.to_thread(_get_features_sync, subject_key, domain)
+
+
+def _find_subject_key_sync(workspace_id: str, domain: str, min_tx: int = 1) -> str | None:
+    """
+    Return the subject_key with the most qualifying transactions for this
+    workspace + domain combo.  Returns None if no key meets min_tx threshold.
+    Matches by EITHER source_name (platform) OR source_category (category).
+    """
+    domain_filter, _ = _domain_filter_sql(domain)
+
+    query = text(f"""
+        SELECT subject_key, COUNT(*) AS tx_count
+        FROM sync_action.record
+        WHERE workspace_id = :workspace_id
+          AND subject_key IS NOT NULL
+          AND {domain_filter}
+          AND (
+              data->'payload'->>'order_time'        IS NOT NULL OR
+              data->'payload'->>'pickupTime'        IS NOT NULL OR
+              data->'payload'->>'receivedDate'      IS NOT NULL OR
+              data->'payload'->>'transaction_date'  IS NOT NULL
+          )
+        GROUP BY subject_key
+        HAVING COUNT(*) >= :min_tx
+        ORDER BY tx_count DESC
+        LIMIT 1
+    """)
+
+    print(f"[ML:find_subject_key] workspace={workspace_id!r} domain={domain!r} min_tx={min_tx}")
+    with _get_engine().connect() as conn:
+        row = conn.execute(query, {"workspace_id": workspace_id, "min_tx": min_tx}).fetchone()
+
+    if row:
+        print(f"[ML:find_subject_key] ✓ found subject_key={row[0]!r} tx_count={row[1]}")
+        return row[0]
+
+    # Workspace has no matching data — fallback: search across ALL workspaces
+    print(f"[ML:find_subject_key] ✗ no data in workspace={workspace_id!r}, trying global fallback")
+    fallback_q = text(f"""
+        SELECT subject_key, COUNT(*) AS tx_count
+        FROM sync_action.record
+        WHERE subject_key IS NOT NULL
+          AND {domain_filter}
+          AND (
+              data->'payload'->>'order_time'        IS NOT NULL OR
+              data->'payload'->>'pickupTime'        IS NOT NULL OR
+              data->'payload'->>'receivedDate'      IS NOT NULL OR
+              data->'payload'->>'transaction_date'  IS NOT NULL
+          )
+        GROUP BY subject_key
+        HAVING COUNT(*) >= :min_tx
+        ORDER BY tx_count DESC
+        LIMIT 1
+    """)
+    with _get_engine().connect() as conn2:
+        fallback_row = conn2.execute(fallback_q, {"min_tx": min_tx}).fetchone()
+
+    if fallback_row:
+        print(f"[ML:find_subject_key] ✓ global fallback found subject_key={fallback_row[0]!r} tx_count={fallback_row[1]}")
+        return fallback_row[0]
+
+    print(f"[ML:find_subject_key] ✗ no data in any workspace for domain={domain!r}")
+    return None
+
+
+async def find_subject_key(workspace_id: str, domain: str, min_tx: int = 1) -> str | None:
+    """Async wrapper — find best subject_key for workspace+domain."""
+    return await asyncio.to_thread(_find_subject_key_sync, workspace_id, domain, min_tx)

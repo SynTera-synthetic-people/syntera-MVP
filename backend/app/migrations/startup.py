@@ -510,6 +510,8 @@ async def _repair_persona_schema(conn: AsyncConnection) -> None:
         "calibration_confidence INTEGER",
         "parent_persona_id VARCHAR",
         "calibration_status VARCHAR",
+        "subject_key VARCHAR",
+        "ml_domain VARCHAR",
     ):
         await ensure_column(conn, "persona", column)
     await _exec(

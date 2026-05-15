@@ -51,8 +51,8 @@ async def query_insights(request: QueryRequest):
     """
     start_time = time.time()
     
-    # Route query
-    query_type = route_query(request.query, request.user_id)
+    # Route based on transaction count (≥5 → ML, else → RAG)
+    query_type = await route_query(request.user_id, request.domain)
     
     try:
         # RAG Path

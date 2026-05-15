@@ -83,14 +83,15 @@ def search_qdrant(
     # Don't use domain filter for now (all documents are 'general')
     query_filter = None
     
-    # Search Qdrant
-    search_results = qdrant_client.query_points(
+    # Search Qdrant (qdrant-client 1.7.x — use .search(), not .query_points())
+    search_results = qdrant_client.search(
         collection_name=settings.QDRANT_COLLECTION_NAME,
-        query=query_vector,
+        query_vector=query_vector,
         query_filter=query_filter,
         limit=top_k,
-        score_threshold=score_threshold
-    ).points
+        score_threshold=score_threshold,
+        with_payload=True,
+    )
     
     # Format results
     results = []
