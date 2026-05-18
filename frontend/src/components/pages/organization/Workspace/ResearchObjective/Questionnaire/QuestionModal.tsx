@@ -14,91 +14,91 @@ export type QuestionType =
   | 'text'                         // E1 Short Text
   | 'essay'                        // E2 Long Text / Essay
   | 'number'                       // E3 Numeric Input (Integer)
-  | 'number_decimal'               // E4 Numeric Input (Decimal / Currency / %)  ← NEW
+  | 'number_decimal'               // E4 Numeric Input (Decimal / Currency / %)  
   | 'date_picker'                  // E5 Date / Time Picker
-  | 'validated_input'              // E6 Validated Format Input                  ← NEW
+  | 'validated_input'              // E6 Validated Format Input                  
   | 'auto_suggest'                 // (platform-specific auto-suggest)
   // Single-Choice Selection
   | 'single_select'                // A1 Radio-Button Single Select
-  | 'button_single_select'         // A3 Button Single Select                    ← NEW
-  | 'image_single_select'          // A4 Image Single Select                     ← NEW
-  | 'binary_yes_no'                // A5 Binary Yes / No                         ← NEW
+  | 'button_single_select'         // A3 Button Single Select                    
+  | 'image_single_select'          // A4 Image Single Select                     
+  | 'binary_yes_no'                // A5 Binary Yes / No                         
   | 'dropdown'                     // A2 Dropdown Menu
   // Multi-Choice Selection
   | 'multi_select'                 // B1 Checkbox Multi-Select
-  | 'button_multi_select'          // B2 Button Multi-Select                     ← NEW
-  | 'image_multi_select'           // B3 Image Multi-Select                      ← NEW
-  | 'top_n_select'                 // B4 Top-N Selection                         ← NEW
-  | 'constant_n_select'            // B5 Constant-N Selection                    ← NEW
+  | 'button_multi_select'          // B2 Button Multi-Select                     
+  | 'image_multi_select'           // B3 Image Multi-Select                      
+  | 'top_n_select'                 // B4 Top-N Selection                         
+  | 'constant_n_select'            // B5 Constant-N Selection                    
   // Grid / Matrix
   | 'single_select_grid'           // C1 Single-Select Grid
-  | 'multi_select_grid'            // C2 Multi-Select Grid                       ← NEW
-  | 'mixed_format_grid'            // C3 Mixed-Format Grid                       ← NEW
-  | 'bipolar_grid'                 // C4 Bipolar Grid / Semantic Differential     ← NEW
+  | 'multi_select_grid'            // C2 Multi-Select Grid                       
+  | 'mixed_format_grid'            // C3 Mixed-Format Grid                       
+  | 'bipolar_grid'                 // C4 Bipolar Grid / Semantic Differential     
   | 'this_or_that'                 // C5 This-or-That / Forced Bipolar
-  | 'side_by_side_grid'            // C6 Side-By-Side Comparison Grid            ← NEW
+  | 'side_by_side_grid'            // C6 Side-By-Side Comparison Grid            
   // Rating Scales
-  | 'likert_scale'                 // D1 Likert Agreement Scale                  ← NEW
-  | 'importance_scale'             // D2 Importance Scale                        ← NEW
-  | 'satisfaction_scale'           // D3 Satisfaction / Performance Scale        ← NEW
-  | 'frequency_scale'              // D4 Frequency Scale                         ← NEW
+  | 'likert_scale'                 // D1 Likert Agreement Scale                  
+  | 'importance_scale'             // D2 Importance Scale                        
+  | 'satisfaction_scale'           // D3 Satisfaction / Performance Scale        
+  | 'frequency_scale'              // D4 Frequency Scale                         
   | 'star_rating'                  // D5 Star Rating
-  | 'emoji_scale'                  // D6 Emoji / Smiley Scale                    ← NEW
+  | 'emoji_scale'                  // D6 Emoji / Smiley Scale                    
   | 'slider'                       // D7 Slider (Discrete)
-  | 'slider_continuous'            // D8 Slider (Continuous / Decimal)           ← NEW
-  | 'vas_scale'                    // D9 Visual Analog Scale (VAS)               ← NEW
-  | 'nps'                          // D10 Net Promoter Score                     ← NEW
+  | 'slider_continuous'            // D8 Slider (Continuous / Decimal)           
+  | 'vas_scale'                    // D9 Visual Analog Scale (VAS)               
+  | 'nps'                          // D10 Net Promoter Score                     
   | 'button_rating'                // D11 Numeric Single-Row Rating
   | 'rating_scale'                 // (grid-style rating — existing)
   | 'card_rating'                  // (card drag rating — existing)
   | 'slider_rating'                // (multi-slider rating — existing)
   // Allocation / Summation
-  | 'constant_sum'                 // F1 Constant Sum                            ← NEW
+  | 'constant_sum'                 // F1 Constant Sum                            
   | 'autosum'                      // F2 Autosum / Running Total
-  | 'chip_allocation'              // F3 Chip / Token Allocation                 ← NEW
-  | 'sum_locked_sliders'           // F4 Sum-Locked Sliders                      ← NEW
+  | 'chip_allocation'              // F3 Chip / Token Allocation                 
+  | 'sum_locked_sliders'           // F4 Sum-Locked Sliders                      
   // Ranking
   | 'rank_sort'                    // G1 Full Rank Sort
-  | 'top_n_ranking'                // G2 Top-N Ranking                           ← NEW
-  | 'forced_distribution_ranking'  // G3 Forced Distribution Ranking             ← NEW
-  | 'pairwise_comparison'          // G4 Pairwise Comparison                     ← NEW
+  | 'top_n_ranking'                // G2 Top-N Ranking                           
+  | 'forced_distribution_ranking'  // G3 Forced Distribution Ranking             
+  | 'pairwise_comparison'          // G4 Pairwise Comparison                     
   // Trade-Off and Choice Modeling
   | 'maxdiff'                      // H1 MaxDiff / Best-Worst Scaling
-  | 'pairwise_modeled'             // H2 Pairwise Comparison (Modeled)           ← NEW
-  | 'cbc_conjoint'                 // H3 Choice-Based Conjoint (CBC)             ← NEW
-  | 'acbc_conjoint'                // H4 Adaptive Conjoint (ACBC)               ← NEW
-  | 'menu_conjoint'                // H5 Menu-Based Conjoint (MBC)               ← NEW
+  | 'pairwise_modeled'             // H2 Pairwise Comparison (Modeled)           
+  | 'cbc_conjoint'                 // H3 Choice-Based Conjoint (CBC)             
+  | 'acbc_conjoint'                // H4 Adaptive Conjoint (ACBC)               
+  | 'menu_conjoint'                // H5 Menu-Based Conjoint (MBC)               
   // Sorting and Classification
   | 'card_sort'                    // I1 Card Sort (Closed)
-  | 'card_sort_open'               // I2 Card Sort (Open)                        ← NEW
-  | 'q_sort'                       // I3 Q-Sort                                  ← NEW
-  | 'drag_classify'                // I4 Drag-to-Classify (General)              ← NEW
+  | 'card_sort_open'               // I2 Card Sort (Open)                        
+  | 'q_sort'                       // I3 Q-Sort                                  
+  | 'drag_classify'                // I4 Drag-to-Classify (General)              
   // Spatial and Visual Input
   | 'image_map'                    // J1 Image Hotspot
-  | 'heatmap'                      // J2 Heatmap (Free-Form Click)               ← NEW
-  | 'map_pin'                      // J3 Map Pin / Geolocation                   ← NEW
-  | 'text_highlight'               // J4 Text Highlight / Annotation             ← NEW
+  | 'heatmap'                      // J2 Heatmap (Free-Form Click)               
+  | 'map_pin'                      // J3 Map Pin / Geolocation                   
+  | 'text_highlight'               // J4 Text Highlight / Annotation             
   // Media Capture and Stimulus
   | 'image_upload'                 // K1 Image Upload
-  | 'audio_capture'                // K2 Audio Capture                           ← NEW
-  | 'video_capture'                // K3 Video Capture (Testimonial)             ← NEW
+  | 'audio_capture'                // K2 Audio Capture                           
+  | 'video_capture'                // K3 Video Capture (Testimonial)             
   | 'video_player'                 // K4 Audio / Video Stimulus Player
   | 'video_player_embed'           // K4 Embed variant
   | 'page_turner'                  // (platform-specific)
-  | 'signature_capture'            // K5 Signature Capture                       ← NEW
+  | 'signature_capture'            // K5 Signature Capture                       
   // Special and Advanced
-  | 'ai_probed_open'               // L1 AI-Probed Open-End                      ← NEW
-  | 'chatbot_dialog'               // L2 Chatbot / Multi-Turn Dialog             ← NEW
-  | 'iat'                          // L3 Implicit Association Test               ← NEW
-  | 'reaction_time'                // L4 Reaction-Time Task                      ← NEW
-  | 'calculator_input'             // L5 Calculator / Formula Input              ← NEW
+  | 'ai_probed_open'               // L1 AI-Probed Open-End                      
+  | 'chatbot_dialog'               // L2 Chatbot / Multi-Turn Dialog             
+  | 'iat'                          // L3 Implicit Association Test               
+  | 'reaction_time'                // L4 Reaction-Time Task                      
+  | 'calculator_input'             // L5 Calculator / Formula Input              
   // Structural / Display
   | 'section'                      // M1 Descriptive Content
   | 'note'                         // M1 Note variant
-  | 'stimulus_display'             // M2 Stimulus Display                        ← NEW
+  | 'stimulus_display'             // M2 Stimulus Display                        
   | 'exec'                         // (platform routing block)
   | 'import_data'                  // (background data import)
-  | 'captcha_check';               // M5 Captcha / Quality Check                 ← NEW
+  | 'captcha_check';               // M5 Captcha / Quality Check                 
 
 interface TypeMeta {
   label: string;
@@ -108,94 +108,94 @@ interface TypeMeta {
 
 export const TYPE_META: Record<QuestionType, TypeMeta> = {
   // ── Open-End ───────────────────────────────────────────────────────────────
-  text:               { label: 'Short Text',                        tooltip: 'Single-line open-ended text response. Best for names, short phrases, or brand mentions.', instructionPlaceholder: 'Please be as precise as possible' },
-  essay:              { label: 'Long Text / Essay',                 tooltip: 'Multi-line text area for longer open-ended responses. Plan AI-assisted coding for large volumes.', instructionPlaceholder: 'Please be as detailed as possible' },
-  number:             { label: 'Number (Integer)',                  tooltip: 'Numeric field accepting whole numbers only. Always set a sensible min/max range.', instructionPlaceholder: 'Please enter a whole number' },
-  number_decimal:     { label: 'Number (Decimal / Currency / %)',   tooltip: 'Numeric field accepting decimals. Use for spend, salary, share-of-wallet, or percentage questions.', instructionPlaceholder: 'Please enter a numeric value' },
-  date_picker:        { label: 'Date / Time Picker',               tooltip: 'Structured date or time selection via a calendar or clock widget.', instructionPlaceholder: 'Select a date' },
-  validated_input:    { label: 'Validated Format Input',           tooltip: 'Text field with format validation — covers email, phone, URL, postal code, and address. Strong PII implications.', instructionPlaceholder: 'Please enter a valid value' },
-  auto_suggest:       { label: 'Auto Suggest',                     tooltip: 'Participants type and receive auto-suggested answers from an uploaded source file.', instructionPlaceholder: 'Be specific' },
+  text: { label: 'Short Text', tooltip: 'Single-line open-ended text response. Best for names, short phrases, or brand mentions.', instructionPlaceholder: 'Please be as precise as possible' },
+  essay: { label: 'Long Text / Essay', tooltip: 'Multi-line text area for longer open-ended responses. Plan AI-assisted coding for large volumes.', instructionPlaceholder: 'Please be as detailed as possible' },
+  number: { label: 'Number (Integer)', tooltip: 'Numeric field accepting whole numbers only. Always set a sensible min/max range.', instructionPlaceholder: 'Please enter a whole number' },
+  number_decimal: { label: 'Number (Decimal / Currency / %)', tooltip: 'Numeric field accepting decimals. Use for spend, salary, share-of-wallet, or percentage questions.', instructionPlaceholder: 'Please enter a numeric value' },
+  date_picker: { label: 'Date / Time Picker', tooltip: 'Structured date or time selection via a calendar or clock widget.', instructionPlaceholder: 'Select a date' },
+  validated_input: { label: 'Validated Format Input', tooltip: 'Text field with format validation — covers email, phone, URL, postal code, and address. Strong PII implications.', instructionPlaceholder: 'Please enter a valid value' },
+  auto_suggest: { label: 'Auto Suggest', tooltip: 'Participants type and receive auto-suggested answers from an uploaded source file.', instructionPlaceholder: 'Be specific' },
   // ── Single-Choice Selection ────────────────────────────────────────────────
-  single_select:      { label: 'Single Select',                    tooltip: 'Default single-answer format with radio buttons. Randomize options unless the list is ordered.', instructionPlaceholder: 'Select one' },
-  button_single_select: { label: 'Button Single Select',           tooltip: 'Options as large tappable tiles. Mobile-optimised. Best for 2–8 short options.', instructionPlaceholder: 'Select one' },
-  image_single_select: { label: 'Image Single Select',             tooltip: 'Options are images; respondent taps one. Use for logo tests, packaging preference, concept selection.', instructionPlaceholder: 'Select the option that best applies' },
-  binary_yes_no:      { label: 'Binary Yes / No',                  tooltip: 'Exactly two options (Yes / No or True / False). Add a "Don\'t know" option if uncertainty is plausible.', instructionPlaceholder: 'Select one' },
-  dropdown:           { label: 'Dropdown',                         tooltip: 'Single-answer from a collapsed dropdown list. Best for long fixed lists (country, industry).', instructionPlaceholder: 'Select one' },
+  single_select: { label: 'Single Select', tooltip: 'Default single-answer format with radio buttons. Randomize options unless the list is ordered.', instructionPlaceholder: 'Select one' },
+  button_single_select: { label: 'Button Single Select', tooltip: 'Options as large tappable tiles. Mobile-optimised. Best for 2–8 short options.', instructionPlaceholder: 'Select one' },
+  image_single_select: { label: 'Image Single Select', tooltip: 'Options are images; respondent taps one. Use for logo tests, packaging preference, concept selection.', instructionPlaceholder: 'Select the option that best applies' },
+  binary_yes_no: { label: 'Binary Yes / No', tooltip: 'Exactly two options (Yes / No or True / False). Add a "Don\'t know" option if uncertainty is plausible.', instructionPlaceholder: 'Select one' },
+  dropdown: { label: 'Dropdown', tooltip: 'Single-answer from a collapsed dropdown list. Best for long fixed lists (country, industry).', instructionPlaceholder: 'Select one' },
   // ── Multi-Choice Selection ─────────────────────────────────────────────────
-  multi_select:       { label: 'Multi-Select',                     tooltip: 'Respondent checks all options that apply. Add a "None of these" exclusive option for clean data.', instructionPlaceholder: 'Select all that apply' },
-  button_multi_select: { label: 'Button Multi-Select',             tooltip: 'Multi-select rendered as tappable tiles. Mobile-first. Up to 10 options with short labels.', instructionPlaceholder: 'Tap all that apply' },
-  image_multi_select: { label: 'Image Multi-Select',               tooltip: 'Multi-answer image select. Respondent taps all images that apply. Normalise image quality.', instructionPlaceholder: 'Tap all that apply' },
-  top_n_select:       { label: 'Top-N Selection',                  tooltip: 'Multi-select capped at a maximum N (e.g. pick top 3). Forces prioritisation without full ranking burden.', instructionPlaceholder: 'Select your top options' },
-  constant_n_select:  { label: 'Constant-N Selection',             tooltip: 'Multi-select requiring exactly N selections. Higher respondent friction than Top-N — use only when precise count is needed.', instructionPlaceholder: 'Select exactly the required number' },
+  multi_select: { label: 'Multi-Select', tooltip: 'Respondent checks all options that apply. Add a "None of these" exclusive option for clean data.', instructionPlaceholder: 'Select all that apply' },
+  button_multi_select: { label: 'Button Multi-Select', tooltip: 'Multi-select rendered as tappable tiles. Mobile-first. Up to 10 options with short labels.', instructionPlaceholder: 'Tap all that apply' },
+  image_multi_select: { label: 'Image Multi-Select', tooltip: 'Multi-answer image select. Respondent taps all images that apply. Normalise image quality.', instructionPlaceholder: 'Tap all that apply' },
+  top_n_select: { label: 'Top-N Selection', tooltip: 'Multi-select capped at a maximum N (e.g. pick top 3). Forces prioritisation without full ranking burden.', instructionPlaceholder: 'Select your top options' },
+  constant_n_select: { label: 'Constant-N Selection', tooltip: 'Multi-select requiring exactly N selections. Higher respondent friction than Top-N — use only when precise count is needed.', instructionPlaceholder: 'Select exactly the required number' },
   // ── Grid / Matrix ──────────────────────────────────────────────────────────
-  single_select_grid: { label: 'Single Select Grid',               tooltip: 'Each row is a sub-question; columns are scale points; one selection per row. Randomise rows to reduce straight-lining.', instructionPlaceholder: 'Select one per row' },
-  multi_select_grid:  { label: 'Multi-Select Grid',                tooltip: 'Each row is an attribute; each column is an entity. Respondent ticks every cell that applies. Add a "None" column.', instructionPlaceholder: 'Tick all that apply in each row' },
-  mixed_format_grid:  { label: 'Mixed-Format Grid',                tooltip: 'Different response types per column (e.g. rating + yes/no + open-end). Limit to 3 columns and 5 rows on mobile.', instructionPlaceholder: 'Complete each column for every row' },
-  bipolar_grid:       { label: 'Bipolar Grid / Semantic Differential', tooltip: 'Each row has two opposing labels flanking a symmetric scale. Classical tool for brand personality and perceptual mapping.', instructionPlaceholder: 'Rate each dimension between the two poles' },
-  this_or_that:       { label: 'This or That',                     tooltip: 'Constrained bipolar scale — respondents must lean toward one of two poles on each dimension.', instructionPlaceholder: 'Please select the option you prefer between the two shown below' },
-  side_by_side_grid:  { label: 'Side-By-Side Comparison Grid',     tooltip: 'Two parallel grids comparing two entities on the same attributes. Use desktop only — breaks on mobile.', instructionPlaceholder: 'Rate both options on each dimension' },
+  single_select_grid: { label: 'Single Select Grid', tooltip: 'Each row is a sub-question; columns are scale points; one selection per row. Randomise rows to reduce straight-lining.', instructionPlaceholder: 'Select one per row' },
+  multi_select_grid: { label: 'Multi-Select Grid', tooltip: 'Each row is an attribute; each column is an entity. Respondent ticks every cell that applies. Add a "None" column.', instructionPlaceholder: 'Tick all that apply in each row' },
+  mixed_format_grid: { label: 'Mixed-Format Grid', tooltip: 'Different response types per column (e.g. rating + yes/no + open-end). Limit to 3 columns and 5 rows on mobile.', instructionPlaceholder: 'Complete each column for every row' },
+  bipolar_grid: { label: 'Bipolar Grid / Semantic Differential', tooltip: 'Each row has two opposing labels flanking a symmetric scale. Classical tool for brand personality and perceptual mapping.', instructionPlaceholder: 'Rate each dimension between the two poles' },
+  this_or_that: { label: 'This or That', tooltip: 'Constrained bipolar scale — respondents must lean toward one of two poles on each dimension.', instructionPlaceholder: 'Please select the option you prefer between the two shown below' },
+  side_by_side_grid: { label: 'Side-By-Side Comparison Grid', tooltip: 'Two parallel grids comparing two entities on the same attributes. Use desktop only — breaks on mobile.', instructionPlaceholder: 'Rate both options on each dimension' },
   // ── Rating Scales ──────────────────────────────────────────────────────────
-  likert_scale:       { label: 'Likert Agreement Scale',           tooltip: 'Symmetric agree-disagree scale (5 or 7 points) for attitude statements. Avoid for importance or satisfaction.', instructionPlaceholder: 'Select your level of agreement' },
-  importance_scale:   { label: 'Importance Scale',                 tooltip: 'Unipolar scale from "not at all important" to "critical". Pair with MaxDiff for genuine prioritisation.', instructionPlaceholder: 'Rate the importance of each item' },
+  likert_scale: { label: 'Likert Agreement Scale', tooltip: 'Symmetric agree-disagree scale (5 or 7 points) for attitude statements. Avoid for importance or satisfaction.', instructionPlaceholder: 'Select your level of agreement' },
+  importance_scale: { label: 'Importance Scale', tooltip: 'Unipolar scale from "not at all important" to "critical". Pair with MaxDiff for genuine prioritisation.', instructionPlaceholder: 'Rate the importance of each item' },
   satisfaction_scale: { label: 'Satisfaction / Performance Scale', tooltip: 'Unipolar scale from "very dissatisfied" to "very satisfied". Analyse using top-2-box scoring.', instructionPlaceholder: 'Rate your level of satisfaction' },
-  frequency_scale:    { label: 'Frequency Scale',                  tooltip: 'Ordered behavioral frequency from "never" to "always". Use time-anchored labels to reduce reference-class bias.', instructionPlaceholder: 'Select how often this applies to you' },
-  star_rating:        { label: 'Star Rating',                      tooltip: '1-to-5 ordinal scale rendered as filled stars. Familiar from e-commerce — respondents bring strong priors.', instructionPlaceholder: 'Select One' },
-  emoji_scale:        { label: 'Emoji / Smiley Scale',             tooltip: 'Ordered emoji faces from sad to happy. Best for children, low-literacy, or cross-cultural surveys. Validate rendering across devices.', instructionPlaceholder: 'Tap the face that best describes how you feel' },
-  slider:             { label: 'Slider (Discrete)',                tooltip: 'Drag-to-position rating on a horizontal track with discrete tick stops. Always hide the default thumb position.', instructionPlaceholder: 'Drag to your answer' },
-  slider_continuous:  { label: 'Slider (Continuous)',              tooltip: 'Slider with no discrete stops; captures a real-valued position. Do not over-interpret decimal precision.', instructionPlaceholder: 'Drag to any point on the scale' },
-  vas_scale:          { label: 'Visual Analog Scale (VAS)',        tooltip: 'A line with anchor labels at each end; no default thumb — a true continuum. Used in clinical research for pain and mood.', instructionPlaceholder: 'Mark a point on the line' },
-  nps:                { label: 'Net Promoter Score (NPS)',         tooltip: '0-to-10 "how likely are you to recommend" question. Always pair with an open-end follow-up for diagnostic depth.', instructionPlaceholder: 'Select a number from 0 to 10' },
-  button_rating:      { label: 'Numeric Single-Row Rating',        tooltip: 'Standalone numeric scale rendered as a row of buttons. Scale labelling matters — label all points if possible.', instructionPlaceholder: 'Select One' },
-  rating_scale:       { label: 'Rating Scale (Grid)',              tooltip: 'Grid-style rating with configurable rows and columns.', instructionPlaceholder: 'Please keep it open' },
-  card_rating:        { label: 'Card Rating',                      tooltip: 'Participants rate cards by dragging them into rating buckets.', instructionPlaceholder: 'Rate the following products by dragging cards' },
-  slider_rating:      { label: 'Slider Rating',                    tooltip: 'Multiple sliders each capturing a separate rating dimension.', instructionPlaceholder: 'Slide to rate your satisfaction' },
+  frequency_scale: { label: 'Frequency Scale', tooltip: 'Ordered behavioral frequency from "never" to "always". Use time-anchored labels to reduce reference-class bias.', instructionPlaceholder: 'Select how often this applies to you' },
+  star_rating: { label: 'Star Rating', tooltip: '1-to-5 ordinal scale rendered as filled stars. Familiar from e-commerce — respondents bring strong priors.', instructionPlaceholder: 'Select One' },
+  emoji_scale: { label: 'Emoji / Smiley Scale', tooltip: 'Ordered emoji faces from sad to happy. Best for children, low-literacy, or cross-cultural surveys. Validate rendering across devices.', instructionPlaceholder: 'Tap the face that best describes how you feel' },
+  slider: { label: 'Slider (Discrete)', tooltip: 'Drag-to-position rating on a horizontal track with discrete tick stops. Always hide the default thumb position.', instructionPlaceholder: 'Drag to your answer' },
+  slider_continuous: { label: 'Slider (Continuous)', tooltip: 'Slider with no discrete stops; captures a real-valued position. Do not over-interpret decimal precision.', instructionPlaceholder: 'Drag to any point on the scale' },
+  vas_scale: { label: 'Visual Analog Scale (VAS)', tooltip: 'A line with anchor labels at each end; no default thumb — a true continuum. Used in clinical research for pain and mood.', instructionPlaceholder: 'Mark a point on the line' },
+  nps: { label: 'Net Promoter Score (NPS)', tooltip: '0-to-10 "how likely are you to recommend" question. Always pair with an open-end follow-up for diagnostic depth.', instructionPlaceholder: 'Select a number from 0 to 10' },
+  button_rating: { label: 'Numeric Single-Row Rating', tooltip: 'Standalone numeric scale rendered as a row of buttons. Scale labelling matters — label all points if possible.', instructionPlaceholder: 'Select One' },
+  rating_scale: { label: 'Rating Scale (Grid)', tooltip: 'Grid-style rating with configurable rows and columns.', instructionPlaceholder: 'Please keep it open' },
+  card_rating: { label: 'Card Rating', tooltip: 'Participants rate cards by dragging them into rating buckets.', instructionPlaceholder: 'Rate the following products by dragging cards' },
+  slider_rating: { label: 'Slider Rating', tooltip: 'Multiple sliders each capturing a separate rating dimension.', instructionPlaceholder: 'Slide to rate your satisfaction' },
   // ── Allocation / Summation ─────────────────────────────────────────────────
-  constant_sum:       { label: 'Constant Sum',                     tooltip: 'Respondent allocates exactly 100 points (or another fixed total) across options. Limit to 5–8 options.', instructionPlaceholder: 'Allocate your points across the options — must total 100' },
-  autosum:            { label: 'Autosum / Running Total',          tooltip: 'Respondent enters numeric values per option with a live running total displayed. Total is not forced.', instructionPlaceholder: 'Enter values — a running total will be displayed' },
-  chip_allocation:    { label: 'Chip / Token Allocation',          tooltip: 'Constant sum rendered visually as draggable chips placed onto buckets. Mobile-friendly. Requires custom scripting.', instructionPlaceholder: 'Drag chips onto the options to allocate your budget' },
-  sum_locked_sliders: { label: 'Sum-Locked Sliders',               tooltip: 'Multiple sliders linked so moving one auto-adjusts others to maintain a fixed total. User-test before fielding.', instructionPlaceholder: 'Adjust sliders — the total will always equal 100%' },
+  constant_sum: { label: 'Constant Sum', tooltip: 'Respondent allocates exactly 100 points (or another fixed total) across options. Limit to 5–8 options.', instructionPlaceholder: 'Allocate your points across the options — must total 100' },
+  autosum: { label: 'Autosum / Running Total', tooltip: 'Respondent enters numeric values per option with a live running total displayed. Total is not forced.', instructionPlaceholder: 'Enter values — a running total will be displayed' },
+  chip_allocation: { label: 'Chip / Token Allocation', tooltip: 'Constant sum rendered visually as draggable chips placed onto buckets. Mobile-friendly. Requires custom scripting.', instructionPlaceholder: 'Drag chips onto the options to allocate your budget' },
+  sum_locked_sliders: { label: 'Sum-Locked Sliders', tooltip: 'Multiple sliders linked so moving one auto-adjusts others to maintain a fixed total. User-test before fielding.', instructionPlaceholder: 'Adjust sliders — the total will always equal 100%' },
   // ── Ranking ────────────────────────────────────────────────────────────────
-  rank_sort:          { label: 'Full Rank Sort',                   tooltip: 'All items must be assigned a rank position from 1 to N, no ties. Best for 4–8 items.', instructionPlaceholder: 'Rank the following brands in order of preference' },
-  top_n_ranking:      { label: 'Top-N Ranking',                   tooltip: 'Respondent ranks only the top N items from a longer list. Remaining items left unranked.', instructionPlaceholder: 'Rank your top items in order of preference' },
+  rank_sort: { label: 'Full Rank Sort', tooltip: 'All items must be assigned a rank position from 1 to N, no ties. Best for 4–8 items.', instructionPlaceholder: 'Rank the following brands in order of preference' },
+  top_n_ranking: { label: 'Top-N Ranking', tooltip: 'Respondent ranks only the top N items from a longer list. Remaining items left unranked.', instructionPlaceholder: 'Rank your top items in order of preference' },
   forced_distribution_ranking: { label: 'Forced Distribution Ranking', tooltip: 'Items distributed into fixed buckets in fixed quantities (e.g. exactly 3 in top, 4 in middle, 3 in bottom).', instructionPlaceholder: 'Place each item into the correct group' },
-  pairwise_comparison: { label: 'Pairwise Comparison',            tooltip: 'Respondent picks the preferred item from a pair, shown repeatedly. Use balanced incomplete block designs for >10 items.', instructionPlaceholder: 'Select the option you prefer' },
+  pairwise_comparison: { label: 'Pairwise Comparison', tooltip: 'Respondent picks the preferred item from a pair, shown repeatedly. Use balanced incomplete block designs for >10 items.', instructionPlaceholder: 'Select the option you prefer' },
   // ── Trade-Off and Choice Modeling ─────────────────────────────────────────
-  maxdiff:            { label: 'MaxDiff / Best-Worst Scaling',     tooltip: 'Respondent picks the best and worst from subsets of items. Design balance is critical.', instructionPlaceholder: 'Select the MOST and LEAST important feature' },
-  pairwise_modeled:   { label: 'Pairwise Comparison (Modeled)',    tooltip: 'Pairwise choices fed into a Bradley-Terry model to estimate latent preference scores across all items.', instructionPlaceholder: 'Select the option that matters more to you' },
-  cbc_conjoint:       { label: 'Choice-Based Conjoint (CBC)',      tooltip: 'Respondent picks from sets of product profiles (attribute combinations). Requires statistical design and HB estimation.', instructionPlaceholder: 'Choose the option you would most prefer, or "None"' },
-  acbc_conjoint:      { label: 'Adaptive Conjoint (ACBC)',         tooltip: 'Conjoint with an adaptive front-end customised per respondent. Best for large attribute lists (8+).', instructionPlaceholder: 'Select the option closest to your ideal' },
-  menu_conjoint:      { label: 'Menu-Based Conjoint (MBC)',        tooltip: 'Respondent builds their own bundle from a menu at given prices. Use only when real purchase context is menu-based.', instructionPlaceholder: 'Build your ideal bundle from the options below' },
+  maxdiff: { label: 'MaxDiff / Best-Worst Scaling', tooltip: 'Respondent picks the best and worst from subsets of items. Design balance is critical.', instructionPlaceholder: 'Select the MOST and LEAST important feature' },
+  pairwise_modeled: { label: 'Pairwise Comparison (Modeled)', tooltip: 'Pairwise choices fed into a Bradley-Terry model to estimate latent preference scores across all items.', instructionPlaceholder: 'Select the option that matters more to you' },
+  cbc_conjoint: { label: 'Choice-Based Conjoint (CBC)', tooltip: 'Respondent picks from sets of product profiles (attribute combinations). Requires statistical design and HB estimation.', instructionPlaceholder: 'Choose the option you would most prefer, or "None"' },
+  acbc_conjoint: { label: 'Adaptive Conjoint (ACBC)', tooltip: 'Conjoint with an adaptive front-end customised per respondent. Best for large attribute lists (8+).', instructionPlaceholder: 'Select the option closest to your ideal' },
+  menu_conjoint: { label: 'Menu-Based Conjoint (MBC)', tooltip: 'Respondent builds their own bundle from a menu at given prices. Use only when real purchase context is menu-based.', instructionPlaceholder: 'Build your ideal bundle from the options below' },
   // ── Sorting and Classification ─────────────────────────────────────────────
-  card_sort:          { label: 'Card Sort (Closed)',               tooltip: 'Items must be placed into pre-defined buckets. Limit to ~15 cards and 3–5 buckets on mobile.', instructionPlaceholder: 'Drag each card into the correct bucket' },
-  card_sort_open:     { label: 'Card Sort (Open)',                 tooltip: 'Respondent creates their own categories and assigns cards. Used for taxonomy discovery and mental model research.', instructionPlaceholder: 'Create your own groups and name them' },
-  q_sort:             { label: 'Q-Sort',                           tooltip: 'Items sorted into a fixed forced-normal distribution. Niche method for psychographic profiling.', instructionPlaceholder: 'Sort the statements into the distribution shown' },
-  drag_classify:      { label: 'Drag-to-Classify',                tooltip: 'Generic drag-and-drop for assigning items to one or more groupings. May allow multi-tagging.', instructionPlaceholder: 'Drag each item to the appropriate category' },
+  card_sort: { label: 'Card Sort (Closed)', tooltip: 'Items must be placed into pre-defined buckets. Limit to ~15 cards and 3–5 buckets on mobile.', instructionPlaceholder: 'Drag each card into the correct bucket' },
+  card_sort_open: { label: 'Card Sort (Open)', tooltip: 'Respondent creates their own categories and assigns cards. Used for taxonomy discovery and mental model research.', instructionPlaceholder: 'Create your own groups and name them' },
+  q_sort: { label: 'Q-Sort', tooltip: 'Items sorted into a fixed forced-normal distribution. Niche method for psychographic profiling.', instructionPlaceholder: 'Sort the statements into the distribution shown' },
+  drag_classify: { label: 'Drag-to-Classify', tooltip: 'Generic drag-and-drop for assigning items to one or more groupings. May allow multi-tagging.', instructionPlaceholder: 'Drag each item to the appropriate category' },
   // ── Spatial and Visual Input ───────────────────────────────────────────────
-  image_map:          { label: 'Image Hotspot',                    tooltip: 'Image with pre-defined invisible regions; respondent clicks to indicate a region of interest.', instructionPlaceholder: 'Click on the part of the image that best applies' },
-  heatmap:            { label: 'Heatmap (Free-Form Click)',        tooltip: 'Image shown; respondent clicks any pixel. Coordinates captured; aggregated heatmap shows attention patterns.', instructionPlaceholder: 'Click anywhere on the image to show where your eye is drawn' },
-  map_pin:            { label: 'Map Pin / Geolocation',            tooltip: 'Interactive map where respondent drops a pin or selects a geographic region. Provide a text search fallback.', instructionPlaceholder: 'Drop a pin on the map to indicate the location' },
-  text_highlight:     { label: 'Text Highlight / Annotation',      tooltip: 'Block of text shown; respondent highlights words or phrases to indicate a specific reaction.', instructionPlaceholder: 'Highlight any words or phrases that apply' },
+  image_map: { label: 'Image Hotspot', tooltip: 'Image with pre-defined invisible regions; respondent clicks to indicate a region of interest.', instructionPlaceholder: 'Click on the part of the image that best applies' },
+  heatmap: { label: 'Heatmap (Free-Form Click)', tooltip: 'Image shown; respondent clicks any pixel. Coordinates captured; aggregated heatmap shows attention patterns.', instructionPlaceholder: 'Click anywhere on the image to show where your eye is drawn' },
+  map_pin: { label: 'Map Pin / Geolocation', tooltip: 'Interactive map where respondent drops a pin or selects a geographic region. Provide a text search fallback.', instructionPlaceholder: 'Drop a pin on the map to indicate the location' },
+  text_highlight: { label: 'Text Highlight / Annotation', tooltip: 'Block of text shown; respondent highlights words or phrases to indicate a specific reaction.', instructionPlaceholder: 'Highlight any words or phrases that apply' },
   // ── Media Capture and Stimulus ─────────────────────────────────────────────
-  image_upload:       { label: 'Image Upload',                     tooltip: 'Respondent uploads an image from device library or captures one in-the-moment via camera.', instructionPlaceholder: 'Please upload a photo as your response' },
-  audio_capture:      { label: 'Audio Capture',                    tooltip: 'Respondent records an audio clip. Plan ASR transcription pipeline before fielding at scale.', instructionPlaceholder: 'Record a short voice message in response to the prompt' },
-  video_capture:      { label: 'Video Capture (Testimonial)',      tooltip: 'Respondent records a video response using their front-facing camera. Drop-off rates are high — provide clear consent.', instructionPlaceholder: 'Record a short video response' },
-  video_player:       { label: 'Video Player',                     tooltip: 'Pre-recorded video shown to the respondent before a downstream response question. Enforce minimum watch time.', instructionPlaceholder: 'Watch the video and answer the questions below' },
-  video_player_embed: { label: 'Video Player (YouTube / Vimeo)',   tooltip: 'Participants watch an embedded YouTube or Vimeo video. Enforce minimum view before continuing.', instructionPlaceholder: 'Watch the video and answer the questions below' },
-  page_turner:        { label: 'Page Turner',                      tooltip: 'Participants page through a set of uploaded images or pages.', instructionPlaceholder: 'Click on the part of the image you like most' },
-  signature_capture:  { label: 'Signature Capture',               tooltip: 'Touch or mouse-drawn signature on a canvas. Used for research consent flows and acknowledgement of terms.', instructionPlaceholder: 'Please sign to confirm your consent' },
+  image_upload: { label: 'Image Upload', tooltip: 'Respondent uploads an image from device library or captures one in-the-moment via camera.', instructionPlaceholder: 'Please upload a photo as your response' },
+  audio_capture: { label: 'Audio Capture', tooltip: 'Respondent records an audio clip. Plan ASR transcription pipeline before fielding at scale.', instructionPlaceholder: 'Record a short voice message in response to the prompt' },
+  video_capture: { label: 'Video Capture (Testimonial)', tooltip: 'Respondent records a video response using their front-facing camera. Drop-off rates are high — provide clear consent.', instructionPlaceholder: 'Record a short video response' },
+  video_player: { label: 'Video Player', tooltip: 'Pre-recorded video shown to the respondent before a downstream response question. Enforce minimum watch time.', instructionPlaceholder: 'Watch the video and answer the questions below' },
+  video_player_embed: { label: 'Video Player (YouTube / Vimeo)', tooltip: 'Participants watch an embedded YouTube or Vimeo video. Enforce minimum view before continuing.', instructionPlaceholder: 'Watch the video and answer the questions below' },
+  page_turner: { label: 'Page Turner', tooltip: 'Participants page through a set of uploaded images or pages.', instructionPlaceholder: 'Click on the part of the image you like most' },
+  signature_capture: { label: 'Signature Capture', tooltip: 'Touch or mouse-drawn signature on a canvas. Used for research consent flows and acknowledgement of terms.', instructionPlaceholder: 'Please sign to confirm your consent' },
   // ── Special and Advanced ───────────────────────────────────────────────────
-  ai_probed_open:     { label: 'AI-Probed Open-End',              tooltip: 'Standard open-end with an LLM-driven follow-up that probes for depth based on the initial response. Audit probe quality regularly.', instructionPlaceholder: 'Answer in your own words — follow-up questions may appear based on your response' },
-  chatbot_dialog:     { label: 'Chatbot / Multi-Turn Dialog',      tooltip: 'Entire question or section delivered as a chat conversation. Build structured validators on top of the free conversation output.', instructionPlaceholder: 'Type your replies in the chat' },
-  iat:                { label: 'Implicit Association Test (IAT)',  tooltip: 'Timed categorisation task where reaction-time differences reveal implicit attitudes. Requires trained research design.', instructionPlaceholder: 'Sort the words as quickly as possible' },
-  reaction_time:      { label: 'Reaction-Time Task',              tooltip: 'Response latency is the key measure alongside content. Use only on calibrated research platforms.', instructionPlaceholder: 'Respond as quickly as possible' },
-  calculator_input:   { label: 'Calculator / Formula Input',       tooltip: 'Field whose value is computed from other fields, or validated against a formula. Always show the live calculated result.', instructionPlaceholder: 'Enter values — totals will be calculated automatically' },
+  ai_probed_open: { label: 'AI-Probed Open-End', tooltip: 'Standard open-end with an LLM-driven follow-up that probes for depth based on the initial response. Audit probe quality regularly.', instructionPlaceholder: 'Answer in your own words — follow-up questions may appear based on your response' },
+  chatbot_dialog: { label: 'Chatbot / Multi-Turn Dialog', tooltip: 'Entire question or section delivered as a chat conversation. Build structured validators on top of the free conversation output.', instructionPlaceholder: 'Type your replies in the chat' },
+  iat: { label: 'Implicit Association Test (IAT)', tooltip: 'Timed categorisation task where reaction-time differences reveal implicit attitudes. Requires trained research design.', instructionPlaceholder: 'Sort the words as quickly as possible' },
+  reaction_time: { label: 'Reaction-Time Task', tooltip: 'Response latency is the key measure alongside content. Use only on calibrated research platforms.', instructionPlaceholder: 'Respond as quickly as possible' },
+  calculator_input: { label: 'Calculator / Formula Input', tooltip: 'Field whose value is computed from other fields, or validated against a formula. Always show the live calculated result.', instructionPlaceholder: 'Enter values — totals will be calculated automatically' },
   // ── Structural / Display ───────────────────────────────────────────────────
-  section:            { label: 'Section',                          tooltip: 'Display a section header or intro block. No response is collected. Keep under 4 lines on mobile.', instructionPlaceholder: 'Content goes...' },
-  note:               { label: 'Note',                             tooltip: 'Display a note or instruction to participants. No response is collected.', instructionPlaceholder: 'Please answer honestly' },
-  stimulus_display:   { label: 'Stimulus Display',                 tooltip: 'Image, video, or rich-media stimulus shown with no captured response. Enforce minimum view time for video.', instructionPlaceholder: 'Review the stimulus carefully before continuing' },
-  exec:               { label: 'Exec',                             tooltip: 'System execution element. No visible text shown to participants.', instructionPlaceholder: 'System execution, no visible text' },
-  import_data:        { label: 'Import Data',                      tooltip: 'Import background data silently into the survey session.', instructionPlaceholder: 'Background data loaded silently' },
-  captcha_check:      { label: 'Captcha / Quality Check',          tooltip: 'Element designed to catch bots, inattentive respondents, or fraudulent participants. Never rely on a single trap.', instructionPlaceholder: 'Quality assurance check' },
+  section: { label: 'Section', tooltip: 'Display a section header or intro block. No response is collected. Keep under 4 lines on mobile.', instructionPlaceholder: 'Content goes...' },
+  note: { label: 'Note', tooltip: 'Display a note or instruction to participants. No response is collected.', instructionPlaceholder: 'Please answer honestly' },
+  stimulus_display: { label: 'Stimulus Display', tooltip: 'Image, video, or rich-media stimulus shown with no captured response. Enforce minimum view time for video.', instructionPlaceholder: 'Review the stimulus carefully before continuing' },
+  exec: { label: 'Exec', tooltip: 'System execution element. No visible text shown to participants.', instructionPlaceholder: 'System execution, no visible text' },
+  import_data: { label: 'Import Data', tooltip: 'Import background data silently into the survey session.', instructionPlaceholder: 'Background data loaded silently' },
+  captcha_check: { label: 'Captcha / Quality Check', tooltip: 'Element designed to catch bots, inattentive respondents, or fraudulent participants. Never rely on a single trap.', instructionPlaceholder: 'Quality assurance check' },
 };
 
 // ── Grouped options for the type dropdown ─────────────────────────────────────
