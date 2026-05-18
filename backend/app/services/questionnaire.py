@@ -41,6 +41,396 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
     
     audience_text = "\n".join(audience_summary)
 
+    # JSON example stored separately to avoid f-string nesting issues
+    json_example = '''{
+  "research_objective_summary": "Understand price sensitivity for organic baby food and identify key purchase drivers",
+  "hypotheses": [
+    {
+      "hypothesis_id": "H1",
+      "null": "No difference in price sensitivity by income segment",
+      "alternative": "High-income parents show lower price sensitivity",
+      "test": "ANOVA or Welch's t-test",
+      "required_questions": ["Q6", "Q27"]
+    },
+    {
+      "hypothesis_id": "H2",
+      "null": "No correlation between health-consciousness and WTP premium",
+      "alternative": "Positive correlation exists",
+      "test": "Pearson correlation or linear regression",
+      "required_questions": ["Q7", "Q23"]
+    }
+  ],
+  "sections": [
+    {
+      "section_id": "S1",
+      "section_theme": "Screeners",
+      "title": "Eligibility and Qualification",
+      "questions": [
+        {
+          "question_id": "M01",
+          "family_code": "M",
+          "element_code": "M5",
+          "question_type": "Captcha",
+          "text": "Please confirm you are not a robot.",
+          "display_meta": {
+            "content_type": "captcha_widget"
+          }
+        },
+        {
+          "question_id": "Q1",
+          "family_code": "A",
+          "element_code": "A5",
+          "question_type": "Binary Yes/No",
+          "text": "Are you 18 years of age or older?",
+          "options": [
+            {
+              "option_id": "opt1",
+              "text": "Yes",
+              "tags": ["expected_self", "stated_satisfaction", "high_conscientiousness"]
+            },
+            {
+              "option_id": "opt2",
+              "text": "No",
+              "tags": ["feared_self", "low_conscientiousness", "stated_barrier_present"]
+            }
+          ],
+          "hypothesis_id": null,
+          "theme_id": "Contextual Framing"
+        }
+      ]
+    },
+    {
+      "section_id": "S2",
+      "section_theme": "Core Measurement",
+      "title": "Product Attitudes",
+      "questions": [
+        {
+          "question_id": "Q6",
+          "family_code": "D",
+          "element_code": "D1",
+          "question_type": "Likert Agreement Scale",
+          "text": "I am willing to pay more for organic baby food.",
+          "scale_meta": {
+            "scale_type": "likert_agreement",
+            "points": 5,
+            "anchors": {
+              "start": "Strongly Disagree",
+              "mid": "Neither Agree nor Disagree",
+              "end": "Strongly Agree"
+            },
+            "reverse_coded": false,
+            "tags_per_point": [
+              ["low_openness", "security_value", "tradition_value", "price_sensitive"],
+              ["security_value", "conformity_value", "deliberator"],
+              ["expected_self", "stated_indifference", "deliberator"],
+              ["high_openness", "self_direction_value", "universalism_value"],
+              ["high_openness", "achievement_value", "early_adopter", "hoped_for_self"]
+            ]
+          },
+          "hypothesis_id": "H1",
+          "theme_id": "Attitudinal Discovery"
+        },
+        {
+          "question_id": "Q7",
+          "family_code": "C",
+          "element_code": "C1",
+          "question_type": "Single-Select Grid",
+          "text": "How important are each of the following when choosing baby food?",
+          "matrix_meta": {
+            "rows": [
+              { "row_id": "r1", "label": "Organic certification" },
+              { "row_id": "r2", "label": "Price" },
+              { "row_id": "r3", "label": "Brand reputation" },
+              { "row_id": "r4", "label": "Ingredient transparency" }
+            ],
+            "scale": {
+              "scale_type": "importance",
+              "points": 5,
+              "anchors": {
+                "start": "Not at All Important",
+                "end": "Extremely Important"
+              },
+              "tags_per_point": [
+                ["stated_indifference", "low_conscientiousness"],
+                ["deliberator", "expected_self"],
+                ["expected_self", "high_conscientiousness"],
+                ["achievement_value", "high_conscientiousness", "deliberator"],
+                ["high_conscientiousness", "universalism_value", "hoped_for_self"]
+              ]
+            }
+          },
+          "hypothesis_id": "H2",
+          "theme_id": "Motivational Depth"
+        }
+      ]
+    },
+    {
+      "section_id": "S3",
+      "section_theme": "Motivational Depth",
+      "title": "What Drives Choice",
+      "questions": [
+        {
+          "question_id": "M02",
+          "family_code": "M",
+          "element_code": "M1",
+          "question_type": "Descriptive Content",
+          "text": "In the next question, you will distribute 100 points across factors. Allocate more points to what matters most to you. Your total must add up to 100.",
+          "display_meta": {
+            "content_type": "text"
+          }
+        },
+        {
+          "question_id": "Q16",
+          "family_code": "F",
+          "element_code": "F1",
+          "question_type": "Constant Sum",
+          "text": "Distribute 100 points across the following factors based on their importance to you.",
+          "scale_meta": {
+            "scale_type": "constant_sum",
+            "total": 100,
+            "items": [
+              {
+                "item_id": "item1",
+                "label": "Price",
+                "tags": ["security_value", "low_income_likely", "price_sensitive"]
+              },
+              {
+                "item_id": "item2",
+                "label": "Brand Trust",
+                "tags": ["conformity_value", "loyalist", "tradition_value"]
+              },
+              {
+                "item_id": "item3",
+                "label": "Organic Certification",
+                "tags": ["universalism_value", "high_openness", "hoped_for_self"]
+              },
+              {
+                "item_id": "item4",
+                "label": "Convenience",
+                "tags": ["hedonism_value", "impulse_buyer", "low_conscientiousness"]
+              }
+            ]
+          },
+          "hypothesis_id": "H2",
+          "theme_id": "Motivational Depth"
+        },
+        {
+          "question_id": "Q18",
+          "family_code": "L",
+          "element_code": "L1",
+          "question_type": "AI-Probed Open-End",
+          "text": "Why is your top factor most important to you?",
+          "input_meta": {
+            "max_length": 500,
+            "min_length": 20,
+            "ai_probe_max_turns": 3
+          },
+          "measurement_dimensions": {
+            "theme": "Motivational Depth",
+            "primary_codes": ["motivation_type", "value_driver", "identity_anchor"],
+            "sentiment_scale": ["Negative", "Neutral", "Positive"],
+            "intensity_scale": [1, 2, 3, 4, 5],
+            "response_quality_levels": ["Vague", "Moderate", "Detailed"]
+          },
+          "hypothesis_id": "H2",
+          "theme_id": "Motivational Depth"
+        }
+      ]
+    },
+    {
+      "section_id": "S4",
+      "section_theme": "Barriers and Friction",
+      "title": "Purchase Obstacles",
+      "questions": [
+        {
+          "question_id": "Q19",
+          "family_code": "B",
+          "element_code": "B1",
+          "question_type": "Checkbox Multi-Select",
+          "text": "What prevents you from buying organic baby food more often? (Select all that apply)",
+          "options": [
+            {
+              "option_id": "opt1",
+              "text": "Price is too high",
+              "tags": ["security_value", "low_income_likely", "stated_barrier_present", "price_sensitive"]
+            },
+            {
+              "option_id": "opt2",
+              "text": "Not available in stores I visit",
+              "tags": ["frustrated_user", "stated_barrier_present", "workaround_seeker"]
+            },
+            {
+              "option_id": "opt3",
+              "text": "I don't trust organic claims",
+              "tags": ["low_openness", "tradition_value", "complainer", "stated_barrier_present"]
+            },
+            {
+              "option_id": "opt4",
+              "text": "My child doesn't like the taste",
+              "tags": ["parent_likely", "frustrated_user", "stated_barrier_present"]
+            },
+            {
+              "option_id": "opt5",
+              "text": "None of these",
+              "tags": ["satisfied_user", "stated_barrier_absent", "expected_self"]
+            }
+          ],
+          "min_select": 0,
+          "max_select": 5,
+          "hypothesis_id": null,
+          "theme_id": "Barriers and Friction"
+        },
+        {
+          "question_id": "Q21",
+          "family_code": "E",
+          "element_code": "E1",
+          "question_type": "Short Text",
+          "text": "Describe your biggest obstacle when trying to purchase organic baby food. (2-3 sentences)",
+          "input_meta": {
+            "max_length": 500,
+            "min_length": 20
+          },
+          "measurement_dimensions": {
+            "theme": "Barriers and Friction",
+            "primary_codes": ["barrier_type", "severity", "workaround_existence"],
+            "sentiment_scale": ["Negative", "Neutral", "Positive"],
+            "intensity_scale": [1, 2, 3, 4, 5],
+            "response_quality_levels": ["Vague", "Moderate", "Detailed"]
+          },
+          "hypothesis_id": null,
+          "theme_id": "Barriers and Friction"
+        }
+      ]
+    },
+    {
+      "section_id": "S5",
+      "section_theme": "Scenario Exploration",
+      "title": "Product Preferences",
+      "questions": [
+        {
+          "question_id": "M03",
+          "family_code": "M",
+          "element_code": "M1",
+          "question_type": "Descriptive Content",
+          "text": "In the next question, you will see several product options. Choose the one you would most likely purchase.",
+          "display_meta": {
+            "content_type": "text"
+          }
+        },
+        {
+          "question_id": "Q22",
+          "family_code": "H",
+          "element_code": "H3",
+          "question_type": "Choice-Based Conjoint",
+          "text": "Which of these baby food products would you choose?",
+          "trade_off_meta": {
+            "method": "cbc",
+            "attributes": [
+              { "name": "Price", "levels": ["INR 150", "INR 200", "INR 250"] },
+              { "name": "Brand", "levels": ["Brand A", "Brand B", "Brand C"] },
+              { "name": "Organic", "levels": ["Yes", "No"] },
+              { "name": "Pack Size", "levels": ["100g", "200g", "500g"] }
+            ],
+            "tasks_per_respondent": 10,
+            "profiles_per_task": 3
+          },
+          "hypothesis_id": "H1",
+          "theme_id": "Scenario Exploration"
+        },
+        {
+          "question_id": "Q23",
+          "family_code": "E",
+          "element_code": "E4",
+          "question_type": "Numeric Input (Currency)",
+          "text": "What is the maximum price you would pay for a 200g pack of organic baby food? (INR)",
+          "input_meta": {
+            "unit": "INR",
+            "min_value": 0,
+            "max_value": 1000,
+            "decimal_places": 0
+          },
+          "hypothesis_id": "H1",
+          "theme_id": "Scenario Exploration"
+        }
+      ]
+    },
+    {
+      "section_id": "S6",
+      "section_theme": "Demographics",
+      "title": "About You",
+      "questions": [
+        {
+          "question_id": "Q25",
+          "family_code": "A",
+          "element_code": "A2",
+          "question_type": "Dropdown Menu",
+          "text": "In which state do you live?",
+          "options": [
+            { "option_id": "opt1", "text": "Karnataka" },
+            { "option_id": "opt2", "text": "Maharashtra" },
+            { "option_id": "opt3", "text": "Tamil Nadu" },
+            { "option_id": "opt4", "text": "Delhi" },
+            { "option_id": "opt5", "text": "Other" }
+          ],
+          "hypothesis_id": null,
+          "theme_id": "Contextual Framing"
+        },
+        {
+          "question_id": "Q26",
+          "family_code": "E",
+          "element_code": "E3",
+          "question_type": "Numeric Input (Integer)",
+          "text": "What is your age in years?",
+          "input_meta": {
+            "min_value": 18,
+            "max_value": 100
+          },
+          "hypothesis_id": null,
+          "theme_id": "Contextual Framing"
+        },
+        {
+          "question_id": "Q27",
+          "family_code": "A",
+          "element_code": "A1",
+          "question_type": "Radio-Button Single Select",
+          "text": "What is your monthly household income range?",
+          "options": [
+            {
+              "option_id": "opt1",
+              "text": "Under INR 30,000",
+              "tags": ["low_income_likely", "security_value", "price_sensitive"]
+            },
+            {
+              "option_id": "opt2",
+              "text": "INR 30,000 - 60,000",
+              "tags": ["expected_self", "deliberator"]
+            },
+            {
+              "option_id": "opt3",
+              "text": "INR 60,000 - 100,000",
+              "tags": ["high_income_likely", "achievement_value"]
+            },
+            {
+              "option_id": "opt4",
+              "text": "Above INR 100,000",
+              "tags": ["high_income_likely", "power_value", "senior_role_likely"]
+            },
+            {
+              "option_id": "opt5",
+              "text": "Prefer not to say",
+              "tags": ["defensive_response", "stated_indifference"]
+            }
+          ],
+          "hypothesis_id": "H1",
+          "theme_id": "Contextual Framing"
+        }
+      ]
+    }
+  ],
+  "balance_rule_overrides": [],
+  "token_budget_notes": "15 substantive questions plus 3 Family M elements equals 18 total. Family D: 2/15 (13 percent), Family C: 1/15 (7 percent), Family A/B: 5/15 (33 percent), Family E: 3/15 (20 percent), Family F: 1/15 (7 percent), Family H: 1/15 (7 percent), Family L: 1/15 (7 percent). All balance rules satisfied."
+}'''
+
     prompt = f"""
 QUANTITATIVE QUESTIONNAIRE ARCHITECT - SYSTEM PROMPT V2.1
 ================================================================================
@@ -635,11 +1025,11 @@ OVERRIDE HANDLING:
 If research objectives require violating these rules (example: brand-attribute study needs 10 grids), the questionnaire can proceed BUT must include:
 
 "balance_rule_overrides": [
-  {
+  {{
     "rule_violated": "Max 25 percent Family C",
     "actual_percentage": 45,
     "justification": "Research objective requires comprehensive brand-attribute association matrix across 8 brands and 15 attributes"
-  }
+  }}
 ]
 
 
@@ -705,25 +1095,25 @@ Barriers and Friction: barrier_type (cost/complexity/trust/availability), severi
 
 TEMPLATE FORMAT FOR OPEN-ENDED QUESTIONS
 
-{
+{{
   "question_id": "Q15",
   "family_code": "E",
   "element_code": "E1",
   "text": "What triggers this feeling?",
-  "input_meta": {
+  "input_meta": {{
     "max_length": 500,
     "min_length": 20
-  },
-  "measurement_dimensions": {
+  }},
+  "measurement_dimensions": {{
     "theme": "Emotional Dimensions",
     "primary_codes": ["trigger_type", "emotion_intensity", "context"],
     "sentiment_scale": ["Negative", "Neutral", "Positive"],
     "intensity_scale": [1, 2, 3, 4, 5],
     "response_quality_levels": ["Vague", "Moderate", "Detailed"]
-  },
+  }},
   "hypothesis_id": "H2",
   "theme_id": "Emotional Dimensions"
-}
+}}
 
 
 DECISION INTELLIGENCE INTEGRATION
@@ -740,14 +1130,14 @@ Complex objective (6 plus decisions): 6-10 hypotheses
 
 HYPOTHESIS FORMAT (REQUIRED FIELDS):
 
-{
+{{
   "hypothesis_id": "H1",
   "null": "No difference in price sensitivity by income segment",
   "alternative": "High-income parents show lower price sensitivity",
   "test": "ANOVA or Welch's t-test",
   "required_questions": ["Q6_WTP", "Q27_income"],
   "sample_size_note": "Min 30 per segment for normality assumption"
-}
+}}
 
 HYPOTHESIS-TO-ELEMENT MAPPING
 
@@ -993,394 +1383,7 @@ Use scale_type to discriminate scale variants (likert_agreement, satisfaction, f
 
 COMPLETE JSON EXAMPLE:
 
-{
-  "research_objective_summary": "Understand price sensitivity for organic baby food and identify key purchase drivers",
-  "hypotheses": [
-    {
-      "hypothesis_id": "H1",
-      "null": "No difference in price sensitivity by income segment",
-      "alternative": "High-income parents show lower price sensitivity",
-      "test": "ANOVA or Welch's t-test",
-      "required_questions": ["Q6", "Q27"]
-    },
-    {
-      "hypothesis_id": "H2",
-      "null": "No correlation between health-consciousness and WTP premium",
-      "alternative": "Positive correlation exists",
-      "test": "Pearson correlation or linear regression",
-      "required_questions": ["Q7", "Q23"]
-    }
-  ],
-  "sections": [
-    {
-      "section_id": "S1",
-      "section_theme": "Screeners",
-      "title": "Eligibility and Qualification",
-      "questions": [
-        {
-          "question_id": "M01",
-          "family_code": "M",
-          "element_code": "M5",
-          "question_type": "Captcha",
-          "text": "Please confirm you are not a robot.",
-          "display_meta": {
-            "content_type": "captcha_widget"
-          }
-        },
-        {
-          "question_id": "Q1",
-          "family_code": "A",
-          "element_code": "A5",
-          "question_type": "Binary Yes/No",
-          "text": "Are you 18 years of age or older?",
-          "options": [
-            {
-              "option_id": "opt1",
-              "text": "Yes",
-              "tags": ["expected_self", "stated_satisfaction", "high_conscientiousness"]
-            },
-            {
-              "option_id": "opt2",
-              "text": "No",
-              "tags": ["feared_self", "low_conscientiousness", "stated_barrier_present"]
-            }
-          ],
-          "hypothesis_id": null,
-          "theme_id": "Contextual Framing"
-        }
-      ]
-    },
-    {
-      "section_id": "S2",
-      "section_theme": "Core Measurement",
-      "title": "Product Attitudes",
-      "questions": [
-        {
-          "question_id": "Q6",
-          "family_code": "D",
-          "element_code": "D1",
-          "question_type": "Likert Agreement Scale",
-          "text": "I am willing to pay more for organic baby food.",
-          "scale_meta": {
-            "scale_type": "likert_agreement",
-            "points": 5,
-            "anchors": {
-              "start": "Strongly Disagree",
-              "mid": "Neither Agree nor Disagree",
-              "end": "Strongly Agree"
-            },
-            "reverse_coded": false,
-            "tags_per_point": [
-              ["low_openness", "security_value", "tradition_value", "price_sensitive"],
-              ["security_value", "conformity_value", "deliberator"],
-              ["expected_self", "stated_indifference", "deliberator"],
-              ["high_openness", "self_direction_value", "universalism_value"],
-              ["high_openness", "achievement_value", "early_adopter", "hoped_for_self"]
-            ]
-          },
-          "hypothesis_id": "H1",
-          "theme_id": "Attitudinal Discovery"
-        },
-        {
-          "question_id": "Q7",
-          "family_code": "C",
-          "element_code": "C1",
-          "question_type": "Single-Select Grid",
-          "text": "How important are each of the following when choosing baby food?",
-          "matrix_meta": {
-            "rows": [
-              { "row_id": "r1", "label": "Organic certification" },
-              { "row_id": "r2", "label": "Price" },
-              { "row_id": "r3", "label": "Brand reputation" },
-              { "row_id": "r4", "label": "Ingredient transparency" }
-            ],
-            "scale": {
-              "scale_type": "importance",
-              "points": 5,
-              "anchors": {
-                "start": "Not at All Important",
-                "end": "Extremely Important"
-              },
-              "tags_per_point": [
-                ["stated_indifference", "low_conscientiousness"],
-                ["deliberator", "expected_self"],
-                ["expected_self", "high_conscientiousness"],
-                ["achievement_value", "high_conscientiousness", "deliberator"],
-                ["high_conscientiousness", "universalism_value", "hoped_for_self"]
-              ]
-            }
-          },
-          "hypothesis_id": "H2",
-          "theme_id": "Motivational Depth"
-        }
-      ]
-    },
-    {
-      "section_id": "S3",
-      "section_theme": "Motivational Depth",
-      "title": "What Drives Choice",
-      "questions": [
-        {
-          "question_id": "M02",
-          "family_code": "M",
-          "element_code": "M1",
-          "question_type": "Descriptive Content",
-          "text": "In the next question, you will distribute 100 points across factors. Allocate more points to what matters most to you. Your total must add up to 100.",
-          "display_meta": {
-            "content_type": "text"
-          }
-        },
-        {
-          "question_id": "Q16",
-          "family_code": "F",
-          "element_code": "F1",
-          "question_type": "Constant Sum",
-          "text": "Distribute 100 points across the following factors based on their importance to you.",
-          "scale_meta": {
-            "scale_type": "constant_sum",
-            "total": 100,
-            "items": [
-              {
-                "item_id": "item1",
-                "label": "Price",
-                "tags": ["security_value", "low_income_likely", "price_sensitive"]
-              },
-              {
-                "item_id": "item2",
-                "label": "Brand Trust",
-                "tags": ["conformity_value", "loyalist", "tradition_value"]
-              },
-              {
-                "item_id": "item3",
-                "label": "Organic Certification",
-                "tags": ["universalism_value", "high_openness", "hoped_for_self"]
-              },
-              {
-                "item_id": "item4",
-                "label": "Convenience",
-                "tags": ["hedonism_value", "impulse_buyer", "low_conscientiousness"]
-              }
-            ]
-          },
-          "hypothesis_id": "H2",
-          "theme_id": "Motivational Depth"
-        },
-        {
-          "question_id": "Q18",
-          "family_code": "L",
-          "element_code": "L1",
-          "question_type": "AI-Probed Open-End",
-          "text": "Why is your top factor most important to you?",
-          "input_meta": {
-            "max_length": 500,
-            "min_length": 20,
-            "ai_probe_max_turns": 3
-          },
-          "measurement_dimensions": {
-            "theme": "Motivational Depth",
-            "primary_codes": ["motivation_type", "value_driver", "identity_anchor"],
-            "sentiment_scale": ["Negative", "Neutral", "Positive"],
-            "intensity_scale": [1, 2, 3, 4, 5],
-            "response_quality_levels": ["Vague", "Moderate", "Detailed"]
-          },
-          "hypothesis_id": "H2",
-          "theme_id": "Motivational Depth"
-        }
-      ]
-    },
-    {
-      "section_id": "S4",
-      "section_theme": "Barriers and Friction",
-      "title": "Purchase Obstacles",
-      "questions": [
-        {
-          "question_id": "Q19",
-          "family_code": "B",
-          "element_code": "B1",
-          "question_type": "Checkbox Multi-Select",
-          "text": "What prevents you from buying organic baby food more often? (Select all that apply)",
-          "options": [
-            {
-              "option_id": "opt1",
-              "text": "Price is too high",
-              "tags": ["security_value", "low_income_likely", "stated_barrier_present", "price_sensitive"]
-            },
-            {
-              "option_id": "opt2",
-              "text": "Not available in stores I visit",
-              "tags": ["frustrated_user", "stated_barrier_present", "workaround_seeker"]
-            },
-            {
-              "option_id": "opt3",
-              "text": "I don't trust organic claims",
-              "tags": ["low_openness", "tradition_value", "complainer", "stated_barrier_present"]
-            },
-            {
-              "option_id": "opt4",
-              "text": "My child doesn't like the taste",
-              "tags": ["parent_likely", "frustrated_user", "stated_barrier_present"]
-            },
-            {
-              "option_id": "opt5",
-              "text": "None of these",
-              "tags": ["satisfied_user", "stated_barrier_absent", "expected_self"]
-            }
-          ],
-          "min_select": 0,
-          "max_select": 5,
-          "hypothesis_id": null,
-          "theme_id": "Barriers and Friction"
-        },
-        {
-          "question_id": "Q21",
-          "family_code": "E",
-          "element_code": "E1",
-          "question_type": "Short Text",
-          "text": "Describe your biggest obstacle when trying to purchase organic baby food. (2-3 sentences)",
-          "input_meta": {
-            "max_length": 500,
-            "min_length": 20
-          },
-          "measurement_dimensions": {
-            "theme": "Barriers and Friction",
-            "primary_codes": ["barrier_type", "severity", "workaround_existence"],
-            "sentiment_scale": ["Negative", "Neutral", "Positive"],
-            "intensity_scale": [1, 2, 3, 4, 5],
-            "response_quality_levels": ["Vague", "Moderate", "Detailed"]
-          },
-          "hypothesis_id": null,
-          "theme_id": "Barriers and Friction"
-        }
-      ]
-    },
-    {
-      "section_id": "S5",
-      "section_theme": "Scenario Exploration",
-      "title": "Product Preferences",
-      "questions": [
-        {
-          "question_id": "M03",
-          "family_code": "M",
-          "element_code": "M1",
-          "question_type": "Descriptive Content",
-          "text": "In the next question, you will see several product options. Choose the one you would most likely purchase.",
-          "display_meta": {
-            "content_type": "text"
-          }
-        },
-        {
-          "question_id": "Q22",
-          "family_code": "H",
-          "element_code": "H3",
-          "question_type": "Choice-Based Conjoint",
-          "text": "Which of these baby food products would you choose?",
-          "trade_off_meta": {
-            "method": "cbc",
-            "attributes": [
-              { "name": "Price", "levels": ["INR 150", "INR 200", "INR 250"] },
-              { "name": "Brand", "levels": ["Brand A", "Brand B", "Brand C"] },
-              { "name": "Organic", "levels": ["Yes", "No"] },
-              { "name": "Pack Size", "levels": ["100g", "200g", "500g"] }
-            ],
-            "tasks_per_respondent": 10,
-            "profiles_per_task": 3
-          },
-          "hypothesis_id": "H1",
-          "theme_id": "Scenario Exploration"
-        },
-        {
-          "question_id": "Q23",
-          "family_code": "E",
-          "element_code": "E4",
-          "question_type": "Numeric Input (Currency)",
-          "text": "What is the maximum price you would pay for a 200g pack of organic baby food? (INR)",
-          "input_meta": {
-            "unit": "INR",
-            "min_value": 0,
-            "max_value": 1000,
-            "decimal_places": 0
-          },
-          "hypothesis_id": "H1",
-          "theme_id": "Scenario Exploration"
-        }
-      ]
-    },
-    {
-      "section_id": "S6",
-      "section_theme": "Demographics",
-      "title": "About You",
-      "questions": [
-        {
-          "question_id": "Q25",
-          "family_code": "A",
-          "element_code": "A2",
-          "question_type": "Dropdown Menu",
-          "text": "In which state do you live?",
-          "options": [
-            { "option_id": "opt1", "text": "Karnataka" },
-            { "option_id": "opt2", "text": "Maharashtra" },
-            { "option_id": "opt3", "text": "Tamil Nadu" },
-            { "option_id": "opt4", "text": "Delhi" },
-            { "option_id": "opt5", "text": "Other" }
-          ],
-          "hypothesis_id": null,
-          "theme_id": "Contextual Framing"
-        },
-        {
-          "question_id": "Q26",
-          "family_code": "E",
-          "element_code": "E3",
-          "question_type": "Numeric Input (Integer)",
-          "text": "What is your age in years?",
-          "input_meta": {
-            "min_value": 18,
-            "max_value": 100
-          },
-          "hypothesis_id": null,
-          "theme_id": "Contextual Framing"
-        },
-        {
-          "question_id": "Q27",
-          "family_code": "A",
-          "element_code": "A1",
-          "question_type": "Radio-Button Single Select",
-          "text": "What is your monthly household income range?",
-          "options": [
-            {
-              "option_id": "opt1",
-              "text": "Under INR 30,000",
-              "tags": ["low_income_likely", "security_value", "price_sensitive"]
-            },
-            {
-              "option_id": "opt2",
-              "text": "INR 30,000 - 60,000",
-              "tags": ["expected_self", "deliberator"]
-            },
-            {
-              "option_id": "opt3",
-              "text": "INR 60,000 - 100,000",
-              "tags": ["high_income_likely", "achievement_value"]
-            },
-            {
-              "option_id": "opt4",
-              "text": "Above INR 100,000",
-              "tags": ["high_income_likely", "power_value", "senior_role_likely"]
-            },
-            {
-              "option_id": "opt5",
-              "text": "Prefer not to say",
-              "tags": ["defensive_response", "stated_indifference"]
-            }
-          ],
-          "hypothesis_id": "H1",
-          "theme_id": "Contextual Framing"
-        }
-      ]
-    }
-  ],
-  "balance_rule_overrides": [],
-  "token_budget_notes": "15 substantive questions plus 3 Family M elements equals 18 total. Family D: 2/15 (13 percent), Family C: 1/15 (7 percent), Family A/B: 5/15 (33 percent), Family E: 3/15 (20 percent), Family F: 1/15 (7 percent), Family H: 1/15 (7 percent), Family L: 1/15 (7 percent). All balance rules satisfied."
-}
+{json_example}
 
 
 TOKEN BUDGET MANAGEMENT
@@ -1485,103 +1488,7 @@ Downstream Consumers: Response Generation Engine, B2C Quant Report Generation (P
 
 """
     return prompt
-    
-    return f"""
-You are a senior quantitative research expert designing a survey questionnaire.
 
----------------------------------------------
-### PRIMARY FOCUS: RESEARCH OBJECTIVE
----------------------------------------------
-
-**Research Objective:**
-{research_desc}
-
-**Total Sample Size:** {total_sample} respondents
-
-**Target Audience Breakdown:**
-{audience_text}
-
----------------------------------------------
-### YOUR TASK
----------------------------------------------
-
-Generate a survey questionnaire that:
-
-1. **DIRECTLY addresses the research objective**
-   - Every question must help answer the research question
-   - Questions should test hypotheses stated in the objective
-   - Focus on the core topic/problem being researched
-
-2. **Considers the sample size and audience**
-   - Questions should be appropriate for {total_sample} respondents
-   - Options should cover the range of perspectives in the target audience
-   - Questions should be relevant to the demographics listed above
-
-3. **Generates actionable insights**
-   - Questions should produce data that answers the research objective
-   - Options should be mutually exclusive and comprehensive
-   - Questions should reveal patterns and preferences
-
----------------------------------------------
-### STRICT STRUCTURAL RULES
----------------------------------------------
-
-- Output **ONLY JSON**.
-- Use **these EXACT 3 sections**:
-
-  1. "Attitudes & Preferences"
-  2. "Perceptions & Acceptance"  
-  3. "Pricing & Purchase Intent"
-
-- Each section must contain **EXACTLY 4 questions**.
-- Each question MUST have **4–6 MCQ options**.
-- Questions MUST be:
-  - Directly derived from the research objective
-  - Clear, unbiased, and actionable
-  - Appropriate for the target audience
-  - Designed to generate quantitative insights
-
-- DO NOT include: id, order, type, metadata.
-- DO NOT create persona-specific questions.
-- DO create questions that ALL personas can answer based on their traits.
-
----------------------------------------------
-### OUTPUT FORMAT (STRICT)
----------------------------------------------
-{{
-  "sections": [
-    {{
-      "title": "Attitudes & Preferences",
-      "questions": [
-        {{
-          "text": "string",
-          "options": ["opt1", "opt2", "opt3", "opt4"]
-        }}
-      ]
-    }},
-    {{
-      "title": "Perceptions & Acceptance",
-      "questions": [
-        {{
-          "text": "string",
-          "options": ["opt1", "opt2", "opt3", "opt4"]
-        }}
-      ]
-    }},
-    {{
-      "title": "Pricing & Purchase Intent",
-      "questions": [
-        {{
-          "text": "string",
-          "options": ["opt1", "opt2", "opt3", "opt4"]
-        }}
-      ]
-    }}
-  ]
-}}
-
-OUTPUT STRICTLY THIS JSON ONLY.
-"""
 
 async def generate_questionnaire(objective, personas_list, population, exploration_id):
     """
@@ -1592,7 +1499,7 @@ async def generate_questionnaire(objective, personas_list, population, explorati
 
     try:
         res = await client.chat.completions.create(
-            model="gpt-4.1",
+            model="gpt-4o",
             response_format={"type": "json_object"},
             messages=[
                 {"role": "system", "content": "Generate survey questions in strict JSON only."},
