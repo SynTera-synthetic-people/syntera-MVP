@@ -574,11 +574,11 @@ const PersonaPreview: React.FC = () => {
   const oceanSummary = (oceanProfile?.summary ?? oceanProfile?.description ?? '') as string;
 
   const radarData = [
-    { subject: 'Openness',          A: resolvedOceanScores.openness          ?? 0, fullMark: 1 },
+    { subject: 'Openness', A: resolvedOceanScores.openness ?? 0, fullMark: 1 },
     { subject: 'Conscientiousness', A: resolvedOceanScores.conscientiousness ?? 0, fullMark: 1 },
-    { subject: 'Extraversion',      A: resolvedOceanScores.extraversion      ?? 0, fullMark: 1 },
-    { subject: 'Agreeableness',     A: resolvedOceanScores.agreeableness     ?? 0, fullMark: 1 },
-    { subject: 'Neuroticism',       A: resolvedOceanScores.neuroticism       ?? 0, fullMark: 1 },
+    { subject: 'Extraversion', A: resolvedOceanScores.extraversion ?? 0, fullMark: 1 },
+    { subject: 'Agreeableness', A: resolvedOceanScores.agreeableness ?? 0, fullMark: 1 },
+    { subject: 'Neuroticism', A: resolvedOceanScores.neuroticism ?? 0, fullMark: 1 },
   ];
 
   const barriersList = flatten(mergedTraits.barriers_pain_points);
@@ -654,7 +654,10 @@ const PersonaPreview: React.FC = () => {
         <button
           className="pp-back-link"
           onClick={() =>
-            navigate(`/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-builder`)
+            navigate(
+              `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-builder`,
+              { state: { fromLoader: true } }
+            )
           }
         >
           <SpIcon name="sp-Arrow-Arrow_Left_SM" size={15} />

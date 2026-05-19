@@ -1002,10 +1002,10 @@ const PersonaBuilder: React.FC = () => {
     : (((fetchedPersonas as Record<string, unknown>)?.data as SavedPersona[]) ?? []);
 
   useEffect(() => {
-    if (fromLoader && savedPersonasFromAPI.length > 0) {
+    if (savedPersonasFromAPI.length > 0) {
       setShowGrid(true);
     }
-  }, [fromLoader, savedPersonasFromAPI.length]);
+  }, [savedPersonasFromAPI.length]);
 
   const personaMap = useRef<Record<string, SavedPersona>>({});
   useEffect(() => {
