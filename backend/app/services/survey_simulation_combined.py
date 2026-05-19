@@ -40,7 +40,7 @@ def _build_combined_simulation_prompt(research_desc: str, personas_list: List[Di
     
     qs_joined = "\n\n".join(qs_text)
 
-    prompt = f"""
+    prompt = """
 # Synthetic People AI - Response Generation Engine
 ## Prompt Specification, Version 2.0 (Dual-Path, Taxonomy-Aware, Upload-Ready)
 
