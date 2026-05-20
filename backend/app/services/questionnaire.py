@@ -70,9 +70,9 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
     SECTION 2: INPUTS
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    Research Objective: {res_desc}
-    Total Sample Size: {total_sample} respondents
-    Target Audience Breakdown: {audience_text}
+    Research Objective: $res_desc
+    Total Sample Size: $total_sample respondents
+    Target Audience Breakdown: $audience_text
 
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     SECTION 3: CRITICAL OUTPUT RULES
@@ -1212,7 +1212,12 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
     All section IDs must use consistent numeric format: S1, S2, S3, etc.
 
     """
-    return prompt
+    from string import Template
+    return Template(prompt).safe_substitute(
+        res_desc=res_desc or research_desc or "Not provided",
+        total_sample=total_sample,
+        audience_text=audience_text
+    )
 
 async def generate_questionnaire(objective, personas_list, population, exploration_id):
     """
