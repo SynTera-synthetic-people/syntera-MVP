@@ -214,6 +214,6 @@ __marimo__/
 
 # ML Pipeline artifacts
 app/ml/data/*.csv
-app/ml/models/saved/*.joblib
+# app/ml/models/saved/*.joblib
 app/ml/catboost_info/
 app/ml/logs/

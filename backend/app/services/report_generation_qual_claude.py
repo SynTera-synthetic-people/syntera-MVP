@@ -104,7 +104,7 @@ You will receive the following inputs. Parse them EXACTLY as provided:
 [REBUTTAL]: The rebuttal layer output. This is where personas were challenged on initial responses and either held firm, qualified, or reversed positions.
 [CTA]: One of: "TRANSCRIPTS" | "DECISION_INTELLIGENCE" | "BEHAVIORAL_ARCHAEOLOGY"
 [METADATA]: Platform-generated: Qual ID, Ground Truth (Actions Data), Enrichment Layer, Neuroscience Inference (Yes/No), Research Objective Score (%), Persona Calibration Score (%), Qual Coverage Score (%), Date, Client name.
-[SOURCEBANK_CONTEXT]: Behavioral research evidence retrieved from the Sourcebank (Qdrant vector store). Use these passages to corroborate or challenge persona responses. Cite specific findings as [SB-N] when referencing them. If absent or empty, proceed without it.
+[SOURCEBANK_CONTEXT]: Behavioral research evidence retrieved from the controlled Sourcebank (approved/indexed links and documents in Qdrant). Use these passages to corroborate or challenge persona responses. Cite specific findings as [SB-N] when referencing them. If absent or empty, proceed without it. Do not invent external citations.
 
 SECTION 1: CTA ROUTING LOGIC
 Based on [CTA], generate ONLY the sections specified below. Do NOT generate sections belonging to other CTAs. This is a hard constraint for token efficiency and report clarity.
@@ -1042,7 +1042,7 @@ async def _persist_persona_link(persona_id: str, subject_key: str, domain: str) 
         print(f"[ML] could not persist persona link for {persona_id}: {exc}")
 
 
-async def _fetch_rag_context(query: str) -> str:
+async def _legacy_fetch_rag_context(query: str) -> str:
     """
     Pull behavioral research evidence from Qdrant for the given query.
     Returns a formatted string of top-5 chunks; empty string on any failure.
@@ -1061,6 +1061,44 @@ async def _fetch_rag_context(query: str) -> str:
     except Exception as exc:
         print(f"[RAG] sourcebank fetch failed: {exc}")
         return ""
+
+
+async def _fetch_rag_context(query: str, exploration_id: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Controlled Sourcebank retrieval wrapper.
+
+    This preserves the same function boundary for the report pipeline. It never
+    performs live internet search; fallbacks only relax filters inside our
+    indexed Sourcebank.
+
+    exploration_id scopes retrieval to sources uploaded for this specific
+    exploration. Falls back to domain-wide search if no exploration-scoped
+    sources are found.
+    """
+    try:
+        from app.rag.retrieve import controlled_sourcebank_search
+
+        inferred_domain = _infer_domain(query)
+        return await asyncio.to_thread(
+            controlled_sourcebank_search,
+            query,
+            domain=inferred_domain,
+            exploration_id=exploration_id,
+            top_k=8,
+            max_sources=3,
+            approved_only=False,
+            allowed_use="qual_report",
+            allow_legacy_fallback=True,
+        )
+    except Exception as exc:
+        print(f"[RAG] sourcebank fetch failed: {exc}")
+        return {
+            "context": "",
+            "sources": [],
+            "confidence": "none",
+            "fallback_level": "rag_error",
+            "error": str(exc),
+        }
 
 
 async def _ml_ground_truth(subject_key: str, domain: str) -> Optional[Dict[str, Any]]:
@@ -1176,20 +1214,34 @@ async def build_llm_payload(
     if not personas_payload:
         raise ValueError("No valid interview data found to generate report")
 
-    # RAG sourcebank context — based on research objective
+    # RAG sourcebank context — global Sourcebank, domain-scoped retrieval
+    # exploration_id=None because sources are shared across all explorations.
+    # Switch to exploration_id=objective_id only when per-exploration private sources are in use.
     ro_query = research_objective if isinstance(research_objective, str) else str(research_objective)
-    sourcebank_context = await _fetch_rag_context(ro_query[:500])
+    sourcebank = await _fetch_rag_context(ro_query[:500], exploration_id=None)
+    sourcebank_context = sourcebank.get("context") if isinstance(sourcebank, dict) else str(sourcebank or "")
+    sourcebank_sources = sourcebank.get("sources", []) if isinstance(sourcebank, dict) else []
+    sourcebank_confidence = sourcebank.get("confidence", "none") if isinstance(sourcebank, dict) else "legacy"
+    sourcebank_fallback_level = sourcebank.get("fallback_level", "legacy") if isinstance(sourcebank, dict) else "legacy"
 
     ml_count = sum(1 for p in personas_payload if p.get("ground_truth") is not None)
-    print(f"[Enrichment] RAG context: {'yes' if sourcebank_context else 'no'} | ML ground truth: {ml_count}/{len(personas_payload)} personas")
+    print(
+        f"[Enrichment] RAG context: {'yes' if sourcebank_context else 'no'} "
+        f"(confidence={sourcebank_confidence}, fallback={sourcebank_fallback_level}) | "
+        f"ML ground truth: {ml_count}/{len(personas_payload)} personas"
+    )
 
     return {
         "research_objective": research_objective,
         "personas": personas_payload,
         "cta": cta,
         "sourcebank_context": sourcebank_context or None,
+        "sourcebank_sources": sourcebank_sources,
         "metadata": {
             "ground_truth_consumers_analyzed": ml_count,
+            "sourcebank_confidence": sourcebank_confidence,
+            "sourcebank_fallback_level": sourcebank_fallback_level,
+            "sourcebank_sources_count": len(sourcebank_sources),
         },
     }
 

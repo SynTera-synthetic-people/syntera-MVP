@@ -4,6 +4,8 @@ Uses raw SQL to query sync_source schema (not SQLModel)
 """
 
 import asyncio
+import hashlib
+import json
 from sqlalchemy import text
 from openai import OpenAI
 from tqdm import tqdm
@@ -26,15 +28,26 @@ async def get_chunks_from_db(session, limit: int = None):
             cc.chunk_index,
             cc.content,
             cc.data_type,
+            cc.content_hash as chunk_content_hash,
             d.id as doc_id,
             d.title,
             d.source_type,
             d.source_url,
-            d.domain
+            d.domain,
+            d.exploration_id,
+            d.registry_id,
+            d.source_group,
+            d.source_keywords,
+            d.approval_status,
+            d.authority_tier,
+            d.quality_score,
+            d.allowed_use,
+            d.citation_metadata
         FROM sync_source.content_chunk cc
         JOIN sync_source.document d ON cc.document_id = d.id
-        WHERE cc.content IS NOT NULL 
+        WHERE cc.content IS NOT NULL
         AND LENGTH(cc.content) > 10
+        AND (cc.embedding_status IS NULL OR cc.embedding_status = 'pending')
         ORDER BY d.id, cc.chunk_index
         LIMIT :limit
     """)
@@ -54,10 +67,57 @@ async def get_chunks_from_db(session, limit: int = None):
             "document_title": row.title or "Untitled",
             "source_type": row.source_type or "unknown",
             "source_url": row.source_url or "",
-            "domain": row.domain or "general"
+            "domain": row.domain or "general",
+            "exploration_id": row.exploration_id,
+            "registry_id": row.registry_id,
+            "source_group": row.source_group,
+            "source_keywords": row.source_keywords or [],
+            "approval_status": row.approval_status or "approved",
+            "authority_tier": row.authority_tier or "user_uploaded",
+            "quality_score": row.quality_score,
+            "allowed_use": row.allowed_use or ["qual_report", "quant_report", "citation"],
+            "citation_metadata": row.citation_metadata or {},
+            "content_hash": row.chunk_content_hash,
         })
     
     return chunks
+
+
+def _stable_point_id(chunk_id: str) -> int:
+    digest = hashlib.sha256(str(chunk_id).encode("utf-8")).hexdigest()
+    return int(digest[:16], 16) % (10**15)
+
+
+def _content_hash(content: str) -> str:
+    return hashlib.sha256((content or "").encode("utf-8")).hexdigest()
+
+
+def _as_json_list(value) -> list:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, list):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+        return [part.strip() for part in value.split(",") if part.strip()]
+    return [value]
+
+
+def _as_json_dict(value) -> dict:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            return parsed if isinstance(parsed, dict) else {}
+        except json.JSONDecodeError:
+            return {}
+    return {}
 
 
 def create_embeddings_batch(texts: list[str]) -> list[list[float]]:
@@ -94,9 +154,8 @@ async def process_chunks_batch(chunks: list):
     # Prepare points for Qdrant
     points = []
     for chunk, embedding in zip(chunks, embeddings):
-        # Convert string ID to integer using hash
-        # This creates a unique integer from the string ID
-        point_id = abs(hash(chunk["chunk_id"])) % (10**15)  # Keep it under 15 digits
+        point_id = _stable_point_id(chunk["chunk_id"])
+        content_hash = chunk.get("content_hash") or _content_hash(chunk["content"])
         
         payload = {
             "chunk_id": chunk["chunk_id"],  # Keep original ID in payload
@@ -105,8 +164,19 @@ async def process_chunks_batch(chunks: list):
             "source_type": chunk["source_type"],
             "source_url": chunk["source_url"],
             "domain": chunk["domain"],
+            "exploration_id": chunk.get("exploration_id"),
+            "registry_id": chunk.get("registry_id"),
+            "source_group": chunk.get("source_group"),
+            "source_keywords": _as_json_list(chunk.get("source_keywords")),
+            "approval_status": chunk.get("approval_status") or "approved",
+            "authority_tier": chunk.get("authority_tier") or "user_uploaded",
+            "quality_score": chunk.get("quality_score"),
+            "allowed_use": _as_json_list(chunk.get("allowed_use")),
+            "citation_metadata": _as_json_dict(chunk.get("citation_metadata")),
             "chunk_index": chunk["chunk_index"],
             "data_type": chunk["data_type"] or "text",
+            "content_hash": content_hash,
+            "embedding_model": settings.EMBEDDING_MODEL,
             "content": chunk["content"],
             "content_preview": chunk["content"][:200],
         }
@@ -130,15 +200,14 @@ async def embed_all_chunks(limit: int = None):
     
     async with AsyncSessionLocal() as session:
         # Get chunks
-        print("\nFetching chunks from sync_source.content_chunk...")
+        print("\nFetching unembedded chunks from sync_source.content_chunk...")
         chunks = await get_chunks_from_db(session, limit)
-        
+
         total = len(chunks)
-        print(f"Found {total:,} chunks to process")
-        
+        print(f"Found {total:,} pending chunks to embed")
+
         if total == 0:
-            print("\n⚠️  No chunks found in database!")
-            print("Make sure sync_source.content_chunk has data.")
+            print("\n✅ No pending chunks — all sources already embedded.")
             return []
         
         # Process in batches

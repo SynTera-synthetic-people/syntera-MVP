@@ -70,6 +70,12 @@ def _parse_form_bool(value: Any, default: bool = False) -> bool:
     return default
 
 
+def _parse_csv_list(value: Optional[str]) -> list[str]:
+    if not value:
+        return []
+    return [item.strip() for item in str(value).split(",") if item.strip()]
+
+
 async def _background_scrape_urls(
     document_id: str,
     domain: Optional[str],
@@ -302,6 +308,12 @@ async def upload_source_document(
     file: UploadFile = File(...),
     title: str = Form(...),
     domain: Optional[str] = Form(None),
+    source_group: Optional[str] = Form(None),
+    keywords: Optional[str] = Form(None),
+    registry_id: Optional[str] = Form(None),
+    approval_status: Optional[str] = Form(None),
+    authority_tier: Optional[str] = Form(None),
+    allowed_use: Optional[str] = Form(None),
     exploration_id: Optional[str] = Form(None),
     scrape_urls: Optional[str] = Form(None),
     scrape_sync: Optional[str] = Form(None),
@@ -350,6 +362,12 @@ async def upload_source_document(
             domain=domain,
             exploration_id=exploration_id,
             user_id=current_user.id,
+            source_group=source_group,
+            source_keywords=_parse_csv_list(keywords),
+            registry_id=registry_id,
+            approval_status=approval_status,
+            authority_tier=authority_tier,
+            allowed_use=_parse_csv_list(allowed_use) or None,
         )
     except Exception as exc:
         logger.exception("Source document upload failed")
@@ -401,6 +419,12 @@ async def register_source_url(
     url: str = Form(...),
     title: str = Form(...),
     domain: Optional[str] = Form(None),
+    source_group: Optional[str] = Form(None),
+    keywords: Optional[str] = Form(None),
+    registry_id: Optional[str] = Form(None),
+    approval_status: Optional[str] = Form(None),
+    authority_tier: Optional[str] = Form(None),
+    allowed_use: Optional[str] = Form(None),
     exploration_id: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_active_user),
@@ -413,6 +437,12 @@ async def register_source_url(
         domain=domain,
         exploration_id=exploration_id,
         user_id=current_user.id,
+        source_group=source_group,
+        source_keywords=_parse_csv_list(keywords),
+        registry_id=registry_id,
+        approval_status=approval_status,
+        authority_tier=authority_tier,
+        allowed_use=_parse_csv_list(allowed_use) or None,
     )
     return doc
 

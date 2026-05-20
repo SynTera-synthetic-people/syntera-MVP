@@ -11,10 +11,10 @@ import sys
 import numpy as np
 import joblib
 
-# Absolute path to the ml-pipeline's models/saved/ dir
-_BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-ML_PIPELINE_DIR = os.path.abspath(os.path.join(_BACKEND_DIR, "..", "syntera-ml-pipeline"))
-MODELS_SAVED_DIR = os.path.join(ML_PIPELINE_DIR, "models", "saved")
+# Models live alongside the backend code at app/ml/models/saved/
+# This path works both locally and inside the Docker container (COPY . .)
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+MODELS_SAVED_DIR = os.path.join(_THIS_DIR, "models", "saved")
 
 VALID_DOMAINS = {"ecom", "food", "mobility", "finance"}
 _MODEL_NAMES = ["xgboost", "lightgbm", "catboost", "random_forest", "neural_net"]
