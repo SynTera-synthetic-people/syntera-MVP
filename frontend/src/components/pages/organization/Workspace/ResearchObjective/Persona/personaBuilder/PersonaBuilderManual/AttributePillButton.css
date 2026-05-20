@@ -24,15 +24,15 @@
 
 /* Selected state — solid teal fill, dark text, exactly as Figma */
 .attribute-pill--selected {
-  background: #00D4A8;
-  border-color: #00D4A8;
+  background: #24E5B6;
+  border-color: #24E5B6;
   color: #0a0f14;
   font-weight: 600;
 }
 
 .attribute-pill--selected:hover:not(.attribute-pill--disabled) {
-  background: #00bc95;
-  border-color: #00bc95;
+  background: #24E5B6;
+  border-color: #24E5B6;
   color: #0a0f14;
 }
 

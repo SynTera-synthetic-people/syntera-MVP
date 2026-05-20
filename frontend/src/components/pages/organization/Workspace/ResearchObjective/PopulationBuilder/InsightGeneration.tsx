@@ -1,7 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TbLoader } from 'react-icons/tb';
 import SpIcon from '../../../../../SPIcon';
+import { useUpdateExplorationMethod } from '../../../../../../hooks/useExplorations';
+import ImpactHighFiveModal from '../DepthInterview/components/ImpactHighFiveModal';
 import './InsightGeneration.css';
 
 interface InsightsGenerationProps {
@@ -138,9 +142,18 @@ const INSIGHT_CARDS: InsightCard[] = [
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-const InsightsGeneration: React.FC<InsightsGenerationProps> = ({ onLaunchSurvey, explorationId }) => {
+const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
+  onLaunchSurvey,
+  explorationId,
+  workspaceId,
+}) => {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const updateExplorationMutation = useUpdateExplorationMethod();
+
   const [cardStates, setCardStates] = useState<Record<string, CardState>>({});
   const [viewingCard, setViewingCard] = useState<ViewableCardId | null>(null);
+  const [showImpactModal, setShowImpactModal] = useState(false);
 
   useEffect(() => {
     if (explorationId) {
@@ -150,6 +163,8 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({ onLaunchSurvey,
 
   // End Exploration is only enabled after at least one insight is generated
   const hasAnyInsightReady = Object.values(cardStates).some((s) => s === 'done');
+
+  // ── Card action ───────────────────────────────────────────────────────────
 
   const handleAction = (card: InsightCard) => {
     const state = cardStates[card.id] ?? 'idle';
@@ -165,6 +180,34 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({ onLaunchSurvey,
       setCardStates((prev) => ({ ...prev, [card.id]: 'done' }));
     }, 2500);
   };
+
+  // ── End Exploration ───────────────────────────────────────────────────────
+
+  const handleEndExplorationClick = () => {
+    setShowImpactModal(true);
+  };
+
+  const handleImpactSubmit = async () => {
+    setShowImpactModal(false);
+    try {
+      if (explorationId) {
+        localStorage.setItem(`quant_sub4_${explorationId}`, '1');
+      }
+      type EndFn = (args: { id: string | undefined; data: { is_end: boolean } }) => Promise<unknown>;
+      await (updateExplorationMutation.mutateAsync as unknown as EndFn)({
+        id: explorationId,
+        data: { is_end: true },
+      });
+      queryClient.invalidateQueries({ queryKey: ['explorations'] });
+      navigate(`/main/organization/workspace/explorations/${workspaceId}`);
+    } catch (err) {
+      console.error('Failed to end exploration:', err);
+      // Navigate anyway so user is never stuck
+      navigate(`/main/organization/workspace/explorations/${workspaceId}`);
+    }
+  };
+
+  // ── Animation variants ────────────────────────────────────────────────────
 
   const containerVariants = {
     hidden: {},
@@ -247,20 +290,25 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({ onLaunchSurvey,
         <button
           className="ig-footer__btn ig-footer__btn--end"
           disabled={!hasAnyInsightReady}
-          onClick={() => {
-            // Wire to your navigation / end-exploration mutation
-          }}
+          onClick={handleEndExplorationClick}
         >
           End Exploration
         </button>
       </div>
 
-      {/* ── Viewer Modal ── */}
+      {/* ── Modals ── */}
       <AnimatePresence>
         {viewingCard !== null && (
           <InsightViewerModal
             cardId={viewingCard}
             onClose={() => setViewingCard(null)}
+          />
+        )}
+
+        {showImpactModal && (
+          <ImpactHighFiveModal
+            onSubmit={handleImpactSubmit}
+            onClose={() => setShowImpactModal(false)}
           />
         )}
       </AnimatePresence>

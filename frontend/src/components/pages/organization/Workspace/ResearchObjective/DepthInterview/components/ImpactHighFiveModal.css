@@ -93,7 +93,7 @@
 }
 
 .ihf-question__num {
-  color: #06A17B;
+  color: white;
   font-weight: 700;
   flex-shrink: 0;
 }
@@ -123,13 +123,13 @@
 }
 
 .ihf-option:hover {
-  border-color: rgba(255, 255, 255, 0.25);
+  border-color: #37FFCE;
   background: rgba(255, 255, 255, 0.04);
   color: #ffffff;
 }
 
 .ihf-option--selected {
-  border-color: rgba(255, 255, 255, 0.35);
+  border-color: #37FFCE;
   background: rgba(255, 255, 255, 0.06);
   color: #ffffff;
 }
@@ -148,8 +148,8 @@
 }
 
 .ihf-option__radio--selected {
-  border-color: #06A17B;
-  background: radial-gradient(circle, #06A17B 5px, transparent 5px);
+  border-color: #37FFCE;
+  background: radial-gradient(circle, #37FFCE 5px, transparent 5px);
 }
 
 /* ── Submit button ───────────────────────────────────────────────────────── */

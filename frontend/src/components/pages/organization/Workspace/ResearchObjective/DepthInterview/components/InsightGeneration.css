@@ -83,13 +83,13 @@
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 20px;
   font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.55);
+  color: white;
   font-weight: 500;
 }
 
 .ig-card__badge-icon {
   flex-shrink: 0;
-  color: rgba(255, 255, 255, 0.4);
+  color: white;
 }
 
 /* Title */
@@ -179,48 +179,46 @@
   gap: 12px;
 }
 
-/* Shared footer button base */
+/* Shared footer button base — neutral reset only */
 .ig-footer__btn {
-  display: inline-flex;
+  display: flex;
+  padding: 12px 20px;
+  justify-content: center;
   align-items: center;
   gap: 8px;
-  padding: 11px 22px;
-  border-radius: 10px;
+  border-radius: 8px;
   font-size: 0.9375rem;
   font-weight: 500;
   font-family: inherit;
   cursor: pointer;
+  background: transparent;
+  border: none;
+  color: #ffffff;
   transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 
-/* Ghost (outlined) — Conversation Studio + Begin Quant */
-.ig-footer__btn--ghost {
+/* "Conversation Studio" + "Begin Quant Exploration" */
+.ig-footer__btn.ig-footer__btn--white {
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  color: rgba(255, 255, 255, 0.85);
-}
-
-.ig-footer__btn--ghost:hover {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.35);
+  border: 1px solid #393C45 !important;
   color: #ffffff;
 }
 
-/* Arrow variant */
-.ig-footer__btn--arrow {
-  gap: 6px;
+.ig-footer__btn.ig-footer__btn--white:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.3) !important;
+  color: #ffffff;
 }
 
-/* End Exploration — teal outlined matching Figma */
+/* "End Exploration" — teal outlined */
 .ig-footer__btn--end {
   background: transparent;
-  border: 1px solid #24E5B6;
+  border-color: #24E5B6;
   color: #24E5B6;
 }
 
 .ig-footer__btn--end:hover {
-  background: transparent;
-  border: 1px solid #E52728;
+  border-color: #E52728;
   color: #E52728;
 }
 

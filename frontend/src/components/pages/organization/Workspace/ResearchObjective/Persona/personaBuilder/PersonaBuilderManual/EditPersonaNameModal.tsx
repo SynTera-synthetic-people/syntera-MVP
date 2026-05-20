@@ -74,7 +74,7 @@ const EditPersonaNameModal: React.FC<EditPersonaNameModalProps> = ({
           >
             {/* Title */}
             <h2 className="epn-title" id="epn-title">Edit Persona Name</h2>
-            <p className="epn-subtitle">Content goes here</p>
+            <p className="epn-subtitle">Give your persona an identity</p>
 
             {/* Input */}
             <div className="epn-input-wrapper">

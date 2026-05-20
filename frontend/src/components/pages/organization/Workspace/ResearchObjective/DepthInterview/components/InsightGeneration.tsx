@@ -102,8 +102,8 @@ const InsightGeneration: React.FC = () => {
 
   // Download mutations — used only in the viewer modal (cache hit, fast).
   const downloadTranscriptsMutation = useDownloadQualTranscripts(workspaceId, objectiveId);
-  const downloadDecisionMutation    = useDownloadQualDecisionIntelligence(workspaceId, objectiveId);
-  const downloadBehaviourMutation   = useDownloadQualBehaviorArchaeology(workspaceId, objectiveId);
+  const downloadDecisionMutation = useDownloadQualDecisionIntelligence(workspaceId, objectiveId);
+  const downloadBehaviourMutation = useDownloadQualBehaviorArchaeology(workspaceId, objectiveId);
 
   // Prepare mutation — fires background LLM generation on the server and returns
   // immediately so the browser never blocks waiting for a 2-3 min LLM call.
@@ -128,12 +128,12 @@ const InsightGeneration: React.FC = () => {
 
     setCardStates((prev) => {
       const next = { ...prev };
-      if (DI === 'done')                                       next.decision  = 'ready';
-      else if (DI === 'failed' && prev.decision === 'generating') next.decision  = 'idle';
-      if (BA === 'done')                                       next.behaviour = 'ready';
+      if (DI === 'done') next.decision = 'ready';
+      else if (DI === 'failed' && prev.decision === 'generating') next.decision = 'idle';
+      if (BA === 'done') next.behaviour = 'ready';
       else if (BA === 'failed' && prev.behaviour === 'generating') next.behaviour = 'idle';
       // Restore verbatim only if not currently generating (avoid race)
-      if (TR === 'done' && prev.verbatim !== 'generating')    next.verbatim  = 'ready';
+      if (TR === 'done' && prev.verbatim !== 'generating') next.verbatim = 'ready';
       return next;
     });
 
@@ -298,21 +298,21 @@ const InsightGeneration: React.FC = () => {
       {/* ── Footer action bar ── */}
       <div className="ig-footer">
         <div className="ig-footer__left">
-          {/* Conversation Studio — only rendered after at least one insight is generated */}
+
+          {/* Conversation Studio */}
           {hasAnyInsightReady && (
             <button
-              className="ig-footer__btn ig-footer__btn--ghost"
+              className="ig-footer__btn ig-footer__btn--white"
               onClick={() => setShowConversationStudio(true)}
             >
               Conversation Studio
             </button>
           )}
 
-          {/* Begin Quant Exploration — only shown when user chose "Both".
-               Pure quantitative users never reach this page via the qual flow. */}
+          {/* Begin Quant Exploration */}
           {researchApproach === 'both' && (
             <button
-              className="ig-footer__btn ig-footer__btn--ghost ig-footer__btn--arrow"
+              className="ig-footer__btn ig-footer__btn--white"
               onClick={handleBeginQuant}
             >
               Begin Quant Exploration

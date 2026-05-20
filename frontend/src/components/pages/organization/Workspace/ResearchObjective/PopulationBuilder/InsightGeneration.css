@@ -188,19 +188,21 @@
 }
 
 .ig-footer__btn--end {
-  background: #ef4444;
-  color: #ffffff;
+  background: transparent;
+  border: 1px solid #24E5B6;
+  color: #24E5B6;
 }
 
 .ig-footer__btn--end:hover:not(:disabled) {
-  background: #dc2626;
+    background: transparent;
+  border: 1px solid #E52728;
+  color: #E52728;
 }
 
 .ig-footer__btn--end:disabled {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.25);
-  cursor: not-allowed;
+  opacity: 0.4;
+  cursor: not-allowed !important;
+  pointer-events: auto;
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
