@@ -1,6 +1,6 @@
 """
 Meta-Model Training
-Trains meta-model that learns optimal combination of 5 base models
+Trains meta-model that learns optimal combination of 4 base models
 """
 
 import sys
@@ -29,12 +29,12 @@ class MetaModelTrainer:
         self.feature_columns = None
         
     def load_base_models(self, model_dir='saved'):
-        """Load all 5 base models for this domain"""
+        """Load all 4 base models for this domain"""
         # Create absolute path
         base_path = os.path.dirname(__file__)
         full_model_dir = os.path.join(base_path, model_dir)
         
-        model_names = ['xgboost', 'lightgbm', 'catboost', 'random_forest', 'neural_net']
+        model_names = ['xgboost', 'lightgbm', 'catboost', 'random_forest']
         
         print(f"\n{'='*60}")
         print(f"Loading base models for {self.domain.upper()}")
@@ -54,27 +54,27 @@ class MetaModelTrainer:
             self.feature_columns = joblib.load(feature_file)
             print(f"✅ Loaded: feature columns ({len(self.feature_columns)} features)")
         
-        if len(self.base_models) < 5:
-            raise ValueError(f"Only found {len(self.base_models)}/5 base models for {self.domain}")
+        if len(self.base_models) < 4:
+            raise ValueError(f"Only found {len(self.base_models)}/4 base models for {self.domain}")
     
     def generate_meta_features(self, X):
         """
-        Generate meta-features: predictions from all 5 base models
+        Generate meta-features: predictions from all 4 base models
         
         Args:
             X: Input features (n_samples, n_features)
         
         Returns:
-            Meta-features (n_samples, 5) - one prediction per base model
+            Meta-features (n_samples, 4) - one prediction per base model
         """
         meta_features = []
         
-        for name in ['xgboost', 'lightgbm', 'catboost', 'random_forest', 'neural_net']:
+        for name in ['xgboost', 'lightgbm', 'catboost', 'random_forest']:
             if name in self.base_models:
                 predictions = self.base_models[name].predict(X)
                 meta_features.append(predictions)
         
-        # Stack predictions: shape (n_samples, 5)
+        # Stack predictions: shape (n_samples, 4)
         return np.column_stack(meta_features)
     
     def train(self, X_train, y_train, X_val, y_val):
@@ -97,7 +97,7 @@ class MetaModelTrainer:
         meta_X_val = self.generate_meta_features(X_val)
         
         print(f"Meta-features shape: {meta_X_train.shape}")
-        print(f"   (5 predictions from 5 base models)")
+        print(f"   (4 predictions from 4 base models)")
         
         # Train meta-model (gradient boosting)
         print("\n🚀 Training Gradient Boosting Meta-Model...")
@@ -127,7 +127,7 @@ class MetaModelTrainer:
         
         # Show learned weights (feature importances)
         print(f"\n📊 Learned Model Weights (Feature Importances):")
-        model_names = ['XGBoost', 'LightGBM', 'CatBoost', 'RandomForest', 'NeuralNet']
+        model_names = ['XGBoost', 'LightGBM', 'CatBoost', 'RandomForest']
         importances = self.meta_model.feature_importances_
         
         for name, weight in zip(model_names, importances):

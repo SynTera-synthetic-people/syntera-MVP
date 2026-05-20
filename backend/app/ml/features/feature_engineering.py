@@ -11,9 +11,6 @@ from datetime import datetime, timedelta
 from tqdm import tqdm
 import json
 
-# Add backend to path to access existing DB config
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../backend')))
-
 from sqlalchemy import create_engine
 from app.config import Settings
 
@@ -150,6 +147,41 @@ class ActionFeatureEngineer:
         
         return (second_rate - first_rate) / first_rate
     
+    
+    def add_domain_features(df, domain):
+        """
+        Domain-specific feature engineering
+        """
+        if domain == 'ecom':
+            # Cart abandonment proxy (incomplete orders)
+            df['small_order_ratio'] = (df['transaction_amount'] < df['transaction_amount'].quantile(0.25)).astype(int)
+            
+            # Repeat purchase rate (same amount orders)
+            df['repeat_purchase'] = df.groupby(['subject_key', 'transaction_amount']).transform('size') > 1
+            
+        elif domain == 'food':
+            # Late night orders (10pm-2am)
+            df['late_night_ratio'] = df.groupby('subject_key').apply(
+                lambda x: ((x['hour'] >= 22) | (x['hour'] <= 2)).mean()
+            )
+            
+            # Meal time regularity
+            df['meal_time_std'] = df.groupby('subject_key')['hour'].transform('std')
+            
+        elif domain == 'mobility':
+            # Commute pattern (same time/route orders)
+            df['commute_pattern'] = df.groupby('subject_key')['hour'].transform(lambda x: (x.mode()[0] if len(x.mode()) > 0 else 0))
+            
+        elif domain == 'finance':
+            # Bill payment pattern (regular amounts)
+            df['regular_amount'] = df.groupby(['subject_key', 'transaction_amount']).transform('size') > 2
+            
+            # Payday correlation (if available)
+            df['day_of_month'] = df['transaction_date'].dt.day
+            df['payday_pattern'] = df['day_of_month'].isin([1,2,3, 15,16,17, 28,29,30,31])
+        
+        return df
+
     def _recency_weighted_freq(self, df):
         """Weight recent transactions more heavily"""
         df = df.copy()
@@ -218,6 +250,64 @@ class ActionFeatureEngineer:
         # Coefficient of variation
         return monthly.std() / monthly.mean() if monthly.mean() > 0 else 0
 
+def add_rfm_features(df):
+    """Add RFM scores"""
+    max_date = df['transaction_date'].max()
+    
+    # Recency
+    df['recency_days'] = (max_date - df.groupby('subject_key')['transaction_date'].transform('max')).dt.days
+    df['recency_score'] = 1 / (1 + df['recency_days'] / 30)
+    
+    # Frequency score (transactions per day)
+    min_date = df.groupby('subject_key')['transaction_date'].transform('min')
+    user_days = (max_date - min_date).dt.days + 1
+    df['frequency_score'] = df.groupby('subject_key')['transaction_date'].transform('count') / user_days
+    
+    # Monetary score (avg transaction amount)
+    df['monetary_score'] = df.groupby('subject_key')['transaction_amount'].transform('mean')
+    
+    # Combined RFM score
+    df['rfm_score'] = (df['recency_score'] + df['frequency_score'] + df['monetary_score']) / 3
+    
+    return df
+
+
+def add_time_patterns(df):
+    """Add temporal patterns"""
+    df['hour'] = df['transaction_date'].dt.hour
+    df['dow'] = df['transaction_date'].dt.dayofweek
+    
+    # Time consistency
+    df['time_consistency'] = 1 / (1 + df.groupby('subject_key')['hour'].transform('std').fillna(0))
+    
+    # Rush hour
+    df['is_rush_hour'] = df['hour'].isin([7,8,9, 12,13,14, 19,20,21,22])
+    df['rush_hour_ratio'] = df.groupby('subject_key')['is_rush_hour'].transform('mean')
+    
+    # Weekday preference
+    df['weekday_preference'] = df.groupby('subject_key')['dow'].transform(lambda x: x.mode()[0] if len(x.mode()) > 0 else 0)
+    
+    return df
+
+
+def add_loyalty_features(df):
+    """Add engagement metrics"""
+    min_date = df.groupby('subject_key')['transaction_date'].transform('min')
+    max_date = df.groupby('subject_key')['transaction_date'].transform('max')
+    
+    # Tenure
+    df['tenure_days'] = (max_date - min_date).dt.days + 1
+    
+    # Activity density
+    df['activity_density'] = df.groupby('subject_key')['transaction_date'].transform('count') / df['tenure_days']
+    
+    # Retention (weeks with orders / total weeks)
+    df['week'] = df['transaction_date'].dt.isocalendar().week
+    weeks_with_orders = df.groupby('subject_key')['week'].transform('nunique')
+    total_weeks = df['tenure_days'] / 7
+    df['retention_rate'] = weeks_with_orders / total_weeks.replace(0, 1)
+    
+    return df
 
 def extract_actions_data(domain=None, limit=None):
     """
@@ -364,7 +454,6 @@ def get_user_transaction_count(min_transactions=5):
             print(f"   {domain}: {count:,} users")
     
     return df
-    
 
 
 def build_feature_dataset(actions_df, min_transactions=5, output_file='data/features.csv'):
@@ -380,11 +469,19 @@ def build_feature_dataset(actions_df, min_transactions=5, output_file='data/feat
         Feature dataframe
     """
     engineer = ActionFeatureEngineer()
+
+    # === ADD NEW FEATURES ===
+    print("\n📊 Adding RFM features...")
+    actions_df = add_rfm_features(actions_df)
+    print("📊 Adding time patterns...")
+    actions_df = add_time_patterns(actions_df)
+    print("📊 Adding loyalty features...")
+    actions_df = add_loyalty_features(actions_df)
     
     # Get eligible users (≥5 transactions per domain)
     user_domain_counts = actions_df.groupby(['subject_key', 'domain']).size().reset_index(name='count')
     eligible = user_domain_counts[user_domain_counts['count'] >= min_transactions]
-    
+
     print(f"\n{'='*60}")
     print(f"Building Features for {len(eligible):,} user-domain combinations")
     print(f"{'='*60}")
@@ -396,8 +493,43 @@ def build_feature_dataset(actions_df, min_transactions=5, output_file='data/feat
         subject_key = row['subject_key']
         domain = row['domain']
         
+        # Extract base features
         features = engineer.extract_features(subject_key, domain, actions_df)
+        
         if features:
+            # Add new features from the enhanced dataframe
+            user_data = actions_df[
+                (actions_df['subject_key'] == subject_key) & 
+                (actions_df['domain'] == domain)
+            ]
+            
+            if len(user_data) > 0:
+                # Add RFM features
+                if 'recency_score' in user_data.columns:
+                    features['recency_score'] = user_data['recency_score'].iloc[0]
+                if 'frequency_score' in user_data.columns:
+                    features['frequency_score'] = user_data['frequency_score'].iloc[0]
+                if 'monetary_score' in user_data.columns:
+                    features['monetary_score'] = user_data['monetary_score'].iloc[0]
+                if 'rfm_score' in user_data.columns:
+                    features['rfm_score'] = user_data['rfm_score'].iloc[0]
+                
+                # Add time pattern features
+                if 'time_consistency' in user_data.columns:
+                    features['time_consistency'] = user_data['time_consistency'].iloc[0]
+                if 'rush_hour_ratio' in user_data.columns:
+                    features['rush_hour_ratio'] = user_data['rush_hour_ratio'].iloc[0]
+                if 'weekday_preference' in user_data.columns:
+                    features['weekday_preference'] = user_data['weekday_preference'].iloc[0]
+                
+                # Add loyalty features
+                if 'tenure_days' in user_data.columns:
+                    features['tenure_days'] = user_data['tenure_days'].iloc[0]
+                if 'activity_density' in user_data.columns:
+                    features['activity_density'] = user_data['activity_density'].iloc[0]
+                if 'retention_rate' in user_data.columns:
+                    features['retention_rate'] = user_data['retention_rate'].iloc[0]
+            
             all_features.append(features)
     
     # Convert to dataframe

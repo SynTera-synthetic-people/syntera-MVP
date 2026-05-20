@@ -9,9 +9,6 @@ import numpy as np
 import pandas as pd
 import joblib
 
-# Add backend to path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../backend')))
-
 
 class MLPredictor:
     """
@@ -33,7 +30,7 @@ class MLPredictor:
         full_model_dir = os.path.join(base_path, self.model_dir)
         
         # Load base models
-        model_names = ['xgboost', 'lightgbm', 'catboost', 'random_forest', 'neural_net']
+        model_names = ['xgboost', 'lightgbm', 'catboost', 'random_forest']
         for name in model_names:
             filepath = os.path.join(full_model_dir, f"{self.domain}_{name}.joblib")
             if os.path.exists(filepath):
@@ -76,7 +73,7 @@ class MLPredictor:
         # Meta-model prediction
         if self.meta_model:
             meta_features = np.array([[base_predictions[name] for name in 
-                                     ['xgboost', 'lightgbm', 'catboost', 'random_forest', 'neural_net']]])
+                                     ['xgboost', 'lightgbm', 'catboost', 'random_forest']]])
             final_prediction = float(self.meta_model.predict(meta_features)[0])
         else:
             # Fallback: simple average
@@ -145,7 +142,7 @@ class MLPredictor:
         explanation += f"Confidence: {confidence*100:.1f}% ({conf_label})\n\n"
         explanation += "Based on:\n"
         explanation += "• 15 behavioral features from transaction history\n"
-        explanation += "• 5 ML models (XGBoost, LightGBM, CatBoost, RF, NN)\n"
+        explanation += "• 4 ML models (XGBoost, LightGBM, CatBoost, RF)\n"
         explanation += "• Meta-model optimal combination\n\n"
         explanation += "Individual model predictions:\n"
         for name, pred in base_predictions.items():

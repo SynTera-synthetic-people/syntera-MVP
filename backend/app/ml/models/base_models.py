@@ -1,6 +1,6 @@
 """
 Base Model Training
-Trains 5 ML algorithms per domain (XGBoost, LightGBM, CatBoost, RF, NN)
+Trains 4 ML algorithms per domain (XGBoost, LightGBM, CatBoost, RF)
 """
 
 import sys
@@ -16,13 +16,10 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.neural_network import MLPRegressor
 import joblib
 
-# Add backend to path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../backend')))
-
 
 class BaseModelTrainer:
     """
-    Train 5 base models for a domain
+    Train 4 base models for a domain
     """
     
     def __init__(self, domain):
@@ -56,7 +53,7 @@ class BaseModelTrainer:
         X = df[self.feature_columns].values
         y = df[target_column].values
         
-        # Fill NaN values with 0 (for Random Forest & Neural Network)
+        # Fill NaN values with 0 (for Random Forest)
         import numpy as np
         X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
         
@@ -186,38 +183,10 @@ class BaseModelTrainer:
         self.models['random_forest'] = model
         return mae, rmse, r2
     
-    def train_neural_network(self, X_train, y_train, X_test, y_test):
-        """Train Neural Network model"""
-        print("\n🚀 Training Neural Network...")
-        
-        model = MLPRegressor(
-            hidden_layer_sizes=(128, 64, 32),
-            activation='relu',
-            solver='adam',
-            alpha=0.001,
-            batch_size=32,
-            learning_rate='adaptive',
-            max_iter=300,
-            early_stopping=True,
-            validation_fraction=0.1,
-            random_state=42
-        )
-        
-        model.fit(X_train, y_train)
-        
-        predictions = model.predict(X_test)
-        mae = mean_absolute_error(y_test, predictions)
-        rmse = np.sqrt(mean_squared_error(y_test, predictions))
-        r2 = r2_score(y_test, predictions)
-        
-        print(f"   MAE: {mae:.4f} | RMSE: {rmse:.4f} | R²: {r2:.4f}")
-        
-        self.models['neural_net'] = model
-        return mae, rmse, r2
     
     def train_all(self, features_df, target_column='orders_per_week'):
         """
-        Train all 5 base models
+        Train all 4 base models
         """
         # Prepare data
         X_train, X_test, y_train, y_test = self.prepare_data(features_df, target_column)
@@ -228,10 +197,9 @@ class BaseModelTrainer:
         results['lightgbm'] = self.train_lightgbm(X_train, y_train, X_test, y_test)
         results['catboost'] = self.train_catboost(X_train, y_train, X_test, y_test)
         results['random_forest'] = self.train_random_forest(X_train, y_train, X_test, y_test)
-        results['neural_net'] = self.train_neural_network(X_train, y_train, X_test, y_test)
         
         print(f"\n{'='*60}")
-        print(f"✅ All 5 base models trained for {self.domain.upper()}")
+        print(f"✅ All 4 base models trained for {self.domain.upper()}")
         print(f"{'='*60}")
         
         # Print summary
