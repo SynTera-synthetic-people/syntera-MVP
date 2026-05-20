@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { TbLoader } from 'react-icons/tb';
-import SpIcon from '../../../../../SPIcon'
+import SpIcon from '../../../../../SPIcon';
 import './InsightGeneration.css';
 
 interface InsightsGenerationProps {
@@ -14,6 +14,7 @@ interface InsightsGenerationProps {
 }
 
 type CardState = 'idle' | 'generating' | 'done';
+type ViewableCardId = 'decision' | 'behaviour';
 
 interface InsightCard {
   id: string;
@@ -22,46 +23,79 @@ interface InsightCard {
   title: string;
   description: string;
   actionLabel: 'Generate' | 'Start';
+  hasViewer?: boolean;
 }
 
-// Icons matching Figma exactly
-const RawDataIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="38" height="38">
-    <circle cx="12" cy="8" r="3" />
-    <path d="M6 20v-1a6 6 0 0 1 12 0v1" />
-    <path d="M17 8.5c.5-.3 1-.5 1.5-.5a3 3 0 0 1 0 6c-.5 0-1-.2-1.5-.5" />
-    <path d="M19 19.5A6 6 0 0 1 24 20" />
-  </svg>
-);
+// ── Viewer Modal ──────────────────────────────────────────────────────────────
 
-const DecisionIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="38" height="38">
-    <path d="M9 18h6" />
-    <path d="M10 22h4" />
-    <path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14" />
-  </svg>
-);
+const VIEWER_META: Record<ViewableCardId, { title: string; subtitle: string }> = {
+  decision: {
+    title: 'Decision Intelligence',
+    subtitle: 'How your personas make decisions and prioritize.',
+  },
+  behaviour: {
+    title: 'Behaviour Archaeology',
+    subtitle: 'Deep psychological patterns behind the choices.',
+  },
+};
 
-const BehaviourIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="38" height="38">
-    <path d="M3 12a9 9 0 1 0 18 0" />
-    <path d="M12 3v9" />
-    <path d="M12 12l4.5 4.5" />
-    <circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" />
-  </svg>
-);
+const InsightViewerModal: React.FC<{ cardId: ViewableCardId; onClose: () => void }> = ({
+  cardId,
+  onClose,
+}) => {
+  const meta = VIEWER_META[cardId];
 
-const PlaygroundIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="38" height="38">
-    <path d="M12 2H6a2 2 0 0 0-2 2v4" />
-    <path d="M12 2h6a2 2 0 0 1 2 2v4" />
-    <path d="M12 2v10" />
-    <path d="M4 8h16" />
-    <path d="M4 8v10a2 2 0 0 0 2 2h4" />
-    <path d="M20 8v10a2 2 0 0 1-2 2h-4" />
-    <path d="M12 12v10" />
-  </svg>
-);
+  return (
+    <motion.div
+      className="ig-ivm-overlay"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={onClose}
+    >
+      <motion.div
+        className="ig-ivm-panel"
+        initial={{ opacity: 0, y: 24, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 24, scale: 0.98 }}
+        transition={{ duration: 0.22, ease: 'easeOut' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="ig-ivm-header">
+          <div className="ig-ivm-header__text">
+            <h2 className="ig-ivm-header__title">{meta.title}</h2>
+            <p className="ig-ivm-header__subtitle">{meta.subtitle}</p>
+          </div>
+          <button className="ig-ivm-close-btn" onClick={onClose} title="Close">
+            <SpIcon name="sp-Menu-Close_MD" size={20} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="ig-ivm-body">
+          <div className="ig-ivm-placeholder">
+            <p className="ig-ivm-placeholder__label">{meta.title}</p>
+            <p className="ig-ivm-placeholder__sub">{meta.subtitle}</p>
+            <p className="ig-ivm-placeholder__note">
+              [Document content would render here as embedded PDF or HTML preview]
+            </p>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="ig-ivm-footer">
+          <button className="ig-ivm-download-btn">
+            <SpIcon name="sp-File-File_Download" size={16} />
+            Download PDF
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+};
+
+// ── Card definitions ──────────────────────────────────────────────────────────
 
 const INSIGHT_CARDS: InsightCard[] = [
   {
@@ -71,6 +105,7 @@ const INSIGHT_CARDS: InsightCard[] = [
     title: 'Raw Data Shell',
     description: 'Structured response data, ready for analysis, export, and validation',
     actionLabel: 'Generate',
+    hasViewer: false,
   },
   {
     id: 'decision',
@@ -79,6 +114,7 @@ const INSIGHT_CARDS: InsightCard[] = [
     title: 'Decision Intelligence',
     description: 'From responses to clear, decision-ready insights and recommendations',
     actionLabel: 'Generate',
+    hasViewer: true,
   },
   {
     id: 'behaviour',
@@ -87,6 +123,7 @@ const INSIGHT_CARDS: InsightCard[] = [
     title: 'Behaviour Archaeology',
     description: 'Uncover the behavioural patterns, motivations, and hidden drivers behind responses',
     actionLabel: 'Generate',
+    hasViewer: true,
   },
   {
     id: 'playground',
@@ -95,20 +132,37 @@ const INSIGHT_CARDS: InsightCard[] = [
     title: 'Data Playground',
     description: 'Slice, filter, and explore your data dynamically to test hypotheses and uncover patterns',
     actionLabel: 'Start',
+    hasViewer: false,
   },
 ];
 
+// ── Component ─────────────────────────────────────────────────────────────────
+
 const InsightsGeneration: React.FC<InsightsGenerationProps> = ({ onLaunchSurvey, explorationId }) => {
   const [cardStates, setCardStates] = useState<Record<string, CardState>>({});
+  const [viewingCard, setViewingCard] = useState<ViewableCardId | null>(null);
+
   useEffect(() => {
     if (explorationId) {
       localStorage.setItem(`quant_sub4_${explorationId}`, '1');
     }
   }, [explorationId]);
-  const handleAction = (cardId: string) => {
-    setCardStates((prev) => ({ ...prev, [cardId]: 'generating' }));
+
+  // End Exploration is only enabled after at least one insight is generated
+  const hasAnyInsightReady = Object.values(cardStates).some((s) => s === 'done');
+
+  const handleAction = (card: InsightCard) => {
+    const state = cardStates[card.id] ?? 'idle';
+
+    // Done + has viewer → open modal instead of re-generating
+    if (state === 'done' && card.hasViewer) {
+      setViewingCard(card.id as ViewableCardId);
+      return;
+    }
+
+    setCardStates((prev) => ({ ...prev, [card.id]: 'generating' }));
     setTimeout(() => {
-      setCardStates((prev) => ({ ...prev, [cardId]: 'done' }));
+      setCardStates((prev) => ({ ...prev, [card.id]: 'done' }));
     }, 2500);
   };
 
@@ -145,6 +199,9 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({ onLaunchSurvey,
       >
         {INSIGHT_CARDS.map((card) => {
           const state = cardStates[card.id] ?? 'idle';
+          const isGenerating = state === 'generating';
+          const isDone = state === 'done';
+
           return (
             <motion.div key={card.id} className="ig-card" variants={cardVariants}>
               <div className="ig-card__icon-wrap">
@@ -160,13 +217,20 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({ onLaunchSurvey,
               <p className="ig-card__desc">{card.description}</p>
 
               <button
-                className={`ig-card__btn ${state === 'done' ? 'ig-card__btn--done' : ''}`}
-                onClick={() => handleAction(card.id)}
-                disabled={state === 'generating' || state === 'done'}
+                className={`ig-card__btn ${isDone && card.hasViewer
+                    ? 'ig-card__btn--view'
+                    : isDone
+                      ? 'ig-card__btn--done'
+                      : ''
+                  }`}
+                onClick={() => handleAction(card)}
+                disabled={isGenerating || (isDone && !card.hasViewer)}
               >
-                {state === 'generating' ? (
-                  <><TbLoader className="ig-card__btn-spinner" />Generating…</>
-                ) : state === 'done' ? (
+                {isGenerating ? (
+                  <><TbLoader className="ig-card__btn-spinner" size={14} />Generating…</>
+                ) : isDone && card.hasViewer ? (
+                  'View'
+                ) : isDone ? (
                   'Ready'
                 ) : (
                   card.actionLabel
@@ -176,6 +240,30 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({ onLaunchSurvey,
           );
         })}
       </motion.div>
+
+      {/* ── Footer ── */}
+      <div className="ig-footer">
+        <div className="ig-footer__left" />
+        <button
+          className="ig-footer__btn ig-footer__btn--end"
+          disabled={!hasAnyInsightReady}
+          onClick={() => {
+            // Wire to your navigation / end-exploration mutation
+          }}
+        >
+          End Exploration
+        </button>
+      </div>
+
+      {/* ── Viewer Modal ── */}
+      <AnimatePresence>
+        {viewingCard !== null && (
+          <InsightViewerModal
+            cardId={viewingCard}
+            onClose={() => setViewingCard(null)}
+          />
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 };

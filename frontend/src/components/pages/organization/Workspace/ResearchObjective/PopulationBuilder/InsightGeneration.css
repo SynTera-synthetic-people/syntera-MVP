@@ -41,7 +41,7 @@
 /* ── Card ────────────────────────────────────────────── */
 .ig-card {
   background: var(--T-Base-B3, #16181C);
-  border:  1px solid var(--T-GreyScale-Grey-800, #393C45);
+  border: 1px solid var(--T-GreyScale-Grey-800, #393C45);
   border-radius: 16px;
   padding: 24px 24px 20px;
   display: flex;
@@ -144,5 +144,198 @@
 }
 
 @keyframes ig-spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.ig-card__btn--view {
+  border-color: rgba(6, 161, 123, 0.4);
+  color: #06A17B;
+  background: rgba(6, 161, 123, 0.06);
+  cursor: pointer;
+}
+
+.ig-card__btn--view:hover {
+  background: rgba(6, 161, 123, 0.12);
+  border-color: rgba(6, 161, 123, 0.6);
+}
+
+/* ── Footer ──────────────────────────────────────────────────────────────── */
+
+.ig-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24px 0 0;
+  margin-top: 8px;
+}
+
+.ig-footer__left {
+  flex: 1;
+}
+
+.ig-footer__btn {
+  padding: 10px 24px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  outline: none;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+.ig-footer__btn--end {
+  background: #ef4444;
+  color: #ffffff;
+}
+
+.ig-footer__btn--end:hover:not(:disabled) {
+  background: #dc2626;
+}
+
+.ig-footer__btn--end:disabled {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.25);
+  cursor: not-allowed;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   Insight Viewer Modal  (prefix: ig-ivm-)
+   ════════════════════════════════════════════════════════════════════════════ */
+
+.ig-ivm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  z-index: 200;
+  padding: 24px;
+  overflow-y: auto;
+}
+
+.ig-ivm-panel {
+  background: var(--T-Base-B3, #16181C);
+  border-radius: 18px;
+  width: 100%;
+  max-width: 1080px;
+  min-height: 600px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ig-ivm-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 24px 28px 20px;
+  background: var(--T-Base-B4, #1E2126);
+}
+
+.ig-ivm-header__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.ig-ivm-header__title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0 0 4px;
+  line-height: 1.25;
+}
+
+.ig-ivm-header__subtitle {
+  font-size: 0.875rem;
+  color: rgba(255, 255, 255, 0.4);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.ig-ivm-close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  border-radius: 8px;
+  flex-shrink: 0;
+  margin-left: 16px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.ig-ivm-close-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.ig-ivm-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 28px;
+}
+
+.ig-ivm-placeholder {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ig-ivm-placeholder__label {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+  margin: 0;
+}
+
+.ig-ivm-placeholder__sub {
+  font-size: 0.9375rem;
+  color: rgba(255, 255, 255, 0.5);
+  margin: 0;
+}
+
+.ig-ivm-placeholder__note {
+  font-size: 0.875rem;
+  color: rgba(255, 255, 255, 0.28);
+  margin: 8px 0 0;
+  font-style: italic;
+}
+
+.ig-ivm-footer {
+  padding: 16px 28px 24px;
+  display: flex;
+  justify-content: flex-end;
+  background: var(--T-Base-B4, #1E2126);
+}
+
+.ig-ivm-download-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.ig-ivm-download-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.25);
 }

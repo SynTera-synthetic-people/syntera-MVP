@@ -29,6 +29,8 @@ import {
   traitNameMapping,
   multiSelectAttributes,
 } from './data';
+import { downloadPersonaCardsFrontend } from './DownloadPersonaCard';
+import type { PersonaCardData } from './PersonaCardRenderer';
 
 // Components
 import Header from './components/Header';
@@ -189,10 +191,10 @@ const DownloadPersonaCardModal: React.FC<DownloadPersonaCardModalProps> = ({
             >
               <span
                 className={`pb-select-all-cb${selectedIds.length === personas.length
-                    ? ' pb-select-all-cb--checked'
-                    : selectedIds.length > 0
-                      ? ' pb-select-all-cb--indeterminate'
-                      : ''
+                  ? ' pb-select-all-cb--checked'
+                  : selectedIds.length > 0
+                    ? ' pb-select-all-cb--indeterminate'
+                    : ''
                   }`}
               >
                 {selectedIds.length === personas.length && <TbCheck size={12} />}
@@ -1000,10 +1002,10 @@ const PersonaBuilder: React.FC = () => {
     : (((fetchedPersonas as Record<string, unknown>)?.data as SavedPersona[]) ?? []);
 
   useEffect(() => {
-    if (fromLoader && savedPersonasFromAPI.length > 0) {
+    if (savedPersonasFromAPI.length > 0) {
       setShowGrid(true);
     }
-  }, [fromLoader, savedPersonasFromAPI.length]);
+  }, [savedPersonasFromAPI.length]);
 
   const personaMap = useRef<Record<string, SavedPersona>>({});
   useEffect(() => {
@@ -1066,18 +1068,10 @@ const PersonaBuilder: React.FC = () => {
   const [showDownloadToast, setShowDownloadToast] = useState(false);
 
   const handleDownloadPersonaCards = async (selectedIds: string[]) => {
-    if (!workspaceId || !objectiveId) return;
-
-    const blob = await personaService.downloadPersonaCards(workspaceId, objectiveId, selectedIds);
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `personas_${objectiveId.slice(0, 8)}.zip`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.URL.revokeObjectURL(url);
-
+    await downloadPersonaCardsFrontend(
+      selectedIds,
+      savedPersonasFromAPI as unknown as PersonaCardData[]
+    );
     setShowDownloadToast(true);
     setTimeout(() => setShowDownloadToast(false), 3500);
   };
