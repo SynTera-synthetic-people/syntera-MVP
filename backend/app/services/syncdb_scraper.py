@@ -2231,6 +2231,9 @@ async def _register_url_document(
     exploration_id: Optional[str],
     user_id: str,
     metadata: Optional[dict[str, Any]] = None,
+    source_group: Optional[str] = None,
+    source_keywords: Optional[list[str]] = None,
+    registry_id: Optional[str] = None,
 ) -> str:
     doc_id = generate_id()
     await db.execute(
@@ -2238,11 +2241,15 @@ async def _register_url_document(
             INSERT INTO sync_source.document
                 (id, title, source_type, source_url,
                  file_data, file_name,
-                 domain, exploration_id, uploaded_by, is_processed, metadata)
+                 domain, exploration_id, uploaded_by, is_processed, metadata,
+                 source_group, source_keywords, registry_id,
+                 approval_status, authority_tier, allowed_use)
             VALUES
                 (:id, :title, 'url', :url,
                  NULL, NULL,
-                 :domain, :exploration_id, :uploaded_by, FALSE, CAST(:metadata AS JSONB))
+                 :domain, :exploration_id, :uploaded_by, FALSE, CAST(:metadata AS JSONB),
+                 :source_group, CAST(:source_keywords AS JSONB), :registry_id,
+                 'approved', 'curated', '["qual_report", "quant_report", "citation"]'::jsonb)
         """),
         {
             "id": doc_id,
@@ -2252,6 +2259,9 @@ async def _register_url_document(
             "exploration_id": exploration_id,
             "uploaded_by": user_id,
             "metadata": json.dumps(metadata or {}, ensure_ascii=False),
+            "source_group": source_group,
+            "source_keywords": json.dumps(source_keywords or [], ensure_ascii=False),
+            "registry_id": registry_id,
         },
     )
     return doc_id
@@ -2283,6 +2293,9 @@ async def _save_successful_result(
     domain: Optional[str],
     exploration_id: Optional[str],
     user_id: str,
+    source_group: Optional[str] = None,
+    source_keywords: Optional[list[str]] = None,
+    registry_id: Optional[str] = None,
 ) -> tuple[int, Any]:
     if not result.text or not result.text.strip():
         raise ValueError("Empty text after fetch")
@@ -2304,14 +2317,23 @@ async def _save_successful_result(
         exploration_id=exploration_id,
         user_id=user_id,
         metadata=crawl_metadata,
+        source_group=source_group,
+        source_keywords=source_keywords,
+        registry_id=registry_id,
     )
     chunks_created, chunk_plan = await save_chunks(db, doc_id, result.text)
     if chunks_created == 0:
         raise ValueError("No chunks created")
 
     await db.execute(
-        text("UPDATE sync_source.document SET is_processed = TRUE WHERE id = :id"),
-        {"id": doc_id},
+        text("""
+            UPDATE sync_source.document
+            SET is_processed = TRUE,
+                quality_score = :quality_score,
+                index_status = 'pending'
+            WHERE id = :id
+        """),
+        {"id": doc_id, "quality_score": result.content_quality_score or None},
     )
     await db.commit()
     return chunks_created, chunk_plan
@@ -2329,6 +2351,9 @@ async def scrape_and_save_source_links(
     exploration_id: Optional[str],
     user_id: str,
     source_document_id: Optional[str] = None,
+    source_group: Optional[str] = None,
+    source_keywords: Optional[list[str]] = None,
+    registry_id: Optional[str] = None,
     max_concurrent: int = _MAX_CONCURRENT,
 ) -> ScrapeReport:
     if not xlsx_chunks:
@@ -2514,6 +2539,9 @@ async def scrape_and_save_source_links(
                         domain=domain,
                         exploration_id=exploration_id,
                         user_id=user_id,
+                        source_group=source_group,
+                        source_keywords=source_keywords,
+                        registry_id=registry_id,
                     )
                     event.status = "success"
                     event.cleaned_length = chunk_plan.cleaned_length
@@ -2702,4 +2730,7 @@ async def scrape_urls_from_document(
         exploration_id=exploration_id,
         user_id=user_id,
         source_document_id=document_id,
+        source_group=doc.get("source_group"),
+        source_keywords=doc.get("source_keywords") or [],
+        registry_id=doc.get("registry_id"),
     )
