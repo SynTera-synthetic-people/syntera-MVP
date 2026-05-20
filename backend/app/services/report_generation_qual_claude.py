@@ -35,6 +35,8 @@ from app.services.auto_generated_persona import (
 )
 from app.services.persona import get_persona
 from app.utils.anthropic_client import get_async_anthropic_client
+from app.ml.predictor import predict_from_features, VALID_DOMAINS
+from app.ml.feature_fetch import get_user_features, find_subject_key
 
 load_dotenv()
 
@@ -102,6 +104,7 @@ You will receive the following inputs. Parse them EXACTLY as provided:
 [REBUTTAL]: The rebuttal layer output. This is where personas were challenged on initial responses and either held firm, qualified, or reversed positions.
 [CTA]: One of: "TRANSCRIPTS" | "DECISION_INTELLIGENCE" | "BEHAVIORAL_ARCHAEOLOGY"
 [METADATA]: Platform-generated: Qual ID, Ground Truth (Actions Data), Enrichment Layer, Neuroscience Inference (Yes/No), Research Objective Score (%), Persona Calibration Score (%), Qual Coverage Score (%), Date, Client name.
+[SOURCEBANK_CONTEXT]: Behavioral research evidence retrieved from the controlled Sourcebank (approved/indexed links and documents in Qdrant). Use these passages to corroborate or challenge persona responses. Cite specific findings as [SB-N] when referencing them. If absent or empty, proceed without it. Do not invent external citations.
 
 SECTION 1: CTA ROUTING LOGIC
 Based on [CTA], generate ONLY the sections specified below. Do NOT generate sections belonging to other CTAs. This is a hard constraint for token efficiency and report clarity.
@@ -1001,6 +1004,131 @@ async def call_anthropic(
     ) as stream:
         return await stream.get_final_message()
 
+_DOMAIN_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "food":     ("swiggy", "zomato", "food", "restaurant", "meal", "dining", "delivery"),
+    "ecom":     ("amazon", "flipkart", "ajio", "myntra", "nykaa", "bigbasket",
+                 "ecommerce", "e-commerce", "shopping", "retail", "purchase"),
+    "mobility": ("uber", "ola", "taxi", "cab", "ride", "mobility", "transport"),
+    "finance":  ("paytm", "phonepe", "hdfc", "icici", "bank", "wallet", "payment", "finance"),
+}
+
+
+def _infer_domain(text: str) -> str | None:
+    """Return the ML domain inferred from free text, or None if ambiguous."""
+    if not text:
+        return None
+    lower = text.lower()
+    scores = {d: sum(1 for kw in kws if kw in lower) for d, kws in _DOMAIN_KEYWORDS.items()}
+    best_domain, best_score = max(scores.items(), key=lambda x: x[1])
+    return best_domain if best_score > 0 else None
+
+
+async def _persist_persona_link(persona_id: str, subject_key: str, domain: str) -> None:
+    """Write subject_key + ml_domain back to the persona row (fire-and-forget)."""
+    try:
+        from sqlalchemy import update as sa_update
+        from app.models.persona import Persona
+        from app.db import async_engine
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        async with AsyncSession(async_engine) as session:
+            await session.execute(
+                sa_update(Persona)
+                .where(Persona.id == persona_id)
+                .values(subject_key=subject_key, ml_domain=domain)
+            )
+            await session.commit()
+    except Exception as exc:
+        print(f"[ML] could not persist persona link for {persona_id}: {exc}")
+
+
+async def _legacy_fetch_rag_context(query: str) -> str:
+    """
+    Pull behavioral research evidence from Qdrant for the given query.
+    Returns a formatted string of top-5 chunks; empty string on any failure.
+    """
+    try:
+        from app.rag.retrieve import search_qdrant
+        results = await asyncio.to_thread(search_qdrant, query, None, 5)
+        if not results:
+            return ""
+        lines = []
+        for i, r in enumerate(results, 1):
+            lines.append(
+                f"[SB-{i}] {r['document_title']} — {r['content_preview']}"
+            )
+        return "\n".join(lines)
+    except Exception as exc:
+        print(f"[RAG] sourcebank fetch failed: {exc}")
+        return ""
+
+
+async def _fetch_rag_context(query: str, exploration_id: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Controlled Sourcebank retrieval wrapper.
+
+    This preserves the same function boundary for the report pipeline. It never
+    performs live internet search; fallbacks only relax filters inside our
+    indexed Sourcebank.
+
+    exploration_id scopes retrieval to sources uploaded for this specific
+    exploration. Falls back to domain-wide search if no exploration-scoped
+    sources are found.
+    """
+    try:
+        from app.rag.retrieve import controlled_sourcebank_search
+
+        inferred_domain = _infer_domain(query)
+        return await asyncio.to_thread(
+            controlled_sourcebank_search,
+            query,
+            domain=inferred_domain,
+            exploration_id=exploration_id,
+            top_k=8,
+            max_sources=3,
+            approved_only=False,
+            allowed_use="qual_report",
+            allow_legacy_fallback=True,
+        )
+    except Exception as exc:
+        print(f"[RAG] sourcebank fetch failed: {exc}")
+        return {
+            "context": "",
+            "sources": [],
+            "confidence": "none",
+            "fallback_level": "rag_error",
+            "error": str(exc),
+        }
+
+
+async def _ml_ground_truth(subject_key: str, domain: str) -> Optional[Dict[str, Any]]:
+    """
+    Attempt ML prediction for one persona.
+    Returns a dict with prediction/confidence/explanation, or None on failure.
+    """
+    if not subject_key or not domain:
+        print(f"[ML:ground_truth] skipped — subject_key={subject_key!r} domain={domain!r}")
+        return None
+    if domain.lower() not in VALID_DOMAINS:
+        print(f"[ML:ground_truth] skipped — domain {domain!r} not in VALID_DOMAINS {VALID_DOMAINS}")
+        return None
+    try:
+        print(f"[ML:ground_truth] fetching features for subject_key={subject_key!r} domain={domain!r}")
+        features = await get_user_features(subject_key, domain.lower())
+        print(f"[ML:ground_truth] ✓ {len(features)} features fetched, running prediction")
+        result = predict_from_features(domain.lower(), features)
+        print(f"[ML:ground_truth] ✓ prediction={result['prediction']:.3f} confidence={result['confidence']:.2f}")
+        return {
+            "prediction": round(result["prediction"], 3),
+            "confidence": f"{result['confidence'] * 100:.1f}%",
+            "confidence_label": result["confidence_label"],
+            "explanation": result["explanation"],
+        }
+    except Exception as exc:
+        print(f"[ML:ground_truth] ✗ failed — subject_key={subject_key!r} domain={domain!r} error={exc!r}")
+        return None
+
+
 async def build_llm_payload(
     objective_id: str,
     cta: str,
@@ -1031,6 +1159,43 @@ async def build_llm_payload(
             continue
 
         persona_details = await get_persona_details(persona_id) or {}
+        full_persona = await get_persona(persona_id) or {}
+
+        subject_key: str | None = full_persona.get("subject_key")
+        ml_domain: str | None = full_persona.get("ml_domain")
+        workspace_id: str | None = full_persona.get("workspace_id")
+
+        print(f"[ML:persona] id={persona_id!r} workspace={workspace_id!r} "
+              f"subject_key={subject_key!r} ml_domain={ml_domain!r}")
+
+        # Auto-match: if no subject_key yet, try every domain until one matches
+        if not subject_key and workspace_id:
+            inferred_domain = ml_domain or _infer_domain(
+                str(research_objective) if research_objective else ""
+            )
+            print(f"[ML:persona] no subject_key — inferred_domain={inferred_domain!r}, "
+                  f"will try domains: {[inferred_domain] if inferred_domain else list(VALID_DOMAINS)}")
+            domains_to_try = (
+                [inferred_domain] if inferred_domain
+                else list(VALID_DOMAINS)
+            )
+            for d in domains_to_try:
+                subject_key = await find_subject_key(workspace_id, d)
+                if subject_key:
+                    ml_domain = d
+                    print(f"[ML:persona] ✓ auto-matched subject_key={subject_key!r} domain={d!r}")
+                    asyncio.create_task(
+                        _persist_persona_link(persona_id, subject_key, ml_domain)
+                    )
+                    break
+            else:
+                print(f"[ML:persona] ✗ no subject_key found in any domain for workspace={workspace_id!r}")
+        elif not workspace_id:
+            print(f"[ML:persona] ✗ skipping auto-match — persona has no workspace_id")
+
+        ground_truth = await _ml_ground_truth(subject_key, ml_domain)
+        print(f"[ML:persona] ground_truth={'ok' if ground_truth else 'none'}"
+              + (f" prediction={ground_truth['prediction']}" if ground_truth else ""))
 
         personas_payload.append(
             {
@@ -1038,6 +1203,7 @@ async def build_llm_payload(
                 "interview_id": interview.get("id"),
                 "persona_details": persona_details,
                 "interview": {"questions_and_answers": qa_data},
+                "ground_truth": ground_truth,
             }
         )
     print("Total Length of Persona: ", len(personas_payload))
@@ -1048,10 +1214,35 @@ async def build_llm_payload(
     if not personas_payload:
         raise ValueError("No valid interview data found to generate report")
 
+    # RAG sourcebank context — global Sourcebank, domain-scoped retrieval
+    # exploration_id=None because sources are shared across all explorations.
+    # Switch to exploration_id=objective_id only when per-exploration private sources are in use.
+    ro_query = research_objective if isinstance(research_objective, str) else str(research_objective)
+    sourcebank = await _fetch_rag_context(ro_query[:500], exploration_id=None)
+    sourcebank_context = sourcebank.get("context") if isinstance(sourcebank, dict) else str(sourcebank or "")
+    sourcebank_sources = sourcebank.get("sources", []) if isinstance(sourcebank, dict) else []
+    sourcebank_confidence = sourcebank.get("confidence", "none") if isinstance(sourcebank, dict) else "legacy"
+    sourcebank_fallback_level = sourcebank.get("fallback_level", "legacy") if isinstance(sourcebank, dict) else "legacy"
+
+    ml_count = sum(1 for p in personas_payload if p.get("ground_truth") is not None)
+    print(
+        f"[Enrichment] RAG context: {'yes' if sourcebank_context else 'no'} "
+        f"(confidence={sourcebank_confidence}, fallback={sourcebank_fallback_level}) | "
+        f"ML ground truth: {ml_count}/{len(personas_payload)} personas"
+    )
+
     return {
         "research_objective": research_objective,
         "personas": personas_payload,
         "cta": cta,
+        "sourcebank_context": sourcebank_context or None,
+        "sourcebank_sources": sourcebank_sources,
+        "metadata": {
+            "ground_truth_consumers_analyzed": ml_count,
+            "sourcebank_confidence": sourcebank_confidence,
+            "sourcebank_fallback_level": sourcebank_fallback_level,
+            "sourcebank_sources_count": len(sourcebank_sources),
+        },
     }
 
 

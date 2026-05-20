@@ -510,6 +510,8 @@ async def _repair_persona_schema(conn: AsyncConnection) -> None:
         "calibration_confidence INTEGER",
         "parent_persona_id VARCHAR",
         "calibration_status VARCHAR",
+        "subject_key VARCHAR",
+        "ml_domain VARCHAR",
     ):
         await ensure_column(conn, "persona", column)
     await _exec(
@@ -806,6 +808,30 @@ async def _repair_sync_source_schema(conn: AsyncConnection) -> None:
     await ensure_table(
         conn,
         """
+        CREATE TABLE IF NOT EXISTS sync_source.source_registry (
+            id VARCHAR PRIMARY KEY,
+            name VARCHAR NOT NULL,
+            domain VARCHAR,
+            source_group VARCHAR,
+            base_url TEXT,
+            source_kind VARCHAR NOT NULL DEFAULT 'website',
+            approval_status VARCHAR NOT NULL DEFAULT 'approved',
+            authority_tier VARCHAR NOT NULL DEFAULT 'curated',
+            allowed_use JSONB NOT NULL DEFAULT '["qual_report", "quant_report", "citation"]'::jsonb,
+            keywords JSONB NOT NULL DEFAULT '[]'::jsonb,
+            crawl_policy JSONB NOT NULL DEFAULT '{}'::jsonb,
+            owner_workspace_id VARCHAR,
+            created_by VARCHAR,
+            created_at TIMESTAMP NOT NULL DEFAULT now(),
+            updated_at TIMESTAMP NOT NULL DEFAULT now(),
+            expires_at TIMESTAMP,
+            metadata JSONB NOT NULL DEFAULT '{}'::jsonb
+        )
+        """,
+    )
+    await ensure_table(
+        conn,
+        """
         CREATE TABLE IF NOT EXISTS sync_source.content_chunk (
             id VARCHAR PRIMARY KEY,
             document_id VARCHAR NOT NULL REFERENCES sync_source.document(id) ON DELETE CASCADE,
@@ -872,6 +898,20 @@ async def _repair_sync_source_schema(conn: AsyncConnection) -> None:
         "file_name VARCHAR",
         "file_path VARCHAR",
         "domain VARCHAR",
+        "registry_id VARCHAR",
+        "workspace_id VARCHAR",
+        "source_group VARCHAR",
+        "source_keywords JSONB NOT NULL DEFAULT '[]'::jsonb",
+        "approval_status VARCHAR NOT NULL DEFAULT 'approved'",
+        "authority_tier VARCHAR NOT NULL DEFAULT 'user_uploaded'",
+        "canonical_url TEXT",
+        "content_hash VARCHAR",
+        "quality_score DOUBLE PRECISION",
+        "indexed_at TIMESTAMP",
+        "index_status VARCHAR NOT NULL DEFAULT 'pending'",
+        "index_version INTEGER NOT NULL DEFAULT 1",
+        "citation_metadata JSONB NOT NULL DEFAULT '{}'::jsonb",
+        "allowed_use JSONB NOT NULL DEFAULT '[\"qual_report\", \"quant_report\", \"citation\"]'::jsonb",
         "is_processed BOOLEAN NOT NULL DEFAULT FALSE",
         "exploration_id VARCHAR",
         "uploaded_by VARCHAR",
@@ -883,6 +923,12 @@ async def _repair_sync_source_schema(conn: AsyncConnection) -> None:
         "content_json JSONB",
         "data_type VARCHAR NOT NULL DEFAULT 'document'",
         "created_at TIMESTAMP NOT NULL DEFAULT now()",
+        "content_hash VARCHAR",
+        "token_count INTEGER",
+        "embedding_status VARCHAR NOT NULL DEFAULT 'pending'",
+        "embedding_model VARCHAR",
+        "qdrant_point_id VARCHAR",
+        "metadata JSONB NOT NULL DEFAULT '{}'::jsonb",
     ):
         await ensure_column(conn, "sync_source.content_chunk", column)
     for column in (
@@ -916,6 +962,15 @@ async def _repair_sync_source_schema(conn: AsyncConnection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_sync_source_chunk_fts ON sync_source.content_chunk USING GIN (to_tsvector('simple', COALESCE(content, '')))",
         "CREATE INDEX IF NOT EXISTS idx_sync_source_chunk_content_json ON sync_source.content_chunk USING GIN (content_json)",
         "CREATE INDEX IF NOT EXISTS idx_sync_source_chunk_doc_type_order ON sync_source.content_chunk (document_id, data_type, chunk_index, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_sync_source_chunk_embedding_status ON sync_source.content_chunk (embedding_status)",
+        "CREATE INDEX IF NOT EXISTS idx_sync_source_chunk_content_hash ON sync_source.content_chunk (content_hash)",
+        "CREATE INDEX IF NOT EXISTS idx_sync_source_document_domain ON sync_source.document (domain)",
+        "CREATE INDEX IF NOT EXISTS idx_sync_source_document_registry ON sync_source.document (registry_id)",
+        "CREATE INDEX IF NOT EXISTS idx_sync_source_document_approval ON sync_source.document (approval_status)",
+        "CREATE INDEX IF NOT EXISTS idx_sync_source_document_group ON sync_source.document (source_group)",
+        "CREATE INDEX IF NOT EXISTS idx_sync_source_registry_domain ON sync_source.source_registry (domain)",
+        "CREATE INDEX IF NOT EXISTS idx_sync_source_registry_approval ON sync_source.source_registry (approval_status)",
+        "CREATE INDEX IF NOT EXISTS idx_sync_source_registry_group ON sync_source.source_registry (source_group)",
         "CREATE INDEX IF NOT EXISTS idx_sync_source_scrape_url_retry ON sync_source.scrape_url (next_retry_at, retry_count) WHERE retryable = TRUE AND status IN ('failed', 'low_quality') AND retry_count < max_retries",
         "CREATE INDEX IF NOT EXISTS idx_sync_source_scrape_url_status ON sync_source.scrape_url (status)",
         "CREATE INDEX IF NOT EXISTS idx_sync_source_scrape_url_domain ON sync_source.scrape_url (domain)",

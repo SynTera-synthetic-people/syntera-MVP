@@ -283,6 +283,9 @@ def persona_to_dict(p: Persona, creator_full_name: Optional[str] = None) -> dict
         "ocean_profile": ocean_profile,
         # Assembled for the Calibration Breakdown tab; never None
         "calibration_breakdown": _build_calibration_breakdown(persona_details),
+        # Action-data linkage for ML ground-truth
+        "subject_key": getattr(p, "subject_key", None),
+        "ml_domain": getattr(p, "ml_domain", None),
     }
 
 async def get_persona(persona_id: str) -> Optional[dict]:
