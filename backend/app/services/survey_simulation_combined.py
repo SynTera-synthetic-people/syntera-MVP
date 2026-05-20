@@ -869,9 +869,30 @@ Brand Standard: Calibri, Navy 1F4788, Teal 40B5AD
 ================================================================================
 END OF P-RESP-V3.0 SPECIFICATION
 ================================================================================
+
+================================================================================
+ACTUAL INPUTS FOR THIS SIMULATION
+================================================================================
+
+Research Objective:
+$research_desc
+
+Total Sample: $total_sample respondents
+
+Target Personas:
+$personas_text
+
+Questionnaire to Simulate:
+$qs_joined
 """
 
-    return prompt
+    from string import Template
+    return Template(prompt).safe_substitute(
+        research_desc=research_desc or "Not provided",
+        total_sample=total_sample,
+        personas_text=personas_text,
+        qs_joined=qs_joined,
+    )
 
 
 async def simulate_combined_and_store(
@@ -920,28 +941,29 @@ async def simulate_combined_and_store(
     ro_description = await get_description(exploration_id)
     # Build combined prompt
     prompt = _build_combined_simulation_prompt(ro_description, personas_list, persona_samples, flat_questions)
-    final_output_structure_prompt = """
+    from string import Template
+    final_output_structure_prompt = Template("""
 **OUTPUT FORMAT:**
 RETURN only in valid JSON:
 
 1) Return ONLY valid JSON, nothing else.
 2) Generate ONE COMBINED result that aggregates ALL personas together.
-3) For each question, distribute the {total_sample} total responses across options based on:
+3) For each question, distribute the $total_sample total responses across options based on:
    - How EACH persona would answer (based on their traits)
    - Their SAMPLE SIZE (weight their preferences accordingly)
    - The RESEARCH OBJECTIVE
 
 4) JSON must have these top-level keys:
-   - sample_size: {total_sample} (integer)
+   - sample_size: $total_sample (integer)
    - question_results: array of objects, each:
-     {{
+     {
        "text": "<question text>",
        "options": [
-         {{ "option": "<option text>", "count": <int>, "pct": <float> }},
+         { "option": "<option text>", "count": <int>, "pct": <float> },
          ...
        ],
-       "total": {total_sample}
-     }}
+       "total": $total_sample
+     }
    - summary: human-readable summary explaining the combined results
    - llm_source_explanation: object with:
        - used_persona_traits (list of strings - which persona traits influenced the results)
@@ -950,9 +972,9 @@ RETURN only in valid JSON:
        - final_reasoning_summary (string)
 
 5) For each question:
-   - Counts must be integers and MUST sum to {total_sample}
-   - pct must equal round(100 * count / {total_sample}, 1)
-   
+   - Counts must be integers and MUST sum to $total_sample
+   - pct must equal round(100 * count / $total_sample, 1)
+
 6) Example logic:
    If Persona A (100 people) prefers "Quality" 60% and Persona B (50 people) prefers "Price" 70%:
    - "Quality" gets: (100 * 0.6) + (50 * 0.3) = 60 + 15 = 75 votes
@@ -963,7 +985,7 @@ RETURN only in valid JSON:
 8) Output JSON only (no explanatory text).
 
 Return the JSON now.
-"""
+""").safe_substitute(total_sample=total_sample_size)
 
     information_gathered_prompt = f"""
 **OUTPUT FORMAT:**
