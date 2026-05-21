@@ -126,7 +126,7 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
     • Minimum: 4 questions per section (mandatory) 
     • Target: 4-6 questions per section (recommended) 
     • Maximum: 8 questions per section (avoid survey fatigue) 
-    • Exception: S1 Screeners may have 2-3 questions
+    • No exceptions — all sections including S1 Screeners must have minimum 4 questions
     TOTAL QUESTIONS BY COMPLEXITY: 
     • Simple objectives (3-5 sections): 12-30 questions total 
     • Moderate objectives (5-8 sections): 20-48 questions total 
@@ -1231,7 +1231,7 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
     • Target 4-6 questions per section for optimal coverage
 
     MANDATORY QUESTION ALLOCATION: 
-    • S1 Screeners: 2-3 questions (qualification only) 
+    • S1 Screeners: 4-6 questions (qualification + context setting)
     • S_DEMO
 
     Demographics: 4-6 questions (standard demographics) 
@@ -1325,9 +1325,7 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
     □ Minimum section count: at least 3 sections (Screeners, Core, Demographics)
     
     QUESTION COUNT PER SECTION (MANDATORY)
-    □ Every section has MINIMUM 4 questions 
-        - Exception: S1 Screeners may have 2-3 questions 
-        - All other sections must have 4-6 questions
+    □ Every section has MINIMUM 4 questions — NO exceptions, including S1 Screeners
     □ Every thematic section has at least 3 S/M questions 
         - Ensures statistical validity - Prevents OE-only sections
     □ No section exceeds 8 questions - Prevents respondent overload in single theme
@@ -1414,6 +1412,9 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
 
     COMPLETE OUTPUT TEMPLATE:
 
+    NOTE: This template shows the REQUIRED question density. ALL sections including S1 must have 4-6 questions.
+    Replicate the S2 pattern for every section — no section may have fewer than 4 questions.
+
 {
   "sections": [
     {
@@ -1423,28 +1424,46 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
       "questions": [
         {
           "question_id": "Q1",
-          "question_text": "string",
+          "text": "string",
           "question_type": "S",
+          "randomize_options": false,
           "options": [
-            {
-              "option_id": "opt1",
-              "text": "string",
-              "tags": [
-                "tag1",
-                "tag2",
-                "tag3"
-              ]
-            },
-            {
-              "option_id": "opt2",
-              "text": "string",
-              "tags": [
-                "tag1",
-                "tag2",
-                "tag3",
-                "tag4"
-              ]
-            }
+            { "option_id": "opt1", "text": "string", "tags": ["tag1", "tag2", "tag3"] },
+            { "option_id": "opt2", "text": "string", "tags": ["tag1", "tag2", "tag3"] },
+            { "option_id": "opt3", "text": "string", "tags": ["tag1", "tag2", "tag3"] }
+          ]
+        },
+        {
+          "question_id": "Q2",
+          "text": "string",
+          "question_type": "S",
+          "randomize_options": false,
+          "options": [
+            { "option_id": "opt1", "text": "string", "tags": ["tag1", "tag2", "tag3"] },
+            { "option_id": "opt2", "text": "string", "tags": ["tag1", "tag2", "tag3"] },
+            { "option_id": "opt3", "text": "string", "tags": ["tag1", "tag2", "tag3"] }
+          ]
+        },
+        {
+          "question_id": "Q3",
+          "text": "string",
+          "question_type": "S",
+          "randomize_options": false,
+          "options": [
+            { "option_id": "opt1", "text": "string", "tags": ["tag1", "tag2", "tag3"] },
+            { "option_id": "opt2", "text": "string", "tags": ["tag1", "tag2", "tag3"] },
+            { "option_id": "opt3", "text": "string", "tags": ["tag1", "tag2", "tag3"] }
+          ]
+        },
+        {
+          "question_id": "Q4",
+          "text": "string",
+          "question_type": "S",
+          "randomize_options": false,
+          "options": [
+            { "option_id": "opt1", "text": "string", "tags": ["tag1", "tag2", "tag3"] },
+            { "option_id": "opt2", "text": "string", "tags": ["tag1", "tag2", "tag3"] },
+            { "option_id": "opt3", "text": "string", "tags": ["tag1", "tag2", "tag3"] }
           ]
         }
       ]
@@ -1454,61 +1473,95 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
       "section_theme": "Behavioral Patterns",
       "title": "Usage & Behavior",
       "questions": [
-        "..."
+        {
+          "question_id": "Q4",
+          "text": "string",
+          "question_type": "S",
+          "randomize_options": false,
+          "options": [
+            { "option_id": "opt1", "text": "string", "tags": ["tag1", "tag2", "tag3"] },
+            { "option_id": "opt2", "text": "string", "tags": ["tag1", "tag2", "tag3"] },
+            { "option_id": "opt3", "text": "string", "tags": ["tag1", "tag2", "tag3"] },
+            { "option_id": "opt4", "text": "string", "tags": ["tag1", "tag2", "tag3"] }
+          ]
+        },
+        {
+          "question_id": "Q5",
+          "text": "string",
+          "question_type": "M",
+          "randomize_options": true,
+          "selection_rule": { "type": "M_MAX_N", "n": 3 },
+          "options": [
+            { "option_id": "opt1", "text": "string", "tags": ["tag1", "tag2", "tag3"] },
+            { "option_id": "opt2", "text": "string", "tags": ["tag1", "tag2", "tag3"] },
+            { "option_id": "opt3", "text": "string", "tags": ["tag1", "tag2", "tag3"] },
+            { "option_id": "opt4", "text": "string", "tags": ["tag1", "tag2", "tag3"] },
+            { "option_id": "opt5", "text": "string", "tags": ["tag1", "tag2", "tag3"] }
+          ]
+        },
+        {
+          "question_id": "Q6",
+          "text": "string",
+          "question_type": "S",
+          "randomize_options": false,
+          "options": [
+            { "option_id": "opt1", "text": "string", "tags": ["tag1", "tag2", "tag3"] },
+            { "option_id": "opt2", "text": "string", "tags": ["tag1", "tag2", "tag3"] },
+            { "option_id": "opt3", "text": "string", "tags": ["tag1", "tag2", "tag3"] },
+            { "option_id": "opt4", "text": "string", "tags": ["tag1", "tag2", "tag3"] },
+            { "option_id": "opt5", "text": "string", "tags": ["tag1", "tag2", "tag3"] }
+          ]
+        },
+        {
+          "question_id": "Q7",
+          "text": "string",
+          "question_type": "OE",
+          "measurement_dimensions": {
+            "primary_construct": "string",
+            "secondary_constructs": ["string"],
+            "coding_frame": ["string"]
+          }
+        }
       ]
     },
     {
       "section_id": "S3",
       "section_theme": "Attitudinal Discovery",
       "title": "Perceptions & Beliefs",
-      "questions": [
-        "..."
-      ]
+      "questions": [ "*** GENERATE 4-6 QUESTIONS FOLLOWING THE S2 PATTERN ABOVE ***" ]
     },
     {
       "section_id": "S4",
       "section_theme": "Emotional Dimensions",
       "title": "Feelings & Reactions",
-      "questions": [
-        "..."
-      ]
+      "questions": [ "*** GENERATE 4-6 QUESTIONS FOLLOWING THE S2 PATTERN ABOVE ***" ]
     },
     {
       "section_id": "S5",
       "section_theme": "Motivational Depth",
       "title": "Drivers & Priorities",
-      "questions": [
-        "..."
-      ]
+      "questions": [ "*** GENERATE 4-6 QUESTIONS FOLLOWING THE S2 PATTERN ABOVE ***" ]
     },
     {
       "section_id": "S6",
       "section_theme": "Barriers & Friction",
       "title": "Obstacles & Challenges",
-      "questions": [
-        "..."
-      ]
+      "questions": [ "*** GENERATE 4-6 QUESTIONS FOLLOWING THE S2 PATTERN ABOVE ***" ]
     },
     {
-      "section_id": "S_DEMO",
+      "section_id": "S7",
       "section_theme": "Contextual Framing",
       "title": "Demographics & Classification",
-      "questions": [
-        "..."
-      ]
+      "questions": [ "*** GENERATE 4-6 QUESTIONS FOLLOWING THE S2 PATTERN ABOVE ***" ]
     }
   ]
 }
-    
-    IMPORTANT NOTE: This template shows 6+ sections as an example. The actual number of sections you generate
-    should be determined by research complexity as defined in Section 13, Step 4: 
-    • Simple objectives (1-2 themes) → Generate 3-5 sections 
-    • Moderate objectives (3-5 themes) → Generate 5-8 sections
-    • Complex objectives (6-8 themes) → Generate 7-10 sections
-    Do NOT default to generating exactly 6 sections. Use the complexity rules above to determine the appropriate
-    section count for each research objective.
-    Each section MUST have 4-6 questions (exception: S1 Screeners may have 2-3).
 
+    CRITICAL REMINDER: Replace every "*** GENERATE 4-6 QUESTIONS ***" placeholder with actual fully-populated
+    question objects. The final JSON must NOT contain any placeholder strings — only real question objects.
+    Every non-screener section must have a minimum of 4 complete question objects.
+
+    Section count: determined by research complexity (3-5 simple, 5-8 moderate, 7-10 complex).
     All section IDs must use consistent numeric format: S1, S2, S3, etc.
 
     """
@@ -1530,8 +1583,9 @@ async def generate_questionnaire(objective, personas_list, population, explorati
         res = await client.chat.completions.create(
             model="gpt-4o",
             response_format={"type": "json_object"},
+            max_tokens=16384,
             messages=[
-                {"role": "system", "content": "Generate survey questions in strict JSON only."},
+                {"role": "system", "content": "Generate survey questions in strict JSON only. Every non-screener section MUST contain exactly 4-6 fully populated question objects. Do not summarize or abbreviate any section."},
                 {"role": "user", "content": prompt}
             ]
         )
@@ -1539,6 +1593,17 @@ async def generate_questionnaire(objective, personas_list, population, explorati
         return None, f"LLM Error: {str(e)}"
 
     raw = res.choices[0].message.content
+
+    # DEBUG: log token usage and question counts per section
+    usage = res.usage
+    finish_reason = res.choices[0].finish_reason
+    print(f"[DEBUG] finish_reason={finish_reason} | prompt_tokens={usage.prompt_tokens} | completion_tokens={usage.completion_tokens} | total_tokens={usage.total_tokens}")
+    try:
+        _debug_data = json.loads(raw)
+        for _sec in _debug_data.get("sections", []):
+            print(f"[DEBUG] Section '{_sec.get('title')}' → {len(_sec.get('questions', []))} questions")
+    except Exception as _e:
+        print(f"[DEBUG] JSON parse failed: {_e}")
 
     try:
         data = json.loads(raw)
