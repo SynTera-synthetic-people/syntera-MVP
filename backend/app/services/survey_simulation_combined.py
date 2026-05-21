@@ -32,11 +32,15 @@ def _build_combined_simulation_prompt(research_desc: str, personas_list: List[Di
     
     personas_text = "\n".join(personas_summary)
     
-    # Format questions
+    # Format questions — include question_type so the LLM knows S vs M
     qs_text = []
     for i, q in enumerate(questions, start=1):
         opts = q.get("options") or []
-        qs_text.append(f"{i}. QUESTION: {q.get('text')}\nOPTIONS: {json.dumps(opts)}")
+        qtype = q.get("question_type", "S") or "S"
+        type_label = {"S": "Single-Select", "M": "Multi-Select", "OE": "Open-Ended"}.get(qtype, qtype)
+        qs_text.append(
+            f"{i}. [{type_label}] QUESTION: {q.get('text')}\nOPTIONS: {json.dumps(opts)}"
+        )
     
     qs_joined = "\n\n".join(qs_text)
 
@@ -617,12 +621,16 @@ def _build_combined_simulation_prompt(research_desc: str, personas_list: List[Di
 
     """
 
-    from string import Template
-    return Template(prompt).safe_substitute(
-        research_desc=research_desc or "Not provided",
-        total_sample=total_sample,
-        personas_text=personas_text,
-        qs_joined=qs_joined,
+    # IMPORTANT: The prompt uses {{variable}} placeholders (Jinja2-style), NOT
+    # Python Template $variable syntax. Template.safe_substitute silently ignores
+    # {{}} patterns, leaving all four inputs as literal placeholder text and causing
+    # the LLM to generate equal distributions. Use str.replace() instead.
+    return (
+        prompt
+        .replace("{{research_desc}}", research_desc or "Not provided")
+        .replace("{{total_sample}}", str(total_sample))
+        .replace("{{personas_text}}", personas_text)
+        .replace("{{qs_joined}}", qs_joined)
     )
 
 
@@ -641,13 +649,15 @@ async def simulate_combined_and_store(
     
     Returns a dict containing the combined simulation result.
     """
-    # Flatten questions
+    # Flatten questions — preserve question_type so normalizer can skip scaling for M
     flat_questions = []
     for sec in questions_sections:
         for q in sec.get("questions", []):
-            text = q.get("text") or ""
-            opts = q.get("options") or []
-            flat_questions.append({"text": text, "options": opts})
+            flat_questions.append({
+                "text": q.get("text") or "",
+                "question_type": q.get("question_type", "S") or "S",
+                "options": q.get("options") or [],
+            })
     
     if not flat_questions:
         raise ValueError("No questions provided to simulate")
@@ -680,17 +690,17 @@ RETURN only in valid JSON:
 1) Return ONLY valid JSON, nothing else.
 2) Generate ONE COMBINED result that aggregates ALL personas together.
 3) For each question, distribute the $total_sample total responses across options based on:
-   - How EACH persona would answer (based on their traits)
+   - How EACH persona would answer (based on their psychographic tags and traits)
    - Their SAMPLE SIZE (weight their preferences accordingly)
    - The RESEARCH OBJECTIVE
 
 4) JSON must have these top-level keys:
    - sample_size: $total_sample (integer)
-   - question_results: array of objects, each:
+   - question_results: array of objects, one per question IN THE SAME ORDER as the input, each:
      {
-       "text": "<question text>",
+       "text": "<exact question text from input>",
        "options": [
-         { "option": "<option text>", "count": <int>, "pct": <float> },
+         { "option": "<use the EXACT 'text' field from the input option — e.g. '18-25', NOT 'opt1'>", "count": <int>, "pct": <float> },
          ...
        ],
        "total": $total_sample
@@ -702,18 +712,31 @@ RETURN only in valid JSON:
        - used_research_objective_elements (list of strings)
        - final_reasoning_summary (string)
 
-5) For each question:
-   - Counts must be integers and MUST sum to $total_sample
-   - pct must equal round(100 * count / $total_sample, 1)
+5) CRITICAL — option text rule:
+   Each input option is a JSON object with "option_id", "text", and "tags".
+   In your output, the "option" value MUST be the "text" field verbatim.
+   Example: input option {"option_id": "opt2", "text": "Mostly personal", "tags": [...]} → output "option": "Mostly personal"
+   NEVER use option_id (like "opt1", "opt2") as the "option" value.
 
-6) Example logic:
+6) Count rules by question type:
+   - SINGLE-SELECT (S): Counts must be integers summing exactly to $total_sample.
+     pct = round(100 * count / $total_sample, 1)
+   - MULTI-SELECT (M): Each option's count = number of respondents (out of $total_sample) who selected that option.
+     Options are independent — counts do NOT need to sum to $total_sample.
+     pct = round(100 * count / $total_sample, 1)
+     IMPORTANT: Multi-select distributions MUST be varied (e.g., 68%, 45%, 31%, 22%, 12%) — NEVER equal (20%/20%/20%).
+
+7) Distribution rule — MANDATORY:
+   FORBIDDEN: Equal or near-equal distributions (e.g., 33%/33%/33% or 20%/20%/20%).
+   REQUIRED: The top option must lead the bottom option by AT LEAST 15 percentage points.
+   Use persona psychographic tags to drive differentiation — this is the entire purpose of the tags.
+
+8) Example logic for single-select:
    If Persona A (100 people) prefers "Quality" 60% and Persona B (50 people) prefers "Price" 70%:
-   - "Quality" gets: (100 * 0.6) + (50 * 0.3) = 60 + 15 = 75 votes
-   - "Price" gets: (100 * 0.1) + (50 * 0.7) = 10 + 35 = 45 votes
-   - etc.
+   - "Quality" gets: (100 * 0.6) + (50 * 0.3) = 75 votes
+   - "Price" gets: (100 * 0.1) + (50 * 0.7) = 45 votes
 
-7) Be realistic and weight each persona's preferences by their sample size.
-8) Output JSON only (no explanatory text).
+9) Output JSON only (no explanatory text).
 
 Return the JSON now.
 """).safe_substitute(total_sample=total_sample_size)

@@ -427,9 +427,10 @@ const SurveyResults = () => {
   const generatePointsFromResults = (results) => {
     if (!results || !Array.isArray(results)) return [];
 
-    return results.map(result =>
-      `${result.option}: ${result.percentage || result.pct}% (${result.count} participants)`
-    );
+    return results.map(result => {
+      const pctStr = result.percentage ?? `${result.pct}%`;
+      return `${result.option}: ${pctStr} (${result.count} participants)`;
+    });
   };
 
   const generateImplicationsFromQuestion = (question, results) => {
@@ -439,8 +440,9 @@ const SurveyResults = () => {
       parseFloat(curr.percentage || curr.pct) > parseFloat(max.percentage || max.pct) ? curr : max
     );
 
+    const pctStr = topResult.percentage ?? `${topResult.pct}%`;
     return [
-      `The majority (${topResult.percentage || topResult.pct}) prefer <span class="font-semibold text-gray-900 dark:text-white">"${topResult.option}"</span>.`
+      `The majority (${pctStr}) prefer <span class="font-semibold text-gray-900 dark:text-white">"${topResult.option}"</span>.`
     ];
   };
 

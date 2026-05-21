@@ -174,6 +174,15 @@ async def add_exploration_audience_type_column():
         """))
 
 
+async def add_questionnaire_question_type_column():
+    """Safe migration: add question_type to questionnairequestion (default S for legacy rows)."""
+    async with async_engine.begin() as conn:
+        await conn.execute(text("""
+            ALTER TABLE questionnairequestion
+            ADD COLUMN IF NOT EXISTS question_type VARCHAR NOT NULL DEFAULT 'S';
+        """))
+
+
 async def create_sync_schemas():
     """Create the 3 SyncDB PostgreSQL schemas and their tables (idempotent)."""
     async with async_engine.begin() as conn:

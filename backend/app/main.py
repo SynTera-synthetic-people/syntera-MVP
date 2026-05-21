@@ -16,6 +16,7 @@ from app.db import (
     add_enterprise_columns,
     add_workspace_visibility_columns,
     add_exploration_audience_type_column,
+    add_questionnaire_question_type_column,
     create_report_cache_table,
     create_sync_schemas,
     add_syncdb_envelope_columns,
@@ -97,6 +98,7 @@ async def startup():
     await add_enterprise_columns()
     await add_workspace_visibility_columns()
     await add_exploration_audience_type_column()
+    await add_questionnaire_question_type_column()
     await create_report_cache_table()
     await create_sync_schemas()
     await add_syncdb_envelope_columns()

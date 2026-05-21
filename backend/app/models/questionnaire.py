@@ -19,6 +19,7 @@ class QuestionnaireQuestion(SQLModel, table=True):
     id: str = Field(default_factory=generate_id, primary_key=True)
     section_id: str = Field(foreign_key="questionnairesection.id")
     text: str
+    question_type: str = Field(default="S")  # S | M | OE
     options: List[str] = Field(sa_column=Column(JSON), default_factory=list)
     created_by: str = Field(foreign_key="user.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)

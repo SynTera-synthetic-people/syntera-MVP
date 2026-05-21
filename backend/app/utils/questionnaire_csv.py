@@ -17,11 +17,20 @@ def _norm_key(s: str) -> str:
 
 
 def _ensure_option_list(opts: Any) -> List[str]:
-    """DB JSON may rarely deserialize oddly; tolerate list or JSON string."""
+    """DB JSON may rarely deserialize oddly; tolerate list or JSON string.
+    Options may be plain strings or dicts {option_id, text, tags} — always extract text.
+    """
+    def _opt_text(x: Any) -> str:
+        if x is None:
+            return ""
+        if isinstance(x, dict):
+            return str(x.get("text", "") or "")
+        return str(x)
+
     if opts is None:
         return []
     if isinstance(opts, list):
-        return [str(x) if x is not None else "" for x in opts]
+        return [_opt_text(x) for x in opts]
     if isinstance(opts, str):
         t = opts.strip()
         if not t:
@@ -29,7 +38,7 @@ def _ensure_option_list(opts: Any) -> List[str]:
         try:
             parsed = json.loads(t)
             if isinstance(parsed, list):
-                return [str(x) if x is not None else "" for x in parsed]
+                return [_opt_text(x) for x in parsed]
         except json.JSONDecodeError:
             pass
     return []

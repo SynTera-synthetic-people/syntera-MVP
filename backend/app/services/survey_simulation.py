@@ -146,7 +146,8 @@ def _fallback_simulation(sample_size: int, questions: List[Dict]) -> Dict:
         opt_results = []
         for opt, cnt in zip(opts, counts):
             pct = round(100.0 * cnt / sample_size, 1) if sample_size > 0 else 0.0
-            opt_results.append({"option": opt, "count": cnt, "pct": pct})
+            opt_label = str(opt.get("text", "") or "") if isinstance(opt, dict) else str(opt)
+            opt_results.append({"option": opt_label, "count": cnt, "pct": pct})
 
         q_results.append({
             "text": q.get("text", ""),

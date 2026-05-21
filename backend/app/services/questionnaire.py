@@ -1638,6 +1638,7 @@ async def store_ai_generated_questionnaire(workspace_id: str, objective_id: str,
                     id=generate_id(),
                     section_id=sec_obj.id,
                     text=q.get("text", ""),
+                    question_type=q.get("question_type", "S"),
                     options=q.get("options", []),
                     created_by=user_id,
                     created_at=datetime.utcnow()
@@ -1827,6 +1828,7 @@ async def get_full_questionnaire(workspace_id, exploration_id):
                     {
                         "id": q.id,
                         "text": q.text,
+                        "question_type": getattr(q, "question_type", "S") or "S",
                         "options": q.options
                     }
                     for q in questions
@@ -1863,6 +1865,7 @@ async def get_questionnaire_by_simulation(workspace_id: str, exploration_id: str
                     {
                         "id": q.id,
                         "text": q.text,
+                        "question_type": getattr(q, "question_type", "S") or "S",
                         "options": q.options
                     }
                     for q in questions
