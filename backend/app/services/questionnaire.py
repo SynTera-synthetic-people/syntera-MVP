@@ -107,14 +107,33 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
     Opposite-meaning options (e.g., very satisfied vs. very dissatisfied) must carry psychographically opposite tags.
 
     RULE 7 — RATING SCALE QUESTIONS MUST USE STANDARD TEMPLATES
-    If a question asks for satisfaction, agreement, frequency, importance, or likelihood, you MUST use question_type: S with standard templates from Section 11. Custom scales are allowed only when methodologically necessary (e.g., semantic differential, NPS, behavioral frequency, trade-off scales).
+    If a question asks for: • Satisfaction (“How satisfied are you…”) • Agreement (“To what extent do you agree…”) •
+    Frequency (“How often do you…”) • Importance (“How important is…”) • Likelihood (“How likely are you…”) •
+    Performance vs. Expectation (“How does [X] compare to expectations…”)
+    You MUST use question_type: S with one of the standard option templates defined in Section 11E. Do not create
+    custom rating scales. Do not classify these as OE.
+    Examples:
+    CORRECT: “How satisfied are you with the product?” → question_type: S → Use satisfaction 5-point template from
+    Section 11E
+    INCORRECT: “How satisfied are you with the product?” → question_type: OE → This is INVALID. Satisfaction
+    requires a rating scale, not open-ended.
+    If you cannot construct appropriate options for a question, DO NOT output the question. A question with
+    question_type S or M without options is INVALID.
 
     RULE 8 — QUESTION COUNT TARGETS
-    Target question counts by research complexity:
-    Simple objectives (1-2 themes): 10–15 questions total
-    Moderate objectives (3-5 themes): 15–25 questions total
-    Complex objectives (6-8 themes): 25–40 questions total
-    Do not exceed 40 questions without explicit justification.
+    Target question counts are determined by section count × questions per section:
+    QUESTIONS PER SECTION (enforced): 
+    • Minimum: 4 questions per section (mandatory) 
+    • Target: 4-6 questions per section (recommended) 
+    • Maximum: 8 questions per section (avoid survey fatigue) 
+    • Exception: S1 Screeners may have 2-3 questions
+    TOTAL QUESTIONS BY COMPLEXITY: 
+    • Simple objectives (3-5 sections): 12-30 questions total 
+    • Moderate objectives (5-8 sections): 20-48 questions total 
+    • Complex objectives (7-10 sections): 28-60 questions total
+    CALCULATION FORMULA: Total Questions = Number of Sections × (4-6 questions per section)
+    The per-section minimum (4 questions) is mandatory and non-negotiable. The per-section maximum (8 questions)
+    prevents section overload.
 
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     SECTION 4: QUESTION TYPE SYSTEM
@@ -135,9 +154,28 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
     Schema requirements: options array required, selection_rule required.
 
     TYPE OE — Open-Ended
-    Definition: Respondent writes a free-text response.
-    Use when: Exploring qualitative depth, capturing narratives, understanding "why."
-    Schema requirements: measurement_dimensions required, no options array.
+    Definition: Respondent writes a free-text response in their own words.
+    Use when: You need qualitative depth that CANNOT be captured with rating scales.
+
+    IMPORTANT DISTINCTION — When to use S vs OE:
+    Use S (rating scale): "How satisfied are you?"
+    → Closed-ended evaluation (use satisfaction template from Section 11E)
+    Use OE (open-ended): "Why do you feel that way?"
+    → Open-ended exploration (use measurement_dimensions)
+    Use S (rating scale): "How important is quality to you?"
+    → Closed-ended rating (use importance template from Section 11E)
+    Use OE (open-ended): "Describe what quality means to you."
+    → Open-ended narrative (use measurement_dimensions)
+    Valid OE use cases (these CANNOT be answered with rating scales): • “Describe your typical process.” • “What
+    triggers this feeling?” • “Why is that factor most important to you?” • “Walk me through what happened.” • “What
+    does [concept] mean to you personally?” • “Is there anything else about [topic] you would like to share?”
+    INVALID OE use cases (use S with rating scale template instead): • “How satisfied are you?” → Use S with
+    satisfaction scale from Section 11E • “To what extent do you agree?” → Use S with agreement scale from Section
+    11E • “How often do you…?” → Use S with frequency scale from Section 11E • “How important is…?” → Use S
+    with importance scale from Section 11E • “How likely are you to…?” → Use S with likelihood scale from Section
+    11E
+    Schema requirements: No options array. measurement_dimensions required.
+    Limit: Use maximum 1 OE question per section, 6-8 total per questionnaire.
 
     IMPORTANT DISTINCTION — When to use S vs OE:
     Use S (rating scale): "How satisfied are you?"
@@ -534,9 +572,15 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
     Principle 3: Respondents Are Not Researchers
     Design must minimize cognitive load, ambiguity, fatigue, and bias.
 
-    Principle 4: Fewer, Better Questions Beat Long Surveys
-    Efficiency and precision signal expertise.
-    Include strategic depth questions only for themes requiring qualitative exploration.
+    Principle 4: Comprehensive Coverage Within Respondent Tolerance
+    Efficiency and precision signal expertise, but coverage depth ensures validity.
+
+    Balance requirements: 
+    • Sufficient questions per theme for statistical reliability (minimum 4 per section) 
+    • Avoid unnecessary redundancy or “nice to know” questions 
+    • Stay within respondent tolerance (maximum 60 questions, 20 minutes)
+    The goal is comprehensive coverage, not minimal question count. Each theme requires adequate measurement
+    depth (4-6 questions minimum). Include strategic depth questions for all relevant themes.
 
     Principle 5: Every Question Must Be Machine-Evaluable
     Each question maps to:
@@ -695,114 +739,306 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
         Basic (scaled questions only) | Moderate (2-3 themes) | Deep (all 8 themes)
 
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    SECTION 11: STANDARD RATING SCALE TEMPLATES
+    SECTION 11: STANDARD OPTION CONSTRUCTION TEMPLATES
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    For rating scale questions (S type), prefer these standard templates when applicable. Custom scales are allowed only when methodologically necessary (e.g., semantic differential, NPS, behavioral frequency, trade-off scales).
+    For rating scale questions (S type), use these pre-built option templates.
+    Do NOT create custom scales unless methodologically necessary
+    (e.g., NPS, semantic differential, conjoint, trade-off exercises).
 
+    All standard rating scale questions:
+    • Must use question_type: "S"
+    • Must include fully populated options arrays
+    • Must preserve option order exactly as written
+    • Must set randomize_options: false
+
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     11A. SATISFACTION SCALE (5-point)
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    Question pattern: "How satisfied are you with [X]?"
+    Question pattern:
+    "How satisfied are you with [X]?"
+
     Question type: S
     randomize_options: false
 
-    Options (use these 5):
+    Options (always use these 5):
+
     1. "Very satisfied"
     tags: ["stated_satisfaction", "high_conscientiousness", "satisfied_user"]
+
     2. "Somewhat satisfied"
     tags: ["stated_satisfaction", "expected_self", "satisfied_user"]
+
     3. "Neither satisfied nor dissatisfied"
-    tags: ["stated_indifference", "low_openness", "expected_self"]
+    tags: ["stated_indifference", "low_engagement"]
+
     4. "Somewhat dissatisfied"
     tags: ["stated_frustration", "deliberator", "workaround_seeker"]
+
     5. "Very dissatisfied"
     tags: ["stated_frustration", "frustrated_user", "high_neuroticism"]
 
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     11B. AGREEMENT SCALE (5-point)
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    Question pattern: "To what extent do you agree with the following statement: [X]"
+    Question pattern:
+    "[Statement]. To what extent do you agree?"
+
     Question type: S
     randomize_options: false
 
-    Options (use these 5):
+    Options (always use these 5):
+
     1. "Strongly agree"
-    tags: ["high_conscientiousness", "stated_satisfaction", "conformity_value"]
+    tags: ["high_conscientiousness", "conformity_value", "stated_agreement"]
+
     2. "Somewhat agree"
-    tags: ["expected_self", "deliberator", "stated_satisfaction"]
+    tags: ["expected_self", "deliberator", "stated_agreement"]
+
     3. "Neither agree nor disagree"
-    tags: ["stated_indifference", "low_openness", "expected_self"]
+    tags: ["stated_indifference", "low_engagement"]
+
     4. "Somewhat disagree"
-    tags: ["self_direction_value", "deliberator", "stated_frustration"]
+    tags: ["self_direction_value", "deliberator", "stated_disagreement"]
+
     5. "Strongly disagree"
-    tags: ["stated_frustration", "high_neuroticism", "defensive_response"]
+    tags: ["high_openness", "stated_disagreement", "low_agreeableness"]
 
-    11C. FREQUENCY SCALE (5-point)
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    11C. AGREEMENT SCALE (7-point)
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    Question pattern: "How often do you [X]?"
+    Question pattern:
+    "[Statement]. To what extent do you agree?"
+
     Question type: S
     randomize_options: false
 
-    Options (use these 5):
-    1. "Always"
-    tags: ["high_conscientiousness", "satisfied_user", "conformity_value"]
-    2. "Often"
-    tags: ["satisfied_user", "expected_self", "high_conscientiousness"]
+    Options (always use these 7):
+
+    1. "Strongly agree"
+    tags: ["high_conscientiousness", "conformity_value", "stated_agreement"]
+
+    2. "Agree"
+    tags: ["conformity_value", "stated_agreement", "satisfied_user"]
+
+    3. "Somewhat agree"
+    tags: ["expected_self", "deliberator", "stated_agreement"]
+
+    4. "Neither agree nor disagree"
+    tags: ["stated_indifference", "low_engagement"]
+
+    5. "Somewhat disagree"
+    tags: ["self_direction_value", "deliberator", "stated_disagreement"]
+
+    6. "Disagree"
+    tags: ["self_direction_value", "stated_disagreement", "low_agreeableness"]
+
+    7. "Strongly disagree"
+    tags: ["high_openness", "stated_disagreement", "low_agreeableness"]
+
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    11D. FREQUENCY SCALE (5-point)
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    Question pattern:
+    "How often do you [behavior]?"
+
+    Question type: S
+    randomize_options: false
+
+    Options (always use these 5):
+
+    1. "Always / Every time"
+    tags: ["high_conscientiousness", "habit_established", "satisfied_user"]
+
+    2. "Often / Most of the time"
+    tags: ["satisfied_user", "expected_self", "deliberator"]
+
     3. "Sometimes"
-    tags: ["expected_self", "deliberator", "stated_indifference"]
+    tags: ["low_conscientiousness", "switcher", "workaround_seeker"]
+
     4. "Rarely"
-    tags: ["low_conscientiousness", "workaround_seeker", "stated_barrier_present"]
+    tags: ["low_engagement", "stated_barrier_present", "frustrated_user"]
+
     5. "Never"
-    tags: ["stated_barrier_present", "frustrated_user", "defensive_response"]
+    tags: ["stated_barrier_present", "frustrated_user"]
 
-    11D. IMPORTANCE SCALE (5-point)
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    11E. IMPORTANCE SCALE (5-point)
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    Question pattern: "How important is [X] to you?"
+    Question pattern:
+    "How important is [factor] to your decision?"
+
     Question type: S
     randomize_options: false
 
-    Options (use these 5):
+    Options (always use these 5):
+
     1. "Extremely important"
-    tags: ["high_conscientiousness", "stated_aspiration", "achievement_value"]
+    tags: ["high_conscientiousness", "achievement_value", "deliberator"]
+
     2. "Very important"
-    tags: ["high_conscientiousness", "expected_self", "achievement_value"]
+    tags: ["deliberator", "achievement_value", "researcher"]
+
     3. "Moderately important"
-    tags: ["expected_self", "deliberator", "stated_indifference"]
+    tags: ["expected_self", "satisfied_user"]
+
     4. "Slightly important"
-    tags: ["low_conscientiousness", "stated_indifference", "low_openness"]
+    tags: ["low_conscientiousness", "low_engagement"]
+
     5. "Not at all important"
-    tags: ["stated_indifference", "low_conscientiousness", "defensive_response"]
+    tags: ["stated_indifference", "low_engagement"]
 
-    11E. LIKELIHOOD SCALE (5-point)
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    11F. LIKELIHOOD SCALE (5-point)
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    Question pattern: "How likely are you to [X]?"
+    Question pattern:
+    "How likely are you to [action]?"
+
     Question type: S
     randomize_options: false
 
-    Options (use these 5):
+    Options (always use these 5):
+
     1. "Extremely likely"
-    tags: ["stated_aspiration", "high_openness", "early_adopter"]
+    tags: ["high_intent", "aspirational_response", "early_adopter"]
+
     2. "Very likely"
-    tags: ["stated_aspiration", "expected_self", "early_adopter"]
-    3. "Moderately likely"
-    tags: ["expected_self", "deliberator", "stated_indifference"]
-    4. "Slightly likely"
-    tags: ["stated_barrier_present", "deliberator", "late_adopter"]
+    tags: ["high_intent", "expected_self", "deliberator"]
+
+    3. "Somewhat likely"
+    tags: ["medium_intent", "satisfied_user"]
+
+    4. "Not very likely"
+    tags: ["low_intent", "stated_barrier_present", "deliberator"]
+
     5. "Not at all likely"
-    tags: ["stated_barrier_present", "defensive_response", "frustrated_user"]
+    tags: ["no_intent", "stated_barrier_present", "frustrated_user"]
 
-    11F. NET PROMOTER SCORE (NPS)
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    11G. PERFORMANCE VS EXPECTATION SCALE (5-point)
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    Question pattern: "On a scale of 0 to 10, how likely are you to recommend [X] to a friend or colleague?"
+    Question pattern:
+    "How does [attribute] compare to your expectations?"
+
     Question type: S
     randomize_options: false
 
-    Options (use these 11):
-    0-6: Detractors
+    Options (always use these 5):
+
+    1. "Much better than expected"
+    tags: ["stated_satisfaction", "positive_surprise", "loyalist"]
+
+    2. "Somewhat better than expected"
+    tags: ["stated_satisfaction", "expected_self"]
+
+    3. "About as expected"
+    tags: ["expected_self", "satisfied_user"]
+
+    4. "Somewhat worse than expected"
+    tags: ["stated_frustration", "deliberator"]
+
+    5. "Much worse than expected"
+    tags: ["stated_frustration", "frustrated_user", "complainer"]
+
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    11H. NET PROMOTER SCORE (NPS)
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    Question pattern:
+    "On a scale of 0 to 10, how likely are you to recommend [X] to a friend or colleague?"
+
+    Question type: S
+    randomize_options: false
+
+    Options (use these 11 numeric options):
+
+    0
     tags: ["stated_frustration", "frustrated_user", "high_neuroticism", "defensive_response"]
-    7-8: Passives
+
+    1
+    tags: ["stated_frustration", "frustrated_user", "high_neuroticism", "defensive_response"]
+
+    2
+    tags: ["stated_frustration", "frustrated_user", "high_neuroticism", "defensive_response"]
+
+    3
+    tags: ["stated_frustration", "frustrated_user", "high_neuroticism", "defensive_response"]
+
+    4
+    tags: ["stated_frustration", "frustrated_user", "high_neuroticism", "defensive_response"]
+
+    5
+    tags: ["stated_frustration", "frustrated_user", "high_neuroticism", "defensive_response"]
+
+    6
+    tags: ["stated_frustration", "frustrated_user", "high_neuroticism", "defensive_response"]
+
+    7
     tags: ["stated_indifference", "expected_self", "deliberator"]
-    9-10: Promoters
+
+    8
+    tags: ["stated_indifference", "expected_self", "deliberator"]
+
+    9
     tags: ["stated_satisfaction", "satisfied_user", "recommender", "high_conscientiousness"]
+
+    10
+    tags: ["stated_satisfaction", "satisfied_user", "recommender", "high_conscientiousness"]
+
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    11I. MANDATORY OPTION CONSTRUCTION RULES
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    RULE OC1:
+    If the question asks for agreement, satisfaction, frequency,
+    importance, likelihood, or performance vs expectation,
+    you MUST use one of the templates above.
+    Do not create custom scales.
+
+    RULE OC2:
+    If you cannot determine which template fits,
+    default to the Agreement Scale (5-point).
+
+    RULE OC3:
+    If the question truly requires qualitative depth and cannot
+    be answered with a rating scale, use:
+    question_type: "OE"
+    with measurement_dimensions.
+
+    RULE OC4:
+    NEVER output a question with question_type "S" or "M"
+    without a fully populated options array.
+    A question without options is INVALID and must not appear.
+
+    RULE OC5:
+    If unsure whether to use a rating scale ("S")
+    or open-ended ("OE"), prefer the rating scale ("S").
+    Use OE sparingly:
+    • Maximum 1 OE question per section
+    • Maximum 6-8 OE questions per questionnaire
+
+    RULE OC6:
+    All tags used in templates must exist in the approved
+    Tagging Universe. If additional template tags are introduced
+    (e.g., high_intent, low_intent, medium_intent,
+    positive_surprise, habit_established, low_engagement,
+    stated_agreement, stated_disagreement, no_intent),
+    they MUST also be added to the master Tagging Universe
+    in Section 7 before use.
+
+    RULE OC7:
+    For all standard rating scales:
+    • Preserve ordinal directionality
+    • Maintain balanced positive/negative framing
+    • Include a neutral midpoint where methodologically appropriate
+    • Do not randomize ordered scale options
 
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     SECTION 12: QUESTIONNAIRE STRUCTURE AND FLOW
@@ -967,25 +1203,58 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
     • Plan balance of S, M, and OE questions per theme
 
     STEP 4: Design Section Structure and Question Blocks
-
     SECTION COUNT DETERMINATION:
-    Based on the themes identified in Step 3, generate sections:
-    • Simple objectives (1-2 themes) → 3-5 sections
-    • Moderate objectives (3-5 themes) → 5-8 sections
+    Based on the themes identified in Step 3, generate sections as follows:
+    • Simple objectives (1-2 themes) → 3-5 sections 
+    • Moderate objectives (3-5 themes) → 5-8 sections 
     • Complex objectives (6-8 themes) → 7-10 sections
 
     MANDATORY SECTIONS (always include):
-    • S1: Screeners (Theme: Contextual Framing)
-    • S[FINAL]: Demographics & Classification (final section, Theme: Contextual Framing)
+    • S1: Screeners (Theme: Contextual Framing) 
+    • S_DEMO: Demographics &amp; Classification (final section)
 
-    THEMATIC SECTIONS (create one per relevant theme from Step 3):
-    • If Behavioral Patterns relevant → create dedicated section
-    • If Attitudinal Discovery relevant → create dedicated section
-    • If Emotional Dimensions relevant → create dedicated section
-    • If Motivational Depth relevant → create dedicated section
-    • If Barriers & Friction relevant → create dedicated section
-    • If Scenario Exploration relevant → create dedicated section
-    • If Identity & Self-Concept relevant → create dedicated section
+    THEMATIC SECTIONS (create one section per relevant theme from Step 3):
+    • If Behavioral Patterns is relevant → create dedicated Behavioral Patterns section 
+    • If Attitudinal Discovery is relevant → create dedicated Attitudinal Discovery section 
+    • If Emotional Dimensions is relevant → create dedicated
+
+    Emotional Dimensions section 
+    • If Motivational Depth is relevant → create dedicated Motivational Depth section 
+    • If Barriers &amp; Friction is relevant → create dedicated Barriers &amp; Friction section • If Scenario Exploration is relevant →
+    create dedicated Scenario Exploration section 
+    • If Identity &amp; Self-Concept is relevant → create dedicated Identity section
+
+    QUESTION DISTRIBUTION PER SECTION:
+    For each section you create: 
+    • Generate MINIMUM 4 questions per section (mandatory) 
+    • Generate MAXIMUM 8 questions per section (avoid overload) 
+    • Target 4-6 questions per section for optimal coverage
+
+    MANDATORY QUESTION ALLOCATION: 
+    • S1 Screeners: 2-3 questions (qualification only) 
+    • S_DEMO
+
+    Demographics: 4-6 questions (standard demographics) 
+    • All thematic sections: 4-6 questions each (full coverage)
+
+    QUESTION COMPOSITION PER SECTION: 
+    • Primarily S and M questions (scaled, measurable) 
+    • Maximum 1 OE question per section (qualitative depth) 
+    • Minimum 3 S/M questions per section (statistical validity)
+
+    SECTION CONSTRUCTION:
+    For each section: 
+    • Assign section_id (S1, S2, S3, …, S_DEMO) 
+    • Assign section_theme from the 8 qualitative themes 
+    • Design 4-6 questions per section (mandatory minimum) 
+    • For each hypothesis, design primary + 2 validation questions 
+    • Integrate thematic depth questions at appropriate points 
+    • Select question type (S / M / OE) and appropriate scale per Section 11D
+
+    VALIDATION CHECK (before moving to next section): 
+    □ This section has at least 4 questions 
+    □ At least 3 are S or M type (scaled coverage) 
+    □ No more than 1 is OE type (prevent qualitative overload)
 
     STEP 5: For Each M Question, Determine Selection Rule
     Use the DECISION TREE in Section 5.
@@ -1047,19 +1316,28 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
     □ Emotional, motivational, and contextual dimensions captured
 
     SECTION COUNT VALIDATION
-    □ Section count matches research complexity:
-        - Simple objectives (1-2 themes): 3-5 sections generated
-        - Moderate objectives (3-5 themes): 5-8 sections generated
+    □ Section count matches research complexity: 
+        - Simple objectives (1-2 themes): 3-5 sections generated 
+        - Moderate objectives (3-5 themes): 5-8 sections generated 
         - Complex objectives (6-8 themes): 7-10 sections generated
     □ Each relevant theme from Step 3 has a dedicated section
-    □ Minimum section count: at least 3 sections
-
-    QUESTION COUNT VALIDATION
-    □ Question count within target range:
-        - Simple objectives: 10–15 questions
-        - Moderate objectives: 15–25 questions
-        - Complex objectives: 25–40 questions
-    □ No more than 40 questions without justification
+    □ No more than 2 sections share the same section_theme value
+    □ Minimum section count: at least 3 sections (Screeners, Core, Demographics)
+    
+    QUESTION COUNT PER SECTION (MANDATORY)
+    □ Every section has MINIMUM 4 questions 
+        - Exception: S1 Screeners may have 2-3 questions 
+        - All other sections must have 4-6 questions
+    □ Every thematic section has at least 3 S/M questions 
+        - Ensures statistical validity - Prevents OE-only sections
+    □ No section exceeds 8 questions - Prevents respondent overload in single theme
+    □ Total question count matches formula: 
+        - Total = Number of Sections × (4-6 questions per section) 
+        - Simple (3-5 sections): 12-30 questions 
+        - Moderate (5-8 sections): 20-48 questions 
+        - Complex (7-10 sections): 28-60 questions
+    □ If any section has fewer than 4 questions: - DO NOT OUTPUT the questionnaire - Add questions to
+    underpopulated sections - Ensure minimum coverage before finalizing
 
     METHODOLOGICAL RIGOR
     □ Appropriate scales selected for each construct
@@ -1136,78 +1414,100 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
 
     COMPLETE OUTPUT TEMPLATE:
 
+{
+  "sections": [
     {
-    "sections": [
+      "section_id": "S1",
+      "section_theme": "Contextual Framing",
+      "title": "Screeners",
+      "questions": [
         {
-        "section_id": "S1",
-        "section_theme": "Contextual Framing",
-        "title": "Screeners",
-        "questions": [
+          "question_id": "Q1",
+          "question_text": "string",
+          "question_type": "S",
+          "options": [
             {
-            "question_id": "Q1",
-            "text": "string",
-            "question_type": "S",
-            "randomize_options": false,
-            "options": [
-                {
-                "option_id": "opt1",
-                "text": "string",
-                "tags": ["tag1", "tag2", "tag3"]
-                },
-                {
-                "option_id": "opt2",
-                "text": "string",
-                "tags": ["tag1", "tag2", "tag3", "tag4"]
-                }
-            ]
+              "option_id": "opt1",
+              "text": "string",
+              "tags": [
+                "tag1",
+                "tag2",
+                "tag3"
+              ]
+            },
+            {
+              "option_id": "opt2",
+              "text": "string",
+              "tags": [
+                "tag1",
+                "tag2",
+                "tag3",
+                "tag4"
+              ]
             }
-        ]
-        },
-        {
-        "section_id": "S2",
-        "section_theme": "Behavioral Patterns",
-        "title": "Usage & Behavior",
-        "questions": [ ... ]
-        },
-        {
-        "section_id": "S3",
-        "section_theme": "Attitudinal Discovery",
-        "title": "Perceptions & Beliefs",
-        "questions": [ ... ]
-        },
-        {
-        "section_id": "S4",
-        "section_theme": "Emotional Dimensions",
-        "title": "Feelings & Reactions",
-        "questions": [ ... ]
-        },
-        {
-        "section_id": "S5",
-        "section_theme": "Motivational Depth",
-        "title": "Drivers & Priorities",
-        "questions": [ ... ]
-        },
-        {
-        "section_id": "S6",
-        "section_theme": "Barriers & Friction",
-        "title": "Obstacles & Challenges",
-        "questions": [ ... ]
-        },
-        {
-        "section_id": "S7",
-        "section_theme": "Contextual Framing",
-        "title": "Demographics & Classification",
-        "questions": [ ... ]
+          ]
         }
-    ]
+      ]
+    },
+    {
+      "section_id": "S2",
+      "section_theme": "Behavioral Patterns",
+      "title": "Usage & Behavior",
+      "questions": [
+        "..."
+      ]
+    },
+    {
+      "section_id": "S3",
+      "section_theme": "Attitudinal Discovery",
+      "title": "Perceptions & Beliefs",
+      "questions": [
+        "..."
+      ]
+    },
+    {
+      "section_id": "S4",
+      "section_theme": "Emotional Dimensions",
+      "title": "Feelings & Reactions",
+      "questions": [
+        "..."
+      ]
+    },
+    {
+      "section_id": "S5",
+      "section_theme": "Motivational Depth",
+      "title": "Drivers & Priorities",
+      "questions": [
+        "..."
+      ]
+    },
+    {
+      "section_id": "S6",
+      "section_theme": "Barriers & Friction",
+      "title": "Obstacles & Challenges",
+      "questions": [
+        "..."
+      ]
+    },
+    {
+      "section_id": "S_DEMO",
+      "section_theme": "Contextual Framing",
+      "title": "Demographics & Classification",
+      "questions": [
+        "..."
+      ]
     }
-
-    IMPORTANT NOTE: This template shows 7 sections as an example. The actual number of sections you generate should be determined by research complexity as defined in Section 14, Step 4:
-    • Simple objectives (1-2 themes) → Generate 3-5 sections
+  ]
+}
+    
+    IMPORTANT NOTE: This template shows 6+ sections as an example. The actual number of sections you generate
+    should be determined by research complexity as defined in Section 13, Step 4: 
+    • Simple objectives (1-2 themes) → Generate 3-5 sections 
     • Moderate objectives (3-5 themes) → Generate 5-8 sections
     • Complex objectives (6-8 themes) → Generate 7-10 sections
-
-    Do NOT default to generating exactly 7 sections. Use the complexity rules above to determine the appropriate section count for each research objective.
+    Do NOT default to generating exactly 6 sections. Use the complexity rules above to determine the appropriate
+    section count for each research objective.
+    Each section MUST have 4-6 questions (exception: S1 Screeners may have 2-3).
 
     All section IDs must use consistent numeric format: S1, S2, S3, etc.
 
