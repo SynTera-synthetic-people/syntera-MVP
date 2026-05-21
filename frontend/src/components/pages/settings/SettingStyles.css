@@ -208,9 +208,43 @@
 }
 
 .acc-nav-flat--active {
-  background: rgba(20, 184, 166, 0.08);
+  background: #4A536A;
+  color: #ffffff;
+  border-left: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.acc-nav-flat--active::after {
+  content: '';
+  width: 3px;
+  height: 20px;        /* fixed height, not stretched */
+  border-radius: 999px; /* fully rounded both ends = pill */
+  background: #37FFCE;
+  flex-shrink: 0;
+  align-self: center;  /* vertically centered */
+  margin-right: -0.75rem; 
+}
+
+.acc-nav-child--active {
+  background: #4A536A;
   color: #e5e7eb;
-  border-left: 2px solid #14b8a6;
+  border-left: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.acc-nav-child--active::after {
+  content: '';
+  width: 3px;
+  height: 20px;
+  border-radius: 999px;
+  background: #37FFCE;
+  flex-shrink: 0;
+  align-self: center;
+  margin-right: -0.75rem; 
 }
 
 .acc-nav-divider {

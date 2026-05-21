@@ -88,11 +88,6 @@
   border: 1px solid var(--T-GreyScale-Grey-800, #393C45);
 }
 
-/* ── Most Popular badge ───────────────────────────────────────────────────────
-   Matches Figma: pill floats centered above the card, straddling the top
-   border. Achieved with position:absolute + negative top offset on the wrap,
-   and overflow:visible on the card.
-─────────────────────────────────────────────────────────────────────────────── */
 .up-card--featured {
   overflow: visible;             /* allow badge to overflow above card edge */
 }

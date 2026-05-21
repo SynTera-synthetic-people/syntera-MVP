@@ -3,7 +3,11 @@
   padding: 1rem 2rem;
   position: relative;
   overflow-x: hidden;
-  background: #121315;
+  overflow-y: visible;
+  background: #0E0F12;
+
+  display: flex;
+  flex-direction: column;
 }
 
 @media (max-width: 768px) {
@@ -23,6 +27,12 @@
   margin: 0 auto;
   position: relative;
   z-index: 10;
+
+  width: 100%;
+  flex: 1;
+
+  display: flex;
+  flex-direction: column;
 }
 
 /* ── Top Bar ── */
@@ -480,16 +490,7 @@
 }
 
 /* Table Card */
-.table-card {
-  background: #0a0b0e !important;
-  border: 1px solid #1E2028;
-  border-radius: 1.25rem;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
-  overflow: visible;
-  flex-direction: column;
-  /* viewport minus: top-bar (~60px) + page-title (~60px) + search-row (~60px) + page padding (~32px) + breathing room */
-  max-height: calc(100vh - 14rem);
-}
+
 /* ── Trial Limit Overlay (inside table card) ── */
 .trial-overlay {
   display: flex;
@@ -548,11 +549,17 @@
   border: 1px solid #1E2028;
   border-radius: 1.25rem;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
-  overflow: visible;
+
   display: flex;
   flex-direction: column;
-  /* viewport minus: top-bar (~60px) + page-title (~60px) + search-row (~60px) + page padding (~32px) + breathing room */
-  max-height: calc(100vh - 14rem);
+
+  overflow: hidden;
+
+  /* IMPORTANT FIX */
+  min-height: 0;
+
+  /* REMOVE viewport locking */
+  max-height: none;
 }
 
 /* Empty State */

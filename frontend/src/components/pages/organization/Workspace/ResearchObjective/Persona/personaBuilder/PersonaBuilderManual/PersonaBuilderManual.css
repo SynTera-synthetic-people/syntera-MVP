@@ -6,11 +6,19 @@
 
 .pbm-container {
   flex: 1;
+
   min-height: 100vh;
+
   background: #0E0F12;
+
+  display: flex;
+  flex-direction: column;
+
+  overflow-x: hidden;
   overflow-y: auto;
-  display: flex;         /* ← add */
-  flex-direction: column; /* ← add */
+
+  /* IMPORTANT */
+  min-width: 0;
 }
 
 .pbm-wrapper {
