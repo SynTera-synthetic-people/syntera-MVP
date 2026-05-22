@@ -551,19 +551,19 @@ async def simulate_survey(
         questions = []
         for sec in q_all:
             questions.append({
-            "title": sec.get("title"),
-            "questions": [
-                {
-                    "id": q.get("id"),
-                    "question_key": q.get("question_key") or q.get("id"),
-                    "question_type": q.get("question_type") or "single_select",
-                    "text": q.get("text"),
-                    "options": q.get("options") or analysis_options_for_question(q),
-                    "option_schema": q.get("option_schema") or (q.get("config") or {}).get("options") or [],
-                    "config": q.get("config") or {},
-                } for q in sec.get("questions", [])
-            ]
-        })
+                "title": sec.get("title"),
+                "questions": [
+                    {
+                        "id": q.get("id"),
+                        "question_key": q.get("question_key") or q.get("id"),
+                        "question_type": q.get("question_type") or "single_select",
+                        "text": q.get("text"),
+                        "options": q.get("options") or analysis_options_for_question(q),
+                        "option_schema": q.get("option_schema") or (q.get("config") or {}).get("options") or [],
+                        "config": q.get("config") or {},
+                    } for q in sec.get("questions", [])
+                ]
+            })
 
     if not questions:
         raise HTTPException(status_code=400, detail="No questions available to simulate")

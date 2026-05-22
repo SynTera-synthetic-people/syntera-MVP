@@ -17,6 +17,7 @@ QUESTION_TYPE_ALIASES: Dict[str, str] = {
     "single-choice": "single_select",
     "single_choice": "single_select",
     "mcq": "single_select",
+    "s": "single_select",
     # ── Multi Select ───────────────────────────────────────────────────────
     "multiple choice": "multi_select",
     "multi select": "multi_select",
@@ -24,6 +25,7 @@ QUESTION_TYPE_ALIASES: Dict[str, str] = {
     "multiple_select": "multi_select",
     "checkbox": "multi_select",
     "checkboxes": "multi_select",
+    "m": "multi_select",
     # ── Dropdown ───────────────────────────────────────────────────────────
     "dropdown": "dropdown",
     "drop down": "dropdown",
@@ -42,6 +44,7 @@ QUESTION_TYPE_ALIASES: Dict[str, str] = {
     "open_ended": "text",
     "short_text": "text",
     "short text": "text",
+    "oe": "text",
     # ── Essay (long open-end) ──────────────────────────────────────────────
     "essay": "essay",
     "long_text": "essay",

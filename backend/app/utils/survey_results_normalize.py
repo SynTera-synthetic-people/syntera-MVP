@@ -79,9 +79,23 @@ def _scale_counts_to_total(raw: List[int], total: int) -> List[int]:
 
 
 def _counts_from_llm_option_list(
-    llm_opts: List[Any], canonical_options: List[str]
+    llm_opts: List[Any], canonical_options: List[str], raw_options: Optional[List[Any]] = None
 ) -> List[int]:
-    """Map LLM option rows to canonical option order."""
+    """Map LLM option rows to canonical option order.
+
+    raw_options: original questionnaire option dicts (with option_id/text/tags) used as
+    a secondary lookup key when the LLM returns option_id instead of option text.
+    """
+    # Build option_id → canonical_text mapping from raw questionnaire options
+    option_id_to_text: Dict[str, str] = {}
+    if raw_options:
+        for raw_opt in raw_options:
+            if isinstance(raw_opt, dict):
+                oid = str(raw_opt.get("option_id", "") or "")
+                text = str(raw_opt.get("text", "") or "")
+                if oid:
+                    option_id_to_text[_norm_label(oid)] = _norm_label(text)
+
     lookup: Dict[str, int] = {}
     for o in llm_opts or []:
         if isinstance(o, dict):
@@ -93,17 +107,19 @@ def _counts_from_llm_option_list(
         if not label.strip():
             continue
         nk = _norm_label(label)
-        lookup[nk] = lookup.get(nk, 0) + cnt
+        # If the LLM used option_id (e.g. "opt1"), remap to canonical text
+        resolved = option_id_to_text.get(nk, nk)
+        lookup[resolved] = lookup.get(resolved, 0) + cnt
 
     counts: List[int] = []
     for opt in canonical_options:
         nk = _norm_label(opt)
         counts.append(lookup.get(nk, 0))
 
-    # position fallback if same length and all zero but lookup had values
+    # Position-based fallback when text matching found nothing
     if len(llm_opts) == len(canonical_options) and sum(counts) == 0:
         counts = []
-        for i, opt in enumerate(canonical_options):
+        for i in range(len(canonical_options)):
             o = llm_opts[i]
             if isinstance(o, dict):
                 counts.append(_ensure_int(o.get("count", 0), 0))
@@ -134,46 +150,61 @@ def build_normalized_survey_results(
     Build results dict keyed by canonical question text from the questionnaire.
 
     Each value is [ {option, count, pct}, ... ] in questionnaire option order.
+
+    Single-select (S): counts are forced to sum to total_sample_size (one choice per respondent).
+    Multi-select (M):  counts are per-option respondent frequencies — each option is independent
+                       and must NOT be scaled to sum to total_sample_size, which would distort
+                       selection rates. Counts are capped at total_sample_size per option.
     """
     llm_rows = list(question_results_llm or [])
     out: Dict[str, List[Dict[str, Any]]] = {}
 
     for i, fq in enumerate(flat_questions):
         qtext = (fq.get("text") or "").strip()
-        canonical_opts = fq.get("options") or []
-        if not canonical_opts and isinstance(fq.get("config"), dict):
-            canonical_opts = fq["config"].get("options") or []
-        if not isinstance(canonical_opts, list):
-            canonical_opts = []
-        canonical_opts = [_option_label(x) for x in canonical_opts]
+        question_type = str(fq.get("question_type") or "single_select").lower().strip()
+        is_multi_select = question_type in {"m", "multi_select", "grid_multi_select"}
+
+        raw_opts = fq.get("option_schema") or fq.get("options") or []
+        if not raw_opts and isinstance(fq.get("config"), dict):
+            raw_opts = fq["config"].get("options") or []
+        if not isinstance(raw_opts, list):
+            raw_opts = []
+        # Options may be plain strings or dicts {option_id, text, tags} — always use the text value
+        canonical_opts = [_option_label(x) for x in raw_opts]
 
         row = _pick_llm_row(llm_rows, i, qtext)
-        if not row:
-            llm_opts: List[Any] = []
-        else:
-            llm_opts = row.get("options") or []
+        llm_opts: List[Any] = row.get("options") or [] if row else []
 
         if not canonical_opts:
             out[qtext] = []
             continue
 
-        counts = _counts_from_llm_option_list(llm_opts, canonical_opts)
-        counts = _scale_counts_to_total(counts, total_sample_size)
+        counts = _counts_from_llm_option_list(llm_opts, canonical_opts, raw_options=raw_opts)
 
-        # At least 1 respondent per option when sample allows
-        if len(counts) >= 2 and total_sample_size >= len(counts):
-            counts = _lift_zero_counts(counts)
+        if is_multi_select:
+            # Multi-select: each count = respondents who picked that option (independent).
+            # Fallback to uniform only when ALL counts are zero (complete matching failure).
+            if sum(counts) == 0:
+                counts = _uniform_counts(len(counts), total_sample_size)
+            else:
+                # Cap each option at total_sample_size; do NOT rescale the sum.
+                counts = [min(c, total_sample_size) for c in counts]
+        else:
+            # Single-select: exactly total_sample_size responses distributed across options.
+            counts = _scale_counts_to_total(counts, total_sample_size)
+            if len(counts) >= 2 and total_sample_size >= len(counts):
+                counts = _lift_zero_counts(counts)
 
-        processed: List[Dict[str, Any]] = []
+        result_rows: List[Dict[str, Any]] = []
         for opt, cnt in zip(canonical_opts, counts):
             pct = (
                 round(100.0 * cnt / total_sample_size, 1)
                 if total_sample_size > 0
                 else 0.0
             )
-            processed.append({"option": opt, "count": int(cnt), "pct": pct})
+            result_rows.append({"option": opt, "count": int(cnt), "pct": pct})
 
-        out[qtext] = processed
+        out[qtext] = result_rows
 
     return out
 
