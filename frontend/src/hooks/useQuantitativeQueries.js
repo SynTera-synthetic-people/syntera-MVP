@@ -237,8 +237,8 @@ export const useCreateQuestionnaireQuestion = (workspaceId, explorationId, simul
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ sectionId, text, options }) =>
-      createQuestionnaireQuestion({ workspaceId, explorationId, sectionId, text, options }),
+    mutationFn: ({ sectionId, text, options, question_type, config }) =>
+      createQuestionnaireQuestion({ workspaceId, explorationId, sectionId, text, options, question_type, config }),
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: questionnaireQueryKey(workspaceId, explorationId, simulationId),
@@ -251,8 +251,8 @@ export const useUpdateQuestionnaireQuestion = (workspaceId, explorationId, simul
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ questionId, text, options }) =>
-      updateQuestionnaireQuestion({ workspaceId, explorationId, questionId, text, options }),
+    mutationFn: ({ questionId, text, options, question_type, config }) =>
+      updateQuestionnaireQuestion({ workspaceId, explorationId, questionId, text, options, question_type, config }),
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: questionnaireQueryKey(workspaceId, explorationId, simulationId),

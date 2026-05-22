@@ -39,6 +39,28 @@ class Settings(BaseSettings):
     TIER1_EXPLORATION_LIMIT: int = 3
     ENTERPRISE_EXPLORATION_LIMIT: int = 10
 
+    # ============================================================
+    # RAG SETTINGS (ADD THESE)
+    # ============================================================
+    
+    # OpenAI Embeddings
+    OPENAI_API_KEY: str = ""
+    EMBEDDING_MODEL: str = "text-embedding-3-small"
+    EMBEDDING_DIMENSIONS: int = 1536
+    
+    # Qdrant Cloud
+    QDRANT_URL: str = ""
+    QDRANT_API_KEY: str = ""
+    QDRANT_COLLECTION_NAME: str = "syntera-behavioral-summaries"
+    
+    # RAG Processing Settings
+    EMBED_BATCH_SIZE: int = 100
+    UPSERT_BATCH_SIZE: int = 50
+    TOP_K_RESULTS: int = 5
+
+    # Background ingestion worker: how often to check for pending chunks (seconds)
+    INGEST_POLL_INTERVAL_SECONDS: int = 60
+
     class Config:
         env_file = ".env"
         case_sensitive = True

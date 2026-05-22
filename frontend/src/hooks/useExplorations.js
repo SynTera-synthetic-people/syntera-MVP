@@ -106,11 +106,11 @@ export const useUpdateExploration = () => {
     mutationFn: ({ id, data }) => explorationService.update(id, data),
     onSuccess: (response, variables) => {
       queryClient.setQueryData(explorationKeys.detail(variables.id), response);
-      queryClient.invalidateQueries({ queryKey: explorationKeys.lists() });
-      toast.success(response.message || 'exploration updated successfully');
+      queryClient.invalidateQueries({ queryKey: explorationKeys.all });
+      toast.success('Update Saved');
     },
     onError: (error) => {
-      toast.error(error?.response?.data?.message || 'Failed to update exploration');
+      toast.error(error?.message || error?.response?.data?.message || 'Failed to update exploration');
     },
   });
 };
@@ -142,7 +142,7 @@ export const useDeleteExploration = () => {
         predicate: (query) =>
           query.queryKey.includes('explorations')
       });
-      toast.success(response.message || 'Exploration deleted successfully');
+      toast.success('Exploration Cleared');
     },
     onError: (error) => {
       toast.error(error?.response?.data?.message || 'Failed to delete exploration');

@@ -1,0 +1,186 @@
+/* ════════════════════════════════════════════════════════════════════════════
+   ShareInsightsModal
+   Prefix: sim-
+   Figma: "Share Insights Across Teams" modal
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Overlay ─────────────────────────────────────────────────────────────── */
+
+.sim-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 500;           /* above InsightViewerModal (z: 100) */
+  padding: 24px;
+}
+
+/* ── Modal panel ─────────────────────────────────────────────────────────── */
+
+.sim-modal {
+  position: relative;
+  width: 100%;
+  max-width: 468px;       /* matches Figma modal width */
+  background: var(--T-Base-B1, #0E0F12);
+  border: 1px solid var(--T-GreyScale-Grey-700, #4F535F);
+  border-radius: 24px;
+  display: flex;
+  flex-direction: column;
+  padding: 36px 36px 28px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.7);
+  box-sizing: border-box;
+}
+
+/* ── Close button ────────────────────────────────────────────────────────── */
+
+.sim-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  border-radius: 7px;
+  transition: background 0.13s, color 0.13s;
+  padding: 0;
+}
+
+.sim-close:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+
+.sim-header {
+  text-align: center;
+  margin-bottom: 36px;    /* large gap between header and email field, per Figma */
+}
+
+.sim-title {
+  font-size: 1.625rem;    /* ~26px — large bold title matching Figma */
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0 0 16px;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.sim-subtitle {
+  font-size: 0.9375rem;   /* 15px */
+  color: rgba(255, 255, 255, 0.45);
+  margin: 0;
+  line-height: 1.55;
+}
+
+/* ── Body ────────────────────────────────────────────────────────────────── */
+
+.sim-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-bottom: 20px;
+}
+
+.sim-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sim-label {
+  font-size: 0.875rem;    /* 14px */
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.75);
+  display: block;
+}
+
+.sim-required {
+  color: #ef4444;
+  margin-left: 1px;
+}
+
+.sim-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  color: #ffffff;
+  font-size: 0.9375rem;   /* 15px */
+  font-family: inherit;
+  padding: 13px 16px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.sim-input::placeholder {
+  color: rgba(255, 255, 255, 0.25);
+}
+
+.sim-input:focus {
+  border-color: rgba(255, 255, 255, 0.38);
+}
+
+/* ── Footer ──────────────────────────────────────────────────────────────── */
+
+.sim-footer {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+
+.sim-btn {
+  flex: 1;
+  padding: 14px 20px;
+  border-radius: 10px;
+  font-size: 0.9375rem;   /* 15px */
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+  border: none;
+  outline: none;
+}
+
+/* Cancel — dark with subtle border, matching Figma */
+.sim-btn--cancel {
+  background: #0E1012;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+.sim-btn--cancel:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* Share — gray filled, disabled-looking until email entered (matches Figma default state) */
+.sim-btn--share {
+  background: #3A3D44;
+  color: rgba(255, 255, 255, 0.45);
+  border: 1px solid transparent;
+  cursor: not-allowed;
+}
+
+/* Share — active state when valid email entered */
+.sim-btn--share-active {
+  background: #3A3D44;
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+}
+
+.sim-btn--share-active:hover {
+  background: #484c55;
+  color: #ffffff;
+}

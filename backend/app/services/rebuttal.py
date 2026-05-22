@@ -64,8 +64,11 @@ async def list_questionnaire_sections(
             question_text = q.get("text", "")
             question_data = {
                 "id": q.get("id"),
+                "question_key": q.get("question_key") or q.get("id"),
+                "question_type": q.get("question_type") or "single_select",
                 "text": question_text,
-                "options": q.get("options") or []
+                "options": q.get("options") or [],
+                "config": q.get("config") or {},
             }
             
             if question_text in survey_results_map:

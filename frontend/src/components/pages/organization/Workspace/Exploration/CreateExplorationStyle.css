@@ -1,0 +1,372 @@
+.ce-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+/* Modal card */
+.ce-modal {
+  position: relative;
+  width: 100%;
+  max-width: 480px;  
+  background: #000000;
+  border: 1px solid #1e2028;
+  border-radius: 1rem;
+  padding: 2rem 2rem 1.75rem;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7);
+}
+
+/* ── Close button ── */
+.ce-close-btn {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.5rem;
+  background: transparent;
+  border: none;
+  color: #6b7280;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.ce-close-btn:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: #ffffff;
+}
+
+/* ── Header ── */
+.ce-header {
+  text-align: center;
+  margin-bottom: 1.75rem;
+}
+
+.ce-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0 0 0.5rem 0;
+  letter-spacing: -0.02em;
+}
+
+.ce-subtitle {
+  font-size: 0.8125rem;
+  color: #9ca3af;
+  margin: 0;
+  line-height: 1.5;
+  max-width: 26rem;
+  margin-inline: auto;
+}
+
+/* ── Form ── */
+.ce-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+/* Field wrapper */
+.ce-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* Label */
+.ce-label {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #d1d5db;
+}
+
+.ce-required {
+  color: #ef4444;
+  font-size: 0.8125rem;
+}
+
+.ce-info-icon {
+  color: #6b7280;
+  display: flex;
+  align-items: center;
+  cursor: help;
+  transition: color 0.15s ease;
+}
+
+.ce-info-icon:hover {
+  color: #9ca3af;
+}
+
+/* Text input */
+.ce-input {
+  width: 100%;
+  padding: 0.6875rem 0.875rem;
+  background: #0a0b0e;
+  border: 1px solid #2a2d35;
+  border-radius: 0.5rem;
+  color: #ffffff;
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  box-sizing: border-box;
+}
+
+.ce-input::placeholder {
+  color: #4b5563;
+}
+
+.ce-input:focus {
+  border-color: #374151;
+  box-shadow: 0 0 0 3px rgba(55, 65, 81, 0.25);
+}
+
+.ce-input--error {
+  border-color: #ef4444;
+}
+
+.ce-input--error:focus {
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2);
+}
+
+/* Field footer: error msg left, char count right */
+.ce-field-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 1rem;
+}
+
+.ce-error-msg {
+  font-size: 0.75rem;
+  color: #ef4444;
+}
+
+.ce-char-count {
+  font-size: 0.75rem;
+  color: #4b5563;
+  margin-left: auto;
+}
+
+/* ── Audience Type radio group ── */
+.ce-radio-group {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.ce-radio-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.ce-radio-label--disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* Hide native radio */
+.ce-radio-input {
+  display: none;
+}
+
+/* Custom radio dot */
+.ce-radio-dot {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  border: 2px solid #4b5563;
+  background: transparent;
+  flex-shrink: 0;
+  transition: border-color 0.15s ease, background 0.15s ease;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ce-radio-dot--checked {
+  border-color: #22c55e;
+  background: #22c55e;
+}
+
+.ce-radio-dot--checked::after {
+  content: "";
+  width: 0.35rem;
+  height: 0.35rem;
+  border-radius: 50%;
+  background: #ffffff;
+}
+
+.ce-radio-text {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #d1d5db;
+}
+
+.ce-radio-text--muted {
+  color: #6b7280;
+}
+
+/* Coming Soon pill */
+.ce-coming-soon {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.55rem;
+  border-radius: 9999px;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: #000000;
+  background: #B5B9C4;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  white-space: nowrap;
+}
+
+/* ── Textarea ── */
+.ce-textarea {
+  width: 100%;
+  padding: 0.6875rem 0.875rem;
+  background: #0a0b0e;
+  border: 1px solid #2a2d35;
+  border-radius: 0.5rem;
+  color: #ffffff;
+  font-size: 0.875rem;
+  line-height: 1.55;
+  outline: none;
+  resize: vertical;
+  min-height: 6rem;
+  font-family: inherit;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  box-sizing: border-box;
+}
+
+.ce-textarea::placeholder {
+  color: #4b5563;
+}
+
+.ce-textarea:focus {
+  border-color: #374151;
+  box-shadow: 0 0 0 3px rgba(55, 65, 81, 0.25);
+}
+
+/* ── Action buttons ── */
+.ce-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding-top: 0.25rem;
+}
+
+/* Cancel */
+.ce-btn-cancel {
+  flex-shrink: 0;
+  padding: 0.6875rem 1.25rem;
+  border-radius: 0.5rem;
+  background: transparent;
+  border: 1px solid #2a2d35;
+  color: #d1d5db;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.ce-btn-cancel:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: #374151;
+}
+
+.ce-btn-cancel:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Submit / Begin Exploration */
+.ce-btn-submit {
+  flex: 1;
+  padding: 0.6875rem 1.25rem;
+  border-radius: 0.5rem;
+  background: #374151;
+  border: none;
+  color: #9ca3af;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: not-allowed;
+  transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* Active state — when title is filled */
+.ce-btn-submit:not(:disabled) {
+  background: #2563eb;
+  color: #ffffff;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
+}
+
+.ce-btn-submit:not(:disabled):hover {
+  background: #1d4ed8;
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.45);
+}
+
+/* Loading state inside submit */
+.ce-btn-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.ce-btn-spinner {
+  display: inline-block;
+  width: 0.875rem;
+  height: 0.875rem;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: ce-spin 0.7s linear infinite;
+}
+
+@keyframes ce-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Loading / Error states ── */
+.ce-loading,
+.ce-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 3rem 1rem;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 0.875rem;
+}
+
+.ce-spinner {
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 3px solid rgba(37, 99, 235, 0.2);
+  border-top-color: #2563eb;
+  border-radius: 50%;
+  animation: ce-spin 0.8s linear infinite;
+}
+
+.ce-error {
+  color: #ef4444;
+}

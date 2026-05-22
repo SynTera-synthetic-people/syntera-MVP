@@ -80,3 +80,17 @@ class Persona(SQLModel, table=True):
         default=False,
         sa_column=Column(Boolean)
     )
+
+    # 0-100 confidence score. Omi-generated default 75, manual default 50.
+    calibration_confidence: Optional[int] = Field(default=None)
+
+    # Lineage: set when this persona was replicated from another
+    parent_persona_id: Optional[str] = Field(default=None)
+
+    # Lifecycle: "draft" (traits only, no AI) | "calibrated" (AI-enriched)
+    # None means existing/legacy calibrated personas
+    calibration_status: Optional[str] = Field(default=None)
+
+    # Action-data linkage for ML ground-truth in reports
+    subject_key: Optional[str] = Field(default=None)   # SHA-256 from sync_action.record
+    ml_domain: Optional[str] = Field(default=None)     # ecom | food | mobility | finance

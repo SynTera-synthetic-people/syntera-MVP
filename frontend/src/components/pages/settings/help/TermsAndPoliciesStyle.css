@@ -1,0 +1,77 @@
+/* ═══════════════════════════════════════════════════════════════
+   TermsAndPoliciesStyle.css  — Settings › Help › Terms & Policies
+   Prefix: tp-
+═══════════════════════════════════════════════════════════════ */
+
+.tp-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 780px;
+}
+
+/* "You accepted on …" line */
+.tp-accepted {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e5e7eb;
+  margin: 0;
+}
+
+/* Scrollable content area — matches Figma's card feel */
+.tp-scroll-area {
+  background: #111318;
+  border: 1px solid #1e2028;
+  border-radius: 12px;
+  padding: 24px 28px;
+  max-height: calc(100vh - 240px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  scrollbar-width: thin;
+  scrollbar-color: #2a2d35 transparent;
+}
+
+.tp-scroll-area::-webkit-scrollbar {
+  width: 5px;
+}
+
+.tp-scroll-area::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tp-scroll-area::-webkit-scrollbar-thumb {
+  background: #2a2d35;
+  border-radius: 4px;
+}
+
+/* Intro paragraph (effective date line) */
+.tp-intro {
+  font-size: 13px;
+  color: #9ca3af;
+  margin: 0;
+  line-height: 1.6;
+}
+
+/* Each numbered section */
+.tp-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tp-section-heading {
+  font-size: 14px;
+  font-weight: 600;
+  color: #f3f4f6;
+  margin: 0;
+}
+
+/* Body paragraphs */
+.tp-para {
+  font-size: 13px;
+  color: #9ca3af;
+  line-height: 1.65;
+  margin: 0;
+}

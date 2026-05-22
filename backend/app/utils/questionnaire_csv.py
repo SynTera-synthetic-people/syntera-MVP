@@ -24,7 +24,7 @@ def _ensure_option_list(opts: Any) -> List[str]:
         if x is None:
             return ""
         if isinstance(x, dict):
-            return str(x.get("text", "") or "")
+            return str(x.get("text") or x.get("label") or x.get("option") or x.get("value") or "")
         return str(x)
 
     if opts is None:

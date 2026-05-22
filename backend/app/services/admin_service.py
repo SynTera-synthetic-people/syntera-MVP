@@ -721,8 +721,11 @@ async def create_user_by_admin(
         is_trial = data.is_trial
         exploration_limit = 1
 
+    _name_parts = (data.full_name or "").strip().split(" ", 1)
     user = User(
-        full_name=data.full_name,
+        first_name=_name_parts[0],
+        last_name=_name_parts[1] if len(_name_parts) > 1 else "",
+        full_name=(data.full_name or "").strip(),
         email=data.email,
         hashed_password=hash_password(temp_password),
         role=data.role,

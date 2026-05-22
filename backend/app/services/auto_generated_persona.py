@@ -40,6 +40,42 @@ from app.services.auto_generated_persona_prompts import (
 load_dotenv()
 
 client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+
+def _parse_confidence(raw) -> int:
+    """Normalise any LLM confidence value to 0-100 integer. Fallback: 75."""
+    import re as _re
+    if isinstance(raw, (int, float)):
+        # 0-1 scale (e.g. 0.91 from evidence_snapshot.confidence_calculation_detail.value)
+        if 0.0 <= raw <= 1.0:
+            return int(round(raw * 100))
+        # Already a percentage (e.g. 91.0)
+        if 1 < raw <= 100:
+            return int(raw)
+    if isinstance(raw, str):
+        m = _re.search(r'\b(\d{1,3})\b', raw)
+        if m:
+            v = int(m.group(1))
+            if 0 <= v <= 100:
+                return v
+    return 75
+
+
+def _extract_calibration_confidence(persona: dict) -> int:
+    """
+    Primary path: evidence_snapshot.confidence_calculation_detail.value (0-1).
+    This is the field the generation prompt always produces.
+    Fallback: top-level confidence_scoring (legacy / manual generation).
+    """
+    try:
+        evidence = persona.get("evidence_snapshot") or {}
+        detail = evidence.get("confidence_calculation_detail") or {}
+        raw = detail.get("value") or detail.get("weighted_total")
+        if raw is not None:
+            return _parse_confidence(raw)
+    except Exception:
+        pass
+    return _parse_confidence(persona.get("confidence_scoring"))
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 async def get_interviews_by_exploration_id(
@@ -306,6 +342,7 @@ async def ai_generate_persona(exploration_id, workspace_id, current_user_id):
                     created_by=current_user_id,
                     persona_details=persona,
                     auto_generated_persona=True,
+                    calibration_confidence=_extract_calibration_confidence(persona),
                 )
 
                 session.add(p)

@@ -1,0 +1,231 @@
+/* ── Page wrapper — fills the content area, NOT a fixed overlay ─────────── */
+
+.asp-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  width: 100%;
+  padding: 48px 32px 32px;
+  box-sizing: border-box;
+  background: #0E0F12;
+  gap: 0;
+}
+
+/* ── Omi avatar ─────────────────────────────────────────────────────────── */
+
+.asp-avatar {
+  width: 120px;
+  height: 120px;
+  border-radius: 120px;
+  overflow: hidden;
+  background: #1a1d2e;
+  margin-bottom: 20px;
+  flex-shrink: 0;
+}
+
+.asp-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 30%;
+  display: block;
+}
+
+/* ── Heading block ──────────────────────────────────────────────────────── */
+
+.asp-header {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.asp-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0 0 6px;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+
+.asp-subtitle {
+  color: var(--T-GreyScale-Grey-900, #0E0F12);
+  text-align: center;
+  font-family: Inter;
+  font-size: 14px;
+  font-style: normal;
+  font-weight: 400;
+  line-height: 150%;
+  /* 21px */
+}
+
+/* ── Cards row ──────────────────────────────────────────────────────────── */
+
+.asp-cards {
+  display: flex;
+  flex-direction: row;
+  gap: 16px;
+  width: 100%;
+  max-width: 700px;
+  margin-bottom: 28px;
+}
+
+/* ── Individual card ────────────────────────────────────────────────────── */
+
+.asp-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 28px 20px 24px;
+  background: #16181C;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: border-color 0.18s ease, background 0.18s ease;
+  font-family: inherit;
+  outline: none;
+  min-height: 140px;
+}
+
+.asp-card:hover:not(.asp-card--disabled):not(.asp-card--selected) {
+  border-color: #37FFCE;
+  background: #1a1d22;
+}
+
+/* Selected state — blue border, matches Figma "Both" card */
+.asp-card--selected {
+  border-color: #37FFCE;
+  background: #37FFCE;
+}
+
+/* Selected state text should be dark */
+.asp-card--selected .asp-card-title {
+  color: #000000;
+}
+
+.asp-card--selected .asp-card-description {
+  color: rgba(0, 0, 0, 0.7);
+}
+
+.asp-card--selected .asp-card-icon svg {
+  color: #000000;
+  fill: #000000 !important;
+  stroke: #000000 !important;
+}
+
+.asp-card--disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* ── Card icon ──────────────────────────────────────────────────────────── */
+
+.asp-card-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.85);
+  margin-bottom: 4px;
+}
+
+.asp-card--selected .asp-card-icon {
+  color: #ffffff;
+}
+
+/* ── Card text ──────────────────────────────────────────────────────────── */
+
+.asp-card-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #ffffff;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.asp-card-description {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.4);
+  line-height: 1.4;
+  text-align: center;
+}
+
+/* ── Footer / Next button ───────────────────────────────────────────────── */
+
+.asp-footer {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+  max-width: 700px;
+}
+
+.asp-next-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 18px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.asp-next-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.22);
+  color: #ffffff;
+}
+
+.asp-next-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* ── Spinner ─────────────────────────────────────────────────────────────── */
+
+.asp-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-top-color: rgba(255, 255, 255, 0.8);
+  border-radius: 50%;
+  animation: asp-spin 0.75s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes asp-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ── Responsive ──────────────────────────────────────────────────────────── */
+
+@media (max-width: 640px) {
+  .asp-page {
+    padding: 32px 16px 24px;
+  }
+
+  .asp-cards {
+    flex-direction: column;
+    max-width: 100%;
+  }
+
+  .asp-card {
+    min-height: 100px;
+    padding: 20px 16px;
+  }
+
+  .asp-footer {
+    max-width: 100%;
+  }
+}

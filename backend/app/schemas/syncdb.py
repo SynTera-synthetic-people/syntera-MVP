@@ -91,6 +91,16 @@ class SourceDocumentOut(BaseModel):
     source_url: Optional[str] = None
     file_name: Optional[str] = None
     domain: Optional[str] = None
+    registry_id: Optional[str] = None
+    source_group: Optional[str] = None
+    source_keywords: Optional[list[str]] = None
+    approval_status: Optional[str] = None
+    authority_tier: Optional[str] = None
+    allowed_use: Optional[list[str]] = None
+    quality_score: Optional[float] = None
+    index_status: Optional[str] = None
+    indexed_at: Optional[datetime] = None
+    citation_metadata: Optional[dict] = None
     file_path: Optional[str] = None
     is_processed: bool
     exploration_id: Optional[str] = None
@@ -113,7 +123,12 @@ class SourceSearchResult(BaseModel):
     chunk_id: str
     document_id: str
     document_title: str
+    source_url: Optional[str] = None
     domain: Optional[str]
+    source_group: Optional[str] = None
+    source_keywords: Optional[list[str]] = None
+    approval_status: Optional[str] = None
+    authority_tier: Optional[str] = None
     data_type: Optional[str] = None
     chunk_index: int
     snippet: str

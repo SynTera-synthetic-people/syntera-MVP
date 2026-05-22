@@ -1,0 +1,14 @@
+/* ════════════════════════════════════════════════════════════════════════════
+   SpIcon — base styles
+   ════════════════════════════════════════════════════════════════════════════ */
+
+.sp-icon {
+  display: inline-block;
+  vertical-align: middle;
+  /* Strokes/fills use currentColor — control color via CSS color property */
+  color: inherit;
+  flex-shrink: 0;
+  /* Prevent selection highlight on click */
+  user-select: none;
+  pointer-events: none;
+}

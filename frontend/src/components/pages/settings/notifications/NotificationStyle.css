@@ -1,0 +1,79 @@
+/* ═══════════════════════════════════════════════════════════════
+   NotificationsStyle.css  — Settings › Settings › Notification
+   Prefix: nf-
+═══════════════════════════════════════════════════════════════ */
+
+/* Two-column grid — matches Figma exactly */
+.nf-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+@media (max-width: 720px) {
+  .nf-grid { grid-template-columns: 1fr; }
+}
+
+/* Column */
+.nf-col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Individual toggle card */
+.nf-toggle-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  background: #111318;
+  border: 1px solid #1e2028;
+  border-radius: 10px;
+  min-height: 52px;
+}
+
+.nf-toggle-label {
+  font-size: 13.5px;
+  color: #e5e7eb;
+  font-weight: 400;
+  flex: 1;
+  line-height: 1.4;
+}
+
+/* Toggle track */
+.nf-toggle {
+  position: relative;
+  width: 42px;
+  height: 24px;
+  border-radius: 999px;
+  border: none;
+  background: #374151;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.2s ease;
+  padding: 0;
+}
+
+.nf-toggle--on {
+  background: #0d9488; /* teal — matches Figma active toggle */
+}
+
+/* Toggle thumb */
+.nf-toggle-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.2s ease;
+  display: block;
+}
+
+.nf-toggle--on .nf-toggle-thumb {
+  transform: translateX(18px);
+}

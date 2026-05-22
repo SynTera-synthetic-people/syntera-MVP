@@ -1,0 +1,131 @@
+/* ════════════════════════════════════════════════════════════════════════════
+   InterviewsCompleted
+   Prefix: ic-
+   Figma: "From Interviews to Insights" screen — image 2
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Page wrapper ─────────────────────────────────────────────────────────── */
+
+.ic-page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 40px;
+  background: #0E0F12;
+  min-height: 100%;
+  box-sizing: border-box;
+  position: relative;
+}
+
+/* ── Toast ───────────────────────────────────────────────────────────────── */
+
+.ic-toast {
+  position: absolute;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 18px;
+  background: #06A17B;
+  border-radius: 10px;
+  color: #ffffff;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 4px 20px rgba(6, 161, 123, 0.4);
+  z-index: 10;
+}
+
+.ic-toast__icon {
+  flex-shrink: 0;
+}
+
+.ic-toast__text {
+  line-height: 1;
+}
+
+.ic-toast__close {
+  display: flex;
+  align-items: center;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  padding: 0;
+  margin-left: 4px;
+  transition: color 0.15s;
+  flex-shrink: 0;
+}
+.ic-toast__close:hover { color: #ffffff; }
+
+/* ── Centre card ─────────────────────────────────────────────────────────── */
+
+.ic-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  background: var(--T-Base-B4, #1E2126);
+  border-radius: 24px;
+  padding: 56px 64px;
+  max-width: 1003px;
+  width: 100%;
+  text-align: center;
+}
+
+.ic-card__icon {
+  width: 72px;
+  height: 72px;
+  border-radius: 18px;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.6);
+  margin-bottom: 8px;
+}
+
+.ic-card__title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+  line-height: 1.25;
+}
+
+.ic-card__subtitle {
+  font-size: 0.9375rem;
+  color: rgba(255, 255, 255, 0.45);
+  margin: 0;
+  line-height: 1.55;
+}
+
+/* ── CTA button ──────────────────────────────────────────────────────────── */
+
+.ic-card__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 13px 28px;
+  background: #2563eb;
+  border: none;
+  border-radius: 10px;
+  color: #ffffff;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+  box-shadow: 0 4px 20px rgba(37, 99, 235, 0.35);
+}
+.ic-card__cta:hover  { background: #1d4ed8; transform: translateY(-1px); }
+.ic-card__cta:active { transform: translateY(0); }
+
+.ic-card__cta-icon {
+  flex-shrink: 0;
+}

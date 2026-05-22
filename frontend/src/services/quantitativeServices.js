@@ -158,18 +158,18 @@ export const deleteQuestionnaireSection = async ({ workspaceId, explorationId, s
   return response.data;
 };
 
-export const createQuestionnaireQuestion = async ({ workspaceId, explorationId, sectionId, text, options }) => {
+export const createQuestionnaireQuestion = async ({ workspaceId, explorationId, sectionId, text, options, question_type, config }) => {
   const response = await axiosInstance.post(
     `/workspaces/${workspaceId}/explorations/${explorationId}/questionnaire/sections/${sectionId}/questions`,
-    { text, options }
+    { text, options, question_type, config }
   );
   return response.data;
 };
 
-export const updateQuestionnaireQuestion = async ({ workspaceId, explorationId, questionId, text, options }) => {
+export const updateQuestionnaireQuestion = async ({ workspaceId, explorationId, questionId, text, options, question_type, config }) => {
   const response = await axiosInstance.put(
     `/workspaces/${workspaceId}/explorations/${explorationId}/questionnaire/questions/${questionId}`,
-    { text, options }
+    { text, options, question_type, config }
   );
   return response.data;
 };

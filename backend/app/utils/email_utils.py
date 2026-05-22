@@ -46,7 +46,7 @@ def build_html_email(title: str, message: str, action_text: str, action_link: st
         <tr>
           <td style="text-align: center; padding: 15px; background-color: #f1f3f5;
                      font-size: 12px; color: #888;">
-            © 2025 Synthetic People. All rights reserved.
+            © 2026 Synthetic People. All rights reserved.
           </td>
         </tr>
       </table>
@@ -266,6 +266,40 @@ async def send_welcome_email(email: str, temp_password: Optional[str] = None) ->
     )
 
     await send_email("Your Synthetic People Trial Access", [email], body)
+
+
+async def send_share_report_email(
+    recipient_email: str,
+    report_type: str,
+    file_path: str,
+    shared_by_email: str,
+) -> None:
+    """Send a shared insight report as an email attachment."""
+    import os
+    login_url = settings.FRONTEND_URL
+    body = build_html_email(
+        title=f"Shared Insights: {report_type}",
+        message=(
+            f"<b>{shared_by_email}</b> has shared a <b>{report_type}</b> insight report "
+            f"from Synthetic People with you.<br><br>"
+            "Please find the report attached to this email.<br><br>"
+            "If you're not already on Synthetic People, click below to learn more."
+        ),
+        action_text="Visit Synthetic People",
+        action_link=login_url,
+        footer_note=(
+            "You're receiving this because someone shared an insight report with you via Synthetic People."
+        ),
+    )
+    filename = os.path.basename(file_path)
+    message = MessageSchema(
+        subject=f"Shared Insights: {report_type}",
+        recipients=[recipient_email],
+        body=body,
+        subtype="html",
+        attachments=[{"file": file_path, "headers": {"Content-Disposition": f'attachment; filename="{filename}"'}}],
+    )
+    await fm.send_message(message)
 
 
 async def send_enterprise_inquiry_email(user_email: str, user_name: str) -> None:

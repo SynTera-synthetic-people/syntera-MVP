@@ -16,6 +16,13 @@ class Organization(SQLModel, table=True):
     # enterprise: current org-level exploration count
     exploration_count: int = Field(default=0)
 
+    # Extended profile fields (added via migration — all nullable for compat)
+    description: Optional[str] = Field(default=None)
+    logo_url: Optional[str] = Field(default=None)
+    domain: Optional[str] = Field(default=None)
+    industry: Optional[str] = Field(default=None)
+    website: Optional[str] = Field(default=None)
+
     owner: Optional["User"] = Relationship(
         sa_relationship_kwargs={"foreign_keys": "[Organization.owner_id]"}
     )

@@ -1,0 +1,552 @@
+/* ─────────────────────────────────────────────────────────────
+   ManageUsersStyle.css
+   Mirrors ExplorationStyle.css conventions exactly.
+   mu- prefix to avoid any class collisions.
+───────────────────────────────────────────────────────────── */
+
+/* ── Page wrapper ── */
+.mu-page {
+  min-height: 100vh;
+  padding: 1rem 2rem;
+  position: relative;
+  overflow-x: visible;
+  background: #121315;
+}
+
+/* When inside Settings panel — no own background or padding */
+.mu-page--embedded {
+  min-height: unset;
+  padding: 0;
+  background: transparent;
+}
+
+@media (max-width: 768px) {
+  .mu-page {
+    padding: 1rem;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   STANDALONE MODE layout rows
+   Back button sits alone on its own line.
+   Title + Add User sit together on the line below.
+───────────────────────────────────────────────────────────── */
+
+/* Row 1 — Back button only */
+.mu-standalone-back-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 0.625rem; /* gap between Back btn and the title row */
+}
+
+/* Row 2 — Title on the left, Add User on the right */
+.mu-standalone-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.25rem; /* gap before the search bar */
+  gap: 1rem;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   EMBEDDED MODE top bar  (title + Add User on one line)
+───────────────────────────────────────────────────────────── */
+
+.mu-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+  gap: 1rem;
+}
+
+.mu-page--embedded .mu-top-bar {
+  margin-bottom: 1rem;
+}
+
+.mu-top-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+/* ── Back button ── */
+.mu-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #1a1b1f;
+  color: #9ca3af;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.mu-back-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e5e7eb;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* ── Page title ── */
+.mu-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Add User button + disabled state + tooltip
+───────────────────────────────────────────────────────────── */
+
+/* Wrapper needed to position the tooltip */
+.mu-add-btn-wrap {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+/* Tooltip — hidden by default, shown when wrapper has --disabled class */
+.mu-add-btn-tooltip {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  background: #1e2028;
+  color: #e5e7eb;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  z-index: 200;
+}
+
+/* Show tooltip on hover when the wrapper is disabled */
+.mu-add-btn-wrap--disabled:hover .mu-add-btn-tooltip {
+  display: block;
+}
+
+/* Normal Add User button */
+.mu-add-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1.25rem;
+  border-radius: 0.625rem;
+  background: #2563eb;
+  color: #ffffff;
+  border: none;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+  transition: background 0.2s, opacity 0.2s;
+  white-space: nowrap;
+}
+
+.mu-add-btn:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+/* Disabled state */
+.mu-add-btn:disabled {
+  background: #1e2028;
+  color: #6b7280;
+  box-shadow: none;
+  cursor: not-allowed;
+  opacity: 1; /* keep opacity at 1 so the grey colour is clearly visible */
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* ── Invite panel ── */
+.mu-invite-panel {
+  background: #0a0b0e;
+  border: 1px solid #1e2028;
+  border-radius: 0.75rem;
+  padding: 14px 18px;
+  margin-bottom: 1rem;
+}
+
+.mu-invite-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.mu-invite-input-wrap {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.mu-invite-icon {
+  position: absolute;
+  left: 11px;
+  color: #6b7280;
+  pointer-events: none;
+}
+
+.mu-invite-input {
+  width: 100%;
+  padding: 9px 12px 9px 34px;
+  background: #000000;
+  border: 1px solid #2a2d35;
+  border-radius: 0.5rem;
+  color: #e5e7eb;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+}
+
+.mu-invite-input::placeholder { color: #4b5563; }
+.mu-invite-input:focus { border-color: #374151; }
+
+.mu-invite-submit {
+  padding: 9px 18px;
+  border-radius: 0.5rem;
+  border: none;
+  background: #2563eb;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.mu-invite-submit:hover:not(:disabled) { background: #1d4ed8; }
+.mu-invite-submit:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.mu-invite-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 0.375rem;
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.mu-invite-close:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: #e5e7eb;
+}
+
+.mu-feedback {
+  margin: 8px 0 0 0;
+  font-size: 13px;
+}
+
+.mu-feedback--error   { color: #f87171; }
+.mu-feedback--success { color: #4ade80; }
+
+/* ── Search ── */
+.mu-search-wrapper {
+  flex: 1;
+  min-width: 180px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.mu-search-icon {
+  position: absolute;
+  left: 0.75rem;
+  color: #6b7280;
+  pointer-events: none;
+  flex-shrink: 0;
+}
+
+.mu-search-input {
+  width: 100%;
+  padding: 0.625rem 1rem 0.625rem 2.375rem;
+  background: #000000;
+  border: 1px solid #2a2d35;
+  border-radius: 0.5rem;
+  color: #ffffff;
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 0.2s ease;
+  box-sizing: border-box;
+}
+
+.mu-search-input::placeholder { color: #6b7280; }
+.mu-search-input:focus         { border-color: #374151; }
+
+/* ── Table card ── */
+.mu-table-card {
+  background: #0a0b0e;
+  border: 1px solid #1e2028;
+  border-radius: 1.25rem;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+  overflow: visible;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Table header ── */
+.mu-table-header {
+  display: grid;
+  grid-template-columns: 1.6fr 1.4fr 2fr 1.4fr 1.1fr 56px;
+  gap: 1rem;
+  padding: 0.875rem 1.25rem;
+  border-bottom: 1px solid #2a2d35;
+  background: #000000;
+  border-radius: 1.25rem 1.25rem 0 0;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  flex-shrink: 0;
+}
+
+.mu-hcell {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+}
+
+.mu-hcell-actions {
+  justify-content: flex-end;
+}
+
+/* ── Table body ── */
+.mu-table-body {
+  background: #000000;
+  border-radius: 0 0 1.25rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Table row ── */
+.mu-table-row {
+  display: grid;
+  grid-template-columns: 1.6fr 1.4fr 2fr 1.4fr 1.1fr 56px;
+  gap: 1rem;
+  padding: 10px 1.25rem;
+  align-items: center;
+  transition: background 0.2s ease;
+  background: #000000;
+  overflow: visible;
+  position: relative;
+}
+
+.mu-table-row:hover {
+  background: #0f1115;
+}
+
+.mu-table-row:last-child {
+  border-bottom: none;
+  border-radius: 0 0 1.25rem 1.25rem;
+}
+
+/* ── Cells ── */
+.mu-cell {
+  font-size: 0.875rem;
+  color: #d1d5db;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mu-cell-name {
+  font-weight: 600;
+  color: #ffffff;
+  text-transform: uppercase;
+  font-size: 0.8125rem;
+}
+
+.mu-cell-secondary {
+  color: #9ca3af;
+}
+
+.mu-cell-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  overflow: visible;
+}
+
+/* ── Status badge ── */
+.mu-status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.7rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.mu-status-badge--accepted {
+  background: var(--T-Success-Success-bg, rgba(26, 171, 24, 0.12));
+  color: #1AAB18;
+}
+
+.mu-status-badge--pending {
+  background: var(--T-Warning-Warning-bg, rgba(231, 181, 0, 0.10));
+  color: #E7B500;
+}
+
+/* ── Kebab wrapper ── */
+.mu-kebab-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.mu-kebab-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.4rem;
+  border-radius: 0.375rem;
+  background: transparent;
+  border: none;
+  color: #9ca3af;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+
+.mu-kebab-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #ffffff;
+}
+
+.mu-kebab-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  background: #090c10;
+  border: 1px solid #212122;
+  border-radius: 0.5rem;
+  padding: 0.375rem;
+  min-width: 130px;
+  z-index: 999;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6);
+}
+
+.mu-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #e5e7eb;
+  transition: background 0.15s;
+}
+
+.mu-menu-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.mu-menu-item--danger {
+  color: #ef4444;
+}
+
+.mu-menu-item--danger:hover {
+  background: rgba(239, 68, 68, 0.1);
+  color: #f87171;
+}
+
+/* ── Loading ── */
+.mu-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 0;
+}
+
+.mu-spinner {
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 0.25rem solid;
+  border-radius: 50%;
+  border-color: #2563eb transparent #2563eb transparent;
+  animation: mu-spin 0.9s linear infinite;
+}
+
+@keyframes mu-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Empty state ── */
+.mu-empty-state {
+  text-align: center;
+  padding: 4rem 1rem;
+}
+
+.mu-empty-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #ffffff;
+  margin: 0 0 0.5rem 0;
+}
+
+.mu-empty-description {
+  color: #9ca3af;
+  font-size: 0.875rem;
+  margin: 0 auto;
+  max-width: 28rem;
+}
+
+/* ── Responsive ── */
+@media (max-width: 900px) {
+  .mu-table-header,
+  .mu-table-row {
+    grid-template-columns: 1.4fr 2fr 1fr 56px;
+  }
+
+  .mu-table-header .mu-hcell:nth-child(2),
+  .mu-table-row   .mu-cell:nth-child(2),
+  .mu-table-header .mu-hcell:nth-child(4),
+  .mu-table-row   .mu-cell:nth-child(4),
+  .mu-table-header .mu-hcell:nth-child(6),
+  .mu-table-row   .mu-cell:nth-child(6) {
+    display: none;
+  }
+}
+
+/* ── Team Management mode — 4-column simplified grid ── */
+.mu-table-header--team {
+  grid-template-columns: 1.8fr 2fr 1.8fr 56px;
+}
+
+.mu-table-row--team {
+  grid-template-columns: 1.8fr 2fr 1.8fr 56px;
+}
+
+.mu-menu-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.07);
+  margin: 0.25rem 0;
+}

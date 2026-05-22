@@ -652,6 +652,7 @@ No additional text. No explanations. No markdown.
                     created_by=current_user_id,
                     persona_details=persona,
                     auto_generated_persona=False,
+                    calibration_confidence=50,
                 )
 
                 session.add(p)

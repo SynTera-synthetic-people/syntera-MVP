@@ -16,6 +16,7 @@ class SurveySimulation(SQLModel, table=True):
     
     simulation_source_id: Optional[str] = Field(default=None)
     results: Optional[Dict] = Field(default=None, sa_column=Column(JSON))
+    normalized_results: Optional[Dict] = Field(default=None, sa_column=Column(JSON))
     narrative: Optional[Dict] = Field(default=None, sa_column=Column(JSON))
     created_by: str = Field(foreign_key="user.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)

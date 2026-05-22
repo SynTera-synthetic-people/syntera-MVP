@@ -1,0 +1,176 @@
+/* ═══════════════════════════════════════════════════════════════
+   HelpCentreStyle.css  — Settings › Help › Help Centre
+   Prefix: hc-
+═══════════════════════════════════════════════════════════════ */
+
+.hc-page {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* Card wrapping the form */
+.hc-card {
+  background: #111318;
+  border: 1px solid #1e2028;
+  border-radius: 14px;
+  padding: 28px 28px 24px;
+  max-width: 520px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Success banner */
+.hc-success {
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.25);
+  color: #4ade80;
+  font-size: 13px;
+}
+
+/* Field wrapper */
+.hc-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Label */
+.hc-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #d1d5db;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.hc-required {
+  color: #f87171;
+}
+
+.hc-info-icon {
+  color: #6b7280;
+  font-size: 12px;
+  cursor: default;
+}
+
+/* Text input */
+.hc-input {
+  padding: 10px 14px;
+  background: #0d0f14;
+  border: 1px solid #2a2d35;
+  border-radius: 8px;
+  color: #e5e7eb;
+  font-size: 13.5px;
+  outline: none;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.hc-input::placeholder { color: #4b5563; }
+.hc-input:focus         { border-color: #374151; }
+.hc-input--error        { border-color: #f87171 !important; }
+
+/* Select wrapper */
+.hc-select-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.hc-select {
+  width: 100%;
+  padding: 10px 36px 10px 14px;
+  background: #0d0f14;
+  border: 1px solid #2a2d35;
+  border-radius: 8px;
+  color: #e5e7eb;
+  font-size: 13.5px;
+  outline: none;
+  appearance: none;
+  cursor: pointer;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+}
+
+.hc-select:focus { border-color: #374151; }
+
+.hc-select option { background: #111318; }
+
+.hc-select-chevron {
+  position: absolute;
+  right: 12px;
+  color: #6b7280;
+  pointer-events: none;
+  font-size: 11px;
+}
+
+/* Textarea */
+.hc-textarea {
+  padding: 10px 14px;
+  background: #0d0f14;
+  border: 1px solid #2a2d35;
+  border-radius: 8px;
+  color: #e5e7eb;
+  font-size: 13.5px;
+  outline: none;
+  resize: vertical;
+  min-height: 130px;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+  width: 100%;
+  font-family: inherit;
+}
+
+.hc-textarea::placeholder { color: #4b5563; }
+.hc-textarea:focus         { border-color: #374151; }
+
+/* Footer row below textarea */
+.hc-textarea-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.hc-error-msg {
+  font-size: 12px;
+  color: #f87171;
+  min-height: 16px;
+  margin: 0;
+}
+
+.hc-char-count {
+  font-size: 11.5px;
+  color: #6b7280;
+  flex-shrink: 0;
+}
+
+/* Submit button */
+.hc-actions {
+  display: flex;
+  align-items: center;
+}
+
+.hc-submit-btn {
+  padding: 9px 28px;
+  border-radius: 8px;
+  border: none;
+  background: #2563eb;
+  color: #fff;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.hc-submit-btn:hover:not(:disabled) { background: #1d4ed8; }
+
+.hc-submit-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

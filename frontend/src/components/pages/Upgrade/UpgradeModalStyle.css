@@ -1,0 +1,412 @@
+/* ═══════════════════════════════════════════════════════════════
+   UpgradeModal.css
+   Upgrade modal component styles.
+   Prefix: um-
+═══════════════════════════════════════════════════════════════ */
+
+/* ── Overlay / scroll container ── */
+.um-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  overflow-y: auto;
+}
+
+.um-center {
+  display: flex;
+  min-height: 100%;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+/* ── Backdrop ── */
+.um-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.70);
+  backdrop-filter: blur(8px);
+}
+
+/* ── Modal panel ── */
+.um-modal {
+  position: relative;
+  width: 100%;
+  max-width: 768px;            /* max-w-3xl */
+  background: #fff;
+  border-radius: 24px;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.35);
+  border: 1px solid #e5e7eb;
+  overflow: hidden;
+}
+
+/* dark mode */
+@media (prefers-color-scheme: dark) {
+  .um-modal {
+    background: #0a0e1a;
+    border-color: rgba(255, 255, 255, 0.10);
+  }
+}
+
+/* ── Close button ── */
+.um-close-btn {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 10;
+  padding: 8px;
+  border: none;
+  background: transparent;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9ca3af;
+}
+
+.um-close-btn:hover { background: rgba(0, 0, 0, 0.06); }
+
+@media (prefers-color-scheme: dark) {
+  .um-close-btn:hover { background: rgba(255, 255, 255, 0.05); }
+}
+
+/* ── Close icon ── */
+.um-close-icon {
+  width: 20px;
+  height: 20px;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   THANK YOU VIEW
+════════════════════════════════════════════════════════════════ */
+
+.um-thankyou {
+  padding: 40px;
+  text-align: center;
+}
+
+.um-thankyou-icon {
+  width: 64px;
+  height: 64px;
+  background: rgba(34, 197, 94, 0.10);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 24px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .um-thankyou-icon { background: rgba(34, 197, 94, 0.20); }
+}
+
+.um-thankyou-check {
+  width: 32px;
+  height: 32px;
+  color: #16a34a;
+}
+
+@media (prefers-color-scheme: dark) {
+  .um-thankyou-check { color: #4ade80; }
+}
+
+.um-thankyou-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0 0 12px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .um-thankyou-title { color: #fff; }
+}
+
+.um-thankyou-desc {
+  font-size: 14px;
+  color: #6b7280;
+  max-width: 448px;
+  margin: 0 auto 32px;
+  line-height: 1.6;
+}
+
+@media (prefers-color-scheme: dark) {
+  .um-thankyou-desc { color: #9ca3af; }
+}
+
+.um-thankyou-btn {
+  padding: 12px 24px;
+  background: linear-gradient(to right, #2563eb, #1d4ed8);
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.um-thankyou-btn:hover {
+  background: linear-gradient(to right, #1d4ed8, #1e40af);
+}
+
+/* ════════════════════════════════════════════════════════════════
+   LOADING VIEW
+════════════════════════════════════════════════════════════════ */
+
+.um-loading {
+  padding: 40px;
+  text-align: center;
+}
+
+.um-spinner-wrap {
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 24px;
+}
+
+.um-spinner {
+  width: 48px;
+  height: 48px;
+  border: 4px solid rgba(37, 99, 235, 0.25);
+  border-top-color: #2563eb;
+  border-radius: 50%;
+  animation: um-spin 0.8s linear infinite;
+}
+
+@keyframes um-spin { to { transform: rotate(360deg); } }
+
+.um-loading-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #111827;
+  margin: 0;
+}
+
+@media (prefers-color-scheme: dark) {
+  .um-loading-title { color: #fff; }
+}
+
+/* ════════════════════════════════════════════════════════════════
+   PLANS VIEW
+════════════════════════════════════════════════════════════════ */
+
+/* Header */
+.um-plans-header {
+  padding: 32px 32px 16px;
+  text-align: center;
+}
+
+.um-plans-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0 0 8px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .um-plans-title { color: #fff; }
+}
+
+.um-plans-subtitle {
+  font-size: 13px;
+  color: #6b7280;
+  max-width: 480px;
+  margin: 0 auto;
+  line-height: 1.6;
+}
+
+@media (prefers-color-scheme: dark) {
+  .um-plans-subtitle { color: #9ca3af; }
+}
+
+/* Cards grid */
+.um-cards-grid {
+  padding: 16px 32px 32px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+@media (max-width: 640px) {
+  .um-cards-grid { grid-template-columns: 1fr; }
+}
+
+/* ── Card base ── */
+.um-card {
+  border-radius: 16px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Featured card — dark ash-grey matching Figma, no blue tint */
+.um-card--featured {
+  border: 2px solid rgba(255, 255, 255, 0.12);
+  background: #1a1d27;
+  position: relative;
+  overflow: visible;             /* allow badge to overflow above card edge */
+  padding-top: 28px;             /* extra room below the absolute badge */
+}
+
+/* Default card */
+.um-card--default {
+  border: 2px solid #e5e7eb;
+  background: #fff;
+}
+
+@media (prefers-color-scheme: dark) {
+  .um-card--default {
+    border-color: rgba(255, 255, 255, 0.10);
+    background: rgba(255, 255, 255, 0.04);
+  }
+}
+
+/* ── Most Popular badge ───────────────────────────────────────────────────────
+   Pill floats centered above the card, straddling the top border.
+   Exact Figma color #EC0E7D, no icon, uppercase tight tracking.
+─────────────────────────────────────────────────────────────────────────────── */
+.um-badge-wrap {
+  position: absolute;
+  top: -14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.um-badge {
+  display: inline-flex;
+  align-items: center;
+  background: #EC0E7D;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  padding: 5px 16px;
+  border-radius: 20px;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+/* ── Card header ── */
+.um-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.um-card-icon--blue  { color: #2563eb; flex-shrink: 0; }
+.um-card-icon--muted { color: #6b7280; flex-shrink: 0; }
+
+@media (prefers-color-scheme: dark) {
+  .um-card-icon--muted { color: #9ca3af; }
+}
+
+.um-card-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #0d131e;
+  margin: 0;
+}
+
+@media (prefers-color-scheme: dark) {
+  .um-card-title { color: #fff; }
+}
+
+/* ── Card description ── */
+.um-card-desc {
+  font-size: 12px;
+  color: #6b7280;
+  margin: 0 0 16px;
+  line-height: 1.5;
+}
+
+@media (prefers-color-scheme: dark) {
+  .um-card-desc { color: #9ca3af; }
+}
+
+/* ── Feature list ── */
+.um-feature-list {
+  list-style: none;
+  margin: 0 0 24px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+}
+
+.um-feature-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  color: #374151;
+  line-height: 1.5;
+}
+
+@media (prefers-color-scheme: dark) {
+  .um-feature-item { color: #d1d5db; }
+}
+
+.um-feature-check        { flex-shrink: 0; margin-top: 2px; }
+.um-feature-check--blue  { color: #2563eb; }
+.um-feature-check--muted { color: #9ca3af; }
+
+/* ── Price ── */
+.um-price {
+  font-size: 22px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0 0 16px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .um-price { color: #fff; }
+}
+
+/* ── CTA buttons ── */
+.um-cta-btn {
+  width: 100%;
+  padding: 12px 0;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+
+.um-cta-btn--primary {
+  background:var(--Color-Primary-P-500, #0E63EC);
+  color: #fff;
+}
+
+
+
+.um-cta-btn--secondary {
+  background: transparent;
+  border: 2px solid #d1d5db;
+  color: #374151;
+}
+
+.um-cta-btn--secondary:hover { background: #f9fafb; }
+
+@media (prefers-color-scheme: dark) {
+  .um-cta-btn--secondary {
+    border-color: rgba(255, 255, 255, 0.15);
+    color: #e5e7eb;
+  }
+  .um-cta-btn--secondary:hover { background: rgba(255, 255, 255, 0.05); }
+}

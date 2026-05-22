@@ -70,6 +70,12 @@ def _parse_form_bool(value: Any, default: bool = False) -> bool:
     return default
 
 
+def _parse_csv_list(value: Optional[str]) -> list[str]:
+    if not value:
+        return []
+    return [item.strip() for item in str(value).split(",") if item.strip()]
+
+
 async def _background_scrape_urls(
     document_id: str,
     domain: Optional[str],
@@ -302,6 +308,12 @@ async def upload_source_document(
     file: UploadFile = File(...),
     title: str = Form(...),
     domain: Optional[str] = Form(None),
+    source_group: Optional[str] = Form(None),
+    keywords: Optional[str] = Form(None),
+    registry_id: Optional[str] = Form(None),
+    approval_status: Optional[str] = Form(None),
+    authority_tier: Optional[str] = Form(None),
+    allowed_use: Optional[str] = Form(None),
     exploration_id: Optional[str] = Form(None),
     scrape_urls: Optional[str] = Form(None),
     scrape_sync: Optional[str] = Form(None),
@@ -350,6 +362,12 @@ async def upload_source_document(
             domain=domain,
             exploration_id=exploration_id,
             user_id=current_user.id,
+            source_group=source_group,
+            source_keywords=_parse_csv_list(keywords),
+            registry_id=registry_id,
+            approval_status=approval_status,
+            authority_tier=authority_tier,
+            allowed_use=_parse_csv_list(allowed_use) or None,
         )
     except Exception as exc:
         logger.exception("Source document upload failed")
@@ -401,6 +419,12 @@ async def register_source_url(
     url: str = Form(...),
     title: str = Form(...),
     domain: Optional[str] = Form(None),
+    source_group: Optional[str] = Form(None),
+    keywords: Optional[str] = Form(None),
+    registry_id: Optional[str] = Form(None),
+    approval_status: Optional[str] = Form(None),
+    authority_tier: Optional[str] = Form(None),
+    allowed_use: Optional[str] = Form(None),
     exploration_id: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_active_user),
@@ -413,6 +437,12 @@ async def register_source_url(
         domain=domain,
         exploration_id=exploration_id,
         user_id=current_user.id,
+        source_group=source_group,
+        source_keywords=_parse_csv_list(keywords),
+        registry_id=registry_id,
+        approval_status=approval_status,
+        authority_tier=authority_tier,
+        allowed_use=_parse_csv_list(allowed_use) or None,
     )
     return doc
 
@@ -541,3 +571,34 @@ async def get_source_chunks(
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+
+# ── Ingestion Worker (admin/ops) ───────────────────────────────────────────
+
+@router.post("/source/ingest/trigger")
+async def trigger_qdrant_ingest(
+    current_user: User = Depends(get_current_active_user),
+):
+    """Force an immediate Qdrant ingest cycle. Useful after bulk uploads."""
+    from app.rag.ingestion_worker import trigger_ingest
+    await trigger_ingest()
+    return {"status": "ingest cycle triggered"}
+
+
+@router.get("/source/ingest/status")
+async def qdrant_ingest_status(
+    db: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Returns pending/done/failed chunk counts — quick health check for ingestion pipeline."""
+    from sqlalchemy import text
+    result = await db.execute(
+        text("""
+            SELECT COALESCE(embedding_status, 'pending') AS status, COUNT(*) AS count
+            FROM sync_source.content_chunk
+            GROUP BY 1
+        """)
+    )
+    counts = {row.status: row.count for row in result}
+    total = sum(counts.values())
+    return {"total_chunks": total, "by_status": counts}

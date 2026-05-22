@@ -1,14 +1,16 @@
 import json
-import os
+import logging
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 from typing import Tuple, Optional, List, Any, Dict, Set
 
 from openai import AsyncOpenAI
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import OPENAI_API_KEY
+from app.db import async_session as AsyncSessionLocal
 from app.models.exploration import Exploration
 from app.models.interview import Interview
 from app.models.omi import OmiSession
@@ -24,23 +26,6 @@ from app.services.research_objectives import build_conversation_text
 # -------------------------------------------------------------------
 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
-# -------------------------------------------------------------------
-# Database Engine & Session (DEFINED ONCE)
-# -------------------------------------------------------------------
-DATABASE_URL = os.getenv("DATABASE_URL")
-
-engine = create_async_engine(
-    DATABASE_URL,
-    echo=False,
-    future=True
-)
-
-AsyncSessionLocal = sessionmaker(
-    engine,
-    class_=AsyncSession,
-    expire_on_commit=False
-)
-
 async def get_exploration_method_flags(
     exploration_id: str
 ) -> Tuple[Optional[bool], Optional[bool]]:
@@ -55,7 +40,7 @@ async def get_exploration_method_flags(
                 Exploration.is_quantitative,
                 Exploration.is_qualitative
             )
-            .where(Exploration.id == exploration_id)
+            .where(Exploration.id == exploration_id, Exploration.is_deleted == False)
         )
 
         result = await session.execute(stmt)
@@ -578,7 +563,11 @@ Never skip any component and ro_score should be greater then 75
         input=[{"role": "user", "content": ro_prompt}],
     )
 
-    ro_result =  json.loads(ro_response.output_text)
+    try:
+        ro_result = json.loads(ro_response.output_text)
+    except (json.JSONDecodeError, AttributeError):
+        logger.error("AI returned malformed JSON for RO traceability", extra={"exploration_id": exploration_id})
+        ro_result = {"components": [], "ro_score": 0, "error": "AI response could not be parsed"}
     ro_result["summary"] = research_objective_summary
 
     # 2. Persona Traceability
@@ -707,7 +696,11 @@ Return STRICT JSON only and score can be 0 to 100.
                 input=[{"role": "user", "content": quant_prompt}],
             )
 
-        quant_result =  json.loads(quant_response.output_text)
+        try:
+            quant_result = json.loads(quant_response.output_text)
+        except (json.JSONDecodeError, AttributeError):
+            logger.error("AI returned malformed JSON for quant traceability", extra={"exploration_id": exploration_id})
+            quant_result = {"quality_scores": [], "overall_score": 0, "error": "AI response could not be parsed"}
     else:
         quant_result = None
 
@@ -814,7 +807,11 @@ Return STRICT JSON only. **Never miss any dimension**
                 input=[{"role": "user", "content": qual_prompt}],
             )
 
-        qual_result =  json.loads(qual_response.output_text)
+        try:
+            qual_result = json.loads(qual_response.output_text)
+        except (json.JSONDecodeError, AttributeError):
+            logger.error("AI returned malformed JSON for qual traceability", extra={"exploration_id": exploration_id})
+            qual_result = {"quality_scores": [], "overall_score": 0, "error": "AI response could not be parsed"}
     else:
         qual_result = None
 

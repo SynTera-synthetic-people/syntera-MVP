@@ -5,7 +5,14 @@ from app.utils.id_generator import generate_id
 
 class User(SQLModel, table=True):
     id: str = Field(default_factory=generate_id, primary_key=True)
-    full_name: str
+
+    # Primary name fields — source of truth
+    first_name: str = Field(default="")
+    last_name: str = Field(default="")
+    # Kept for backward compat with existing DB rows and old code;
+    # always synced with first_name + last_name on every write.
+    full_name: str = Field(default="")
+
     email: str = Field(unique=True, index=True)
     hashed_password: str
     user_type: str = Field(default="Student")
@@ -27,6 +34,19 @@ class User(SQLModel, table=True):
     account_tier: str = Field(default="free")
     # For enterprise users: FK to their shared enterprise Organization
     organization_id: Optional[str] = Field(default=None, foreign_key="organization.id", index=True)
+
+    # Profile fields
+    phone: Optional[str] = Field(default=None)
+    avatar_url: Optional[str] = Field(default=None)
+
+    # Trial expiry — set when a time-boxed trial begins (null = no expiry enforced)
+    trial_expires_at: Optional[datetime] = Field(default=None)
+
+    # Soft-delete fields
+    is_deleted: bool = Field(default=False)
+    deleted_at: Optional[datetime] = Field(default=None)
+    # ID of the admin who deleted this account (null for self-deletion)
+    deleted_by: Optional[str] = Field(default=None, foreign_key="user.id")
 
     created_at: datetime = Field(default_factory=datetime.utcnow)
     last_activity_at: Optional[datetime] = None

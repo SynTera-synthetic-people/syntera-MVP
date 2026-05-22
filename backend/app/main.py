@@ -1,7 +1,8 @@
+import asyncio
 import json
 import logging
 import os
-
+from app.routers import insights
 from fastapi import FastAPI
 from fastapi import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,25 +10,15 @@ from fastapi.requests import Request
 from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.db import (
-    init_db,
-    add_is_active_column,
-    add_trial_columns,
-    add_enterprise_columns,
-    add_workspace_visibility_columns,
-    add_exploration_audience_type_column,
-    add_questionnaire_question_type_column,
-    create_report_cache_table,
-    create_sync_schemas,
-    add_syncdb_envelope_columns,
-    migrate_source_document_file_storage,
-    migrate_source_content_json,
-)
+from app.db import async_session
+from app.migrations.startup import run_startup_migrations
 from app.routers import (auth, orgs, workspace, research_objectives, personas, interview,
                          population, questionnaire, rebuttal, traceability, omi, exploration,
-                         omi_workflow, admin, enterprise, syncdb)
+                         omi_workflow, admin, enterprise, syncdb, billing, product_state)
+from app.routers import settings as settings_router
 from app.routers import reports as reports_router_module
 from app.schemas.response import ErrorResponse
+from app.services.billing_service import seed_subscription_plans
 from app.utils.create_superadmin import ensure_superadmin_exists
 
 
@@ -48,6 +39,7 @@ def _configure_logging() -> None:
 _configure_logging()
 
 app = FastAPI(title="Synthetic People")
+
 
 @app.get("/health")
 def health():
@@ -90,22 +82,21 @@ async def custom_http_exception_handler(request: Request, exc: HTTPException):
         content=payload.dict()
     )
 
+
+async def _start_ingest_worker() -> None:
+    """Deferred start so Qdrant errors don't crash the whole app on startup."""
+    from app.rag.ingestion_worker import ingest_loop
+    await ingest_loop()
+
+
 @app.on_event("startup")
 async def startup():
-    await init_db()
-    await add_is_active_column()
-    await add_trial_columns()
-    await add_enterprise_columns()
-    await add_workspace_visibility_columns()
-    await add_exploration_audience_type_column()
-    await add_questionnaire_question_type_column()
-    await create_report_cache_table()
-    await create_sync_schemas()
-    await add_syncdb_envelope_columns()
+    await run_startup_migrations()
+    asyncio.create_task(_start_ingest_worker())
     await ensure_superadmin_exists()
-    
-    await migrate_source_document_file_storage()
-    await migrate_source_content_json()
+    # Seed plan catalog after billing tables and indexes are guaranteed.
+    async with async_session() as _seed_session:
+        await seed_subscription_plans(_seed_session)
 
 
 app.include_router(auth.router)
@@ -125,6 +116,10 @@ app.include_router(admin.router)
 app.include_router(enterprise.router)
 app.include_router(reports_router_module.router)
 app.include_router(syncdb.router)
+app.include_router(billing.router)
+app.include_router(settings_router.router)
+app.include_router(product_state.router)
+app.include_router(insights.router)
 
 # default_cors_origins = [
 #     "http://localhost:5173",
@@ -134,13 +129,13 @@ app.include_router(syncdb.router)
 #     "https://www.synthetic-people.ai",
 # ]
 
-cors = os.getenv("CORS_ORIGINS",  "https://staging-ui.synthetic-people.ai" )
-allow_origins = [x.strip() for x in cors.split(",") if x.strip()] 
+cors = os.getenv("CORS_ORIGINS", "https://staging-ui.synthetic-people.ai")
+allow_origins = [x.strip() for x in cors.split(",") if x.strip()]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allow_origins,
-    # allow_origins=["*"],
+    #allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

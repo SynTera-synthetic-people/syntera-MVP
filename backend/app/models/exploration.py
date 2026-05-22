@@ -22,3 +22,5 @@ class Exploration(SQLModel, table=True):
     is_end: bool = Field(default=False, nullable=False)
     is_deleted: bool = Field(default=False, index=True)
     deleted_at: Optional[datetime] = None
+    deleted_by: Optional[str] = Field(default=None, foreign_key="user.id")
+    updated_by: Optional[str] = Field(default=None, foreign_key="user.id")

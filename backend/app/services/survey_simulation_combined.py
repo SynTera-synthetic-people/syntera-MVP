@@ -9,9 +9,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import OPENAI_API_KEY, settings
 from openai import AsyncOpenAI
 from app.services.survey_simulation import _group_results_by_section, _fallback_simulation
-from app.utils.survey_results_normalize import build_normalized_survey_results
+from app.utils.survey_results_normalize import build_canonical_survey_results, build_normalized_survey_results
+from app.services.question_engine import analysis_options_for_question
 
 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+
+
+def _simulation_question_type_code(question_type: Any) -> str:
+    qtype = str(question_type or "single_select").lower().strip()
+    if qtype in {"m", "multi_select", "grid_multi_select", "reusable_answer_lists"}:
+        return "M"
+    if qtype in {"oe", "text", "essay"}:
+        return "OE"
+    return "S"
 
 
 def _build_combined_simulation_prompt(research_desc: str, personas_list: List[Dict], persona_samples: Dict[str, int], questions: List[Dict]) -> str:
@@ -36,10 +46,18 @@ def _build_combined_simulation_prompt(research_desc: str, personas_list: List[Di
     qs_text = []
     for i, q in enumerate(questions, start=1):
         opts = q.get("options") or []
-        qtype = q.get("question_type", "S") or "S"
-        type_label = {"S": "Single-Select", "M": "Multi-Select", "OE": "Open-Ended"}.get(qtype, qtype)
+        qtype_code = _simulation_question_type_code(q.get("question_type"))
+        type_label = {"S": "Single-Select", "M": "Multi-Select", "OE": "Open-Ended"}[qtype_code]
+        q_meta = {
+            "question_id": q.get("question_key") or q.get("id") or f"Q{i}",
+            "question_type": qtype_code,
+            "question_type_label": type_label,
+            "source_question_type": q.get("question_type") or "single_select",
+            "config": q.get("config") or {},
+            "options": q.get("option_schema") or opts,
+        }
         qs_text.append(
-            f"{i}. [{type_label}] QUESTION: {q.get('text')}\nOPTIONS: {json.dumps(opts)}"
+            f"{i}. [{type_label}] QUESTION: {q.get('text')}\nSCHEMA: {json.dumps(q_meta, default=str)}"
         )
     
     qs_joined = "\n\n".join(qs_text)
@@ -653,10 +671,16 @@ async def simulate_combined_and_store(
     flat_questions = []
     for sec in questions_sections:
         for q in sec.get("questions", []):
+            text = q.get("text") or ""
+            opts = q.get("options") or analysis_options_for_question(q)
             flat_questions.append({
-                "text": q.get("text") or "",
-                "question_type": q.get("question_type", "S") or "S",
-                "options": q.get("options") or [],
+                "id": q.get("id"),
+                "question_key": q.get("question_key") or q.get("id"),
+                "question_type": q.get("question_type") or "single_select",
+                "text": text,
+                "options": opts,
+                "option_schema": q.get("option_schema") or (q.get("config") or {}).get("options") or [],
+                "config": q.get("config") or {},
             })
     
     if not flat_questions:
@@ -789,6 +813,11 @@ You should provide the output based on that in a JSON format including Statistic
         flat_questions,
         total_sample_size,
     )
+    canonical_results = build_canonical_survey_results(
+        normalized_results,
+        flat_questions,
+        total_sample_size,
+    )
 
     # Group by sections
     grouped_output = _group_results_by_section(questions_sections, normalized_results)
@@ -822,6 +851,7 @@ You should provide the output based on that in a JSON format including Statistic
         total_sample_size=total_sample_size,  # Sum of all sample sizes
         simulation_source_id=simulation_id,
         results=normalized_results,
+        normalized_results=canonical_results,
         narrative=narrative,
         created_by=user_id,
         created_at=datetime.utcnow(),
@@ -841,6 +871,7 @@ You should provide the output based on that in a JSON format including Statistic
         "personas": narrative["personas"],
         "sections": grouped_output,
         "results": sim_obj.results,
+        "normalized_results": sim_obj.normalized_results,
         "narrative": sim_obj.narrative,
         "llm_source_explanation": llm_source_explanation,
         "created_at": sim_obj.created_at.isoformat()

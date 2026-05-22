@@ -849,6 +849,12 @@ async def upload_source_document(
     domain: Optional[str],
     exploration_id: Optional[str],
     user_id: str,
+    source_group: Optional[str] = None,
+    source_keywords: Optional[list[str]] = None,
+    registry_id: Optional[str] = None,
+    approval_status: Optional[str] = None,
+    authority_tier: Optional[str] = None,
+    allowed_use: Optional[list[str]] = None,
 ) -> Optional[dict]:
     """
     Store a source document.
@@ -857,8 +863,32 @@ async def upload_source_document(
       Caller must invoke process_document() to extract and chunk the content.
     - CSV / XLSX / XLS: rows parsed and stored as individual JSONB chunks inline;
       document is marked is_processed=TRUE immediately — no /process step needed.
+
+    Governance fields (domain, source_group, authority_tier, approval_status,
+    allowed_use) are auto-classified when not explicitly provided.
     """
     from pathlib import Path
+    from app.rag.source_classifier import classify_source, merge_with_explicit
+
+    auto = classify_source(title=title)
+    resolved = merge_with_explicit(
+        auto,
+        domain=domain,
+        source_group=source_group,
+        authority_tier=authority_tier,
+        approval_status=approval_status,
+        allowed_use=allowed_use,
+    )
+    domain          = resolved["domain"]
+    source_group    = resolved["source_group"]
+    authority_tier  = resolved["authority_tier"]
+    approval_status = resolved["approval_status"]
+    allowed_use     = resolved["allowed_use"]
+    logger.info(
+        "Source governance | title=%s | domain=%s | group=%s | tier=%s | status=%s",
+        title, domain, source_group, authority_tier, approval_status,
+    )
+
     doc_id = generate_id()
     ext = Path(filename).suffix.lstrip(".").lower() or source_type
     is_tabular = ext in _TABULAR_TYPES
@@ -868,11 +898,15 @@ async def upload_source_document(
             INSERT INTO sync_source.document
                 (id, title, source_type, source_url,
                  file_data, file_name, file_path,
-                 domain, exploration_id, uploaded_by)
+                 domain, exploration_id, uploaded_by,
+                 registry_id, source_group, source_keywords,
+                 approval_status, authority_tier, allowed_use)
             VALUES
                 (:id, :title, :source_type, NULL,
                  :file_data, :file_name, NULL,
-                 :domain, :exploration_id, :uploaded_by)
+                 :domain, :exploration_id, :uploaded_by,
+                 :registry_id, :source_group, CAST(:source_keywords AS JSONB),
+                 :approval_status, :authority_tier, CAST(:allowed_use AS JSONB))
         """),
         {
             "id":             doc_id,
@@ -883,6 +917,12 @@ async def upload_source_document(
             "domain":         domain,
             "exploration_id": exploration_id,
             "uploaded_by":    user_id,
+            "registry_id":     registry_id,
+            "source_group":    source_group,
+            "source_keywords": json.dumps(source_keywords or [], ensure_ascii=False),
+            "approval_status": approval_status or "approved",
+            "authority_tier":  authority_tier or "user_uploaded",
+            "allowed_use":     json.dumps(allowed_use or ["qual_report", "quant_report", "citation"]),
         },
     )
 
@@ -913,6 +953,12 @@ async def register_url_document(
     domain: Optional[str],
     exploration_id: Optional[str],
     user_id: str,
+    source_group: Optional[str] = None,
+    source_keywords: Optional[list[str]] = None,
+    registry_id: Optional[str] = None,
+    approval_status: Optional[str] = None,
+    authority_tier: Optional[str] = None,
+    allowed_use: Optional[list[str]] = None,
 ) -> Optional[dict]:
     """
     Register a URL, fetch its content, and save as text chunks.
@@ -920,8 +966,30 @@ async def register_url_document(
 
     If the fetch fails the document row is still committed (is_processed=FALSE)
     so the caller knows the URL was registered and can retry via /process.
+
+    Governance fields are auto-classified from the URL when not explicitly provided.
     """
     import httpx
+    from app.rag.source_classifier import classify_source, merge_with_explicit
+
+    auto = classify_source(url=url, title=title)
+    resolved = merge_with_explicit(
+        auto,
+        domain=domain,
+        source_group=source_group,
+        authority_tier=authority_tier,
+        approval_status=approval_status,
+        allowed_use=allowed_use,
+    )
+    domain          = resolved["domain"]
+    source_group    = resolved["source_group"]
+    authority_tier  = resolved["authority_tier"]
+    approval_status = resolved["approval_status"]
+    allowed_use     = resolved["allowed_use"]
+    logger.info(
+        "URL governance | url=%s | domain=%s | group=%s | tier=%s | status=%s",
+        url, domain, source_group, authority_tier, approval_status,
+    )
 
     doc_id = generate_id()
 
@@ -930,11 +998,15 @@ async def register_url_document(
             INSERT INTO sync_source.document
                 (id, title, source_type, source_url,
                  file_data, file_name, file_path,
-                 domain, exploration_id, uploaded_by)
+                 domain, exploration_id, uploaded_by,
+                 registry_id, source_group, source_keywords,
+                 approval_status, authority_tier, allowed_use)
             VALUES
                 (:id, :title, 'url', :url,
                  NULL, NULL, NULL,
-                 :domain, :exploration_id, :uploaded_by)
+                 :domain, :exploration_id, :uploaded_by,
+                 :registry_id, :source_group, CAST(:source_keywords AS JSONB),
+                 :approval_status, :authority_tier, CAST(:allowed_use AS JSONB))
         """),
         {
             "id":             doc_id,
@@ -943,6 +1015,12 @@ async def register_url_document(
             "domain":         domain,
             "exploration_id": exploration_id,
             "uploaded_by":    user_id,
+            "registry_id":     registry_id,
+            "source_group":    source_group,
+            "source_keywords": json.dumps(source_keywords or [], ensure_ascii=False),
+            "approval_status": approval_status or "approved",
+            "authority_tier":  authority_tier or "curated",
+            "allowed_use":     json.dumps(allowed_use or ["qual_report", "quant_report", "citation"]),
         },
     )
 
@@ -976,8 +1054,17 @@ async def register_url_document(
                 soft_max_chunks=_SOFT_MAX_SCRAPED_CHUNKS,
             )
             await db.execute(
-                text("UPDATE sync_source.document SET is_processed = TRUE WHERE id = :id"),
-                {"id": doc_id},
+                text("""
+                    UPDATE sync_source.document
+                    SET is_processed = TRUE,
+                        quality_score = :quality_score,
+                        index_status = 'pending'
+                    WHERE id = :id
+                """),
+                {
+                    "id": doc_id,
+                    "quality_score": _score_content_quality(raw_text)[0],
+                },
             )
             logger.info(
                 "URL scraped | doc_id=%s | url=%s | cleaned_length=%d | "
@@ -1068,8 +1155,14 @@ async def process_document(db: AsyncSession, document_id: str) -> dict:
         )
 
         await db.execute(
-            text("UPDATE sync_source.document SET is_processed = TRUE WHERE id = :id"),
-            {"id": document_id},
+            text("""
+                UPDATE sync_source.document
+                SET is_processed = TRUE,
+                    quality_score = :quality_score,
+                    index_status = 'pending'
+                WHERE id = :id
+            """),
+            {"id": document_id, "quality_score": _score_content_quality(raw_text)[0]},
         )
         await db.commit()
 
@@ -1107,6 +1200,9 @@ async def get_source_document(
         text("""
             SELECT id, title, source_type, source_url, file_name,
                    domain, exploration_id, uploaded_by,
+                   registry_id, source_group, source_keywords,
+                   approval_status, authority_tier, allowed_use,
+                   quality_score, index_status, indexed_at, citation_metadata,
                    is_processed, uploaded_at, metadata
             FROM sync_source.document
             WHERE id = :id
@@ -1138,6 +1234,9 @@ async def list_source_documents(
         text(f"""
             SELECT id, title, source_type, source_url, file_name,
                    domain, exploration_id, uploaded_by,
+                   registry_id, source_group, source_keywords,
+                   approval_status, authority_tier, allowed_use,
+                   quality_score, index_status, indexed_at, citation_metadata,
                    is_processed, uploaded_at, metadata
             FROM sync_source.document
             {where}
@@ -1236,7 +1335,12 @@ async def search_source_chunks(
                 c.id            AS chunk_id,
                 c.document_id,
                 d.title         AS document_title,
+                d.source_url,
                 d.domain,
+                d.source_group,
+                d.source_keywords,
+                d.approval_status,
+                d.authority_tier,
                 c.data_type,
                 c.chunk_index,
                 c.content       AS snippet

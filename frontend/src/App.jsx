@@ -22,12 +22,16 @@ import ManageUsers from "./components/pages/organization/Workspace/ManageUsers";
 import WorkspaceForm from "./components/pages/organization/Workspace/WorkspaceForm"
 
 import PersonaBuilder from "./components/pages/organization/Workspace/ResearchObjective/Persona/personaBuilder/PersonaBuilder";
+import ApproachSelectionPage from "./components/pages/organization/Workspace/ResearchObjective/Persona/personaBuilder/components/ApproachSelectionPage";
+import PersonaBuilderManual from "./components/pages/organization/Workspace/ResearchObjective/Persona/personaBuilder/PersonaBuilderManual/PersonaBuilderManual";
+import PersonaGenerationLoader from "./components/pages/organization/Workspace/ResearchObjective/PersonaGenerationLoader";
 import AddPersona from "./components/pages/organization/Workspace/ResearchObjective/Persona/AddPersona";
 import PersonaPreview from "./components/pages/organization/Workspace/ResearchObjective/Persona/PersonaPreview";
 import { ThemeProvider } from "./context/ThemeContext";
 import ResearchObjectiveLayout from "./components/pages/organization/Workspace/ResearchObjective/ResearchObjectiveLayout";
 import DepthInterview from "./components/pages/organization/Workspace/ResearchObjective/DepthInterview/DepthInterview";
 import ChatView from "./components/pages/organization/Workspace/ResearchObjective/DepthInterview/ChatView";
+import InsightGeneration from './components/pages/organization/Workspace/ResearchObjective/DepthInterview/components/InsightGeneration';
 import PopulationBuilder from "./components/pages/organization/Workspace/ResearchObjective/PopulationBuilder/PopulationBuilder";
 import Questionnaire from "./components/pages/organization/Workspace/ResearchObjective/Questionnaire/Questionnaire"
 import SurveyResults from "./components/pages/organization/Workspace/ResearchObjective/SurveyResults/SurveyResults"
@@ -47,11 +51,13 @@ import AdminDashboard from "./components/pages/Admin/AdminDashboard";
 import AdminUserList from "./components/pages/Admin/AdminUserList";
 import AdminUserProvision from "./components/pages/Admin/AdminUserProvision";
 import AdminUserDetail from "./components/pages/Admin/AdminUserDetail";
-import ChangePassword from "./components/pages/ChangePassword/ChangePassword";
+// import ChangePassword from "./components/pages/ChangePassword/ChangePassword";
 import Upgrade from "./components/pages/Upgrade/Upgrade";
 import EnterpriseOrgsPage from "./components/pages/Admin/EnterpriseOrgsPage";
 import EnterpriseOrgDetail from "./components/pages/Admin/EnterpriseOrgDetail";
 import AcceptInvitation from "./components/pages/Invitation/AcceptInvitation";
+import SpIconProvider from './components/SPIconProvider';
+import ApproachSelectionModal from "./components/pages/organization/Workspace/ResearchObjective/Persona/personaBuilder/components/ApproachSelectionPage";
 
 const queryClient = new QueryClient();
 
@@ -132,6 +138,7 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
+        <SpIconProvider />
         <Router>
           <Routes>
             {/* PUBLIC ROUTES */}
@@ -197,27 +204,19 @@ function App() {
             </Route>
 
             {/* PROTECTED ROUTES */}
-            <Route
+            {/* <Route
               path="/change-password"
               element={
                 <ProtectedRoute>
                   <ChangePassword />
                 </ProtectedRoute>
               }
-            />
+            /> */}
             <Route
               path="/upgrade"
               element={
                 <ProtectedRoute>
                   <Upgrade />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/landing"
-              element={
-                <ProtectedRoute>
-                  <LandingPage />
                 </ProtectedRoute>
               }
             />
@@ -240,12 +239,23 @@ function App() {
                 element={<CreateExploration />} />
 
               {/* RESEARCH OBJECTIVE WIZARD ROUTES (WITH LAYOUT) */}
+              {/* ── ONLY CHANGE FROM ORIGINAL ──────────────────────────────────
+                  :explorationId renamed to :objectiveId on research-mode and
+                  persona-generating routes so all child routes use the same
+                  param name. This fixes useStepProgress() receiving undefined
+                  and the sidebar never showing completed steps.
+                  The actual URL structure is identical — same ID, same paths.
+              ──────────────────────────────────────────────────────────────── */}
               <Route path="organization/workspace/research-objectives/:workspaceId" element={<ResearchObjectiveLayout />}>
-                <Route path=":explorationId/research-mode" element={<AddResearchObjective />} />
+                <Route path=":objectiveId/research-mode" element={<AddResearchObjective />} />
                 {/* <Route
                   path=":objectiveId/edit"
                   element={<EditResearchObjective />}
                 /> */}
+                <Route
+                  path=":objectiveId/persona-generating"
+                  element={<PersonaGenerationLoader />}
+                />
                 <Route
                   path=":objectiveId/persona/add"
                   element={<AddPersona />}
@@ -253,6 +263,15 @@ function App() {
                 <Route
                   path=":objectiveId/persona-builder"
                   element={<PersonaBuilder />}
+                />
+                <Route
+                  path=":objectiveId/approach-selection"
+                  element={<ApproachSelectionPage />}
+                />
+
+                <Route
+                  path=":objectiveId/persona-builder/manual"
+                  element={<PersonaBuilderManual />}
                 />
                 <Route
                   path=":objectiveId/persona-preview/:personaId"
@@ -270,6 +289,9 @@ function App() {
                   path=":objectiveId/population-builder"
                   element={<PopulationBuilder />}
                 />
+                 <Route 
+                  path=":objectiveId/insights"
+                  element={<InsightGeneration />} />
                 <Route
                   path=":objectiveId/questionnaire"
                   element={<Questionnaire />}
@@ -290,6 +312,7 @@ function App() {
               <Route path="settings" element={<Settings />} />
               <Route path="traceability" element={<Traceability />} />
               <Route path="traceability/:workspaceId/:explorationId" element={<Traceability />} />
+              <Route path="landing" element={<LandingPage />} />
 
             </Route>
           </Routes>

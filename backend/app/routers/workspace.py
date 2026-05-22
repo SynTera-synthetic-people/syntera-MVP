@@ -10,7 +10,8 @@ from app.models.user import User
 from app.models.omi import WorkflowStage
 from app.routers.auth_dependencies import get_current_active_user
 from app.schemas.response import DeleteResponse, ErrorResponse, SuccessResponse
-from app.schemas.workspace import InviteMemberIn, RoleUpdate, WorkspaceCreate
+from app.schemas.workspace import InviteMemberIn, RoleUpdate, WorkspaceCreate, UpdateMemberIn
+from app.services.workspace import get_or_create_personal_org
 from app.services import workspace as ws_service
 from app.services.auth import get_user_by_email
 from app.utils.email_utils import send_invite_email
@@ -31,15 +32,31 @@ def _workspace_to_dict(workspace) -> dict:
     }
 
 
+@router.get("/members/all", response_model=SuccessResponse)
+async def list_all_org_members(
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Return all unique members across every workspace visible to the caller.
+    Used by Settings > Team Management (mode='team').
+    """
+    members = await ws_service.list_all_org_members(session, current_user)
+    return SuccessResponse(
+        message="Organisation members fetched successfully",
+        data=members,
+    )
+
+
 @router.get("/", response_model=SuccessResponse)
 async def list_workspaces(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_active_user),
 ):
-    workspaces = await ws_service.list_accessible_workspaces(session, current_user)
+    workspaces = await ws_service.list_accessible_workspaces_with_members(session, current_user)
     return SuccessResponse(
         message="Workspaces fetched successfully",
-        data=[_workspace_to_dict(workspace) for workspace in workspaces],
+        data=workspaces,
     )
 
 
@@ -49,22 +66,32 @@ async def create_workspace(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_active_user),
 ):
-    if current_user.role != "enterprise_admin" or not current_user.organization_id:
+    if current_user.account_tier == "enterprise":
+        if current_user.role != "enterprise_admin" or not current_user.organization_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=ErrorResponse(
+                    status="error",
+                    message="Only enterprise admins can create workspaces.",
+                ).dict(),
+            )
+        org = await session.get(Organization, current_user.organization_id)
+        if not org or org.account_tier != "enterprise":
+            raise HTTPException(
+                status_code=404,
+                detail=ErrorResponse(
+                    status="error",
+                    message="Enterprise organization not found. Cannot create a workspace.",
+                ).dict(),
+            )
+    elif current_user.account_tier == "tier1":
+        org = await get_or_create_personal_org(session, current_user)
+    else:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=ErrorResponse(
                 status="error",
-                message="Only enterprise admins can create workspaces.",
-            ).dict(),
-        )
-
-    org = await session.get(Organization, current_user.organization_id)
-    if not org or org.account_tier != "enterprise":
-        raise HTTPException(
-            status_code=404,
-            detail=ErrorResponse(
-                status="error",
-                message="Enterprise organization not found. Cannot create a workspace.",
+                message="Upgrade to Explorer Pack or Enterprise to create workspaces.",
             ).dict(),
         )
 
@@ -72,7 +99,7 @@ async def create_workspace(
         org_id=org.id,
         name=payload.name,
         description=payload.description,
-        department_name=payload.department_name,
+        department_name=payload.resolved_department,
         creator_id=current_user.id,
         creator_email=current_user.email,
     )
@@ -204,7 +231,12 @@ async def update_workspace(
             ).dict(),
         )
 
-    updated = await ws_service.update_workspace(workspace_id, payload)
+    updated = await ws_service.update_workspace(
+        workspace_id,
+        name=payload.name,
+        description=payload.description,
+        department_name=payload.resolved_department,
+    )
     return SuccessResponse(
         message="Workspace updated successfully",
         data=updated,
@@ -232,16 +264,6 @@ async def invite_member(
             ErrorResponse(
                 status="error",
                 message="Only workspace admins can invite new members",
-            ).dict(),
-        )
-
-    org = await session.get(Organization, workspace.organization_id)
-    if not org or org.account_tier != "enterprise":
-        raise HTTPException(
-            403,
-            ErrorResponse(
-                status="error",
-                message="Workspace invitations are only available for enterprise workspaces.",
             ).dict(),
         )
 
@@ -323,6 +345,51 @@ async def change_role(
 
     await ws_service.change_member_role(workspace_id, member_id, payload.new_role)
     return SuccessResponse(message=f"Member role updated to {payload.new_role}")
+
+
+@router.patch("/{workspace_id}/members/{member_id}", response_model=SuccessResponse)
+async def update_member(
+    workspace_id: str,
+    member_id: str,
+    payload: UpdateMemberIn,
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Update a workspace member's display name.
+    Only workspace admins or enterprise_admin of the same org may do this.
+    """
+    if payload.first_name is None and payload.last_name is None:
+        raise HTTPException(
+            status_code=400,
+            detail=ErrorResponse(
+                status="error",
+                message="No fields provided to update."
+            ).dict()
+        )
+
+    try:
+        updated = await ws_service.update_member_details(
+            workspace_id=workspace_id,
+            member_id=member_id,
+            requesting_user=current_user,
+            first_name=payload.first_name,
+            last_name=payload.last_name,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            404,
+            ErrorResponse(status="error", message=str(exc)).dict()
+        )
+    except PermissionError as exc:
+        raise HTTPException(
+            403,
+            ErrorResponse(status="error", message=str(exc)).dict()
+        )
+
+    return SuccessResponse(
+        message="Member details updated successfully",
+        data=updated,
+    )
 
 
 @router.delete("/{workspace_id}/members/{member_id}", response_model=DeleteResponse)
