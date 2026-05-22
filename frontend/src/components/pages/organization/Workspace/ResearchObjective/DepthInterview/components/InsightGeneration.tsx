@@ -145,7 +145,10 @@ const InsightGeneration: React.FC = () => {
         { toastId: 'BA-failed' }
       );
     }
-    prevStatusRef.current = { DI, BA };
+    prevStatusRef.current = {
+      ...(DI !== undefined && { DI }),
+      ...(BA !== undefined && { BA }),
+    };
 
     setCardStates((prev) => {
       const next = { ...prev };

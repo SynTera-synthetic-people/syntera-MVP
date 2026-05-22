@@ -6,7 +6,7 @@
 // Categories & sample icons:
 
 import React from 'react';
-import './SpIcon.css';
+import './SPIcon.css';
 
 // ── Icon name union type ──────────────────────────────────────────────────
 
