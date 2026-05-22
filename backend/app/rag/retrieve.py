@@ -123,15 +123,17 @@ def _search_qdrant_vector(
     top_k: int,
     score_threshold: float,
 ) -> list[dict]:
-    search_results = qdrant_client.search(
+    # qdrant-client ≥1.14 removed .search(); use .query_points() instead.
+    # .points returns List[ScoredPoint] with the same .payload/.score shape.
+    hits = qdrant_client.query_points(
         collection_name=settings.QDRANT_COLLECTION_NAME,
-        query_vector=query_vector,
+        query=query_vector,
         query_filter=query_filter,
         limit=top_k,
         score_threshold=score_threshold,
         with_payload=True,
-    )
-    return [_hit_to_result(hit) for hit in search_results]
+    ).points
+    return [_hit_to_result(hit) for hit in hits]
 
 
 def create_query_embedding(query: str) -> list[float]:
@@ -206,19 +208,18 @@ def _legacy_search_qdrant_unfiltered(
     # Don't use domain filter for now (all documents are 'general')
     query_filter = None
     
-    # Search Qdrant (qdrant-client 1.7.x — use .search(), not .query_points())
-    search_results = qdrant_client.search(
+    hits = qdrant_client.query_points(
         collection_name=settings.QDRANT_COLLECTION_NAME,
-        query_vector=query_vector,
+        query=query_vector,
         query_filter=query_filter,
         limit=top_k,
         score_threshold=score_threshold,
         with_payload=True,
-    )
-    
+    ).points
+
     # Format results
     results = []
-    for hit in search_results:
+    for hit in hits:
         results.append({
             "chunk_id": hit.payload["chunk_id"],
             "document_id": hit.payload["document_id"],
@@ -385,7 +386,7 @@ def controlled_sourcebank_search(
     max_sources: int = 3,
     score_threshold: float = 0.0,
     approved_only: bool = False,
-    allowed_use: Optional[str] = "qual_report",
+    allowed_use: Optional[str] = None,
     allow_legacy_fallback: bool = True,
 ) -> dict:
     """

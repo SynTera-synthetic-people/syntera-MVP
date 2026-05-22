@@ -9,8 +9,11 @@ URL pattern:
   /workspaces/{workspace_id}/explorations/{exploration_id}/reports/quant/{simulation_id}/<type>
 """
 import asyncio
+import logging
 import os
 from datetime import datetime, timedelta
+
+logger = logging.getLogger(__name__)
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
@@ -141,6 +144,10 @@ async def _run_qual_report_generation(
         )
         await cache.store_report_cache(exploration_id, cache_key, pdf_path, "qual")
     except Exception as exc:
+        logger.exception(
+            "report generation failed — exploration=%s cache_key=%s: %s",
+            exploration_id, cache_key, exc,
+        )
         await cache.set_report_status(
             exploration_id=exploration_id,
             cta_type=cache_key,

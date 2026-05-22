@@ -3,6 +3,7 @@ Upload embeddings to Qdrant Cloud and write status back to Postgres.
 """
 
 import asyncio
+import logging
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
 from sqlalchemy import text
@@ -12,14 +13,17 @@ from app.config import settings
 from app.db import AsyncSessionLocal
 from .embed_worker import embed_all_chunks
 
+logger = logging.getLogger(__name__)
+
 _WRITEBACK_BATCH = 500
 
 
 
-# Initialize Qdrant client
+# Initialize Qdrant client — timeout=120 prevents WriteTimeout on large batches
 client = QdrantClient(
     url=settings.QDRANT_URL,
     api_key=settings.QDRANT_API_KEY,
+    timeout=120,
 )
 
 
@@ -114,8 +118,8 @@ async def write_back_embedded_status(points: list) -> None:
                     SET embedding_status = 'done',
                         qdrant_point_id   = data.qid
                     FROM (
-                        SELECT unnest(:cids::text[]) AS cid,
-                               unnest(:qids::text[]) AS qid
+                        SELECT unnest(CAST(:cids AS text[])) AS cid,
+                               unnest(CAST(:qids AS text[])) AS qid
                     ) AS data
                     WHERE id = data.cid
                 """),
@@ -163,20 +167,35 @@ async def ingest_to_qdrant(limit: int = None):
     
     # Step 2: Upload to Qdrant
     print("\n[STEP 2/3] Uploading to Qdrant Cloud...")
-    create_collection_if_not_exists()
-    upsert_points(points)
+    await asyncio.to_thread(create_collection_if_not_exists)
+    await asyncio.to_thread(upsert_points, points)
 
     # Step 3: Write status back to Postgres
     print("\n[STEP 3/3] Writing embedding status back to Postgres...")
     await write_back_embedded_status(points)
 
-    # Collection stats
-    collection_info = client.get_collection(settings.QDRANT_COLLECTION_NAME)
-    print(f"\n📊 Qdrant Collection Stats:")
-    print(f"   Collection: {settings.QDRANT_COLLECTION_NAME}")
-    print(f"   Total points: {collection_info.points_count:,}")
-    print(f"   Vector size: {collection_info.config.params.vectors.size}")
-    print(f"   Distance: {collection_info.config.params.vectors.distance}")
+    # Collection stats — non-critical; a schema mismatch between qdrant-client and
+    # Qdrant Cloud server versions can cause a Pydantic validation error here even
+    # after a fully successful ingest.  Isolate so it never kills the cycle.
+    try:
+        collection_info = client.get_collection(settings.QDRANT_COLLECTION_NAME)
+        vectors_cfg = collection_info.config.params.vectors
+        if hasattr(vectors_cfg, "size"):
+            vec_size, vec_dist = vectors_cfg.size, vectors_cfg.distance
+        else:
+            # Named-vector collection: VectorsConfig is a dict[str, VectorParams]
+            first = next(iter(vectors_cfg.values()))
+            vec_size, vec_dist = first.size, first.distance
+        print(f"\n📊 Qdrant Collection Stats:")
+        print(f"   Collection: {settings.QDRANT_COLLECTION_NAME}")
+        print(f"   Total points: {collection_info.points_count:,}")
+        print(f"   Vector size: {vec_size}")
+        print(f"   Distance: {vec_dist}")
+    except Exception as _stats_exc:
+        logger.warning(
+            "ingest_qdrant: collection stats unavailable (ingestion succeeded) — %s",
+            _stats_exc,
+        )
 
     print("\n" + "="*70)
     print("✅ INGESTION COMPLETE!")

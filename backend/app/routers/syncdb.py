@@ -571,3 +571,34 @@ async def get_source_chunks(
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+
+# ── Ingestion Worker (admin/ops) ───────────────────────────────────────────
+
+@router.post("/source/ingest/trigger")
+async def trigger_qdrant_ingest(
+    current_user: User = Depends(get_current_active_user),
+):
+    """Force an immediate Qdrant ingest cycle. Useful after bulk uploads."""
+    from app.rag.ingestion_worker import trigger_ingest
+    await trigger_ingest()
+    return {"status": "ingest cycle triggered"}
+
+
+@router.get("/source/ingest/status")
+async def qdrant_ingest_status(
+    db: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Returns pending/done/failed chunk counts — quick health check for ingestion pipeline."""
+    from sqlalchemy import text
+    result = await db.execute(
+        text("""
+            SELECT COALESCE(embedding_status, 'pending') AS status, COUNT(*) AS count
+            FROM sync_source.content_chunk
+            GROUP BY 1
+        """)
+    )
+    counts = {row.status: row.count for row in result}
+    total = sum(counts.values())
+    return {"total_chunks": total, "by_status": counts}
