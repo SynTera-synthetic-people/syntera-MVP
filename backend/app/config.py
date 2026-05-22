@@ -55,8 +55,11 @@ class Settings(BaseSettings):
     
     # RAG Processing Settings
     EMBED_BATCH_SIZE: int = 100
-    UPSERT_BATCH_SIZE: int = 100
+    UPSERT_BATCH_SIZE: int = 50
     TOP_K_RESULTS: int = 5
+
+    # Background ingestion worker: how often to check for pending chunks (seconds)
+    INGEST_POLL_INTERVAL_SECONDS: int = 60
 
     class Config:
         env_file = ".env"

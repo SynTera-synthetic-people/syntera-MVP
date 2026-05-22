@@ -32,3 +32,4 @@ frontend/node_modules/
 node_modules/.vite/
 package.json
 package-lock.json
+.claude/settings.local.json

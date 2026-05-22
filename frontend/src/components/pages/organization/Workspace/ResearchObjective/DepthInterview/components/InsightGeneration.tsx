@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { toast } from 'react-toastify';
 import { useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TbLoader } from 'react-icons/tb';
@@ -79,6 +80,9 @@ const InsightGeneration: React.FC = () => {
   }>();
   const { trigger } = useOmniWorkflow();
 
+  // Tracks previous DI/BA statuses so we only toast on actual transitions
+  const prevStatusRef = useRef<{ DI?: string; BA?: string }>({});
+
   // ── Card generate/ready state per card ───────────────────────────────────
 
   const [cardStates, setCardStates] = useState<CardStates>({
@@ -126,19 +130,42 @@ const InsightGeneration: React.FC = () => {
     const BA = qual.BEHAVIORAL_ARCHAEOLOGY?.status as string | undefined;
     const TR = qual.TRANSCRIPTS?.status as string | undefined;
 
+    // Toast only on actual pending → failed transitions, not stale page load
+    if (DI === 'failed' && prevStatusRef.current.DI === 'pending') {
+      const msg = qual.DECISION_INTELLIGENCE?.error_message as string | undefined;
+      toast.error(
+        msg ? `Decision Intelligence failed: ${msg.slice(0, 100)}` : 'Decision Intelligence generation failed — please try again.',
+        { toastId: 'DI-failed' }
+      );
+    }
+    if (BA === 'failed' && prevStatusRef.current.BA === 'pending') {
+      const msg = qual.BEHAVIORAL_ARCHAEOLOGY?.error_message as string | undefined;
+      toast.error(
+        msg ? `Behaviour Archaeology failed: ${msg.slice(0, 100)}` : 'Behaviour Archaeology generation failed — please try again.',
+        { toastId: 'BA-failed' }
+      );
+    }
+    prevStatusRef.current = { DI, BA };
+
     setCardStates((prev) => {
       const next = { ...prev };
       if (DI === 'done') next.decision = 'ready';
+      else if (DI === 'pending' && prev.decision === 'idle') next.decision = 'generating';
       else if (DI === 'failed' && prev.decision === 'generating') next.decision = 'idle';
       if (BA === 'done') next.behaviour = 'ready';
+      else if (BA === 'pending' && prev.behaviour === 'idle') next.behaviour = 'generating';
       else if (BA === 'failed' && prev.behaviour === 'generating') next.behaviour = 'idle';
       // Restore verbatim only if not currently generating (avoid race)
       if (TR === 'done' && prev.verbatim !== 'generating') next.verbatim = 'ready';
       return next;
     });
 
-    // Stop polling once nothing is pending
-    if (DI !== 'pending' && BA !== 'pending') setPollingEnabled(false);
+    // Re-enable polling when tasks are in flight (handles re-navigation case)
+    if (DI === 'pending' || BA === 'pending') {
+      setPollingEnabled(true);
+    } else {
+      setPollingEnabled(false);
+    }
   }, [reportStatusData]);
 
   // Pre-fetch verbatim preview data so it's ready when user clicks "View"

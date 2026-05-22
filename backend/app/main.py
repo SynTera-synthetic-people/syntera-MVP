@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -82,9 +83,16 @@ async def custom_http_exception_handler(request: Request, exc: HTTPException):
     )
 
 
+async def _start_ingest_worker() -> None:
+    """Deferred start so Qdrant errors don't crash the whole app on startup."""
+    from app.rag.ingestion_worker import ingest_loop
+    await ingest_loop()
+
+
 @app.on_event("startup")
 async def startup():
     await run_startup_migrations()
+    asyncio.create_task(_start_ingest_worker())
     await ensure_superadmin_exists()
     # Seed plan catalog after billing tables and indexes are guaranteed.
     async with async_session() as _seed_session:

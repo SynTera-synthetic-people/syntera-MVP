@@ -1087,7 +1087,6 @@ async def _fetch_rag_context(query: str, exploration_id: Optional[str] = None) -
             top_k=8,
             max_sources=3,
             approved_only=False,
-            allowed_use="qual_report",
             allow_legacy_fallback=True,
         )
     except Exception as exc:
