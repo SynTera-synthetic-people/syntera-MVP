@@ -6,7 +6,7 @@
   height: 100%;
   width: 100%;
   position: relative;
-  overflow:visible;
+  overflow: visible;
   background: transparent;
 }
 
@@ -15,7 +15,7 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  overflow: visible;
+  overflow: hidden;
   padding: 1.5rem 2rem 1rem 3rem;
   background: transparent;
 }
@@ -26,8 +26,14 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 1.5rem;
+  min-height: 0;
+}
+
+.aro-messages::before {
+  content: '';
+  flex: 1;
 }
 
 /* ── Loading / empty states ── */
@@ -162,7 +168,8 @@
   padding: 16px 20px;
   background: #16181C;
   color: #e5e7eb;
-  border-radius: 8px 24px 24px 24px;;
+  border-radius: 8px 24px 24px 24px;
+  ;
   width: 680px;
   max-width: 100%;
   box-sizing: border-box;
@@ -408,12 +415,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 2.25rem;
-  height: 2.25rem;
+  width: 32px;
+  height: 32px;
   background: #2563eb;
   color: #ffffff;
   border: none;
-  border-radius: 0.625rem;
+  border-radius: 50%;
   cursor: pointer;
   box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
   transition: background 0.2s ease;
@@ -468,14 +475,34 @@
 }
 
 /* ── Scrollbar ── */
-.aro-messages::-webkit-scrollbar { width: 4px; }
-.aro-messages::-webkit-scrollbar-track { background: transparent; }
-.aro-messages::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.05); border-radius: 10px; }
+.aro-messages::-webkit-scrollbar {
+  width: 4px;
+}
 
-.aro-textarea::-webkit-scrollbar { width: 4px; }
-.aro-textarea::-webkit-scrollbar-track { background: transparent; }
-.aro-textarea::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.05); border-radius: 10px; }
+.aro-messages::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.aro-messages::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+}
+
+.aro-textarea::-webkit-scrollbar {
+  width: 4px;
+}
+
+.aro-textarea::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.aro-textarea::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+}
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }

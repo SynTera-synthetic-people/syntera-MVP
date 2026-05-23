@@ -37,7 +37,6 @@
   background: rgba(255, 255, 255, 0.08);
 }
 
-/* Disabled state — step not yet complete */
 .step-sidebar__back--disabled,
 .step-sidebar__back:disabled {
   opacity: 0.3;
@@ -64,7 +63,7 @@
   gap: 1.5rem;
 }
 
-/* ── Step group (main step + optional sub-steps) ─────────────────────────── */
+/* ── Step group ──────────────────────────────────────────────────────────── */
 
 .step-sidebar__step-group {
   display: flex;
@@ -85,12 +84,7 @@
   width: 100%;
 }
 
-.step-sidebar__step:hover:not(:disabled) { opacity: 0.9; }
-
-.step-sidebar__step--locked {
-  cursor: not-allowed;
-  opacity: 0.4;
-}
+.step-sidebar__step:hover:not(:disabled) { opacity: 0.85; }
 
 /* ── Circle ──────────────────────────────────────────────────────────────── */
 
@@ -107,13 +101,13 @@
   flex-shrink: 0;
   transition: background 0.2s ease, border-color 0.2s ease;
 
-  /* Default / locked / upcoming — subtle outline */
+  /* Default = upcoming locked steps — thin outline, readable number */
   background: transparent;
-  border: 1.5px solid rgba(255, 255, 255, 0.18);
-  color: rgba(255, 255, 255, 0.3);
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
+  color: rgba(255, 255, 255, 0.7);
 }
 
-/* Active — solid grey fill with white number (matches Figma "3" circle) */
+/* Active — solid grey fill, white number */
 .step-sidebar__circle--active {
   background: #3A3D45;
   border-color: #3A3D45;
@@ -127,11 +121,11 @@
   color: #ffffff;
 }
 
-/* Locked — very dim */
+/* Locked — same thin outline, slightly dimmer */
 .step-sidebar__circle--locked {
   background: transparent;
-  border-color: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.25);
+  color: rgba(255, 255, 255, 0.5);
 }
 
 /* ── Step text ───────────────────────────────────────────────────────────── */
@@ -143,48 +137,54 @@
   min-width: 0;
 }
 
+/* Default = upcoming steps — clearly readable */
 .step-sidebar__label {
   font-size: 0.6875rem;
   font-weight: 400;
-  color: rgba(255, 255, 255, 0.38);
+  color: rgba(255, 255, 255, 0.45);
   line-height: 1.2;
 }
 
 .step-sidebar__name {
   font-size: 0.875rem;
   font-weight: 400;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 0.75);
   line-height: 1.3;
   white-space: normal;
   word-break: break-word;
 }
 
-/* Active step */
+/* ── Active step — bold white name ── */
 .step-sidebar__step--active .step-sidebar__name {
   font-weight: 700;
   color: #ffffff;
 }
 .step-sidebar__step--active .step-sidebar__label {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+/* ── Completed step — white name ── */
+.step-sidebar__step--completed .step-sidebar__name {
+  font-weight: 600;
+  color: #ffffff;
+}
+.step-sidebar__step--completed .step-sidebar__label {
   color: rgba(255, 255, 255, 0.5);
 }
 
-/* Completed step */
-.step-sidebar__step--completed .step-sidebar__name {
-  color: #ffffff;
-  font-weight: 600;
+/* ── Locked step — slightly dimmer than upcoming ── */
+.step-sidebar__step--locked {
+  cursor: not-allowed;
 }
-.step-sidebar__step--completed .step-sidebar__label {
+.step-sidebar__step--locked .step-sidebar__label {
+  color: rgba(255, 255, 255, 0.3);
+}
+.step-sidebar__step--locked .step-sidebar__name {
   color: rgba(255, 255, 255, 0.45);
 }
 
-/* Locked step */
-.step-sidebar__step--locked .step-sidebar__label,
-.step-sidebar__step--locked .step-sidebar__name {
-  color: rgba(255, 255, 255, 0.18);
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════
-   SUB-STEPS  (Qualitative Exploration children)
+   SUB-STEPS
 ═══════════════════════════════════════════════════════════════════════════ */
 
 .step-sidebar__substeps {
@@ -192,21 +192,13 @@
   flex-direction: column;
   gap: 1rem;
   margin-top: 1rem;
-  /* Indented so circles align under the parent step text (not its circle) */
-  padding-left: 2.875rem; /* 2rem circle + 0.875rem gap */
+  padding-left: 2.875rem;
   position: relative;
 }
 
-/* Vertical connector line running down the left of the sub-step circles */
+/* Vertical connector line */
 .step-sidebar__substeps::before {
-  content: '';
-  position: absolute;
-  display: none;
-  left: calc(2.875rem - 0.75rem);
-  top: 0;
-  bottom: 0;
-  width: 1px;
-  background: rgba(255, 255, 255, 0.1);
+display: none;
 }
 
 /* ── Sub-step button ─────────────────────────────────────────────────────── */
@@ -224,11 +216,10 @@
   position: relative;
 }
 
-.step-sidebar__substep:hover:not(:disabled) { opacity: 0.9; }
+.step-sidebar__substep:hover:not(:disabled) { opacity: 0.85; }
 
 .step-sidebar__substep--locked {
   cursor: not-allowed;
-  opacity: 0.4;
 }
 
 /* ── Sub-step circle ─────────────────────────────────────────────────────── */
@@ -245,12 +236,12 @@
   font-weight: 600;
   flex-shrink: 0;
   transition: background 0.2s ease, border-color 0.2s ease;
-  /* Pull back over the vertical line so it sits centred on it */
   margin-left: -0.75rem;
 
+  /* Default = upcoming sub-step — clearly visible */
   background: #0E0F12;
-  border: 1.5px solid rgba(255, 255, 255, 0.2);
-  color: rgba(255, 255, 255, 0.35);
+  border: 1.5px solid rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.65);
 }
 
 .step-sidebar__substep-circle--active {
@@ -267,12 +258,11 @@
 
 .step-sidebar__substep-circle--locked {
   background: #0E0F12;
-  border-color: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.4);
 }
 
-/* Sub-step text uses the shared .step-sidebar__text / label / name classes
-   but at a slightly smaller scale */
+/* Sub-step text — smaller scale */
 .step-sidebar__substep .step-sidebar__label { font-size: 0.625rem; }
 .step-sidebar__substep .step-sidebar__name  { font-size: 0.8125rem; }
 
@@ -281,7 +271,7 @@
   color: #ffffff;
 }
 .step-sidebar__substep--active .step-sidebar__label {
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 0.55);
 }
 
 .step-sidebar__substep--completed .step-sidebar__name {
@@ -289,10 +279,12 @@
   font-weight: 500;
 }
 .step-sidebar__substep--completed .step-sidebar__label {
-  color: rgba(255, 255, 255, 0.45);
+  color: rgba(255, 255, 255, 0.5);
 }
 
-.step-sidebar__substep--locked .step-sidebar__label,
+.step-sidebar__substep--locked .step-sidebar__label {
+  color: rgba(255, 255, 255, 0.3);
+}
 .step-sidebar__substep--locked .step-sidebar__name {
-  color: rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.45);
 }

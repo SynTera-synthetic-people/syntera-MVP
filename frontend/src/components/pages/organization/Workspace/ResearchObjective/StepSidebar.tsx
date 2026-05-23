@@ -102,12 +102,9 @@ const getActiveQualSubStep = (pathname: string, currentId?: string): number => {
   return 0;
 };
 
-// FIX: check localStorage so the active sub-step advances correctly as the user
-// progresses through Population Calibration → Survey Execution → Insights.
 const getActiveQuantSubStep = (pathname: string, currentId?: string): number => {
   if (pathname.includes("rebuttal-mode")) return 4;
   if (pathname.includes("survey-results")) {
-    // If survey is already complete (sub3 written), highlight Insights (4)
     if (currentId && localStorage.getItem(`quant_sub3_${currentId}`)) return 4;
     return 3;
   }
@@ -139,23 +136,12 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
   const currentId = explorationId || objectiveId;
   const activeStep = getActiveStep(pathname);
   const activeQualSubStep = getActiveQualSubStep(pathname, currentId);
-  // FIX: pass currentId so localStorage keys can be resolved
   const activeQuantSubStep = getActiveQuantSubStep(pathname, currentId);
 
   const lsStep1Done = !!currentId && !!localStorage.getItem(`step1_done_${currentId}`);
   const lsStep2Done = !!currentId && !!localStorage.getItem(`step2_done_${currentId}`);
 
-  // ── Back-button gate ────────────────────────────────────────────────────────
-  // Back is only enabled once the user has fully completed the active step
-  // (including all its sub-steps). While any step or sub-step is still in
-  // progress the button is disabled so users cannot abandon mid-flow.
-  //
-  // Evaluated lazily here (before isStepCompleted is defined) by inlining the
-  // same LS reads — isStepCompleted is called below after its definition.
-  // We'll set this after the helpers are declared; use a ref-style sentinel
-  // so the value is available in JSX. Actual assignment is below.
-  // (Declared with let so the helper functions below can assign it.)
-  let isBackEnabled = false;
+  let isBackEnabled = true;
 
   // ── Completion helpers ──────────────────────────────────────────────────────
 
@@ -168,13 +154,6 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
     return false;
   };
 
-  // FIX: mirror isQualSubStepCompleted — read from localStorage using the keys
-  // that each component actually writes:
-  //   Sub 1 (Questionnaire Design)   → Questionnaire.tsx writes `quantitative_sub1_`
-  //   Sub 2 (Population Calibration) → PopulationBuilder.tsx writes `quant_sub2_`
-  //   Sub 3 (Survey Execution)       → PopulationBuilder.tsx writes `quant_sub3_`
-  //   Sub 4 (Insights Generation)    → driven by navigation to rebuttal-mode; no
-  //                                    dedicated LS key, so rely on prop only.
   const isQuantSubStepCompleted = (n: number): boolean => {
     if (completedQuantSubSteps.includes(n)) return true;
     if (!currentId) return false;
@@ -208,8 +187,6 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
     return completedSteps.includes(stepNumber);
   };
 
-  // Assign back-button gate now that isStepCompleted is available.
-  // The button is enabled only when the user has fully finished the active step.
   isBackEnabled = isStepCompleted(activeStep);
 
   // ── Navigation ──────────────────────────────────────────────────────────────
@@ -262,15 +239,9 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
 
   return (
     <aside className="step-sidebar">
-
       <button
-        className={[
-          "step-sidebar__back",
-          !isBackEnabled ? "step-sidebar__back--disabled" : "",
-        ].join(" ")}
+        className="step-sidebar__back"
         onClick={handleBack}
-        disabled={!isBackEnabled}
-        aria-disabled={!isBackEnabled}
         title={!isBackEnabled ? "Complete the current step to go back" : undefined}
       >
         <SpIcon name="sp-Arrow-Arrow_Left_SM" />
@@ -288,7 +259,7 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
             step.number === 1 ? true :
               step.number === 2 ? lsStep1Done :
                 step.number === 3
-                  ? (lsStep2Done || !!localStorage.getItem(`approach_${currentId}`) || activeStep === 3)
+                  ? (lsStep2Done || !!localStorage.getItem(`approach_${currentId}`) || activeStep >= 3)
                   : step.number === 4
                     ? (
                       activeStep === 4 ||
@@ -299,13 +270,10 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
 
           const locked = !isStepUnlocked(step.number) && !lsUnlocked;
 
-          const showSubSteps =
-            !!step.subSteps && (
-              active ||
-              completed ||
-              (step.number === 3 && activeStep === 3) ||
-              (step.number === 4 && activeStep === 4)
-            );
+          // FIX: Sub-steps only expand when the step is CURRENTLY ACTIVE.
+          // A completed step collapses its sub-steps so e.g. Qualitative
+          // collapses once the user moves on to Quantitative.
+          const showSubSteps = !!step.subSteps && active;
 
           return (
             <div key={step.number} className="step-sidebar__step-group">
@@ -340,7 +308,7 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
                 </div>
               </button>
 
-              {/* ── Sub-steps ── */}
+              {/* ── Sub-steps (only shown when this step is active) ── */}
               {showSubSteps && step.subSteps && (
                 <div className="step-sidebar__substeps">
                   {step.subSteps.map((sub) => {
@@ -351,7 +319,7 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
                       : isQuantSubStepCompleted(sub.number);
 
                     const activeSubStep = isQual ? activeQualSubStep : activeQuantSubStep;
-                    const subActive = active && activeSubStep === sub.number;
+                    const subActive = activeSubStep === sub.number;
 
                     const subLocked =
                       sub.number > 1 &&

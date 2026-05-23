@@ -1224,12 +1224,20 @@ const PersonaBuilder: React.FC = () => {
   const handleGridCreateNew = useCallback(() => {
     if (savedPersonasFromAPI.length >= PERSONA_LIMIT) {
       setShowAddNewPersonaModal(true);
-    } else {
-      setShowGrid(false);
-      handleAddPersona();
+      return;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [savedPersonasFromAPI.length]);
+
+    try {
+      generatePersonas();
+    } catch (err) {
+      console.error("Failed to kick off persona generation:", err);
+    }
+
+    navigate(
+      `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-generating`,
+      { state: { flow: "omi" } }
+    );
+  }, [savedPersonasFromAPI.length, generatePersonas, navigate, workspaceId, objectiveId]);
 
   const handleAddNewPersonaConfirm = (count: number) => {
     setShowAddNewPersonaModal(false);
