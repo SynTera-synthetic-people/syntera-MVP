@@ -143,6 +143,27 @@ async def _run_qual_report_generation(
             cta=cta,
         )
         await cache.store_report_cache(exploration_id, cache_key, pdf_path, "qual")
+    except asyncio.CancelledError:
+        # CancelledError is a BaseException, not Exception — it is raised when the worker
+        # is killed (server restart, proxy timeout). Without this block the DB status stays
+        # "pending" forever. We shield the DB write so it survives the cancellation signal.
+        logger.warning(
+            "report generation cancelled — exploration=%s cache_key=%s",
+            exploration_id, cache_key,
+        )
+        try:
+            await asyncio.shield(
+                cache.set_report_status(
+                    exploration_id=exploration_id,
+                    cta_type=cache_key,
+                    report_type="qual",
+                    status="failed",
+                    error_message="Report generation was cancelled (server timeout or restart). Please retry.",
+                )
+            )
+        except Exception:
+            pass
+        raise
     except Exception as exc:
         logger.exception(
             "report generation failed — exploration=%s cache_key=%s: %s",

@@ -1179,7 +1179,12 @@ async def build_llm_payload(
                 else list(VALID_DOMAINS)
             )
             for d in domains_to_try:
-                subject_key = await find_subject_key(workspace_id, d)
+                try:
+                    subject_key = await find_subject_key(workspace_id, d)
+                except Exception as exc:
+                    # ML DB lookup is optional — a connection error must not kill report generation.
+                    print(f"[ML:persona] ✗ find_subject_key failed domain={d!r}: {exc}")
+                    break
                 if subject_key:
                     ml_domain = d
                     print(f"[ML:persona] ✓ auto-matched subject_key={subject_key!r} domain={d!r}")

@@ -35,7 +35,14 @@ def _get_sync_engine():
     global _sync_engine
     if _sync_engine is None:
         from app.config import settings
-        sync_url = settings.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
+        sync_url = (
+            settings.DATABASE_URL
+            .replace("postgresql+asyncpg://", "postgresql://")
+            .replace("?ssl=true", "?sslmode=require")
+            .replace("&ssl=true", "&sslmode=require")
+            .replace("?ssl=require", "?sslmode=require")
+            .replace("&ssl=require", "&sslmode=require")
+        )
         _sync_engine = create_engine(sync_url)
     return _sync_engine
 

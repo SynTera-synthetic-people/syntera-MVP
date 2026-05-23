@@ -16,7 +16,14 @@ from app.config import Settings
 
 # Create settings and engine
 settings = Settings()
-db_url = settings.DATABASE_URL.replace('postgresql+asyncpg://', 'postgresql://')
+db_url = (
+    settings.DATABASE_URL
+    .replace("postgresql+asyncpg://", "postgresql://")
+    .replace("?ssl=true", "?sslmode=require")
+    .replace("&ssl=true", "&sslmode=require")
+    .replace("?ssl=require", "?sslmode=require")
+    .replace("&ssl=require", "&sslmode=require")
+)
 engine = create_engine(db_url)
 
 

@@ -12,7 +12,15 @@ from sqlalchemy import create_engine, text
 from app.config import settings
 
 # Sync engine (psycopg2) — feature computation is CPU-bound, run via to_thread
-_sync_url = settings.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
+# psycopg2 uses sslmode=require; asyncpg/cloud URLs often have ssl=true or ssl=require which psycopg2 rejects.
+_sync_url = (
+    settings.DATABASE_URL
+    .replace("postgresql+asyncpg://", "postgresql://")
+    .replace("?ssl=true", "?sslmode=require")
+    .replace("&ssl=true", "&sslmode=require")
+    .replace("?ssl=require", "?sslmode=require")
+    .replace("&ssl=require", "&sslmode=require")
+)
 _engine = None
 
 
