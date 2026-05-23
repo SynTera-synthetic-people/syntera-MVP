@@ -168,16 +168,16 @@ const PersonaGenerationLoader: React.FC<Props> = ({
             ],
             outcome: "A grounded persona foundation built from behavioural alignment, not demographic approximation.",
         },
-        {
-            title: "Neuroscience Calibration",
-            description: "Modelling how the persona feels, hesitates, and evaluates",
-            items: [
-                "Aligning foundational traits with our neuroscience dataset",
-                `Calibrated ${values.neuroscienceCount} relevant emotional and physiological signal`,
-                "Estimated cognitive and emotional load, sensitivity, and perceived patterns",
-            ],
-            outcome: "A persona that reacts with emotional realism, not surface-level sentiment.",
-        },
+        // { uncomment when we have neuroscience data 
+        //     title: "Neuroscience Calibration",
+        //     description: "Modelling how the persona feels, hesitates, and evaluates",
+        //     items: [
+        //         "Aligning foundational traits with our neuroscience dataset",
+        //         `Calibrated ${values.neuroscienceCount} relevant emotional and physiological signal`,
+        //         "Estimated cognitive and emotional load, sensitivity, and perceived patterns",
+        //     ],
+        //     outcome: "A persona that reacts with emotional realism, not surface-level sentiment.",
+        // },
         {
             title: "Contextual & Cognitive Enrichment",
             description: "Embedding real-world context into decision-making",

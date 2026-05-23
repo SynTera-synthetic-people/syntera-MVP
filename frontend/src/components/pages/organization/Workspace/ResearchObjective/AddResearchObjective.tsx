@@ -12,6 +12,7 @@ import {
   TbSparkles,
   TbPencil,
 } from "react-icons/tb";
+import SpIcon from "../../../../SPIcon";
 import { useTheme } from "../../../../../context/ThemeContext";
 import {
   useInitializeOmiSession,
@@ -341,18 +342,18 @@ const AddResearchObjective: React.FC = () => {
   };
 
   const handleBuildManually = () => {
-  trigger({
-    stage: 'persona_builder',
-    event: 'PERSONA_WORKFLOW_LOADED',
-    payload: {},
-  });
+    trigger({
+      stage: 'persona_builder',
+      event: 'PERSONA_WORKFLOW_LOADED',
+      payload: {},
+    });
 
-  // Mark Step 1 (Research Objective) as complete
-  if (objectiveId) localStorage.setItem(`step1_done_${objectiveId}`, '1');
+    // Mark Step 1 (Research Objective) as complete
+    if (objectiveId) localStorage.setItem(`step1_done_${objectiveId}`, '1');
 
-  const targetUrl = `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-builder/manual`;
-  navigate(targetUrl, { state: { flow: "manual" } });
-};
+    const targetUrl = `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-builder/manual`;
+    navigate(targetUrl, { state: { flow: "manual" } });
+  };
 
   // ── Message sending ──────────────────────────────────────────────────────
 
@@ -635,15 +636,14 @@ const AddResearchObjective: React.FC = () => {
                   className={`aro-message-row ${message.sender === 'user' ? 'aro-message-row--user' : 'aro-message-row--omi'}`}
                 >
                   <div className={`aro-bubble-wrapper ${message.sender === 'user' ? 'aro-bubble-wrapper--user' : 'aro-bubble-wrapper--omi'}`}>
-                    <div className={`aro-bubble ${
-                      message.sender === 'omi'
-                        ? message.isError
-                          ? 'aro-bubble--omi-error'
-                          : isSummaryMessage(message)
-                            ? 'aro-bubble--omi-summary'
-                            : 'aro-bubble--omi'
-                        : 'aro-bubble--user'
-                    }`}>
+                    <div className={`aro-bubble ${message.sender === 'omi'
+                      ? message.isError
+                        ? 'aro-bubble--omi-error'
+                        : isSummaryMessage(message)
+                          ? 'aro-bubble--omi-summary'
+                          : 'aro-bubble--omi'
+                      : 'aro-bubble--user'
+                      }`}>
                       {message.sender === 'omi' && !isSummaryMessage(message) && (
                         <div className="aro-omi-avatar">
                           <video
@@ -717,7 +717,7 @@ const AddResearchObjective: React.FC = () => {
             <form onSubmit={handleSendMessage} className="aro-input-form">
 
               <label className="aro-input-file-label">
-                <TbPaperclip size={20} />
+                <SpIcon name= "sp-Edit-Paperclip_Attechment_Tilt"/>
                 <input
                   type="file"
                   className="hidden"
@@ -736,7 +736,6 @@ const AddResearchObjective: React.FC = () => {
                     handleSendMessage();
                   }
                 }}
-                placeholder="Typing..."
                 className="aro-textarea"
                 rows={1}
                 disabled={isSubmitting || isLoading || !sessionData}
@@ -747,7 +746,7 @@ const AddResearchObjective: React.FC = () => {
                 className="aro-input-icon-btn"
                 disabled={isSubmitting || isLoading || !sessionData}
               >
-                <TbMicrophone size={20} />
+                <SpIcon name="sp-Other-Mic"/>
               </button>
 
               <button
@@ -756,8 +755,8 @@ const AddResearchObjective: React.FC = () => {
                 disabled={isSubmitting || isLoading || !sessionData || (inputValue.trim() === "" && !uploadedFile)}
               >
                 {isSubmitting || isSendingMessage
-                  ? <TbLoader className="aro-spinner" size={18} />
-                  : <TbSend size={18} />
+                  ? <TbLoader className="aro-spinner" size={16} />
+                  : <SpIcon name="sp-Communication-Paper_Plane" size={16}/>
                 }
               </button>
             </form>
