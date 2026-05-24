@@ -30,7 +30,11 @@ from app.services.report_generation_qual_claude import (
     generate_pdf_path,
 )
 from app.services.report_generation_quant_claude import generate_md_report
-from app.services.survey_simulation import get_survey_simulation_by_id, parse_survey_results_field
+from app.services.survey_simulation import (
+    get_survey_simulation_by_id,
+    get_survey_simulation_by_source_id,
+    parse_survey_results_field,
+)
 from app.services.questionnaire import get_questionnaire_by_simulation
 from app.utils.questionnaire_csv import (
     questionnaire_sections_to_csv_bytes,
@@ -111,10 +115,31 @@ def _is_stale_pending_report(report) -> bool:
     return datetime.utcnow() - created_at > timedelta(seconds=QUAL_PENDING_STALE_SECONDS)
 
 
-async def _personas_for_simulation(simulation_id: str):
+def _survey_simulation_matches_context(sim, workspace_id: str, exploration_id: str) -> bool:
+    return bool(
+        sim
+        and sim.workspace_id == workspace_id
+        and sim.exploration_id == exploration_id
+    )
+
+
+async def _resolve_quant_survey_simulation(workspace_id: str, exploration_id: str, simulation_id: str):
     sim = await get_survey_simulation_by_id(simulation_id)
-    if not sim:
+    if _survey_simulation_matches_context(sim, workspace_id, exploration_id):
+        return sim
+    if sim:
         raise HTTPException(404, "Survey simulation not found")
+
+    # Older/current clients can pass the population simulation id here. Resolve
+    # the latest linked survey run so reports are generated from survey data.
+    sim = await get_survey_simulation_by_source_id(simulation_id)
+    if _survey_simulation_matches_context(sim, workspace_id, exploration_id):
+        return sim
+
+    raise HTTPException(404, "Survey simulation not found")
+
+
+async def _personas_for_simulation(sim):
     persona_ids = sim.persona_id if isinstance(sim.persona_id, list) else ([sim.persona_id] if sim.persona_id else [])
     personas = []
     for pid in persona_ids:
@@ -383,17 +408,17 @@ async def quant_transcripts(
       1. questionnaire_overview.csv  — Q No., Question Description, Options, Count
       2. survey_results.csv          — one row per respondent (wide format)
 
-    simulation_id is the SURVEY simulation ID.
+    simulation_id is normally the SURVEY simulation ID. If a legacy client sends
+    the population simulation ID, the latest linked survey simulation is used.
     Population sim is resolved via simulation_source_id for the questionnaire lookup.
     """
-    cached = await cache.get_cached_report(exploration_id, QUANT_TRANSCRIPTS_CACHE_KEY, simulation_id)
+    survey_sim = await _resolve_quant_survey_simulation(workspace_id, exploration_id, simulation_id)
+    resolved_simulation_id = survey_sim.id
+
+    cached = await cache.get_cached_report(exploration_id, QUANT_TRANSCRIPTS_CACHE_KEY, resolved_simulation_id)
     if _cached_file_ready(cached):
         content = _read_file(cached.pdf_path)
     else:
-        survey_sim = await get_survey_simulation_by_id(simulation_id)
-        if not survey_sim:
-            raise HTTPException(404, "Survey simulation not found")
-
         population_sim_id = survey_sim.simulation_source_id
         if not population_sim_id:
             raise HTTPException(422, "Survey simulation has no linked population simulation")
@@ -423,7 +448,7 @@ async def quant_transcripts(
             results=results_data,
             persona_sample_sizes=persona_sample_sizes,
             persona_names_map=persona_names_map,
-            seed=simulation_id,
+            seed=resolved_simulation_id,
         )
 
         # ── Combine into ZIP ──
@@ -431,12 +456,12 @@ async def quant_transcripts(
 
         path = generate_pdf_path(prefix="quant_transcripts").replace(".pdf", ".zip")
         _write_file(path, content)
-        await cache.store_report_cache(exploration_id, QUANT_TRANSCRIPTS_CACHE_KEY, path, "quant", simulation_id)
+        await cache.store_report_cache(exploration_id, QUANT_TRANSCRIPTS_CACHE_KEY, path, "quant", resolved_simulation_id)
 
     return Response(
         content=content,
         media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="survey_transcripts_{simulation_id}.zip"'},
+        headers={"Content-Disposition": f'attachment; filename="survey_transcripts_{resolved_simulation_id}.zip"'},
     )
 
 
@@ -448,21 +473,24 @@ async def quant_decision_intelligence(
     current_user: User = Depends(get_current_active_user),
 ):
     """Decision Intelligence PDF for quantitative survey."""
-    cached = await cache.get_cached_report(exploration_id, QUANT_DI_CACHE_KEY, simulation_id)
+    survey_sim = await _resolve_quant_survey_simulation(workspace_id, exploration_id, simulation_id)
+    resolved_simulation_id = survey_sim.id
+
+    cached = await cache.get_cached_report(exploration_id, QUANT_DI_CACHE_KEY, resolved_simulation_id)
     if _cached_file_ready(cached):
         content = _read_file(cached.pdf_path)
     else:
-        personas = await _personas_for_simulation(simulation_id)
-        pdf_bytes = await generate_md_report(exploration_id, simulation_id, personas, cta="DECISION_INTELLIGENCE")
+        personas = await _personas_for_simulation(survey_sim)
+        pdf_bytes = await generate_md_report(exploration_id, resolved_simulation_id, personas, cta="DECISION_INTELLIGENCE")
         path = generate_pdf_path(prefix="quant_di")
         _write_file(path, pdf_bytes)
-        await cache.store_report_cache(exploration_id, QUANT_DI_CACHE_KEY, path, "quant", simulation_id)
+        await cache.store_report_cache(exploration_id, QUANT_DI_CACHE_KEY, path, "quant", resolved_simulation_id)
         content = pdf_bytes
 
     return Response(
         content=content,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="decision_intelligence_{simulation_id}.pdf"'},
+        headers={"Content-Disposition": f'attachment; filename="decision_intelligence_{resolved_simulation_id}.pdf"'},
     )
 
 
@@ -474,21 +502,24 @@ async def quant_behavior_archaeology(
     current_user: User = Depends(get_current_active_user),
 ):
     """Behavior Archaeology PDF for quantitative survey."""
-    cached = await cache.get_cached_report(exploration_id, QUANT_BA_CACHE_KEY, simulation_id)
+    survey_sim = await _resolve_quant_survey_simulation(workspace_id, exploration_id, simulation_id)
+    resolved_simulation_id = survey_sim.id
+
+    cached = await cache.get_cached_report(exploration_id, QUANT_BA_CACHE_KEY, resolved_simulation_id)
     if _cached_file_ready(cached):
         content = _read_file(cached.pdf_path)
     else:
-        personas = await _personas_for_simulation(simulation_id)
-        pdf_bytes = await generate_md_report(exploration_id, simulation_id, personas, cta="BEHAVIORAL_ARCHAEOLOGY")
+        personas = await _personas_for_simulation(survey_sim)
+        pdf_bytes = await generate_md_report(exploration_id, resolved_simulation_id, personas, cta="BEHAVIORAL_ARCHAEOLOGY")
         path = generate_pdf_path(prefix="quant_ba")
         _write_file(path, pdf_bytes)
-        await cache.store_report_cache(exploration_id, QUANT_BA_CACHE_KEY, path, "quant", simulation_id)
+        await cache.store_report_cache(exploration_id, QUANT_BA_CACHE_KEY, path, "quant", resolved_simulation_id)
         content = pdf_bytes
 
     return Response(
         content=content,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="behavior_archaeology_{simulation_id}.pdf"'},
+        headers={"Content-Disposition": f'attachment; filename="behavior_archaeology_{resolved_simulation_id}.pdf"'},
     )
 
 

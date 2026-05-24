@@ -32,7 +32,8 @@ const ProgressBar = () => {
     }
 
     // 1. Check API data first
-    const fromData = explorationData?.data?.research_approach || explorationData?.research_approach;
+    const apiData = explorationData?.data ?? explorationData ?? {};
+    const fromData = apiData?.research_approach;
     if (fromData) {
       const approach = fromData.toLowerCase().trim();
       if (objectiveId) localStorage.setItem(`approach_${objectiveId}`, approach);
@@ -45,7 +46,16 @@ const ProgressBar = () => {
       if (cached) return cached;
     }
 
-    // 3. Fallback to URL path logic while loading or if data missing
+    // 3. Derive from backend boolean flags (is_qualitative / is_quantitative)
+    const isQual = !!apiData?.is_qualitative;
+    const isQuant = !!apiData?.is_quantitative;
+    if (isQual || isQuant) {
+      const derived = isQual && isQuant ? 'both' : isQual ? 'qualitative' : 'quantitative';
+      if (objectiveId) localStorage.setItem(`approach_${objectiveId}`, derived);
+      return derived;
+    }
+
+    // 4. Fallback to URL path logic while loading or if data missing
     if (path.includes('depth-interview') || path.includes('chatview')) return 'qualitative';
     if (path.includes('population-builder') || path.includes('survey-results') || path.includes('rebuttal-mode')) return 'quantitative';
 

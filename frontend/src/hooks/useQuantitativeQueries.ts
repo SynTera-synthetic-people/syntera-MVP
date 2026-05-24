@@ -5,6 +5,7 @@ import {
   simulatePopulation,
   generateQuestionnaire,
   getAllQuestionnaires,
+  getAllQuestionnairesForExploration,
   getPersonas,
   simulateSurvey,
   getSurveySimulationBySource,
@@ -35,11 +36,11 @@ interface SimulatePopulationPayload extends QueryParams {
 
 interface GenerateQuestionnairePayload extends QueryParams {
   personaIds: string[];
-  simulationId: string;
+  simulationId?: string; // optional — not available at questionnaire-design step (pre-population)
 }
 
 interface SimulateSurveyPayload extends QueryParams {
-  personaId: string;
+  personaId: string | string[];
   simulationId: string;
   forceRerun?: boolean;
 }
@@ -79,6 +80,22 @@ const questionnaireQueryKey = (
     explorationId,
     simulationId,
   ];
+
+/**
+ * Fetch all questionnaire sections for an exploration without needing a simulation_id.
+ * Used by the Questionnaire Design step (Step 1 of Quant) to load LLM-generated questions.
+ */
+export const useAllQuestionnairesForExploration = (
+  workspaceId?: string,
+  explorationId?: string,
+) => {
+  return useQuery({
+    queryKey: ['questionnairesAll', workspaceId, explorationId],
+    queryFn: () => getAllQuestionnairesForExploration({ workspaceId, explorationId }),
+    enabled: !!workspaceId && !!explorationId,
+    staleTime: 30_000,
+  });
+};
 
 /** Saved population + questionnaire runs for an exploration (for restore & exports). */
 export const usePopulationSimulations = (

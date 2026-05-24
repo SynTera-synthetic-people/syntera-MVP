@@ -1,10 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TbLoader } from 'react-icons/tb';
 import SpIcon from '../../../../../SPIcon';
 import { useUpdateExplorationMethod } from '../../../../../../hooks/useExplorations';
+import {
+  useSimulateSurvey,
+  useDownloadQuantTranscripts,
+  useDownloadQuantDecisionIntelligence,
+  useDownloadQuantBehaviorArchaeology,
+} from '../../../../../../hooks/useQuantitativeQueries';
+import { getSurveySimulationBySource } from '../../../../../../services/quantitativeServices';
+import { getAxiosErrorMessage } from '../../../../../../utils/axiosBlobError';
 import ImpactHighFiveModal from '../DepthInterview/components/ImpactHighFiveModal';
 import './InsightGeneration.css';
 
@@ -43,9 +51,18 @@ const VIEWER_META: Record<ViewableCardId, { title: string; subtitle: string }> =
   },
 };
 
-const InsightViewerModal: React.FC<{ cardId: ViewableCardId; onClose: () => void }> = ({
+interface InsightViewerModalProps {
+  cardId: ViewableCardId;
+  onClose: () => void;
+  onDownload: () => void;
+  isDownloading: boolean;
+}
+
+const InsightViewerModal: React.FC<InsightViewerModalProps> = ({
   cardId,
   onClose,
+  onDownload,
+  isDownloading,
 }) => {
   const meta = VIEWER_META[cardId];
 
@@ -82,16 +99,23 @@ const InsightViewerModal: React.FC<{ cardId: ViewableCardId; onClose: () => void
             <p className="ig-ivm-placeholder__label">{meta.title}</p>
             <p className="ig-ivm-placeholder__sub">{meta.subtitle}</p>
             <p className="ig-ivm-placeholder__note">
-              [Document content would render here as embedded PDF or HTML preview]
+              Your report is ready. Click the download button below to save it as a PDF.
             </p>
           </div>
         </div>
 
         {/* Footer */}
         <div className="ig-ivm-footer">
-          <button className="ig-ivm-download-btn">
-            <SpIcon name="sp-File-File_Download" size={16} />
-            Download PDF
+          <button
+            className="ig-ivm-download-btn"
+            onClick={onDownload}
+            disabled={isDownloading}
+          >
+            {isDownloading ? (
+              <><TbLoader className="ig-card__btn-spinner" size={14} /> Downloading…</>
+            ) : (
+              <><SpIcon name="sp-File-File_Download" size={16} /> Download PDF</>
+            )}
           </button>
         </div>
       </motion.div>
@@ -143,17 +167,27 @@ const INSIGHT_CARDS: InsightCard[] = [
 // ── Component ─────────────────────────────────────────────────────────────────
 
 const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
-  onLaunchSurvey,
+  selectedPersonas,
   explorationId,
   workspaceId,
+  simulationResult,
 }) => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const updateExplorationMutation = useUpdateExplorationMethod();
 
+  const populationSimulationId: string = simulationResult?.id ?? '';
+
+  const simulateSurveyMutation = useSimulateSurvey();
+  const downloadTranscriptsMutation = useDownloadQuantTranscripts();
+  const downloadDecisionMutation = useDownloadQuantDecisionIntelligence();
+  const downloadBehaviourMutation = useDownloadQuantBehaviorArchaeology();
+
   const [cardStates, setCardStates] = useState<Record<string, CardState>>({});
   const [viewingCard, setViewingCard] = useState<ViewableCardId | null>(null);
   const [showImpactModal, setShowImpactModal] = useState(false);
+  const [surveySimulationId, setSurveySimulationId] = useState('');
+  const ensureSurveyPromiseRef = useRef<Promise<string> | null>(null);
 
   useEffect(() => {
     if (explorationId) {
@@ -161,24 +195,169 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
     }
   }, [explorationId]);
 
-  // End Exploration is only enabled after at least one insight is generated
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!workspaceId || !explorationId || !populationSimulationId) {
+      setSurveySimulationId('');
+      return undefined;
+    }
+
+    const hydrateSurveySimulation = async () => {
+      try {
+        const existing = await getSurveySimulationBySource({
+          workspaceId,
+          explorationId,
+          simulationSourceId: populationSimulationId,
+        });
+        const existingSurveyId = existing?.data?.id;
+        if (!cancelled && existingSurveyId) {
+          setSurveySimulationId(existingSurveyId);
+          localStorage.setItem(`quant_sub3_${explorationId}`, '1');
+        }
+      } catch (err) {
+        console.warn('Could not hydrate survey simulation for insights', err);
+      }
+    };
+
+    hydrateSurveySimulation();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceId, explorationId, populationSimulationId]);
+
   const hasAnyInsightReady = Object.values(cardStates).some((s) => s === 'done');
+
+  const getPersonaIds = () => {
+    const selectedIds = selectedPersonas.map((p) => p.id).filter(Boolean);
+    if (selectedIds.length > 0) return selectedIds;
+
+    if (Array.isArray(simulationResult?.persona_ids)) {
+      return simulationResult.persona_ids.filter(Boolean);
+    }
+
+    if (Array.isArray(simulationResult?.persona_id)) {
+      return simulationResult.persona_id.filter(Boolean);
+    }
+
+    return [];
+  };
+
+  const ensureSurveySimulationId = async () => {
+    if (surveySimulationId) return surveySimulationId;
+    if (ensureSurveyPromiseRef.current) return ensureSurveyPromiseRef.current;
+
+    const promise = (async () => {
+      if (!workspaceId || !explorationId || !populationSimulationId) {
+        throw new Error('Missing population simulation context.');
+      }
+
+      const existing = await getSurveySimulationBySource({
+        workspaceId,
+        explorationId,
+        simulationSourceId: populationSimulationId,
+      });
+      const existingSurveyId = existing?.data?.id;
+      if (existingSurveyId) {
+        setSurveySimulationId(existingSurveyId);
+        queryClient.setQueryData(
+          ['surveySimulationBySource', workspaceId, explorationId, populationSimulationId],
+          existing,
+        );
+        localStorage.setItem(`quant_sub3_${explorationId}`, '1');
+        return existingSurveyId;
+      }
+
+      const personaIds = getPersonaIds();
+      if (personaIds.length === 0) {
+        throw new Error('No personas available to run the survey simulation.');
+      }
+
+      const result = await simulateSurveyMutation.mutateAsync({
+        workspaceId,
+        explorationId,
+        personaId: personaIds,
+        simulationId: populationSimulationId,
+        forceRerun: false,
+      });
+      const nextSurveyId = result?.data?.id;
+      if (!nextSurveyId) {
+        throw new Error('Survey simulation did not return an ID.');
+      }
+
+      setSurveySimulationId(nextSurveyId);
+      queryClient.setQueryData(
+        ['surveySimulationBySource', workspaceId, explorationId, populationSimulationId],
+        result,
+      );
+      localStorage.setItem(`quant_sub3_${explorationId}`, '1');
+      return nextSurveyId;
+    })();
+
+    ensureSurveyPromiseRef.current = promise;
+    try {
+      return await promise;
+    } finally {
+      ensureSurveyPromiseRef.current = null;
+    }
+  };
 
   // ── Card action ───────────────────────────────────────────────────────────
 
-  const handleAction = (card: InsightCard) => {
+  const handleAction = async (card: InsightCard) => {
     const state = cardStates[card.id] ?? 'idle';
 
-    // Done + has viewer → open modal instead of re-generating
+    // Done + has viewer → open modal
     if (state === 'done' && card.hasViewer) {
       setViewingCard(card.id as ViewableCardId);
       return;
     }
 
+    // Playground has no API — mark done immediately
+    if (card.id === 'playground') {
+      setCardStates((prev) => ({ ...prev, [card.id]: 'generating' }));
+      setTimeout(() => setCardStates((prev) => ({ ...prev, [card.id]: 'done' })), 800);
+      return;
+    }
+
     setCardStates((prev) => ({ ...prev, [card.id]: 'generating' }));
-    setTimeout(() => {
+    try {
+      const reportSimulationId = await ensureSurveySimulationId();
+      const payload = { workspaceId, explorationId, simulationId: reportSimulationId };
+      if (card.id === 'raw') {
+        await downloadTranscriptsMutation.mutateAsync(payload);
+      } else if (card.id === 'decision') {
+        await downloadDecisionMutation.mutateAsync(payload);
+      } else if (card.id === 'behaviour') {
+        await downloadBehaviourMutation.mutateAsync(payload);
+      }
       setCardStates((prev) => ({ ...prev, [card.id]: 'done' }));
-    }, 2500);
+    } catch (err) {
+      console.error(`Failed to generate ${card.id}:`, err);
+      const detail = await getAxiosErrorMessage(err, 'Could not generate this report.');
+      alert(detail);
+      setCardStates((prev) => ({ ...prev, [card.id]: 'idle' }));
+    }
+  };
+
+  // ── Modal download handler ────────────────────────────────────────────────
+
+  const handleModalDownload = async () => {
+    if (!viewingCard) return;
+    try {
+      const reportSimulationId = await ensureSurveySimulationId();
+      const payload = { workspaceId, explorationId, simulationId: reportSimulationId };
+      if (viewingCard === 'decision') {
+        await downloadDecisionMutation.mutateAsync(payload);
+      } else if (viewingCard === 'behaviour') {
+        await downloadBehaviourMutation.mutateAsync(payload);
+      }
+    } catch (err) {
+      console.error(`Failed to download ${viewingCard}:`, err);
+      const detail = await getAxiosErrorMessage(err, 'Could not download this report.');
+      alert(detail);
+    }
   };
 
   // ── End Exploration ───────────────────────────────────────────────────────
@@ -202,7 +381,6 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
       navigate(`/main/organization/workspace/explorations/${workspaceId}`);
     } catch (err) {
       console.error('Failed to end exploration:', err);
-      // Navigate anyway so user is never stuck
       navigate(`/main/organization/workspace/explorations/${workspaceId}`);
     }
   };
@@ -219,6 +397,13 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
     visible: { opacity: 1, y: 0, transition: { duration: 0.4 } },
   };
 
+  const isModalDownloading =
+    simulateSurveyMutation.isPending
+      ? true
+      : viewingCard === 'decision'
+      ? downloadDecisionMutation.isPending
+      : downloadBehaviourMutation.isPending;
+
   return (
     <motion.div
       className="ig-root"
@@ -230,7 +415,7 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
       <div className="ig-header">
         <h1 className="ig-title">Insights Generation</h1>
         <p className="ig-subtitle">
-          Generate detailed insights from your qualitative interviews. Choose which documents to create.
+          Generate detailed insights from your quantitative survey. Choose which documents to create.
         </p>
       </div>
 
@@ -267,7 +452,7 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
                       : ''
                   }`}
                 onClick={() => handleAction(card)}
-                disabled={isGenerating || (isDone && !card.hasViewer)}
+                disabled={isGenerating || (isDone && !card.hasViewer && card.id !== 'playground')}
               >
                 {isGenerating ? (
                   <><TbLoader className="ig-card__btn-spinner" size={14} />Generating…</>
@@ -302,6 +487,8 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
           <InsightViewerModal
             cardId={viewingCard}
             onClose={() => setViewingCard(null)}
+            onDownload={handleModalDownload}
+            isDownloading={isModalDownloading}
           />
         )}
 

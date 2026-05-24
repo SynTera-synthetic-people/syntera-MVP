@@ -1,23 +1,29 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TbLoader, TbX, TbAlertCircle } from 'react-icons/tb';
 import SpIcon from '../../../../../SPIcon';
 import QuestionnaireLoader from './QuestionnaireLoader';
 import QuestionnaireGuide from './QuestionnaireGuide';
+import type { Question } from './QuestionModal';
+import type { QuestionType } from './QuestionModal';
+import {
+  useAllQuestionnairesForExploration,
+  usePersonas,
+} from '../../../../../../hooks/useQuantitativeQueries';
+import {
+  generateQuestionnaire,
+  uploadQuestionnaire,
+  getAllQuestionnairesForExploration,
+} from '../../../../../../services/quantitativeServices';
 import './Questionnaire.css';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-interface QuestionItem {
+interface Section {
   id: string;
-  text: string;
-  options: string[];
-}
-
-interface SectionItem {
   title: string;
-  questions: QuestionItem[];
+  questions: Question[];
 }
 
 // ── File validation constants ─────────────────────────────────────────────────
@@ -25,7 +31,6 @@ interface SectionItem {
 const MAX_FILE_SIZE_MB = 2;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 
-/** Allowed MIME types: PDF, Word (.doc / .docx), Excel (.xls / .xlsx) */
 const ALLOWED_MIME_TYPES = new Set([
   'application/pdf',
   'application/msword',
@@ -34,16 +39,15 @@ const ALLOWED_MIME_TYPES = new Set([
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 ]);
 
-/** Fallback extension check in case MIME type is unreliable */
 const ALLOWED_EXTENSIONS = ['.pdf', '.doc', '.docx', '.xls', '.xlsx'];
 
-type UploadError = 'size' | 'format' | null;
+type UploadError = 'size' | 'format' | 'api' | null;
 
 const getUploadErrorMessage = (errorType: UploadError): { title: string; subtitle: string } => {
   if (errorType === 'size') {
     return {
       title: 'Upload Failed',
-      subtitle: `File may exceed size limits of ${MAX_FILE_SIZE_MB}MB" in case of space issue`,
+      subtitle: `File may exceed size limits of ${MAX_FILE_SIZE_MB}MB`,
     };
   }
   if (errorType === 'format') {
@@ -52,73 +56,31 @@ const getUploadErrorMessage = (errorType: UploadError): { title: string; subtitl
       subtitle: 'Invalid file format. Only PDF, Word (.doc/.docx) and Excel (.xls/.xlsx) files are allowed.',
     };
   }
+  if (errorType === 'api') {
+    return {
+      title: 'Generation Failed',
+      subtitle: 'Could not generate questionnaire. Please try again.',
+    };
+  }
   return { title: '', subtitle: '' };
 };
 
-// ── Static questionnaire data ─────────────────────────────────────────────────
+// ── Helper — map backend section/question shape to QuestionnaireGuide Section ─
 
-const SECTIONS: SectionItem[] = [
-  {
-    title: 'Section 1: Attitudes & Preferences',
-    questions: [
-      {
-        id: 'Q1',
-        text: 'How often do you consume pastries/desserts?',
-        options: ['Daily', '2-3 times a week', 'Once a week', 'Once a month or less'],
-      },
-      {
-        id: 'Q2',
-        text: 'When choosing pastries, what factors matter most to you? (Rank top 3)',
-        options: ['Taste', 'Price', 'Healthiness', 'Brand'],
-      },
-      {
-        id: 'Q3',
-        text: 'Would you be interested in healthier pastry options (e.g., reduced sugar, gluten-free, whole grains, plant-based ingredients)?',
-        options: ['Very interested', 'Somewhat interested', 'Not interested', 'Unsure'],
-      },
-    ],
-  },
-  {
-    title: 'Section 2: Perceptions & Acceptance',
-    questions: [
-      {
-        id: 'Q4',
-        text: 'Do you believe pastries can be made "healthier" without losing taste?',
-        options: ['Yes, definitely', 'Yes, possibly', 'No, not really', 'No, not at all'],
-      },
-      {
-        id: 'Q5',
-        text: 'If a healthy gourmet patisserie opened in Whitefield, how likely are you to try it?',
-        options: ['Very likely', 'Somewhat likely', 'Not likely', 'I would not try it'],
-      },
-      {
-        id: 'Q6',
-        text: 'What would make you choose a healthier pastry over a regular one?',
-        options: ['Better taste', 'Lower price', 'Clear nutritional info', 'Recommendation'],
-      },
-    ],
-  },
-  {
-    title: 'Section 3: Pricing & Purchase Intent',
-    questions: [
-      {
-        id: 'Q7',
-        text: 'What is your budget for a single pastry?',
-        options: ['Less than $3', '$3 - $5', '$5 - $7', 'More than $7'],
-      },
-      {
-        id: 'Q8',
-        text: 'How much more would you be willing to pay for a healthier pastry?',
-        options: ['Nothing extra', 'Up to 10% more', '10-25% more', 'More than 25% more'],
-      },
-      {
-        id: 'Q9',
-        text: 'Where do you typically buy pastries?',
-        options: ['Supermarket', 'Local bakery', 'Cafe/Coffee shop', 'Gourmet patisserie'],
-      },
-    ],
-  },
-];
+const makeId = () => Math.random().toString(36).slice(2, 8);
+
+const mapApiToSections = (apiSections: any[]): Section[] =>
+  (apiSections ?? []).map((sec: any) => ({
+    id: sec.id || makeId(),
+    title: sec.title || 'Section',
+    questions: (sec.questions ?? []).map((q: any) => ({
+      id: q.id || makeId(),
+      type: ((q.question_type || q.type || 'single_select') as QuestionType),
+      text: q.text || '',
+      required: q.required ?? false,
+      options: Array.isArray(q.options) ? q.options : [],
+    })),
+  }));
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -129,36 +91,47 @@ const Questionnaire: React.FC = () => {
 
   // ── State ─────────────────────────────────────────────────────────────────
 
+  const [sections, setSections] = useState<Section[]>([]);
   const [hasQuestionnaire, setHasQuestionnaire] = useState(false);
-  const [isGenerating,     setIsGenerating]     = useState(false);
-  const [showLoader,       setShowLoader]       = useState(false);
-  const [loaderMode,       setLoaderMode]       = useState<'generate' | 'upload'>('generate');
-  const [loaderReady,      setLoaderReady]      = useState(false);
-  const [showReadyToast,   setShowReadyToast]   = useState(false);
-  const [showUploadToast,  setShowUploadToast]  = useState(false);
-  const [uploadReady,      setUploadReady]      = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [showLoader, setShowLoader] = useState(false);
+  const [loaderMode, setLoaderMode] = useState<'generate' | 'upload'>('generate');
+  const [loaderReady, setLoaderReady] = useState(false);
+  const [showReadyToast, setShowReadyToast] = useState(false);
+  const [showUploadToast, setShowUploadToast] = useState(false);
+  const [uploadReady, setUploadReady] = useState(false);
+  const [uploadError, setUploadError] = useState<UploadError>(null);
 
-  // ── Upload validation error state ─────────────────────────────────────────
-  const [uploadError,      setUploadError]      = useState<UploadError>(null);
+  // ── Data fetching ─────────────────────────────────────────────────────────
 
-  /**
-   * Validates file against:
-   *   1. Format — must be PDF, Word, or Excel (by MIME + extension)
-   *   2. Size   — must be ≤ 2 MB
-   *
-   * Returns the error type if invalid, or null if valid.
-   */
-  const validateFile = (file: File): UploadError => {
-    // 1. Format check — MIME type first, then extension as fallback
+  // Fetch personas so we can pass their IDs to the generate API
+  const { data: personasData } = usePersonas(workspaceId, objectiveId);
+
+  // Fetch any already-generated questionnaire for this exploration
+  const {
+    data: existingQData,
+    isLoading: existingLoading,
+  } = useAllQuestionnairesForExploration(workspaceId, objectiveId);
+
+  // When existing questionnaire loads, hydrate the UI
+  useEffect(() => {
+    const apiSections: any[] = existingQData?.data ?? [];
+    if (apiSections.length > 0) {
+      setSections(mapApiToSections(apiSections));
+      setHasQuestionnaire(true);
+      if (objectiveId) {
+        localStorage.setItem(`quantitative_sub1_${objectiveId}`, '1');
+      }
+    }
+  }, [existingQData, objectiveId]);
+
+  // ── File validation ───────────────────────────────────────────────────────
+
+  const validateFile = (file: File): 'size' | 'format' | null => {
     const mimeOk = ALLOWED_MIME_TYPES.has(file.type);
-    const extOk  = ALLOWED_EXTENSIONS.some(ext =>
-      file.name.toLowerCase().endsWith(ext)
-    );
+    const extOk = ALLOWED_EXTENSIONS.some(ext => file.name.toLowerCase().endsWith(ext));
     if (!mimeOk && !extOk) return 'format';
-
-    // 2. Size check
     if (file.size > MAX_FILE_SIZE_BYTES) return 'size';
-
     return null;
   };
 
@@ -171,10 +144,31 @@ const Questionnaire: React.FC = () => {
     setIsGenerating(true);
 
     try {
-      await new Promise<void>((resolve) => setTimeout(resolve, 14_000));
+      const personas: any[] = personasData?.data ?? [];
+      const personaIds: string[] = personas.map((p: any) => p.id).filter(Boolean);
+
+      // Step 1: trigger LLM generation + DB store
+      await generateQuestionnaire({
+        workspaceId,
+        explorationId: objectiveId,
+        personaIds,
+        simulationId: undefined, // not available at questionnaire-design step (pre-population)
+      });
+
+      // Step 2: fetch sections from the authoritative /all endpoint so we never
+      // depend on the generate-response format (LLM may wrap output differently).
+      const freshData = await getAllQuestionnairesForExploration({
+        workspaceId,
+        explorationId: objectiveId,
+      });
+      const apiSections: any[] = freshData?.data ?? [];
+      setSections(mapApiToSections(apiSections));
+
       setLoaderReady(true);
     } catch (err) {
-      console.error('Generation failed:', err);
+      console.error('Questionnaire generation failed:', err);
+      setUploadError('api');
+      setTimeout(() => setUploadError(null), 6_000);
       setShowLoader(false);
     } finally {
       setIsGenerating(false);
@@ -182,41 +176,51 @@ const Questionnaire: React.FC = () => {
   };
 
   const handleUploadClick = () => {
-    // Clear any previous error before opening picker
     setUploadError(null);
     fileInputRef.current?.click();
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    // Reset input so the same file can be re-selected after an error
     e.target.value = '';
     if (!file) return;
 
-    // ── Run validations ────────────────────────────────────────────────────
     const errorType = validateFile(file);
     if (errorType) {
       setUploadError(errorType);
-      // Auto-dismiss error banner after 6 s
       setTimeout(() => setUploadError(null), 6_000);
       return;
     }
 
-    // ── Validation passed — proceed with upload flow ───────────────────────
     setUploadError(null);
     setLoaderMode('upload');
     setUploadReady(false);
     setShowLoader(true);
-
     setShowUploadToast(true);
     setTimeout(() => setShowUploadToast(false), 4000);
 
     try {
-      // TODO: replace with real upload API call
-      await new Promise<void>((resolve) => setTimeout(resolve, 18_000));
+      // Upload without simulation_id — questionnaire design step precedes population
+      await uploadQuestionnaire({
+        workspaceId,
+        explorationId: objectiveId,
+        simulationId: undefined as any,
+        file,
+      });
+
+      // Fetch from /all after store so we always read from the canonical DB state
+      const freshData = await getAllQuestionnairesForExploration({
+        workspaceId,
+        explorationId: objectiveId,
+      });
+      const apiSections: any[] = freshData?.data ?? [];
+      setSections(mapApiToSections(apiSections));
+
       setUploadReady(true);
     } catch (err) {
       console.error('Upload failed:', err);
+      setUploadError('api');
+      setTimeout(() => setUploadError(null), 6_000);
       setShowLoader(false);
       setUploadReady(false);
     }
@@ -227,11 +231,9 @@ const Questionnaire: React.FC = () => {
     setUploadReady(false);
     setLoaderReady(false);
     setHasQuestionnaire(true);
-
     if (objectiveId) {
       localStorage.setItem(`quantitative_sub1_${objectiveId}`, '1');
     }
-
     setShowReadyToast(true);
     setTimeout(() => setShowReadyToast(false), 4000);
   };
@@ -245,7 +247,7 @@ const Questionnaire: React.FC = () => {
     );
   };
 
-  // ── Upload error banner (Figma-accurate, shown before loader) ─────────────
+  // ── Upload error banner ───────────────────────────────────────────────────
 
   const UploadErrorBanner: React.FC = () => {
     if (!uploadError) return null;
@@ -278,7 +280,20 @@ const Questionnaire: React.FC = () => {
     );
   };
 
-  // ── Loader screen ─────────────────────────────────────────────────────────
+  // ── Loading state while fetching existing questionnaire ───────────────────
+
+  if (existingLoading) {
+    return (
+      <div className="qu-page qu-page--centered">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-secondary, #aaa)' }}>
+          <TbLoader size={22} style={{ animation: 'spin 1s linear infinite' }} />
+          <span>Loading questionnaire…</span>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Loader screen (generate / upload animation) ───────────────────────────
 
   if (showLoader) {
     return (
@@ -323,7 +338,6 @@ const Questionnaire: React.FC = () => {
           onChange={handleFileChange}
         />
 
-        {/* Error banner — floats above the card */}
         <div className="qu-error-portal">
           <UploadErrorBanner />
         </div>
@@ -365,7 +379,7 @@ const Questionnaire: React.FC = () => {
     );
   }
 
-  // ── Main questionnaire view — delegates to QuestionnaireGuide ─────────
+  // ── Main questionnaire view ───────────────────────────────────────────────
 
   return (
     <>
@@ -377,7 +391,6 @@ const Questionnaire: React.FC = () => {
         onChange={handleFileChange}
       />
 
-      {/* Error banner — floats at top of page */}
       <div className="qu-error-portal">
         <UploadErrorBanner />
       </div>
@@ -387,6 +400,7 @@ const Questionnaire: React.FC = () => {
         onUpload={handleUploadClick}
         showReadyToast={showReadyToast}
         onDismissToast={() => setShowReadyToast(false)}
+        initialSections={sections}
       />
     </>
   );

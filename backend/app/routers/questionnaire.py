@@ -210,9 +210,12 @@ async def generate_questionnaire_api(
     if not objective:
         raise HTTPException(404, "Research objective not found")
 
-    simulation = await get_simulation(payload.simulation_id)
-    if not simulation:
-        raise HTTPException(404, "Population simulation not found")
+    # simulation_id is optional — only validate when provided.
+    simulation = None
+    if payload.simulation_id:
+        simulation = await get_simulation(payload.simulation_id)
+        if not simulation:
+            raise HTTPException(404, "Population simulation not found")
 
     # Idempotency: reuse existing questionnaire instead of re-running the LLM.
     if payload.simulation_id:

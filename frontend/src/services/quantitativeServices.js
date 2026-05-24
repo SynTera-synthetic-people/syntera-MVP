@@ -1,4 +1,10 @@
 import axiosInstance from "../utils/axiosConfig";
+import API_CONFIG from "../config/apiConfig";
+
+const REPORT_DOWNLOAD_TIMEOUT = Math.max(
+  API_CONFIG.TIMEOUT || 0,
+  Number(import.meta.env.VITE_REPORT_TIMEOUT || 960000),
+);
 
 /** List saved population simulations for an exploration (newest can be restored with questionnaire). */
 export const listPopulationSimulations = async ({ workspaceId, explorationId }) => {
@@ -63,6 +69,14 @@ export const generateQuestionnaire = async ({ workspaceId, explorationId, person
 export const getAllQuestionnaires = async ({ workspaceId, explorationId, simulationId }) => {
   const response = await axiosInstance.get(
     `/workspaces/${workspaceId}/explorations/${explorationId}/questionnaire/allquestionnaires/${simulationId}`
+  );
+  return response.data;
+};
+
+/** Fetch all questionnaire sections for an exploration — no simulation_id needed. */
+export const getAllQuestionnairesForExploration = async ({ workspaceId, explorationId }) => {
+  const response = await axiosInstance.get(
+    `/workspaces/${workspaceId}/explorations/${explorationId}/questionnaire/all`
   );
   return response.data;
 };
@@ -195,7 +209,7 @@ export const previewSurvey = async ({ workspaceId, explorationId, simulationId }
 export const downloadQuantTranscripts = async ({ workspaceId, explorationId, simulationId }) => {
   const response = await axiosInstance.get(
     `/workspaces/${workspaceId}/explorations/${explorationId}/reports/quant/${simulationId}/transcripts`,
-    { responseType: 'blob' }
+    { responseType: 'blob', timeout: REPORT_DOWNLOAD_TIMEOUT }
   );
   return response.data;
 };
@@ -203,7 +217,7 @@ export const downloadQuantTranscripts = async ({ workspaceId, explorationId, sim
 export const downloadQuantDecisionIntelligence = async ({ workspaceId, explorationId, simulationId }) => {
   const response = await axiosInstance.get(
     `/workspaces/${workspaceId}/explorations/${explorationId}/reports/quant/${simulationId}/decision-intelligence`,
-    { responseType: 'blob' }
+    { responseType: 'blob', timeout: REPORT_DOWNLOAD_TIMEOUT }
   );
   return response.data;
 };
@@ -211,7 +225,7 @@ export const downloadQuantDecisionIntelligence = async ({ workspaceId, explorati
 export const downloadQuantBehaviorArchaeology = async ({ workspaceId, explorationId, simulationId }) => {
   const response = await axiosInstance.get(
     `/workspaces/${workspaceId}/explorations/${explorationId}/reports/quant/${simulationId}/behavior-archaeology`,
-    { responseType: 'blob' }
+    { responseType: 'blob', timeout: REPORT_DOWNLOAD_TIMEOUT }
   );
   return response.data;
 };

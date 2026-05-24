@@ -1,5 +1,5 @@
 import React from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useParams } from 'react-router-dom';
 import RunningInterviews from './RunningInterviews';
 import InterviewsCompleted from './InterviewsCompleted';
 
@@ -7,6 +7,10 @@ import InterviewsCompleted from './InterviewsCompleted';
 
 interface ChatViewLocationState {
   interviewsDone?: boolean;
+}
+
+interface ChatViewParams {
+  objectiveId?: string;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -21,9 +25,16 @@ interface ChatViewLocationState {
 
 const ChatView: React.FC = () => {
   const location = useLocation();
+  const { objectiveId } = useParams<ChatViewParams>();
   const state = location.state as ChatViewLocationState | null;
 
-  if (state?.interviewsDone) {
+  // Check localStorage so that resuming via "Continue" (no location.state) also
+  // skips re-running interviews when they were already completed.
+  const interviewsDoneInStorage = objectiveId
+    ? !!localStorage.getItem(`qualitative_sub2_${objectiveId}`)
+    : false;
+
+  if (state?.interviewsDone || interviewsDoneInStorage) {
     return <InterviewsCompleted />;
   }
 

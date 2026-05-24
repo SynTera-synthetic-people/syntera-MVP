@@ -23,70 +23,6 @@ interface Section {
 
 const makeId = () => Math.random().toString(36).slice(2, 8);
 
-const INITIAL_SECTIONS: Section[] = [
-    {
-        id: makeId(),
-        title: 'Section Name',
-        questions: [
-            {
-                id: makeId(),
-                type: 'multi_select',
-                text: 'Can you walk me through a recent challenge you faced in your startup?',
-                required: true,
-                options: ['Design', 'Dev', 'Lack of transparency in pricing', 'Too many steps or platforms involved', 'Managing changes, cancellations, or disruptions', 'Not knowing where to start', 'Difficulty coordinating multiple providers (flights, hotels, etc.)', 'Difficulty using or understanding loyalty programs'],
-            },
-            {
-                id: makeId(),
-                type: 'single_select',
-                text: 'Can you walk me through a recent challenge you faced in your startup?',
-                required: false,
-                options: ['Yes', 'No'],
-            },
-            {
-                id: makeId(),
-                type: 'rank_sort',
-                text: 'Can you walk me through a recent challenge you faced in your startup?',
-                required: false,
-                rankItems: ['Text text text text', 'Text text text text', 'Text text text text', 'Text text text text', 'Text text text text', 'Text text text text', 'Text text text text', 'Text text text text', 'Text text text text'],
-            },
-        ],
-    },
-    {
-        id: makeId(),
-        title: 'Section Name',
-        questions: [
-            {
-                id: makeId(),
-                type: 'multi_select',
-                text: 'Can you walk me through a recent challenge you faced in your startup?',
-                required: true,
-                options: ['Design', 'Dev', 'Lack of transparency in pricing', 'Too many steps or platforms involved', 'Managing changes, cancellations, or disruptions', 'Not knowing where to start', 'Difficulty coordinating multiple providers (flights, hotels, etc.)', 'Difficulty using or understanding loyalty programs'],
-            },
-            {
-                id: makeId(),
-                type: 'single_select',
-                text: 'Can you walk me through a recent challenge you faced in your startup?',
-                required: false,
-                options: ['Yes', 'No'],
-            },
-            {
-                id: makeId(),
-                type: 'rank_sort',
-                text: 'Can you walk me through a recent challenge you faced in your startup?',
-                required: false,
-                rankItems: ['Text text text text', 'Text text text text', 'Text text text text', 'Text text text text', 'Text text text text', 'Text text text text', 'Text text text text', 'Text text text text', 'Text text text text'],
-            },
-            {
-                id: makeId(),
-                type: 'single_select',
-                text: 'Can you walk me through a recent challenge you faced in your startup?',
-                required: false,
-                options: ['Yes', 'No'],
-            },
-        ],
-    },
-];
-
 // ── Question preview renderers ─────────────────────────────────────────────────
 
 const MAX_VISIBLE = 7;
@@ -529,6 +465,8 @@ interface QuestionnaireGuideProps {
     onUpload?: () => void;
     showReadyToast?: boolean;
     onDismissToast?: () => void;
+    /** Pre-populated sections from the backend (LLM-generated or uploaded). */
+    initialSections?: Section[];
 }
 
 const QuestionnaireGuide: React.FC<QuestionnaireGuideProps> = ({
@@ -536,8 +474,9 @@ const QuestionnaireGuide: React.FC<QuestionnaireGuideProps> = ({
     onUpload,
     showReadyToast = false,
     onDismissToast,
+    initialSections,
 }) => {
-    const [sections, setSections] = useState<Section[]>(INITIAL_SECTIONS);
+    const [sections, setSections] = useState<Section[]>(initialSections ?? []);
 
     const [modalOpen, setModalOpen] = useState(false);
     const [editTarget, setEditTarget] = useState<{ sectionId: string; question: Question | null } | null>(null);

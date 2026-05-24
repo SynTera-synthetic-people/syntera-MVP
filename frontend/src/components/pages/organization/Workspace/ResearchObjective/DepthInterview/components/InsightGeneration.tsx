@@ -182,11 +182,14 @@ const InsightGeneration: React.FC = () => {
   const { data: explorationData } = useExploration(objectiveId);
   const updateExplorationMutation = useUpdateExplorationMethod();
 
+  const _apiData = (explorationData as any)?.data ?? (explorationData as any) ?? {};
+  const _isQual = !!_apiData?.is_qualitative;
+  const _isQuant = !!_apiData?.is_quantitative;
+  const _derivedFromFlags = _isQual && _isQuant ? 'both' : _isQual ? 'qualitative' : _isQuant ? 'quantitative' : '';
   const researchApproach = (
-    (explorationData as any)?.data?.research_approach ||
-    (explorationData as any)?.research_approach ||
+    _apiData?.research_approach ||
     localStorage.getItem(`approach_${objectiveId}`) ||
-    ''
+    _derivedFromFlags
   ).toLowerCase().trim();
 
   // ── Generate handlers ─────────────────────────────────────────────────────
