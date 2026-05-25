@@ -145,19 +145,21 @@ const Sidebar: React.FC = () => {
     setIsCollapsed(false);
   };
 
-  const handleSidebarMouseLeave = (e: React.MouseEvent<HTMLDivElement>) => {
-    isMouseInSidebarRef.current = false;
-    const relatedTarget = e.relatedTarget as Node | null;
-    const movingToProfile = relatedTarget ? profileMenuRef.current?.contains(relatedTarget) : false;
-    if (!movingToProfile && !showProfileMenu) {
-      collapseTimeoutRef.current = setTimeout(() => {
-        if (!isMouseInSidebarRef.current && !isMouseInProfilePopupRef.current) {
-          setIsCollapsed(true);
-          setShowWorkspaceDropdown(false);
-        }
-      }, 300);
-    }
-  };
+// AFTER
+const handleSidebarMouseLeave = (e: React.MouseEvent<HTMLDivElement>) => {
+  isMouseInSidebarRef.current = false;
+  const relatedTarget = e.relatedTarget as Node | null;
+  const movingToProfile = relatedTarget ? profileMenuRef.current?.contains(relatedTarget) : false;
+  if (!movingToProfile) {
+    collapseTimeoutRef.current = setTimeout(() => {
+      if (!isMouseInSidebarRef.current && !isMouseInProfilePopupRef.current) {
+        setIsCollapsed(true);
+        setShowWorkspaceDropdown(false);
+        setShowProfileMenu(false);   // ← add this
+      }
+    }, 300);
+  }
+};
 
   useEffect(() => {
     const handleProfilePopupEnter = () => {

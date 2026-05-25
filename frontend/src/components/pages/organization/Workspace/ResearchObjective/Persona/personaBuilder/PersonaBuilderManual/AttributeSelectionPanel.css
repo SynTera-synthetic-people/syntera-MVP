@@ -224,3 +224,74 @@
     width: 140px;
   }
 }
+/* ── Geography custom input wrapper ── */
+.attribute-selection__geo-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.attribute-selection__geo-custom-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Warn state on input */
+.attribute-selection__custom-input--warn {
+  border-color: #f59e0b;
+}
+.attribute-selection__custom-input--warn:focus {
+  border-color: #f59e0b;
+}
+
+/* ── Spell-check prompt bar ── */
+.attribute-selection__spell-prompt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: 8px;
+  font-size: 13px;
+  color: #fbbf24;
+  flex-wrap: wrap;
+}
+
+.attribute-selection__spell-prompt--unknown {
+  background: rgba(239, 68, 68, 0.07);
+  border-color: rgba(239, 68, 68, 0.22);
+  color: #f87171;
+}
+
+.attribute-selection__spell-icon {
+  flex-shrink: 0;
+}
+
+.attribute-selection__spell-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  font-family: inherit;
+  transition: opacity 0.15s;
+  white-space: nowrap;
+}
+
+.attribute-selection__spell-btn--accept {
+  background: #f59e0b;
+  color: #0a0f14;
+}
+.attribute-selection__spell-btn--accept:hover { opacity: 0.88; }
+
+.attribute-selection__spell-btn--keep {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.75);
+}
+.attribute-selection__spell-btn--keep:hover { background: rgba(255, 255, 255, 0.13); }

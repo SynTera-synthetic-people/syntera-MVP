@@ -146,9 +146,9 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
         setMessages([
           {
             sender: 'bot',
-            text: `Hey, I'm ${selectedPersonaName}. You bring the curiosity, I'll handle the heavy lifting.`,
+            text: `Hey, I’m ,${selectedPersonaName}.I’m here and ready for all your what-ifs, curiosities, and tough questions`,
             timestamp: new Date().toISOString(),
-          },
+          }
         ]);
         setInterviewId(id);
         setIsChatActive(true);
