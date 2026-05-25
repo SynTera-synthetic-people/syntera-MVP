@@ -85,12 +85,7 @@ const PersonaBuilderManual: React.FC = () => {
     const [highlightedSubTab, setHighlightedSubTab] = useState<string | null>(null);
     const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const demographicItems = getCategoryItems('Demographics');
-    const psychologicalItems = getCategoryItems('Psychological');
-    const behaviouralItems = getCategoryItems('Behavioural');
-    const hasMinimumData =
-        demographicItems.some((item) => completedSubTabs.has(item)) &&
-        psychologicalItems.some((item) => completedSubTabs.has(item)) &&
-        behaviouralItems.some((item) => completedSubTabs.has(item));
+    const hasMinimumData = demographicItems.some((item) => completedSubTabs.has(item));
 
     // ── Init ───────────────────────────────────────────────────────────────────
 
