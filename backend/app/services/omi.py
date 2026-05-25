@@ -79,7 +79,7 @@ async def get_or_create_session(exploration_id: str, user_id: str) -> OmiSession
         await add_message(
             omi_session.id,
             "omi",
-            "Hey, I'm Omi—your research co-pilot! 👋 Ready to define your research objectives? Let's start by understanding what you want to explore. What's the question or curiosity that brought you here today?",
+            "Hey, I'm Omi - your research co-pilot! 👋 Ready to define your research objectives? Let's start by understanding what you want to explore. What's the question or curiosity that brought you here today?",
             "greeting",
             WorkflowStage.RESEARCH_OBJECTIVES,
             OmiState.GREETING
@@ -130,7 +130,7 @@ async def get_or_create_session_org(organization_id: str, user_id: str) -> OmiSe
         await add_message(
             omi_session.id,
             "omi",
-            "Hey, I'm Omi—your research co-pilot! 👋 I'm here to guide you through creating amazing research. Ready to set up your first workspace? Let's make this fun and easy!",
+            "Hey, I'm Omi - your research co-pilot! 👋 I'm here to guide you through creating amazing research. Ready to set up your first workspace? Let's make this fun and easy!",
             "greeting",
             WorkflowStage.ORGANIZATION_SETUP,
             OmiState.GREETING
