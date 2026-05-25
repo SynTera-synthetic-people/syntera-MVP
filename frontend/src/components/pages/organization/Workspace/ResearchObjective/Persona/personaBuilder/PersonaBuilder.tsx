@@ -447,6 +447,7 @@ const ReplicatePersonaModal: React.FC<ReplicatePersonaModalProps> = ({
   const [agreed, setAgreed] = useState(false);
   const [personaDropdownOpen, setPersonaDropdownOpen] = useState(false);
   const [countryDropdownOpen, setCountryDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!show) return;
@@ -457,10 +458,26 @@ const ReplicatePersonaModal: React.FC<ReplicatePersonaModalProps> = ({
     setCountryDropdownOpen(false);
   }, [show, preSelectedPersona]);
 
+  // Close dropdowns on outside click
+  useEffect(() => {
+    if (!personaDropdownOpen && !countryDropdownOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setPersonaDropdownOpen(false);
+        setCountryDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [personaDropdownOpen, countryDropdownOpen]);
+
+  // Auto-close persona dropdown when all personas selected
   const togglePersona = (id: string) => {
-    setSelectedPersonaIds(prev =>
-      prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]
-    );
+    setSelectedPersonaIds(prev => {
+      const next = prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id];
+      if (next.length === personas.length) setPersonaDropdownOpen(false);
+      return next;
+    });
   };
 
   const removePersona = (id: string) => {
@@ -500,86 +517,89 @@ const ReplicatePersonaModal: React.FC<ReplicatePersonaModalProps> = ({
               Test the same audience in multiple countries to uncover how behavior, preferences, and decisions shift by market.
             </p>
 
-            {/* Persona selector */}
-            <div className="pb-dropdown-wrap">
-              <button
-                className="pb-dropdown-btn"
-                onClick={() => { setPersonaDropdownOpen(o => !o); setCountryDropdownOpen(false); }}
-              >
-                <span className="pb-dropdown-placeholder">Choose Personas</span>
-                <TbChevronRight size={16} className={`pb-dropdown-chevron${personaDropdownOpen ? ' pb-dropdown-chevron--open' : ''}`} />
-              </button>
-              <AnimatePresence>
-                {personaDropdownOpen && (
-                  <motion.div
-                    className="pb-dropdown-list"
-                    initial={{ opacity: 0, y: -6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -6 }}
-                  >
-                    {personas.map(p => (
-                      <label key={p.id} className="pb-dropdown-option">
-                        <input
-                          type="checkbox"
-                          checked={selectedPersonaIds.includes(p.id)}
-                          onChange={() => togglePersona(p.id)}
-                          className="pb-dropdown-checkbox"
-                        />
-                        <span>{p.name ?? 'Unnamed'}</span>
-                      </label>
-                    ))}
-                  </motion.div>
+            {/* Wrapper div with ref to catch outside clicks for both dropdowns */}
+            <div ref={dropdownRef}>
+              {/* Persona selector */}
+              <div className="pb-dropdown-wrap">
+                <button
+                  className="pb-dropdown-btn"
+                  onClick={() => { setPersonaDropdownOpen(o => !o); setCountryDropdownOpen(false); }}
+                >
+                  <span className="pb-dropdown-placeholder">Choose Personas</span>
+                  <TbChevronRight size={16} className={`pb-dropdown-chevron${personaDropdownOpen ? ' pb-dropdown-chevron--open' : ''}`} />
+                </button>
+                <AnimatePresence>
+                  {personaDropdownOpen && (
+                    <motion.div
+                      className="pb-dropdown-list"
+                      initial={{ opacity: 0, y: -6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -6 }}
+                    >
+                      {personas.map(p => (
+                        <label key={p.id} className="pb-dropdown-option">
+                          <input
+                            type="checkbox"
+                            checked={selectedPersonaIds.includes(p.id)}
+                            onChange={() => togglePersona(p.id)}
+                            className="pb-dropdown-checkbox"
+                          />
+                          <span>{p.name ?? 'Unnamed'}</span>
+                        </label>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+                {/* Tags */}
+                {selectedPersonaIds.length > 0 && (
+                  <div className="pb-tag-row">
+                    {selectedPersonaIds.map(id => {
+                      const p = personas.find(p => p.id === id);
+                      return (
+                        <span key={id} className="pb-tag">
+                          {p?.name ?? 'Persona'}
+                          <button className="pb-tag-remove" onClick={() => removePersona(id)}><TbX size={10} /></button>
+                        </span>
+                      );
+                    })}
+                  </div>
                 )}
-              </AnimatePresence>
-              {/* Tags */}
-              {selectedPersonaIds.length > 0 && (
-                <div className="pb-tag-row">
-                  {selectedPersonaIds.map(id => {
-                    const p = personas.find(p => p.id === id);
-                    return (
-                      <span key={id} className="pb-tag">
-                        {p?.name ?? 'Persona'}
-                        <button className="pb-tag-remove" onClick={() => removePersona(id)}><TbX size={10} /></button>
-                      </span>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+              </div>
 
-            {/* Country selector */}
-            <div className="pb-dropdown-wrap" style={{ marginTop: 12 }}>
-              <button
-                className="pb-dropdown-btn"
-                onClick={() => { setCountryDropdownOpen(o => !o); setPersonaDropdownOpen(false); }}
-              >
-                <span className="pb-dropdown-placeholder">
-                  {selectedCountryObj
-                    ? <>{selectedCountryObj.name} {selectedCountryObj.flag}</>
-                    : 'Select Country'}
-                </span>
-                <TbChevronRight size={16} className={`pb-dropdown-chevron${countryDropdownOpen ? ' pb-dropdown-chevron--open' : ''}`} />
-              </button>
-              <AnimatePresence>
-                {countryDropdownOpen && (
-                  <motion.div
-                    className="pb-dropdown-list"
-                    initial={{ opacity: 0, y: -6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -6 }}
-                  >
-                    {COUNTRIES.map(c => (
-                      <button
-                        key={c.code}
-                        className={`pb-dropdown-option pb-dropdown-option--btn${selectedCountry === c.code ? ' pb-dropdown-option--selected' : ''}`}
-                        onClick={() => { setSelectedCountry(c.code); setCountryDropdownOpen(false); }}
-                      >
-                        {c.flag} {c.name}
-                      </button>
-                    ))}
-                  </motion.div>
-                )}
-              </AnimatePresence>
+              {/* Country selector */}
+              <div className="pb-dropdown-wrap" style={{ marginTop: 12 }}>
+                <button
+                  className="pb-dropdown-btn"
+                  onClick={() => { setCountryDropdownOpen(o => !o); setPersonaDropdownOpen(false); }}
+                >
+                  <span className="pb-dropdown-placeholder">
+                    {selectedCountryObj
+                      ? <>{selectedCountryObj.name} {selectedCountryObj.flag}</>
+                      : 'Select Country'}
+                  </span>
+                  <TbChevronRight size={16} className={`pb-dropdown-chevron${countryDropdownOpen ? ' pb-dropdown-chevron--open' : ''}`} />
+                </button>
+                <AnimatePresence>
+                  {countryDropdownOpen && (
+                    <motion.div
+                      className="pb-dropdown-list"
+                      initial={{ opacity: 0, y: -6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -6 }}
+                    >
+                      {COUNTRIES.map(c => (
+                        <button
+                          key={c.code}
+                          className={`pb-dropdown-option pb-dropdown-option--btn${selectedCountry === c.code ? ' pb-dropdown-option--selected' : ''}`}
+                          onClick={() => { setSelectedCountry(c.code); setCountryDropdownOpen(false); }}
+                        >
+                          {c.flag} {c.name}
+                        </button>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
             </div>
 
             {/* Pricing */}

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { TbPencil, TbTrash } from 'react-icons/tb';
+import { TbTrash } from 'react-icons/tb';
 import SpIcon from '../../../SPIcon';
 import { useSelector, useDispatch } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
@@ -7,38 +7,28 @@ import { DeleteAccountModal } from '../SettingModal';
 import { updateUser, logout } from '../../../../redux/slices/authSlice';
 import axiosInstance from '../../../../utils/axiosConfig';
 import { useQueryClient } from '@tanstack/react-query';
+import { useAutoSaveContext } from '../Settings';
 import './AccountStyles.css';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-/**
- * RootState — mirrors the auth slice shape used across Settings, UpgradeModal,
- * and Upgrade. All fields optional because the slice is populated incrementally.
- */
 interface AuthUser {
-  // Identity
   first_name?: string;
   last_name?: string;
-  full_name?: string;           // fallback if backend sends a single full-name field
+  full_name?: string;
   email?: string;
   phone?: string;
-
-  // Role / tier
   role?: string;
   user_type?: string;
   account_tier?: string;
   is_admin?: boolean;
   is_trial?: boolean;
-
-  // Quota
   exploration_count?: number;
   trial_exploration_limit?: number;
-
-  // Profile
   avatar_url?: string;
-  profile_picture?: string;  // alternate key some backends use
-  created_at?: string;       // e.g. "2024-01-15T..."
-  member_since?: string;     // pre-formatted alternative
+  profile_picture?: string;
+  created_at?: string;
+  member_since?: string;
 }
 
 interface RootState {
@@ -67,64 +57,35 @@ interface ProfileErrors {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/** Format an ISO date string → "Jan 2024" */
 const formatMemberSince = (dateStr?: string): string => {
   if (!dateStr) return '';
   try {
-    return new Date(dateStr).toLocaleDateString('en-US', {
-      month: 'short',
-      year: 'numeric',
-    });
+    return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
   } catch {
     return dateStr;
   }
 };
 
-/**
- * Derive a human-readable role label from the user object.
- * Prefers explicit role/user_type strings; falls back to tier.
- */
 const deriveRoleLabel = (user: AuthUser): string => {
-  if (user.role) {
-    // Capitalise first letter, replace underscores with spaces
-    return user.role.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-  }
-  if (user.user_type) {
-    return user.user_type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-  }
-  if (user.account_tier) {
-    return user.account_tier.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-  }
+  if (user.role) return user.role.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  if (user.user_type) return user.user_type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  if (user.account_tier) return user.account_tier.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
   return '';
 };
 
-/** Build ProfileState from the Redux user object. */
 const buildProfileFromUser = (user: AuthUser | null): ProfileState => {
   if (!user) {
-    return {
-      firstName: '',
-      lastName: '',
-      email: '',
-      phone: '',
-      role: '',
-      memberSince: '',
-      avatarUrl: null,
-    };
+    return { firstName: '', lastName: '', email: '', phone: '', role: '', memberSince: '', avatarUrl: null };
   }
-
-  // Support both split first/last and a single `full_name` field
   const firstName = user.first_name ?? (user.full_name?.split(' ')[0] ?? '');
   const lastName = user.last_name ?? (user.full_name?.split(' ').slice(1).join(' ') ?? '');
-
   return {
     firstName,
     lastName,
     email: user.email ?? '',
-    phone: user.phone ?? '',          // blank if not provided
+    phone: user.phone ?? '',
     role: deriveRoleLabel(user),
-    memberSince: user.member_since
-      ? user.member_since
-      : formatMemberSince(user.created_at),
+    memberSince: user.member_since ? user.member_since : formatMemberSince(user.created_at),
     avatarUrl: user.avatar_url ?? user.profile_picture ?? null,
   };
 };
@@ -137,51 +98,68 @@ const Account: React.FC = () => {
   const queryClient = useQueryClient();
   const { user } = useSelector((state: RootState) => state.auth);
 
-  const [profile, setProfile] = useState<ProfileState>(() =>
-    buildProfileFromUser(user),
-  );
+  // Notify the parent Settings topbar autosave indicator
+  const { recordSave } = useAutoSaveContext();
 
+  const [profile, setProfile] = useState<ProfileState>(() => buildProfileFromUser(user));
+
+  // ── Keep a ref always pointing at the latest profile so the debounced
+  //    save callback never reads a stale closure value ─────────────────────
+  const profileRef = useRef<ProfileState>(profile);
   useEffect(() => {
-    setProfile(buildProfileFromUser(user));
+    profileRef.current = profile;
+  });
+
+  // ── Only initialise from Redux on first mount, never overwrite user edits ─
+  const hasInitializedRef = useRef(false);
+  useEffect(() => {
+    if (!hasInitializedRef.current && user) {
+      setProfile(buildProfileFromUser(user));
+      hasInitializedRef.current = true;
+    }
   }, [user]);
 
   const [errors, setErrors] = useState<ProfileErrors>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [savedAt, setSavedAt] = useState<string | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
-  ) => {
-    const { name, value } = e.target;
-    setProfile((prev) => ({ ...prev, [name]: value }));
-    setErrors((prev) => ({ ...prev, [name]: undefined }));
-  };
+  // ── Cleanup debounce on unmount ───────────────────────────────────────────
+  useEffect(() => {
+    return () => {
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    };
+  }, []);
 
-  const validate = (): boolean => {
-    const next: ProfileErrors = {};
-    if (!profile.firstName.trim()) next.firstName = 'First name is required.';
-    if (!profile.lastName.trim()) next.lastName = 'Last name is required.';
-    if (!profile.email.trim()) next.email = 'Email is required.';
-    setErrors(next);
-    return Object.keys(next).length === 0;
-  };
-
+  // ── Save — always reads from profileRef so it gets the latest values ─────
   const handleSave = async () => {
-    if (!validate()) return;
+    const currentProfile = profileRef.current;
+
+    // Inline validation against the latest profile
+    const next: ProfileErrors = {};
+    if (!currentProfile.firstName.trim()) next.firstName = 'First name is required.';
+    if (!currentProfile.lastName.trim()) next.lastName = 'Last name is required.';
+    if (!currentProfile.email.trim()) next.email = 'Email is required.';
+    if (Object.keys(next).length > 0) {
+      setErrors(next);
+      return;
+    }
+
     setSaving(true);
     setSaveError(null);
     try {
       const res = await axiosInstance.patch('/auth/me', {
-        first_name: profile.firstName,
-        last_name: profile.lastName,
-        phone: profile.phone || null,
+        first_name: currentProfile.firstName,
+        last_name: currentProfile.lastName,
+        phone: currentProfile.phone || null,
       });
-      // Sync updated name/phone back into Redux so all components reflect the change
       if (res.data?.data) {
+        // Update Redux but do NOT reset local profile state — user may still
+        // be typing. The ref pattern above keeps everything in sync.
         dispatch(updateUser({
           full_name: res.data.data.full_name,
           first_name: res.data.data.first_name,
@@ -189,13 +167,27 @@ const Account: React.FC = () => {
           phone: res.data.data.phone,
         }));
       }
-      const now = new Date();
-      setSavedAt(`${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}`);
+      // Tell the parent Settings topbar to update "Auto saved: X sec ago"
+      recordSave();
     } catch (err: any) {
       setSaveError(err?.message || err?.response?.data?.message || 'Failed to save profile.');
     } finally {
       setSaving(false);
     }
+  };
+
+  // ── Change handler with debounced autosave ────────────────────────────────
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    setProfile((prev) => ({ ...prev, [name]: value }));
+    setErrors((prev) => ({ ...prev, [name]: undefined }));
+
+    // Debounce: fire save 1.5s after the user stops typing.
+    // handleSave reads from profileRef so it always sees the latest value.
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(() => {
+      handleSave();
+    }, 1500);
   };
 
   const handleAvatarClick = () => fileInputRef.current?.click();
@@ -207,25 +199,17 @@ const Account: React.FC = () => {
     setProfile((prev) => ({ ...prev, avatarUrl: url }));
   };
 
-  const handleDeleteAccount = () => {
-    setShowDeleteModal(true);
-  };
+  const handleDeleteAccount = () => setShowDeleteModal(true);
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <>
       <div className="ap-page">
 
-        {/* Auto-save indicator */}
-        {savedAt && (
-          <div className="ap-autosave">
-            <span className="ap-autosave-dot" />
-            Saved at {savedAt}
-          </div>
-        )}
+        {/* Inline save error only — the autosave indicator lives in Settings topbar */}
         {saveError && (
-          <div className="ap-autosave" style={{ color: '#e55' }}>
-            {saveError}
-          </div>
+          <p className="ap-save-error">{saveError}</p>
         )}
 
         {/* Profile card */}
@@ -300,7 +284,7 @@ const Account: React.FC = () => {
               </div>
             </div>
 
-            {/* Email — read-only, populated from auth */}
+            {/* Email — read-only */}
             <div className="ap-field">
               <label className="ap-label">
                 Email Address <span className="ap-required">*</span>
@@ -317,7 +301,7 @@ const Account: React.FC = () => {
               {errors.email && <p className="ap-error">{errors.email}</p>}
             </div>
 
-            {/* Phone — left blank if not available from backend */}
+            {/* Phone */}
             <div className="ap-field">
               <label className="ap-label">Phone Number</label>
               <input
@@ -329,7 +313,7 @@ const Account: React.FC = () => {
               />
             </div>
 
-            {/* Role — derived from user.role / user_type / account_tier */}
+            {/* Role */}
             <div className="ap-field">
               <label className="ap-label">Your Role</label>
               <textarea

@@ -35,7 +35,7 @@ type PendingValidationType =
 
 // ── File validation constants ─────────────────────────────────────────────────
 
-const MAX_FILE_SIZE_MB    = 2;
+const MAX_FILE_SIZE_MB = 2;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 
 const ALLOWED_MIME_TYPES = new Set([
@@ -64,7 +64,7 @@ const getUploadErrorMessage = (errorType: UploadError): { title: string; subtitl
 
 const validateFile = (file: File): UploadError => {
   const mimeOk = ALLOWED_MIME_TYPES.has(file.type);
-  const extOk  = ALLOWED_EXTENSIONS.some(ext => file.name.toLowerCase().endsWith(ext));
+  const extOk = ALLOWED_EXTENSIONS.some(ext => file.name.toLowerCase().endsWith(ext));
   if (!mimeOk && !extOk) return 'format';
   if (file.size > MAX_FILE_SIZE_BYTES) return 'size';
   return null;
@@ -225,9 +225,9 @@ const DepthInterview: React.FC = () => {
     refetch: refetchGuide, generateGuide, isGenerating, generationError, shouldAutoGenerate,
   } = useDiscussionGuideWithAutoGenerate(workspaceId, objectiveId);
 
-  const createSectionMutation  = useCreateSection(workspaceId!, objectiveId!);
-  const updateSectionMutation  = useUpdateSection(workspaceId!, objectiveId!);
-  const deleteSectionMutation  = useDeleteSection(workspaceId!, objectiveId!);
+  const createSectionMutation = useCreateSection(workspaceId!, objectiveId!);
+  const updateSectionMutation = useUpdateSection(workspaceId!, objectiveId!);
+  const deleteSectionMutation = useDeleteSection(workspaceId!, objectiveId!);
   const createQuestionMutation = useCreateQuestion(workspaceId!, objectiveId!);
   const updateQuestionMutation = useUpdateQuestion(workspaceId!, objectiveId!);
   const deleteQuestionMutation = useDeleteQuestion(workspaceId!, objectiveId!);
@@ -237,30 +237,30 @@ const DepthInterview: React.FC = () => {
 
   // ── UI state ──────────────────────────────────────────────────────────────
 
-  const [showChat,       setShowChat]       = useState(false);
-  const [showLoader,     setShowLoader]     = useState(false);
+  const [showChat, setShowChat] = useState(false);
+  const [showLoader, setShowLoader] = useState(false);
   const [showReadyToast, setShowReadyToast] = useState(false);
-  const [openKebabId,    setOpenKebabId]    = useState<string | null>(null);
-  const [loaderMode,     setLoaderMode]     = useState<'generate' | 'upload'>('generate');
+  const [openKebabId, setOpenKebabId] = useState<string | null>(null);
+  const [loaderMode, setLoaderMode] = useState<'generate' | 'upload'>('generate');
   const [showUploadToast, setShowUploadToast] = useState(false);
-  const [uploadReady,    setUploadReady]    = useState(false);
+  const [uploadReady, setUploadReady] = useState(false);
 
   // ── Upload validation error ───────────────────────────────────────────────
   const [uploadError, setUploadError] = useState<UploadError>(null);
 
   type ModalState =
-    | { type: 'editSection';    sectionId: string; currentTitle: string }
+    | { type: 'editSection'; sectionId: string; currentTitle: string }
     | { type: 'addSection' }
-    | { type: 'editQuestion';   questionId: string; currentText: string }
-    | { type: 'addQuestion';    sectionId: string }
-    | { type: 'deleteSection';  sectionId: string }
+    | { type: 'editQuestion'; questionId: string; currentText: string }
+    | { type: 'addQuestion'; sectionId: string }
+    | { type: 'deleteSection'; sectionId: string }
     | { type: 'deleteQuestion'; questionId: string }
     | null;
 
   const [modal, setModal] = useState<ModalState>(null);
 
-  const [showValidationModal,   setShowValidationModal]   = useState(false);
-  const [validationReason,      setValidationReason]      = useState('');
+  const [showValidationModal, setShowValidationModal] = useState(false);
+  const [validationReason, setValidationReason] = useState('');
   const [pendingValidationData, setPendingValidationData] = useState<PendingValidationType | null>(null);
 
   // ── Effects ───────────────────────────────────────────────────────────────
@@ -362,12 +362,12 @@ const DepthInterview: React.FC = () => {
     setValidationReason('');
     setPendingValidationData(null);
     try {
-      if (data.type === 'updateQuestion')      await saveQuestion(data.questionId, data.text, true);
+      if (data.type === 'updateQuestion') await saveQuestion(data.questionId, data.text, true);
       else if (data.type === 'createQuestion') await addQuestion(data.sectionId, data.text, true);
-      else if (data.type === 'updateSection')  await saveSection(data.sectionId, data.title, true);
-      else if (data.type === 'createSection')  await addSection(data.title, true);
+      else if (data.type === 'updateSection') await saveSection(data.sectionId, data.title, true);
+      else if (data.type === 'createSection') await addSection(data.title, true);
       else if (data.type === 'deleteQuestion') await deleteQuestion(data.questionId, true);
-      else if (data.type === 'deleteSection')  await deleteSection(data.sectionId, true);
+      else if (data.type === 'deleteSection') await deleteSection(data.sectionId, true);
     } catch (e) { console.error(e); }
   };
 
@@ -715,6 +715,10 @@ const DepthInterview: React.FC = () => {
           </div>
 
           <div className="di-start-interview-bar">
+            <button className="di-download-guide-btn" onClick={() => {/* TODO: wire download handler */ }}>
+              Download Discussion Guide
+              <SpIcon name="sp-File-File_Download" size={24} />
+            </button>
             <button className="di-start-interview-btn" onClick={handleStartInterview}>
               Start Interview
               <SpIcon name="sp-Arrow-Arrow_Right_SM" size={16} />
