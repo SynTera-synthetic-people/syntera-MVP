@@ -263,102 +263,185 @@ async def get_section_description_by_question_id(question_id: str):
 
 
 async def ai_generate_persona(exploration_id, workspace_id, current_user_id):
+    """
+    Generate 2 personas in parallel for maximum speed.
+    Each persona is generated in a separate API call concurrently.
+    """
     description = await get_description(exploration_id)
 
-    prompt = PERSONA_GENERATION_PROMPT.format(
-    research_objective=description
-)
+    # Import the split prompts
+    from app.services.auto_generated_persona_prompts import (
+        PERSONA_GENERATION_BASE_INSTRUCTIONS,
+        RESEARCH_OBJECTIVE_PROMPT
+    )
 
-    response = await client.responses.create(
-        model="gpt-5",
-        reasoning={"effort": "low"},
-        tools=[
-            {
-                "type": "web_search",
-                "filters": {
-                    "allowed_domains": [
-                        "www.quora.com",
-                        "www.reddit.com",
-                        "www.youtube.com",
-                        "x.com",
-                        "www.capterra.in",
-                        "www.linkedin.com",
-                        "medium.com",
+    # ============================================================================
+    # PARALLEL PERSONA GENERATION
+    # ============================================================================
+    
+    async def generate_single_persona(persona_number: int):
+        """
+        Generate a single persona via API call.
+        """
+        # Format dynamic prompt - specify this is persona N of 2
+        dynamic_prompt = f"""
+{RESEARCH_OBJECTIVE_PROMPT.format(research_objective=description)}
+
+Generate exactly 1 high-quality persona (Persona #{persona_number} of 2 total).
+Ensure this persona represents a distinct behavioral segment from other personas.
+"""
+
+        # API call with caching
+        response = await client.responses.create(
+            model="gpt-5",
+            reasoning={"effort": "low"},
+            tools=[
+                {
+                    "type": "web_search",
+                    "filters": {
+                        "allowed_domains": [
+                            "www.quora.com",
+                            "www.reddit.com",
+                            "www.youtube.com",
+                            "x.com",
+                            "www.capterra.in",
+                            "www.linkedin.com",
+                            "medium.com",
+                        ]
+                    },
+                }
+            ],
+            input=[
+                {
+                    "role": "system",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": PERSONA_GENERATION_BASE_INSTRUCTIONS,  # ← Cached
+                            "cache_control": {"type": "ephemeral"}
+                        }
                     ]
                 },
-            }
-        ],
-        input=[{"role": "user", "content": f"{prompt}"}],
-    )
-    response_text = response.output_text
-
-    data = json.loads(response_text)
-    customer_personas = data.get("consumer_personas", "")
-    response = {"personas": []}
-    if customer_personas:
-        for persona in customer_personas:
-            persona["auto_generated_persona"] = True
-            reference_sites = persona["reference_sites_with_usage"]
-            site_counter = dict(
-                Counter(urlparse(url).netloc for url in reference_sites)
-            )
-            persona["researched_sites"] = site_counter
-
-            data = SimpleNamespace(**persona)
-            persona_id = generate_id()
-            persona["id"] = persona_id
-
-            async with AsyncSession(async_engine) as session:
-                p = Persona(
-                    id=persona_id,
-                    exploration_id=exploration_id,
-                    workspace_id=workspace_id,
-                    name=getattr(data, "name", ""),
-                    age_range=getattr(data, "age_range", ""),
-                    gender=getattr(data, "gender", ""),
-                    location_country=getattr(data, "location_country", ""),
-                    location_state=getattr(data, "location_state", ""),
-                    education_level=getattr(data, "education_level", ""),
-                    occupation=getattr(data, "occupation", ""),
-                    income_range=getattr(data, "income_range", ""),
-                    family_size=getattr(data, "family_size", ""),
-                    geography=getattr(data, "geography", ""),
-                    lifestyle=getattr(data, "lifestyle", ""),
-                    values=getattr(data, "values", ""),
-                    personality=getattr(data, "personality", ""),
-                    interests=getattr(data, "interests", ""),
-                    motivations=getattr(data, "motivations", ""),
-                    brand_sensitivity=getattr(data, "brand_sensitivity", ""),
-                    price_sensitivity=getattr(data, "price_sensitivity", ""),
-                    mobility=getattr(data, "mobility", ""),
-                    accommodation=getattr(data, "accommodation", ""),
-                    marital_status=getattr(data, "marital_status", ""),
-                    daily_rhythm=getattr(data, "daily_rhythm", ""),
-                    hobbies=getattr(data, "hobbies", ""),
-                    professional_traits=getattr(data, "professional_traits", ""),
-                    digital_activity=getattr(data, "digital_activity", ""),
-                    preferences=getattr(data, "preferences", ""),
-                    backstory=getattr(data, "backstory", ""),
-                    created_by=current_user_id,
-                    persona_details=persona,
-                    auto_generated_persona=True,
-                    calibration_confidence=_extract_calibration_confidence(persona),
-                )
-
-                session.add(p)
-                await session.commit()
-                await session.refresh(p)
-
-            response["personas"].append(
                 {
+                    "role": "user",
+                    "content": dynamic_prompt
+                }
+            ],
+        )
+        
+        return response.output_text
+
+    # ============================================================================
+    # EXECUTE BOTH CALLS IN PARALLEL
+    # ============================================================================
+    
+    print("\n🚀 Starting parallel persona generation (2 concurrent API calls)...")
+    start_time = asyncio.get_event_loop().time()
+    
+    # Launch both API calls simultaneously
+    results = await asyncio.gather(
+        generate_single_persona(1),
+        generate_single_persona(2),
+        return_exceptions=True  # Don't fail if one call errors
+    )
+    
+    elapsed = asyncio.get_event_loop().time() - start_time
+    print(f"✓ Parallel generation completed in {elapsed:.1f}s\n")
+
+    # ============================================================================
+    # PROCESS RESULTS AND SAVE TO DATABASE
+    # ============================================================================
+    
+    response = {"personas": []}
+    
+    for idx, result in enumerate(results, 1):
+        # Handle errors gracefully
+        if isinstance(result, Exception):
+            print(f"❌ Persona {idx} generation failed: {result}")
+            continue
+            
+        try:
+            data = json.loads(result)
+            customer_personas = data.get("consumer_personas", [])
+            
+            if not customer_personas:
+                print(f"⚠️  Persona {idx}: No personas in response")
+                continue
+            
+            # Process each persona (usually just 1 per call)
+            for persona in customer_personas:
+                persona["auto_generated_persona"] = True
+                reference_sites = persona.get("reference_sites_with_usage", [])
+                site_counter = dict(
+                    Counter(urlparse(url).netloc for url in reference_sites)
+                )
+                persona["researched_sites"] = site_counter
+
+                data_obj = SimpleNamespace(**persona)
+                persona_id = generate_id()
+                persona["id"] = persona_id
+
+                # Save to database
+                async with AsyncSession(async_engine) as session:
+                    p = Persona(
+                        id=persona_id,
+                        exploration_id=exploration_id,
+                        workspace_id=workspace_id,
+                        name=getattr(data_obj, "name", ""),
+                        age_range=getattr(data_obj, "age_range", ""),
+                        gender=getattr(data_obj, "gender", ""),
+                        location_country=getattr(data_obj, "location_country", ""),
+                        location_state=getattr(data_obj, "location_state", ""),
+                        education_level=getattr(data_obj, "education_level", ""),
+                        occupation=getattr(data_obj, "occupation", ""),
+                        income_range=getattr(data_obj, "income_range", ""),
+                        family_size=getattr(data_obj, "family_size", ""),
+                        geography=getattr(data_obj, "geography", ""),
+                        lifestyle=getattr(data_obj, "lifestyle", ""),
+                        values=getattr(data_obj, "values", ""),
+                        personality=getattr(data_obj, "personality", ""),
+                        interests=getattr(data_obj, "interests", ""),
+                        motivations=getattr(data_obj, "motivations", ""),
+                        brand_sensitivity=getattr(data_obj, "brand_sensitivity", ""),
+                        price_sensitivity=getattr(data_obj, "price_sensitivity", ""),
+                        mobility=getattr(data_obj, "mobility", ""),
+                        accommodation=getattr(data_obj, "accommodation", ""),
+                        marital_status=getattr(data_obj, "marital_status", ""),
+                        daily_rhythm=getattr(data_obj, "daily_rhythm", ""),
+                        hobbies=getattr(data_obj, "hobbies", ""),
+                        professional_traits=getattr(data_obj, "professional_traits", ""),
+                        digital_activity=getattr(data_obj, "digital_activity", ""),
+                        preferences=getattr(data_obj, "preferences", ""),
+                        backstory=getattr(data_obj, "backstory", ""),
+                        created_by=current_user_id,
+                        persona_details=persona,
+                        auto_generated_persona=True,
+                        calibration_confidence=_extract_calibration_confidence(persona),
+                    )
+
+                    session.add(p)
+                    await session.commit()
+                    await session.refresh(p)
+
+                response["personas"].append({
                     "id": persona["id"],
                     "workspace_id": workspace_id,
                     "exploration_id": exploration_id,
                     "name": persona["name"],
                     "auto_generated_persona": True,
                     "persona_details": persona,
-                }
-            )
+                })
+                
+                print(f"✓ Saved persona: {persona['name']}")
+                
+        except json.JSONDecodeError as e:
+            print(f"❌ Persona {idx}: JSON parse error - {e}")
+            continue
+        except Exception as e:
+            print(f"❌ Persona {idx}: Unexpected error - {e}")
+            continue
+    
+    print(f"\n✅ Total personas generated: {len(response['personas'])}")
     return response
 
 async def _run_validator(prompt: str):
