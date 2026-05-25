@@ -206,7 +206,7 @@ const RunningInterviews: React.FC = () => {
             </div>
 
             {/* ── Persona Grid ── */}
-            <div className="ri-persona-grid">
+            <div className={`ri-persona-grid ${personas.length <= 2 ? 'ri-persona-grid--few' : ''}`}>
                 {personas.length > 0 ? (
                     personas.map((persona, index) => (
                         <PersonaAvatar

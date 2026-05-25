@@ -1533,9 +1533,9 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ initial, sectionTitle, on
                   onChange={(e) => set('text', e.target.value)}
                   placeholder="Can you walk me through a recent challenge you faced in your startup?"
                   rows={3}
-                  maxLength={100}
+                  maxLength={300}
                 />
-                <span className="qm-char-count">{q.text.length}/100</span>
+                <span className="qm-char-count">{q.text.length}/300</span>
               </div>
             </div>
           )}

@@ -38,11 +38,21 @@
 
 /* ── Persona grid ─────────────────────────────────────────────────────────── */
 
+/* ── Persona grid ─────────────────────────────────────────────────────────── */
+
 .ri-persona-grid {
   display: grid;
   grid-template-columns: repeat(4, 120px);
   gap: 24px;
   margin-bottom: 40px;
+  /* Center the fixed-width grid within the page */
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* When fewer than 4 personas, collapse to fewer columns so they center */
+.ri-persona-grid--few {
+  grid-template-columns: repeat(2, 120px);
 }
 
 /* ── Single persona avatar ───────────────────────────────────────────────── */
