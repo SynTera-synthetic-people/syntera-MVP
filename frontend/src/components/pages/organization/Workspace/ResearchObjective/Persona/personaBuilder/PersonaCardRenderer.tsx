@@ -1,13 +1,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// PersonaCardRenderer.tsx
-//
-// A self-contained, pixel-perfect card built for html2canvas capture.
-// Rules for capture-safe rendering:
+// PersonaCardRenderer.tsx  — "Dossier" edition
+//Capture-safe rules still apply:
 //  1. Inline ALL styles (no CSS classes — html2canvas misses external sheets)
-//  2. Use only web-safe / data-uri fonts  (or embed a @font-face style tag)
-//  3. No backdrop-filter, no CSS variables, no animations
-//  4. SVG avatars are inlined (not <img src=data:... > — html2canvas can choke)
-//  5. Fixed 900 × 540 px at 2× device-pixel-ratio → 1800 × 1080 export
+//  2. Only system / data-uri fonts  (Playfair Display & JetBrains Mono loaded
+//     via a <style> tag injected into the card itself; html2canvas captures
+//     inline <style> tags correctly when the fonts are already in the browser
+//     cache — make sure the parent page loads them via <link> first)
+//  3. No backdrop-filter, no CSS variables, no JS animations
+//  4. Fixed 900 × 560 px at 2× device-pixel-ratio → 1800 × 1120 export
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React from 'react';
@@ -16,8 +16,6 @@ import {
   buildCardPalette,
   normaliseOcean,
   inferOceanFromTraits,
-  renderAvatarSVG,
-  svgToDataUri,
   type OceanScores,
 } from './personaCardUtils';
 
@@ -80,17 +78,33 @@ export interface PersonaCardData {
     multi_platform?: number;
   };
 
-  // Tags
   tags?: string[];
-
   [key: string]: unknown;
 }
 
 interface Props {
   persona: PersonaCardData;
-  /** Width of the card in px (default 900) */
   width?: number;
 }
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const BG         = '#050505';
+const SURFACE    = '#0d0d0d';
+const SURFACE_EL = '#151515';
+const BORDER     = 'rgba(255,255,255,0.06)';
+const BORDER_BR  = 'rgba(255,255,255,0.12)';
+const TEXT_PRI   = '#ffffff';
+const TEXT_SEC   = 'rgba(255,255,255,0.70)';
+const TEXT_TER   = 'rgba(255,255,255,0.40)';
+const ACCENT     = '#0E63EC';
+const ACCENT_DIM = 'rgba(14,99,236,0.18)';
+const ACCENT_GLOW = 'rgba(14,99,236,0.22)';
+const GOLD       = '#ffd700';
+
+const MONO = "'JetBrains Mono', 'Courier New', monospace";
+const SERIF = "'Playfair Display', Georgia, serif";
+const SANS  = "'Inter', 'Segoe UI', sans-serif";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -111,46 +125,43 @@ function coerce(v: unknown): string {
   return String(v);
 }
 
+function toList(v: unknown): string[] {
+  if (!v) return [];
+  if (Array.isArray(v)) return v.filter((s): s is string => typeof s === 'string' && !!s);
+  return String(v).split(',').map(s => s.trim()).filter(Boolean);
+}
+
 function getOceanScores(p: PersonaCardData): OceanScores {
   const raw = p.ocean_profile?.scores;
   if (raw && Object.keys(raw).length >= 4) return normaliseOcean(raw);
-
   const traits = p.ocean_profile?.traits;
   if (traits && traits.length >= 4) {
     const map: Record<string, number> = {};
     traits.forEach(t => { map[t.name.toLowerCase()] = t.score; });
     return normaliseOcean(map);
   }
-
-  // Fallback: infer from demographic traits
   return inferOceanFromTraits(p as Record<string, unknown>);
 }
 
-function confColor(score: number): string {
-  return score >= 80 ? '#22c55e' : score >= 60 ? '#f59e0b' : '#ef4444';
+// Deterministic seeded pseudo-random (no Math.random — stable across renders)
+function seededVal(seed: number, index: number): number {
+  const x = Math.sin(seed + index * 9301 + 49297) * 233280;
+  return x - Math.floor(x);
 }
 
-// ── Mini OCEAN pentagon (pure SVG, no recharts) ───────────────────────────────
+// ── OCEAN Radar (pure SVG) ────────────────────────────────────────────────────
 
-function OceanPentagon({
-  scores,
-  accentColor,
-  size = 140,
-}: {
-  scores: OceanScores;
-  accentColor: string;
-  size?: number;
-}) {
+function OceanRadar({ scores, size = 220 }: { scores: OceanScores; size?: number }) {
   const cx = size / 2, cy = size / 2;
-  const maxR = size * 0.38;
+  const maxR = size * 0.36;
   const n = 5;
-  const labels = ['O', 'C', 'E', 'A', 'S'];
-  const values = [
-    scores.openness,
-    scores.conscientiousness,
-    scores.extraversion,
-    scores.agreeableness,
-    1 - scores.neuroticism, // invert neuroticism → "Stability"
+
+  const dims = [
+    { label: 'O', full: 'Openness',          value: scores.openness },
+    { label: 'C', full: 'Conscientiousness', value: scores.conscientiousness },
+    { label: 'E', full: 'Extraversion',       value: scores.extraversion },
+    { label: 'A', full: 'Agreeableness',      value: scores.agreeableness },
+    { label: 'N', full: 'Neuroticism',        value: scores.neuroticism },
   ];
 
   const pt = (idx: number, r: number) => {
@@ -158,142 +169,238 @@ function OceanPentagon({
     return { x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) };
   };
 
-  const gridLevels = [0.25, 0.5, 0.75, 1];
-  const dataPts = values.map((v, i) => pt(i, v * maxR));
-  const dataPath = dataPts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+  const dataPts = dims.map((d, i) => pt(i, d.value * maxR));
+  const dataPath = dataPts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ') + ' Z';
+
+  const gridLevels = [0.2, 0.4, 0.6, 0.8, 1.0];
 
   return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}
+      style={{ filter: 'drop-shadow(0 0 18px rgba(14,99,236,0.25))' }}>
+      <defs>
+        <linearGradient id="radarFill" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor={ACCENT} stopOpacity="0.28" />
+          <stop offset="100%" stopColor="#5b9bff" stopOpacity="0.10" />
+        </linearGradient>
+      </defs>
       {/* Grid rings */}
       {gridLevels.map(l => {
-        const poly = values.map((_, i) => {
+        const poly = dims.map((_, i) => {
           const p = pt(i, l * maxR);
           return `${p.x.toFixed(1)},${p.y.toFixed(1)}`;
         }).join(' ');
-        return <polygon key={l} points={poly} fill="none" stroke="rgba(255,255,255,0.09)" strokeWidth="1" />;
+        return <polygon key={l} points={poly} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="1" />;
       })}
-      {/* Spokes */}
-      {values.map((_, i) => {
+      {/* Axes */}
+      {dims.map((_, i) => {
         const p = pt(i, maxR);
-        return <line key={i} x1={cx} y1={cy} x2={p.x.toFixed(1)} y2={p.y.toFixed(1)} stroke="rgba(255,255,255,0.09)" strokeWidth="1" />;
+        return <line key={i} x1={cx} y1={cy} x2={p.x.toFixed(1)} y2={p.y.toFixed(1)} stroke="rgba(255,255,255,0.08)" strokeWidth="1" />;
       })}
       {/* Data polygon */}
-      <polygon
-        points={dataPath}
-        fill={accentColor}
-        fillOpacity="0.22"
-        stroke={accentColor}
-        strokeWidth="1.5"
-        strokeOpacity="0.9"
-      />
+      <path d={dataPath} fill="url(#radarFill)" stroke={ACCENT} strokeWidth="2.5" strokeLinejoin="round" />
       {/* Data points */}
       {dataPts.map((p, i) => (
-        <circle key={i} cx={p.x.toFixed(1)} cy={p.y.toFixed(1)} r="2.5" fill={accentColor} />
+        <circle key={i} cx={p.x.toFixed(1)} cy={p.y.toFixed(1)} r="4.5" fill={ACCENT} />
       ))}
       {/* Labels */}
-      {values.map((v, i) => {
-        const lp = pt(i, maxR + 13);
-        const vp = pt(i, maxR + 22);
+      {dims.map((d, i) => {
+        const lp = pt(i, maxR + 18);
         return (
-          <g key={i}>
-            <text
-              x={lp.x.toFixed(1)} y={lp.y.toFixed(1)}
-              textAnchor="middle" dominantBaseline="central"
-              fontSize="9" fontWeight="700" fill="rgba(255,255,255,0.55)"
-              fontFamily="'DM Sans', 'Segoe UI', sans-serif"
-            >{labels[i]}</text>
-            <text
-              x={vp.x.toFixed(1)} y={vp.y.toFixed(1)}
-              textAnchor="middle" dominantBaseline="central"
-              fontSize="7.5" fill="rgba(255,255,255,0.3)"
-              fontFamily="'DM Mono', 'Courier New', monospace"
-            >{Math.round(v * 100)}</text>
-          </g>
+          <text key={i}
+            x={lp.x.toFixed(1)} y={lp.y.toFixed(1)}
+            textAnchor="middle" dominantBaseline="central"
+            fontSize="13" fontWeight="600" fill="rgba(255,255,255,0.50)"
+            fontFamily={MONO}
+          >{d.label}</text>
         );
       })}
     </svg>
   );
 }
 
-// ── Trait Bar (inline styles only, no animation for capture) ─────────────────
+// ── Calibration ring SVG ──────────────────────────────────────────────────────
 
-function TraitBar({
-  label, value, color,
-}: { label: string; value: number; color: string }) {
+function CalibRing({ score, size = 140 }: { score: number; size?: number }) {
+  const r = (size / 2) - 8;
+  const circ = 2 * Math.PI * r;
+  const dash = circ * (score / 100);
   return (
-    <div style={{ marginBottom: 9 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-        <span style={{
-          fontSize: 10, color: 'rgba(255,255,255,0.5)',
-          fontFamily: "'DM Sans','Segoe UI',sans-serif",
-        }}>{label}</span>
-        <span style={{
-          fontSize: 10, color, fontWeight: 700,
-          fontFamily: "'DM Mono','Courier New',monospace",
-        }}>{value}</span>
-      </div>
-      <div style={{ height: 3, background: 'rgba(255,255,255,0.07)', borderRadius: 99, overflow: 'hidden' }}>
-        <div style={{ height: '100%', width: `${Math.min(value, 100)}%`, background: color, borderRadius: 99 }} />
+    <div style={{ width: size, height: size, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ position: 'absolute', top: 0, left: 0 }}>
+        {/* Track */}
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="9" />
+        {/* Fill */}
+        <circle
+          cx={size / 2} cy={size / 2} r={r}
+          fill="none" stroke={ACCENT} strokeWidth="9"
+          strokeLinecap="round"
+          strokeDasharray={`${dash.toFixed(1)} ${circ.toFixed(1)}`}
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+        />
+      </svg>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 1 }}>
+        <span style={{ fontFamily: MONO, fontSize: 32, fontWeight: 700, color: ACCENT, lineHeight: 1 }}>
+          {score}%
+        </span>
+        <span style={{ fontFamily: MONO, fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.15em', color: TEXT_TER, marginTop: 5 }}>
+          Calibrated
+        </span>
       </div>
     </div>
   );
 }
 
-// ── Tag chip ─────────────────────────────────────────────────────────────────
+// ── Behavioral dimension bar card ─────────────────────────────────────────────
 
-function Tag({ label, color }: { label: string; color: string }) {
+interface DimCardProps {
+  name: string;
+  description: string;
+  intensity: string;
+  value: number;
+  color: string;
+}
+
+function DimCard({ name, description, intensity, value, color }: DimCardProps) {
+  return (
+    <div style={{
+      background: SURFACE_EL,
+      border: `1px solid ${BORDER}`,
+      borderRadius: 10,
+      padding: '14px 16px',
+      position: 'relative',
+      overflow: 'hidden',
+      marginBottom: 10,
+    }}>
+      {/* top accent bar */}
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: color, opacity: 0.55 }} />
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+        <span style={{ fontFamily: SANS, fontSize: 13, fontWeight: 600, color: TEXT_PRI }}>{name}</span>
+        <span style={{
+          padding: '3px 8px', borderRadius: 4, fontSize: 9, fontWeight: 700,
+          fontFamily: MONO, textTransform: 'uppercase', letterSpacing: '0.05em',
+          background: color, color: BG,
+        }}>{intensity}</span>
+      </div>
+      <p style={{ fontFamily: SANS, fontSize: 11, lineHeight: 1.55, color: TEXT_SEC, marginBottom: 10 }}>{description}</p>
+      {/* Progress bar */}
+      <div style={{ height: 5, background: 'rgba(255,255,255,0.05)', borderRadius: 3, overflow: 'hidden' }}>
+        <div style={{ height: '100%', width: `${value}%`, background: color, borderRadius: 3 }} />
+      </div>
+    </div>
+  );
+}
+
+// ── Psycho item (left-border style) ──────────────────────────────────────────
+
+function PsychoItem({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div style={{ borderLeft: `2px solid ${BORDER_BR}`, paddingLeft: 14, marginBottom: 16 }}>
+      <div style={{ fontFamily: MONO, fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.10em', color: TEXT_TER, marginBottom: 5, fontWeight: 600 }}>
+        {label}
+      </div>
+      <div style={{ fontFamily: SANS, fontSize: 12, lineHeight: 1.65, color: TEXT_SEC }}>{children}</div>
+    </div>
+  );
+}
+
+// ── Interest chip ─────────────────────────────────────────────────────────────
+
+function InterestChip({ label }: { label: string }) {
+  return (
+    <div style={{
+      background: SURFACE_EL, border: `1px solid ${BORDER}`,
+      padding: '6px 10px', borderRadius: 6, fontSize: 11,
+      fontFamily: SANS, color: TEXT_SEC, textAlign: 'center' as const,
+    }}>{label}</div>
+  );
+}
+
+// ── Section header ────────────────────────────────────────────────────────────
+
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20,
+      fontFamily: MONO, fontSize: 10, textTransform: 'uppercase',
+      letterSpacing: '0.15em', color: ACCENT, fontWeight: 600,
+    }}>
+      <div style={{ width: 3, height: 14, background: ACCENT, borderRadius: 2, flexShrink: 0 }} />
+      {children}
+    </div>
+  );
+}
+
+// ── Section card (surface bg with top gradient line) ──────────────────────────
+
+function Section({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
+  return (
+    <div style={{
+      background: SURFACE,
+      border: `1px solid ${BORDER}`,
+      borderRadius: 14,
+      padding: '24px 24px 20px',
+      position: 'relative',
+      overflow: 'hidden',
+      ...style,
+    }}>
+      {/* top shimmer line */}
+      <div style={{
+        position: 'absolute', top: 0, left: 0, right: 0, height: 1,
+        background: `linear-gradient(90deg, transparent, ${ACCENT}, transparent)`,
+        opacity: 0.25,
+      }} />
+      {children}
+    </div>
+  );
+}
+
+// ── Demo row ──────────────────────────────────────────────────────────────────
+
+function DemoItem({ label, value }: { label: string; value: string }) {
+  if (!value) return null;
+  return (
+    <div style={{ borderLeft: `2px solid ${BORDER_BR}`, paddingLeft: 12 }}>
+      <div style={{ fontFamily: MONO, fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.08em', color: TEXT_TER, marginBottom: 4 }}>{label}</div>
+      <div style={{ fontFamily: SANS, fontSize: 13, fontWeight: 500, color: TEXT_PRI }}>{value}</div>
+    </div>
+  );
+}
+
+// ── Evidence source tag ───────────────────────────────────────────────────────
+
+function SourceTag({ label }: { label: string }) {
+  return (
+    <div style={{
+      background: SURFACE_EL, border: `1px solid ${BORDER}`,
+      padding: '7px 10px', borderRadius: 6, fontSize: 10,
+      fontFamily: SANS, color: TEXT_SEC, textAlign: 'center' as const,
+    }}>{label}</div>
+  );
+}
+
+function TechTag({ label }: { label: string }) {
   return (
     <span style={{
-      display: 'inline-block', padding: '3px 9px', borderRadius: 99,
-      border: `1px solid ${color}55`, color, fontSize: 9,
-      fontFamily: "'DM Mono','Courier New',monospace",
-      letterSpacing: '0.04em', fontWeight: 700,
-      textTransform: 'uppercase', background: `${color}12`,
+      background: ACCENT_DIM, border: `1px solid ${ACCENT}`,
+      padding: '4px 10px', borderRadius: 4, fontSize: 9,
+      fontFamily: MONO, color: ACCENT, textTransform: 'uppercase' as const,
+      letterSpacing: '0.05em',
     }}>{label}</span>
   );
 }
 
-// ── Pill list item ────────────────────────────────────────────────────────────
+// ── OCEAN value row (right side of radar) ─────────────────────────────────────
 
-function PillItem({ text, color }: { text: string; color: string }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 6 }}>
-      <div style={{
-        width: 16, height: 16, borderRadius: 5, flexShrink: 0,
-        background: `${color}14`, border: `1px solid ${color}30`,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>
-        <div style={{ width: 5, height: 5, borderRadius: '50%', background: color }} />
-      </div>
-      <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.72)', lineHeight: 1.35, fontFamily: "'DM Sans','Segoe UI',sans-serif" }}>
-        {text}
-      </span>
-    </div>
-  );
-}
-
-// ── Section label ─────────────────────────────────────────────────────────────
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div style={{
-      fontSize: 8, fontWeight: 700, letterSpacing: '0.12em',
-      textTransform: 'uppercase', color: 'rgba(255,255,255,0.28)',
-      marginBottom: 8, fontFamily: "'DM Mono','Courier New',monospace",
-    }}>{children}</div>
-  );
-}
-
-// ── Source row ────────────────────────────────────────────────────────────────
-
-function SourceRow({ label, value }: { label: string; value: string }) {
+function OceanRow({ label, value }: { label: string; value: number }) {
   return (
     <div style={{
       display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-      padding: '4px 0', borderBottom: '1px solid rgba(255,255,255,0.05)',
+      padding: '10px 0', borderBottom: `1px solid ${BORDER}`,
     }}>
-      <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', fontFamily: "'DM Sans','Segoe UI',sans-serif" }}>{label}</span>
-      <span style={{ fontSize: 9, fontFamily: "'DM Mono','Courier New',monospace", color: 'rgba(255,255,255,0.6)', fontWeight: 600 }}>{value}</span>
+      <span style={{ fontFamily: SANS, fontSize: 12, color: TEXT_SEC }}>{label}</span>
+      <span style={{ fontFamily: MONO, fontSize: 24, fontWeight: 700, color: ACCENT }}>
+        {Math.round(value * 100)}
+      </span>
     </div>
   );
 }
@@ -302,357 +409,290 @@ function SourceRow({ label, value }: { label: string; value: string }) {
 
 const PersonaCardRenderer = React.forwardRef<HTMLDivElement, Props>(
   ({ persona, width = 900 }, ref) => {
-    const height = Math.round(width * 0.60); // 900 × 540 golden-ish ratio
-    const leftW = Math.round(width * 0.285);
-    const rightW = width - leftW;
-
-    // ── Derived data ─────────────────────────────────────────────────────────
-
+    // ── Derived data ──────────────────────────────────────────────────────────
     const ocean = getOceanScores(persona);
-    const avatarCfg = buildAvatarConfig(ocean);
-    const palette = buildCardPalette(avatarCfg);
-    const { accent, accentMuted, complement, triadic } = palette;
-
     const confidenceScore = getConfidenceScore(persona);
-    const confFill = confColor(confidenceScore);
-    const confBarW = `${Math.min(confidenceScore, 100)}%`;
-
-    const avatarSvg = renderAvatarSVG(avatarCfg, 88);
-    const avatarDataUri = svgToDataUri(avatarSvg);
 
     const personaName = persona.name ?? 'Unnamed Persona';
-    const archetype = persona.archetype ?? 'Research Persona';
-    const isAI = !!persona.auto_generated_persona;
-    const createdBy = isAI ? 'Omi' : (persona.created_by_name ?? persona.created_by ?? 'You');
+    const archetype   = persona.archetype ?? 'Research Persona';
+    const isAI        = !!persona.auto_generated_persona;
+    const createdBy   = isAI ? 'Omi' : (persona.created_by_name ?? persona.created_by ?? 'You');
 
     const locationStr = [persona.location_state, persona.location_country ?? persona.geography]
-      .filter(Boolean).join(', ') || 'Location unavailable';
+      .filter(Boolean).join(', ') || '';
 
-    const tags = [
-      ...(persona.tags ?? []),
-      coerce(persona.personality).split(',').map(s => s.trim()).filter(Boolean).slice(0, 2),
-    ].flat().filter(Boolean).slice(0, 5) as string[];
+    const interests   = toList(persona.interests).slice(0, 6);
+    const motivations = coerce(persona.motivations);
+    const lifestyle   = coerce(persona.lifestyle);
+    const values      = coerce(persona.values);
+    const personality = coerce(persona.personality);
 
-    const sources = persona.calibration_sources ?? {
-      real_actions: 120000,
-      emotional_neural: 120000,
-      validated_research: 120000,
-      multi_platform: 120000,
-    };
+    const sources     = persona.calibration_sources ?? {};
+    const numPeople   = (
+      sources.real_actions ??
+      sources.emotional_neural ??
+      123456
+    ).toLocaleString('en-IN');
 
-    const motivators = [
-      ...(Array.isArray(persona.triggers_opportunities)
-        ? persona.triggers_opportunities as string[]
-        : coerce(persona.triggers_opportunities).split(',').map(s => s.trim()).filter(Boolean)
-      ),
-      ...(Array.isArray(persona.motivations)
-        ? persona.motivations as string[]
-        : coerce(persona.motivations).split(',').map(s => s.trim()).filter(Boolean)
-      ),
-    ].slice(0, 3);
+    const EVIDENCE_SOURCES = [
+      'Purchase & Transaction Receipts',
+      'Click Intent',
+      'Interaction Trails',
+      'Feature Usage',
+      'Engagement Channel',
+      'Online Browsing Patterns',
+    ];
 
-    const barriers = (
-      Array.isArray(persona.barriers_pain_points)
-        ? persona.barriers_pain_points as string[]
-        : coerce(persona.barriers_pain_points).split(',').map(s => s.trim()).filter(Boolean)
-    ).slice(0, 3);
+    const TECHNOLOGIES = ['EOG', 'ECG', 'GSR', 'EMG', 'PSG', 'ERP'];
 
-    const media = coerce(persona.media_consumption).split(',').map(s => s.trim()).filter(Boolean).slice(0, 3);
+    // Derive behavioral dimensions from persona data
+    const dims: DimCardProps[] = [
+      {
+        name: 'Optimization Under Pressure',
+        description: persona.decision_making_style
+          ? `Decision style: ${coerce(persona.decision_making_style)}`
+          : 'Turns chaos into systems, but the systems become their own source of stress',
+        intensity: 'High',
+        value: Math.round(ocean.conscientiousness * 100),
+        color: '#ff6b6b',
+      },
+      {
+        name: 'Time Sensitivity',
+        description: persona.purchase_frequency
+          ? `Purchase frequency: ${coerce(persona.purchase_frequency)}`
+          : 'Every decision is a trade-off evaluated against competing priorities',
+        intensity: ocean.neuroticism > 0.6 ? 'Extreme' : 'High',
+        value: Math.round((ocean.conscientiousness * 0.5 + ocean.neuroticism * 0.5) * 100),
+        color: '#ff3333',
+      },
+      {
+        name: 'Brand Skepticism',
+        description: persona.brand_sensitivity
+          ? coerce(persona.brand_sensitivity)
+          : 'Prefers brands that publish real methodologies, roadmaps, and trade-offs',
+        intensity: ocean.agreeableness < 0.5 ? 'Moderate' : 'Low',
+        value: Math.round((1 - ocean.agreeableness) * 100),
+        color: '#ffd93d',
+      },
+    ];
 
-    // ── Behavioural scores (estimated from string hints if no direct number) ──
+    // Calibration breakdown
+    const calibBreakdown: Array<{ label: string; value: number }> = [
+      { label: 'Volume',          value: 100 },
+      { label: 'Source Diversity',value: 85  },
+      { label: 'Recency',         value: 100 },
+      { label: 'Signal Clarity',  value: 100 },
+    ];
 
-    const bScore = (key: string, fallback: number): number => {
-      const raw = persona[key];
-      if (typeof raw === 'number') return Math.round(raw <= 1 ? raw * 100 : raw);
-      const str = coerce(raw).toLowerCase();
-      if (/high|very|strong|always/i.test(str)) return 80 + Math.round(Math.random() * 15);
-      if (/low|rare|minimal|never/i.test(str)) return 20 + Math.round(Math.random() * 15);
-      if (/medium|moderate|sometimes/i.test(str)) return 48 + Math.round(Math.random() * 18);
-      return fallback;
-    };
-
-    const behaviouralScores = {
-      digitalNative: bScore('digital_activity', Math.round(ocean.openness * 60 + 30)),
-      researchDepth: bScore('decision_making_style', Math.round(ocean.conscientiousness * 60 + 30)),
-      impulseBuying: bScore('price_sensitivity', Math.round((1 - ocean.conscientiousness) * 50 + 20)),
-      brandLoyalty: bScore('brand_sensitivity', Math.round(ocean.agreeableness * 50 + 25)),
-    };
-
-    // ── Background gradient (subtle, capture-safe) ────────────────────────────
-
-    const bgGrad = `linear-gradient(145deg, #0d0d11 0%, #0f0f14 60%, #0b0d10 100%)`;
-    const leftBg  = '#111115';
-    const glowL   = `radial-gradient(ellipse at 30% 20%, ${accent}14 0%, transparent 65%)`;
-    const glowR   = `radial-gradient(ellipse at 80% 80%, ${accent}09 0%, transparent 60%)`;
+    // ── Layout constants ──────────────────────────────────────────────────────
+    // We render at full scroll height — caller wraps in a fixed-height
+    // clipping div for html2canvas if needed. Keeping it tall ensures all
+    // content is captured. Typical html2canvas usage: scale: 2, useCORS: true.
+    const GAP = 24;
+    const HALF = (width - GAP * 3) / 2;
 
     return (
       <div
         ref={ref}
         style={{
           width,
-          height,
-          background: bgGrad,
-          borderRadius: 20,
-          overflow: 'hidden',
-          display: 'flex',
-          flexDirection: 'row',
-          fontFamily: "'DM Sans','Segoe UI',sans-serif",
-          position: 'relative',
+          background: BG,
+          padding: '52px 40px 48px',
           boxSizing: 'border-box',
+          fontFamily: SANS,
+          position: 'relative',
+          overflow: 'hidden',
         }}
       >
-        {/* ── Glow layers ── */}
-        <div style={{ position: 'absolute', inset: 0, background: glowL, pointerEvents: 'none' }} />
-        <div style={{ position: 'absolute', inset: 0, background: glowR, pointerEvents: 'none' }} />
-
-        {/* ════════════════════════════════════════════════
-            LEFT PANEL
-        ════════════════════════════════════════════════ */}
+        {/* ── Ambient glow layers ── */}
         <div style={{
-          width: leftW,
-          flexShrink: 0,
-          height: '100%',
-          background: leftBg,
-          borderRight: '1px solid rgba(255,255,255,0.07)',
-          padding: '26px 20px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 18,
-          boxSizing: 'border-box',
-          position: 'relative',
-          overflow: 'hidden',
-        }}>
+          position: 'absolute', top: '-40%', left: '-30%', width: '160%', height: '160%',
+          background: `radial-gradient(circle at 30% 20%, rgba(14,99,236,0.04) 0%, transparent 40%),
+                       radial-gradient(circle at 70% 80%, rgba(14,99,236,0.03) 0%, transparent 40%)`,
+          pointerEvents: 'none', zIndex: 0,
+        }} />
 
-          {/* Avatar + identity */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
-            {/* Avatar with confidence ring */}
-            <div style={{ position: 'relative', width: 88, flexShrink: 0 }}>
-              <img
-                src={avatarDataUri}
-                alt={personaName}
-                width={88}
-                height={88}
-                style={{ display: 'block', borderRadius: '50%' }}
-              />
-              {/* Status dot */}
-              <div style={{
-                position: 'absolute', bottom: 1, right: -2,
-                width: 18, height: 18, borderRadius: '50%',
-                background: leftBg, border: `2px solid ${accent}`,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-                <div style={{ width: 7, height: 7, borderRadius: '50%', background: accent }} />
-              </div>
-            </div>
+        {/* ─────────────────────────── HEADER ─────────────────────────────── */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 52, position: 'relative', zIndex: 1 }}>
 
-            <div>
-              {/* Archetype label */}
-              <div style={{
-                fontSize: 8, color: accent,
-                fontFamily: "'DM Mono','Courier New',monospace",
-                letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4,
-              }}>{archetype}</div>
-
-              {/* Persona name */}
-              <div style={{
-                fontSize: 15, fontWeight: 700, lineHeight: 1.25,
-                color: 'rgba(255,255,255,0.95)', fontFamily: "'DM Sans','Segoe UI',sans-serif",
-                marginBottom: 4,
-              }}>{personaName}</div>
-
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', fontFamily: "'DM Sans','Segoe UI',sans-serif" }}>
-                by <span style={{ color: accentMuted }}>{createdBy}</span>
-              </div>
-            </div>
-
-            {/* Confidence badge */}
+          {/* Left: name + tagline + demo grid */}
+          <div style={{ maxWidth: width * 0.60 }}>
+            {/* Archetype label */}
             <div style={{
-              display: 'flex', alignItems: 'center', gap: 5,
-              background: 'rgba(255,255,255,0.04)',
-              border: '1px solid rgba(255,255,255,0.08)',
-              borderRadius: 99, padding: '4px 11px 4px 8px', width: 'fit-content',
+              fontFamily: MONO, fontSize: 10, textTransform: 'uppercase',
+              letterSpacing: '0.12em', color: ACCENT, marginBottom: 12,
             }}>
-              {/* Mini ring */}
-              <svg width="8" height="8" viewBox="0 0 8 8">
-                <circle cx="4" cy="4" r="3.2" fill="none" stroke={accent} strokeWidth="1.4"
-                  strokeDasharray={`${(confidenceScore / 100) * 20.1} 20.1`}
-                  transform="rotate(-90 4 4)" />
-                <circle cx="4" cy="4" r="1.4" fill={accent} />
-              </svg>
-              <span style={{ fontSize: 10, fontFamily: "'DM Mono','Courier New',monospace", color: accent, fontWeight: 700 }}>
-                {confidenceScore}%
-              </span>
-              <span style={{ fontSize: 9.5, color: 'rgba(255,255,255,0.28)' }}>calibrated</span>
+              {archetype} · by {createdBy}
+            </div>
+
+            {/* Persona name */}
+            <div style={{ position: 'relative', marginBottom: 16, display: 'inline-block' }}>
+              {/* Blue highlight bar behind first line */}
+              <div style={{
+                position: 'absolute', left: -8, top: 4, bottom: 4,
+                width: 5, borderRadius: 3,
+                background: ACCENT,
+                opacity: 0.9,
+              }} />
+              <h1 style={{
+                fontFamily: SERIF, fontSize: 52, fontWeight: 900, lineHeight: 1.08,
+                letterSpacing: '-0.025em',
+                color: TEXT_PRI,
+                paddingLeft: 14,
+                margin: 0,
+              }}>{personaName}</h1>
+            </div>
+
+            {/* Tagline */}
+            {personality && (
+              <p style={{
+                fontFamily: SANS, fontSize: 15, lineHeight: 1.60,
+                color: TEXT_SEC, marginBottom: 28, maxWidth: 540,
+              }}>{personality}</p>
+            )}
+
+            {/* Demographics grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0 24px' }}>
+              <DemoItem label="Age"        value={coerce(persona.age_range)} />
+              <DemoItem label="Income"     value={coerce(persona.income_range)} />
+              <DemoItem label="Location"   value={locationStr} />
+              <DemoItem label="Status"     value={coerce(persona.marital_status)} />
             </div>
           </div>
 
-          {/* Tags */}
-          {tags.length > 0 && (
-            <div>
-              <SectionLabel>Profile Tags</SectionLabel>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                {tags.map(t => <Tag key={t} label={t} color={accent} />)}
-              </div>
-            </div>
-          )}
+          {/* Right: calibration badge + mini breakdown */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+            <CalibRing score={confidenceScore} size={160} />
 
-          {/* Demographics */}
-          <div>
-            <SectionLabel>Demographics</SectionLabel>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '7px 10px' }}>
-              {[
-                { k: 'Age',       v: coerce(persona.age_range) },
-                { k: 'Gender',    v: coerce(persona.gender) },
-                { k: 'Income',    v: coerce(persona.income_range) },
-                { k: 'Education', v: coerce(persona.education_level) },
-                { k: 'Location',  v: locationStr },
-                { k: 'Status',    v: coerce(persona.marital_status) },
-              ].filter(r => r.v).map(({ k, v }) => (
-                <div key={k}>
-                  <div style={{ fontSize: 7.5, color: 'rgba(255,255,255,0.25)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: "'DM Mono','Courier New',monospace" }}>{k}</div>
-                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.82)', fontWeight: 500, marginTop: 2, lineHeight: 1.3, fontFamily: "'DM Sans','Segoe UI',sans-serif" }}>{v}</div>
+            {/* mini metric chips */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, width: 200 }}>
+              {calibBreakdown.map(b => (
+                <div key={b.label} style={{
+                  background: SURFACE,
+                  border: `1px solid ${BORDER}`,
+                  borderRadius: 8, padding: '10px 8px', textAlign: 'center',
+                }}>
+                  <div style={{ fontFamily: MONO, fontSize: 20, fontWeight: 700, color: ACCENT }}>{b.value}%</div>
+                  <div style={{ fontFamily: MONO, fontSize: 8, textTransform: 'uppercase', letterSpacing: '0.08em', color: TEXT_TER, marginTop: 3 }}>
+                    {b.label}
+                  </div>
                 </div>
               ))}
             </div>
           </div>
-
-          {/* Signal sources — pushed to bottom */}
-          <div style={{ marginTop: 'auto' }}>
-            <SectionLabel>Signal Sources</SectionLabel>
-            <SourceRow label="Real Actions Signal"   value={`${Math.round((sources.real_actions ?? 120000) / 1000)}K`} />
-            <SourceRow label="Emotional & Neural"    value={`${Math.round((sources.emotional_neural ?? 120000) / 1000)}K`} />
-            <SourceRow label="Validated Research"    value={`${Math.round((sources.validated_research ?? 120000) / 1000)}K`} />
-            <SourceRow label="Multi-Platform Conv."  value={`${Math.round((sources.multi_platform ?? 120000) / 1000)}K`} />
-          </div>
         </div>
 
-        {/* ════════════════════════════════════════════════
-            RIGHT PANEL
-        ════════════════════════════════════════════════ */}
-        <div style={{
-          flex: 1,
-          height: '100%',
-          padding: '26px 28px 22px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 20,
-          boxSizing: 'border-box',
-          position: 'relative',
-          overflow: 'hidden',
-        }}>
+        {/* ─────────────────────────── ROW 1 ─────────────────────────────── */}
+        <div style={{ display: 'flex', gap: GAP, marginBottom: GAP, position: 'relative', zIndex: 1 }}>
 
-          {/* TOP SECTION: OCEAN radar + Behavioural bars */}
-          <div style={{ display: 'grid', gridTemplateColumns: '148px 1fr', gap: 26, alignItems: 'start' }}>
+          {/* Behavioral Dimensions */}
+          <Section style={{ width: HALF, flexShrink: 0 }}>
+            <SectionTitle>Behavioral Dimensions</SectionTitle>
+            {dims.map(d => <DimCard key={d.name} {...d} />)}
+          </Section>
 
-            {/* OCEAN Pentagon */}
-            <div>
-              <SectionLabel>Personality Profile</SectionLabel>
-              <OceanPentagon scores={ocean} accentColor={accent} size={148} />
+          {/* Psychographic Profile */}
+          <Section style={{ flex: 1 }}>
+            <SectionTitle>Psychographic Profile</SectionTitle>
+            {lifestyle   && <PsychoItem label="Lifestyle">{lifestyle}</PsychoItem>}
+            {values      && <PsychoItem label="Values">{values}</PsychoItem>}
+            {personality && <PsychoItem label="Personality">{personality}</PsychoItem>}
 
-              {/* Mini legend */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 6px', marginTop: 4 }}>
-                {['Openness','Conscien.','Extraver.','Agreeable','Stability'].map((label, i) => {
-                  const vals = [ocean.openness, ocean.conscientiousness, ocean.extraversion, ocean.agreeableness, 1 - ocean.neuroticism];
-                  return (
-                    <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <div style={{ width: 4, height: 4, borderRadius: '50%', background: accent, opacity: 0.5 + vals[i]! * 0.5 }} />
-                      <span style={{ fontSize: 8.5, color: 'rgba(255,255,255,0.4)', fontFamily: "'DM Sans','Segoe UI',sans-serif" }}>{label}</span>
-                      <span style={{ fontSize: 8.5, fontFamily: "'DM Mono','Courier New',monospace", color: accentMuted, marginLeft: 'auto' }}>
-                        {Math.round(vals[i]! * 100)}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
+            {interests.length > 0 && (
+              <PsychoItem label="Interests">
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 4 }}>
+                  {interests.map(i => <InterestChip key={i} label={i} />)}
+                </div>
+              </PsychoItem>
+            )}
+
+            {motivations && <PsychoItem label="Motivations">{motivations}</PsychoItem>}
+          </Section>
+        </div>
+
+        {/* ─────────────────────────── ROW 2 – OCEAN ──────────────────────── */}
+        <Section style={{ marginBottom: GAP, position: 'relative', zIndex: 1 }}>
+          <SectionTitle>OCEAN Personality Profile</SectionTitle>
+          <div style={{ display: 'flex', gap: 48, alignItems: 'center' }}>
+            {/* Radar */}
+            <div style={{ flexShrink: 0 }}>
+              <OceanRadar scores={ocean} size={220} />
             </div>
 
-            {/* Behavioural bars */}
-            <div>
-              <SectionLabel>Behavioural Traits</SectionLabel>
-              <div style={{ marginBottom: 14 }}>
-                <TraitBar label="Digital Native"  value={behaviouralScores.digitalNative}  color={accent} />
-                <TraitBar label="Research Depth"  value={behaviouralScores.researchDepth}  color={accentMuted} />
-                <TraitBar label="Impulse Buying"  value={behaviouralScores.impulseBuying}  color={complement} />
-                <TraitBar label="Brand Loyalty"   value={behaviouralScores.brandLoyalty}   color={triadic} />
-              </div>
+            {/* Value rows */}
+            <div style={{ flex: 1 }}>
+              {[
+                { label: 'Openness',          value: ocean.openness },
+                { label: 'Conscientiousness', value: ocean.conscientiousness },
+                { label: 'Extraversion',      value: ocean.extraversion },
+                { label: 'Agreeableness',     value: ocean.agreeableness },
+                { label: 'Neuroticism',       value: ocean.neuroticism },
+              ].map(d => (
+                <OceanRow key={d.label} label={d.label} value={d.value} />
+              ))}
+            </div>
 
-              {/* Decision style highlight box */}
-              {persona.decision_making_style && (
-                <div style={{
-                  padding: '9px 12px', borderRadius: 10,
-                  background: `${accent}0d`, border: `1px solid ${accent}20`,
-                }}>
-                  <div style={{
-                    fontSize: 8, color: 'rgba(255,255,255,0.28)',
-                    fontFamily: "'DM Mono','Courier New',monospace",
-                    textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4,
-                  }}>Decision Style</div>
-                  <div style={{
-                    fontSize: 13, fontWeight: 700, color: accent,
-                    fontFamily: "'DM Sans','Segoe UI',sans-serif",
-                    fontStyle: 'italic',
-                  }}>{coerce(persona.decision_making_style)}</div>
-                </div>
+            {/* Additional psychometric quick facts */}
+            <div style={{ flexShrink: 0, width: 220 }}>
+              {persona.occupation && (
+                <PsychoItem label="Occupation">{coerce(persona.occupation)}</PsychoItem>
               )}
+              {persona.education_level && (
+                <PsychoItem label="Education">{coerce(persona.education_level)}</PsychoItem>
+              )}
+              {persona.digital_activity && (
+                <PsychoItem label="Digital Activity">{coerce(persona.digital_activity)}</PsychoItem>
+              )}
+              {persona.media_consumption && (
+                <PsychoItem label="Media">{coerce(persona.media_consumption)}</PsychoItem>
+              )}
+            </div>
+          </div>
+        </Section>
 
-              {/* Calibration confidence bar (repeated in right panel for visual weight) */}
-              <div style={{ marginTop: 14 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', fontFamily: "'DM Mono','Courier New',monospace", textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                    Calibration Confidence
-                  </span>
-                  <span style={{ fontSize: 9, color: confFill, fontWeight: 700, fontFamily: "'DM Mono','Courier New',monospace" }}>
-                    {confidenceScore}%
-                  </span>
-                </div>
-                <div style={{ height: 4, background: 'rgba(255,255,255,0.07)', borderRadius: 99, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: confBarW, background: confFill, borderRadius: 99 }} />
-                </div>
+        {/* ─────────────────────────── ROW 3 – EVIDENCE ───────────────────── */}
+        <Section style={{
+          background: `linear-gradient(135deg, ${SURFACE} 0%, ${SURFACE_EL} 100%)`,
+          position: 'relative', zIndex: 1,
+        }}>
+          <SectionTitle>Evidence Base</SectionTitle>
+
+          {/* Top stats row */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 18, marginBottom: 20 }}>
+            {[
+              { n: numPeople,                         label: 'People Analyzed' },
+              { n: String(EVIDENCE_SOURCES.length),   label: 'Data Sources' },
+              { n: String(TECHNOLOGIES.length),        label: 'Technologies Used' },
+            ].map(s => (
+              <div key={s.label} style={{
+                textAlign: 'center', padding: '16px 12px',
+                background: 'rgba(14,99,236,0.04)',
+                border: `1px solid ${BORDER}`, borderRadius: 10,
+              }}>
+                <div style={{ fontFamily: MONO, fontSize: 28, fontWeight: 700, color: ACCENT, marginBottom: 6 }}>{s.n}</div>
+                <div style={{ fontFamily: MONO, fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.10em', color: TEXT_TER }}>{s.label}</div>
               </div>
-            </div>
+            ))}
           </div>
 
-          {/* Divider */}
-          <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', margin: '0 -28px' }} />
-
-          {/* BOTTOM SECTION: Motivators / Barriers / Media */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 18, flex: 1 }}>
-            <div>
-              <SectionLabel>Motivators</SectionLabel>
-              {motivators.length > 0
-                ? motivators.map(m => <PillItem key={m} text={m} color={accent} />)
-                : <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)' }}>—</span>
-              }
-            </div>
-            <div>
-              <SectionLabel>Barriers</SectionLabel>
-              {barriers.length > 0
-                ? barriers.map(b => <PillItem key={b} text={b} color={complement} />)
-                : <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)' }}>—</span>
-              }
-            </div>
-            <div>
-              <SectionLabel>Media Habits</SectionLabel>
-              {media.length > 0
-                ? media.map(m => <PillItem key={m} text={m} color={accentMuted} />)
-                : <PillItem text={coerce(persona.digital_activity) || '—'} color={accentMuted} />
-              }
-            </div>
+          {/* Source tags grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 16 }}>
+            {EVIDENCE_SOURCES.map(s => <SourceTag key={s} label={s} />)}
           </div>
 
-          {/* Watermark */}
-          <div style={{
-            position: 'absolute', bottom: 14, right: 22,
-            fontSize: 8, color: 'rgba(255,255,255,0.12)',
-            fontFamily: "'DM Mono','Courier New',monospace", letterSpacing: '0.07em',
-            display: 'flex', alignItems: 'center', gap: 5,
-          }}>
-            <svg width="10" height="10" viewBox="0 0 10 10">
-              <circle cx="5" cy="5" r="4" fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="1" />
-              <circle cx="5" cy="5" r="1.5" fill="rgba(255,255,255,0.12)" />
-            </svg>
-            PERSONA CARD · RESEARCH EXPLORATION
+          {/* Technology chips */}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' as const }}>
+            {TECHNOLOGIES.map(t => <TechTag key={t} label={t} />)}
           </div>
+        </Section>
+
+        {/* ── Watermark ── */}
+        <div style={{
+          position: 'absolute', bottom: 18, right: 28,
+          fontFamily: MONO, fontSize: 9, color: 'rgba(255,255,255,0.18)',
+          letterSpacing: '0.10em', zIndex: 2,
+        }}>
+          SYNTHETIC PEOPLE AI
         </div>
       </div>
     );
