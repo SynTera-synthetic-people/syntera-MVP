@@ -84,6 +84,8 @@ const PersonaBuilderManual: React.FC = () => {
     // Flash-highlight state: briefly rings the sub-tab the search jumped to
     const [highlightedSubTab, setHighlightedSubTab] = useState<string | null>(null);
     const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const demographicItems = getCategoryItems('Demographics');
+    const hasMinimumData = demographicItems.some((item) => completedSubTabs.has(item));
 
     // ── Init ───────────────────────────────────────────────────────────────────
 
@@ -431,7 +433,7 @@ const PersonaBuilderManual: React.FC = () => {
                     completedSubTabs={Array.from(completedSubTabs)}
                     highlightedSubTab={highlightedSubTab}
                 />
-        <AttributeSelectionPanel
+                <AttributeSelectionPanel
                     attributeName={activeSubTab}
                     currentValue={getCurrentAttributeValue()}
                     onSelect={(value) => handleAttributeSelect(activeSubTab, value)}
@@ -501,30 +503,23 @@ const PersonaBuilderManual: React.FC = () => {
                         </button>
                     </div>
 
-                    {activeCategory === 'Formative Experience' ? (
-                        <button
-                            onClick={handleCalibratePersona}
-                            disabled={isSubmitting}
-                            className="pbm-btn-calibrate pbm-btn-calibrate--active"
-                        >
-                            {isSubmitting ? (
-                                <>
-                                    <TbLoader size={16} className="pbm-spinner" />
-                                    Creating Persona...
-                                </>
-                            ) : (
-                                <>
-                                    Calibrate Persona
-                                    <SpIcon name="sp-Arrow-Arrow_Right_SM" />
-                                </>
-                            )}
-                        </button>
-                    ) : (
-                        <button className="pbm-btn-calibrate" disabled>
-                            Calibrate Persona
-                            <SpIcon name="sp-Arrow-Arrow_Right_SM" />
-                        </button>
-                    )}
+                    <button
+                        onClick={handleCalibratePersona}
+                        disabled={isSubmitting || !hasMinimumData}
+                        className={`pbm-btn-calibrate ${hasMinimumData ? 'pbm-btn-calibrate--active' : ''}`}
+                    >
+                        {isSubmitting ? (
+                            <>
+                                <TbLoader size={16} className="pbm-spinner" />
+                                Creating Persona...
+                            </>
+                        ) : (
+                            <>
+                                Calibrate Persona
+                                <SpIcon name="sp-Arrow-Arrow_Right_SM" />
+                            </>
+                        )}
+                    </button>
                 </div>
 
             </div>

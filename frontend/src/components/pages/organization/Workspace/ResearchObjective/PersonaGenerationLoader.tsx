@@ -194,7 +194,7 @@ const PersonaGenerationLoader: React.FC<Props> = ({
             title: "Persona Synthesis",
             description: "Assembling all layers into a coherent, simulation-ready decision model",
             items: [
-                "Merging behavioural, neurological, and contextual layers into a unified profile",
+                "Merging behavioural and contextual layers into a unified profile",
                 "Validating internal consistency across emotional states and decision scenarios",
                 "Finalising voice, motivation stack, and constraint framework",
                 "Preparing persona for qualitative simulation and research interaction",
@@ -217,16 +217,16 @@ const PersonaGenerationLoader: React.FC<Props> = ({
             ],
             outcome: "A foundational behavioural layer that reflects how this persona is likely to act, not just how they are described.",
         },
-        {
-            title: "Neuroscience Calibration",
-            description: "Modelling how the persona feels, hesitates, and evaluates",
-            items: [
-                "Aligning foundational traits with our neuroscience dataset",
-                `Calibrated ${values.neuroscienceCount} relevant emotional and physiological signal`,
-                "Estimated cognitive and emotional load, sensitivity, and perceived patterns",
-            ],
-            outcome: "A persona that reacts with emotional realism, not surface-level sentiment.",
-        },
+        // {
+        //     title: "Neuroscience Calibration",
+        //     description: "Modelling how the persona feels, hesitates, and evaluates",
+        //     items: [
+        //         "Aligning foundational traits with our neuroscience dataset",
+        //         `Calibrated ${values.neuroscienceCount} relevant emotional and physiological signal`,
+        //         "Estimated cognitive and emotional load, sensitivity, and perceived patterns",
+        //     ],
+        //     outcome: "A persona that reacts with emotional realism, not surface-level sentiment.",
+        // },
         {
             title: "Contextual & Cognitive Enrichment",
             description: "Embedding real-world context into decision-making",
@@ -243,7 +243,7 @@ const PersonaGenerationLoader: React.FC<Props> = ({
             title: "Persona Synthesis",
             description: "Assembling all layers into a coherent, simulation-ready decision model",
             items: [
-                "Merging behavioural, neurological, and contextual layers into a unified profile",
+                "Merging behavioural and contextual layers into a unified profile",
                 "Validating internal consistency across emotional states and decision scenarios",
                 "Finalising voice, motivation stack, and constraint framework",
                 "Preparing persona for qualitative simulation and research interaction",

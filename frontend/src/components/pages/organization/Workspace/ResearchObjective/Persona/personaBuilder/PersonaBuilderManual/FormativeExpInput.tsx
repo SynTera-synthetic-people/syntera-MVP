@@ -32,12 +32,10 @@ const FormativeExperienceInput: React.FC<FormativeExperienceInputProps> = ({
     }
   }, [value]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const newValue = e.target.value;
-    if (newValue.length <= maxLength) {
-      onChange(newValue);
-    }
-  };
+const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+  const newValue = e.target.value;
+  onChange(newValue.slice(0, maxLength));
+};
 
   const characterCount = value.length;
   const isNearLimit = characterCount >= maxLength * 0.9;
