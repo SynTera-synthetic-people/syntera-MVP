@@ -5,6 +5,7 @@
   width: 100%;
   overflow: hidden;
   position: relative;
+  align-items: stretch;
 }
 
 /* ── Background ── */
@@ -32,6 +33,7 @@
   position: relative;
   z-index: 10;
   flex: 1;
+  height: 100%; 
   overflow-y: auto;
   display: flex;
   flex-direction: column;

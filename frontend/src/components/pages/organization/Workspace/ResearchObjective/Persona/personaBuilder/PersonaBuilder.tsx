@@ -1,3 +1,4 @@
+//all the commented code in here is part of OLD UI will remove it eventually 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
@@ -33,15 +34,15 @@ import { downloadPersonaCardsFrontend } from './DownloadPersonaCard';
 import type { PersonaCardData } from './PersonaCardRenderer';
 
 // Components
-import Header from './components/Header';
-import TabsNavigation from './components/TabsNavigation';
-import EmptyState from './components/EmptyState';
-import PersonaListItem from './components/PersonaListItem';
-import BackstoryModal from './components/BackstoryModal';
-import ValidationModal from './components/ValidationModal';
-import ApproachSelectionModal from './components/ApproachSelectionPage';
-import AttributeItem from './components/AttributeItem';
-import SelectionPanel from './components/SelectionPanel';
+// import Header from './components/Header';
+// import TabsNavigation from './components/TabsNavigation';
+// import EmptyState from './components/EmptyState';
+// import PersonaListItem from './components/PersonaListItem';
+// import BackstoryModal from './components/BackstoryModal';
+// import ValidationModal from './components/ValidationModal';
+// import ApproachSelectionModal from './components/ApproachSelectionPage';
+// import AttributeItem from './components/AttributeItem';
+// import SelectionPanel from './components/SelectionPanel';
 
 import './PersonaBuilder.css';
 
@@ -958,8 +959,14 @@ const PersonasReadyGrid: React.FC<PersonasReadyGridProps> = ({
 
         {/* If no personas yet, just show create tile */}
         {countryKeys.length === 0 && (
-          <div className="pb-personas-grid">
-            <PersonaGridCard isCreateNew onCreateNew={onCreateNew} />
+          <div className="pb-empty-state">
+            <p className="pb-empty-state__title">No personas yet</p>
+            <p className="pb-empty-state__subtitle">
+              Get started by creating your first persona — Omi can build one for you.
+            </p>
+            <div className="pb-personas-grid">
+              <PersonaGridCard isCreateNew onCreateNew={onCreateNew} />
+            </div>
           </div>
         )}
       </div>
@@ -1022,10 +1029,8 @@ const PersonaBuilder: React.FC = () => {
     : (((fetchedPersonas as Record<string, unknown>)?.data as SavedPersona[]) ?? []);
 
   useEffect(() => {
-    if (savedPersonasFromAPI.length > 0) {
-      setShowGrid(true);
-    }
-  }, [savedPersonasFromAPI.length]);
+    setShowGrid(true);
+  }, []);
 
   const personaMap = useRef<Record<string, SavedPersona>>({});
   useEffect(() => {
@@ -1812,190 +1817,190 @@ const PersonaBuilder: React.FC = () => {
 
   // ── Trait builder view ──────────────────────────────────────────────────────
 
-  return (
-    <div className="p-4 md:p-8 relative min-h-[calc(100vh-100px)] flex flex-col">
-      <div className="max-w-7xl mx-auto relative z-10 w-full flex-grow flex flex-col">
+  // return (
+  //   <div className="p-4 md:p-8 relative min-h-[calc(100vh-100px)] flex flex-col">
+  //     <div className="max-w-7xl mx-auto relative z-10 w-full flex-grow flex flex-col">
 
-        <Header
-          personas={personas()}
-          onBack={handleBack}
-          onAIGenerate={memoizedHandleAIGenerate}
-          isGeneratingAI={isGeneratingPersonas}
-          showAIGenerate={personaIds.length > 0}
-        />
+  //       {/* <Header
+  //         personas={personas()}
+  //         onBack={handleBack}
+  //         onAIGenerate={memoizedHandleAIGenerate}
+  //         isGeneratingAI={isGeneratingPersonas}
+  //         showAIGenerate={personaIds.length > 0}
+  //       /> */}
 
-        {savedPersonasFromAPI.length > 0 && (
-          <button className="pb-view-all-btn" onClick={() => setShowGrid(true)}>
-            <TbUsers size={14} />
-            View all personas ({savedPersonasFromAPI.length})
-          </button>
-        )}
+  //       {savedPersonasFromAPI.length > 0 && (
+  //         <button className="pb-view-all-btn" onClick={() => setShowGrid(true)}>
+  //           <TbUsers size={14} />
+  //           View all personas ({savedPersonasFromAPI.length})
+  //         </button>
+  //       )}
 
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="bg-white/95 dark:bg-white/5 backdrop-blur-xl border-2 border-gray-200 dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden p-6 md:p-8 min-h-[600px] relative z-10"
-        >
-          {personaIds.length > 0 && (
-            <TabsNavigation tabs={tabs} activeTab={activeTab} onTabChange={handleTabChange} />
-          )}
+  //       <motion.div
+  //         initial={{ opacity: 0, y: 20 }}
+  //         animate={{ opacity: 1, y: 0 }}
+  //         transition={{ delay: 0.1 }}
+  //         className="bg-white/95 dark:bg-white/5 backdrop-blur-xl border-2 border-gray-200 dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden p-6 md:p-8 min-h-[600px] relative z-10"
+  //       >
+  //         {/* {personaIds.length > 0 && (
+  //           <TabsNavigation tabs={tabs} activeTab={activeTab} onTabChange={handleTabChange} />
+  //         )} */}
 
-          {personaIds.length === 0 ? (
-            <EmptyState
-              onAddPersona={handleAddPersona}
-              onAIGenerate={memoizedHandleAIGenerate}
-              isGeneratingAI={isGeneratingPersonas || isMockGenerating}
-            />
-          ) : (
-            <div className="flex flex-col lg:flex-row gap-8">
-              <div className="w-full lg:w-64 flex-shrink-0 space-y-4 bg-gray-50/50 dark:bg-black/10 p-4 rounded-2xl border border-gray-100 dark:border-white/5">
-                <div className="space-y-2">
-                  {personaIds.map(id => {
-                    const persona = personaDataById[id];
-                    if (!persona) return null;
-                    return (
-                      <PersonaListItem
-                        key={id}
-                        name={persona.name}
-                        isSelected={selectedPersonaId === id}
-                        isEditing={editingPersonaId === id}
-                        newName={newPersonaName}
-                        isAIPersona={!!(persona.isAI || persona.isAIGenerated)}
-                        savedPersona={savedPersonasFromAPI?.find(p => p.id === id)}
-                        onSelect={() => handleSelectPersona(id)}
-                        onDoubleClick={() => handleDoubleClick(id)}
-                        onNameChange={handleNameChange}
-                        onNameBlur={handleNameBlur}
-                        onNameKeyDown={handleNameKeyDown}
-                        onPreview={() => handlePreviewPersona(id)}
-                        onEditClick={(e: React.MouseEvent<HTMLButtonElement>) => {
-                          e.stopPropagation();
-                          handleDoubleClick(id);
-                        }}
-                      />
-                    );
-                  })}
-                </div>
+  //         {personaIds.length === 0 ? (
+  //           <EmptyState
+  //             onAddPersona={handleAddPersona}
+  //             onAIGenerate={memoizedHandleAIGenerate}
+  //             isGeneratingAI={isGeneratingPersonas || isMockGenerating}
+  //           />
+  //         ) : (
+  //           <div className="flex flex-col lg:flex-row gap-8">
+  //             <div className="w-full lg:w-64 flex-shrink-0 space-y-4 bg-gray-50/50 dark:bg-black/10 p-4 rounded-2xl border border-gray-100 dark:border-white/5">
+  //               {/* <div className="space-y-2">
+  //                 {personaIds.map(id => {
+  //                   const persona = personaDataById[id];
+  //                   if (!persona) return null;
+  //                   return (
+  //                     <PersonaListItem
+  //                       key={id}
+  //                       name={persona.name}
+  //                       isSelected={selectedPersonaId === id}
+  //                       isEditing={editingPersonaId === id}
+  //                       newName={newPersonaName}
+  //                       isAIPersona={!!(persona.isAI || persona.isAIGenerated)}
+  //                       savedPersona={savedPersonasFromAPI?.find(p => p.id === id)}
+  //                       onSelect={() => handleSelectPersona(id)}
+  //                       onDoubleClick={() => handleDoubleClick(id)}
+  //                       onNameChange={handleNameChange}
+  //                       onNameBlur={handleNameBlur}
+  //                       onNameKeyDown={handleNameKeyDown}
+  //                       onPreview={() => handlePreviewPersona(id)}
+  //                       onEditClick={(e: React.MouseEvent<HTMLButtonElement>) => {
+  //                         e.stopPropagation();
+  //                         handleDoubleClick(id);
+  //                       }}
+  //                     />
+  //                   );
+  //                 })}
+  //               </div> */}
 
-                <button
-                  onClick={handleAddPersona}
-                  className={`w-full flex items-center justify-center gap-2 p-3 rounded-xl border-2 border-dashed transition-all font-medium ${personaIds.length === 0
-                    ? 'bg-blue-600 border-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-500/20'
-                    : 'border-gray-300 dark:border-white/10 text-gray-500 dark:text-gray-400 hover:border-blue-500 dark:hover:border-blue-500/50 hover:text-blue-600 dark:hover:text-blue-400'
-                    }`}
-                >
-                  <TbPlus size={20} />
-                  <span>{personaIds.length === 0 ? 'Create Your First Persona' : 'Add Persona'}</span>
-                </button>
-              </div>
+  //               {/* <button
+  //                 onClick={handleAddPersona}
+  //                 className={`w-full flex items-center justify-center gap-2 p-3 rounded-xl border-2 border-dashed transition-all font-medium ${personaIds.length === 0
+  //                   ? 'bg-blue-600 border-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-500/20'
+  //                   : 'border-gray-300 dark:border-white/10 text-gray-500 dark:text-gray-400 hover:border-blue-500 dark:hover:border-blue-500/50 hover:text-blue-600 dark:hover:text-blue-400'
+  //                   }`}
+  //               >
+  //                 <TbPlus size={20} />
+  //                 <span>{personaIds.length === 0 ? 'Create Your First Persona' : 'Add Persona'}</span>
+  //               </button> */}
+  //             </div>
 
-              <div className="flex-grow flex flex-col gap-6">
-                <div className="flex-grow flex flex-col md:flex-row gap-8 bg-gray-50/80 dark:bg-black/10 p-6 rounded-2xl border border-gray-100 dark:border-white/5 h-full relative min-h-[500px]">
-                  {isTraitLoading ? (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center z-50 bg-gray-50/50 dark:bg-black/20 backdrop-blur-sm rounded-2xl">
-                      <TbLoader className="animate-spin text-blue-600 dark:text-blue-400 mb-4" size={48} />
-                      <p className="text-sm font-medium text-gray-500 dark:text-gray-400 animate-pulse">
-                        Loading attributes...
-                      </p>
-                    </div>
-                  ) : (
-                    <>
-                      {activeTab !== 'Persona' && (
-                        <div className={`w-full flex-shrink-0 space-y-3 transition-all duration-300 ${editingItem ? 'md:w-64' : 'md:w-[440px]'}`}>
-                          <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Attributes</h3>
-                          <AnimatePresence mode="wait">
-                            <motion.div
-                              key={activeTab}
-                              initial={{ opacity: 0, x: 20 }}
-                              animate={{ opacity: 1, x: 0 }}
-                              exit={{ opacity: 0, x: -20 }}
-                              className={`grid gap-3 transition-all duration-300 ${editingItem ? 'grid-cols-1' : 'grid-cols-2'}`}
-                            >
-                              {((contentData as Record<string, { items: string[] }>)[activeTab])?.items?.map((item: string) => {
-                                const isAIPersona = !!(
-                                  currentPersonaData?.isAI || currentPersonaData?.isAIGenerated ||
-                                  selectedPersonaId?.toLowerCase().includes('ai') ||
-                                  selectedPersonaId?.toLowerCase().includes('mock')
-                                );
-                                return (
-                                  <AttributeItem
-                                    key={item}
-                                    item={item}
-                                    currentValue={currentPersonaData[item]}
-                                    isEditing={editingItem?.item === item}
-                                    onClick={() => handleItemClick(activeTab, item)}
-                                    disabled={isAIPersona}
-                                  />
-                                );
-                              })}
-                            </motion.div>
-                          </AnimatePresence>
-                        </div>
-                      )}
+  //             <div className="flex-grow flex flex-col gap-6">
+  //               {/* <div className="flex-grow flex flex-col md:flex-row gap-8 bg-gray-50/80 dark:bg-black/10 p-6 rounded-2xl border border-gray-100 dark:border-white/5 h-full relative min-h-[500px]">
+  //                 {isTraitLoading ? (
+  //                   <div className="absolute inset-0 flex flex-col items-center justify-center z-50 bg-gray-50/50 dark:bg-black/20 backdrop-blur-sm rounded-2xl">
+  //                     <TbLoader className="animate-spin text-blue-600 dark:text-blue-400 mb-4" size={48} />
+  //                     <p className="text-sm font-medium text-gray-500 dark:text-gray-400 animate-pulse">
+  //                       Loading attributes...
+  //                     </p>
+  //                   </div>
+  //                 ) : (
+  //                   <>
+  //                     {activeTab !== 'Persona' && (
+  //                       <div className={`w-full flex-shrink-0 space-y-3 transition-all duration-300 ${editingItem ? 'md:w-64' : 'md:w-[440px]'}`}>
+  //                         <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Attributes</h3>
+  //                         <AnimatePresence mode="wait">
+  //                           <motion.div
+  //                             key={activeTab}
+  //                             initial={{ opacity: 0, x: 20 }}
+  //                             animate={{ opacity: 1, x: 0 }}
+  //                             exit={{ opacity: 0, x: -20 }}
+  //                             className={`grid gap-3 transition-all duration-300 ${editingItem ? 'grid-cols-1' : 'grid-cols-2'}`}
+  //                           >
+  //                             {((contentData as Record<string, { items: string[] }>)[activeTab])?.items?.map((item: string) => {
+  //                               const isAIPersona = !!(
+  //                                 currentPersonaData?.isAI || currentPersonaData?.isAIGenerated ||
+  //                                 selectedPersonaId?.toLowerCase().includes('ai') ||
+  //                                 selectedPersonaId?.toLowerCase().includes('mock')
+  //                               );
+  //                               return (
+  //                                 <AttributeItem
+  //                                   key={item}
+  //                                   item={item}
+  //                                   currentValue={currentPersonaData[item]}
+  //                                   isEditing={editingItem?.item === item}
+  //                                   onClick={() => handleItemClick(activeTab, item)}
+  //                                   disabled={isAIPersona}
+  //                                 />
+  //                               );
+  //                             })}
+  //                           </motion.div>
+  //                         </AnimatePresence>
+  //                       </div>
+  //                     )}
 
-                      <SelectionPanel
-                        editingItem={editingItem}
-                        currentValue={currentPersonaData[editingItem?.item ?? '']}
-                        onSelect={handleSave}
-                      />
+  //                     <SelectionPanel
+  //                       editingItem={editingItem}
+  //                       currentValue={currentPersonaData[editingItem?.item ?? '']}
+  //                       onSelect={handleSave}
+  //                     />
 
-                      {!editingItem && activeTab !== 'Persona' && (
-                        <div className="flex-grow flex items-center justify-center p-12 text-center text-gray-500 dark:text-gray-400 bg-gray-50/50 dark:bg-white/5 rounded-2xl border border-dashed border-gray-200 dark:border-white/10">
-                          <div>
-                            <TbEdit size={48} className="mx-auto mb-4 opacity-20" />
-                            <p>Select an attribute on the left to configure it.</p>
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
+  //                     {!editingItem && activeTab !== 'Persona' && (
+  //                       <div className="flex-grow flex items-center justify-center p-12 text-center text-gray-500 dark:text-gray-400 bg-gray-50/50 dark:bg-white/5 rounded-2xl border border-dashed border-gray-200 dark:border-white/10">
+  //                         <div>
+  //                           <TbEdit size={48} className="mx-auto mb-4 opacity-20" />
+  //                           <p>Select an attribute on the left to configure it.</p>
+  //                         </div>
+  //                       </div>
+  //                     )}
+  //                   </>
+  //                 )}
+  //               </div> */}
 
-                <div className="flex gap-2 justify-end">
-                  {!currentPersonaData?.isAI && !currentPersonaData?.isAIGenerated && (
-                    <button
-                      onClick={handleSubmit}
-                      disabled={isProcessing || !hasSelectedTraits}
-                      className="flex items-center gap-2 px-10 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-bold shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {isProcessing ? 'Processing...' : currentPersonaData.isSaved ? 'Update' : 'Submit'}
-                    </button>
-                  )}
-                  {savedPersonasFromAPI.length > 0 && (
-                    <button
-                      onClick={handleDiscussionGuidelines}
-                      disabled={updateExplorationMethodMutation.isPending}
-                      className="flex items-center gap-2 px-10 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-bold shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {updateExplorationMethodMutation.isPending ? 'Processing...' : 'Next step'}
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-        </motion.div>
-      </div>
+  //               <div className="flex gap-2 justify-end">
+  //                 {/* {!currentPersonaData?.isAI && !currentPersonaData?.isAIGenerated && (
+  //                   <button
+  //                     onClick={handleSubmit}
+  //                     disabled={isProcessing || !hasSelectedTraits}
+  //                     className="flex items-center gap-2 px-10 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-bold shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+  //                   >
+  //                     {isProcessing ? 'Processing...' : currentPersonaData.isSaved ? 'Update' : 'Submit'}
+  //                   </button>
+  //                 )} */}
+  //                 {/* {savedPersonasFromAPI.length > 0 && (
+  //                   <button
+  //                     onClick={handleDiscussionGuidelines}
+  //                     disabled={updateExplorationMethodMutation.isPending}
+  //                     className="flex items-center gap-2 px-10 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-bold shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+  //                   >
+  //                     {updateExplorationMethodMutation.isPending ? 'Processing...' : 'Next step'}
+  //                   </button>
+  //                 )} */}
+  //               </div>
+  //             </div>
+  //           </div>
+  //         )}
+  //       </motion.div>
+  //     </div>
 
-      <BackstoryModal
-        show={showBackstoryPopup}
-        selectedPersona={currentPersonaData.name ?? selectedPersonaId}
-        backstory={backstory}
-        isSubmitting={isProcessing}
-        onBackstoryChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setBackstory(e.target.value)}
-        onSubmit={handleBackstorySubmit}
-        onClose={() => setShowBackstoryPopup(false)}
-      />
+  //     {/* <BackstoryModal
+  //       show={showBackstoryPopup}
+  //       selectedPersona={currentPersonaData.name ?? selectedPersonaId}
+  //       backstory={backstory}
+  //       isSubmitting={isProcessing}
+  //       onBackstoryChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setBackstory(e.target.value)}
+  //       onSubmit={handleBackstorySubmit}
+  //       onClose={() => setShowBackstoryPopup(false)}
+  //     />
 
-      <ValidationModal
-        show={showValidationModal}
-        validationError={validationError}
-        onContinue={handleValidationModalContinue}
-        onClose={handleValidationModalClose}
-      />
-    </div>
-  );
+  //     <ValidationModal
+  //       show={showValidationModal}
+  //       validationError={validationError}
+  //       onContinue={handleValidationModalContinue}
+  //       onClose={handleValidationModalClose}
+  //     /> */}
+  //   </div>
+  // );
 };
 
 export default PersonaBuilder;
