@@ -625,7 +625,7 @@ const ExplorationList: React.FC = () => {
                                     // need to apply logic
                                     }}
                                   >
-                                    <SpIcon name="sp-File-File_Document" />View Exploration
+                                    {/* <SpIcon name="sp-File-File_Document" />View Exploration */}
                                   </div>
                                 )}
                                 <div className="menu-item menu-item-delete" onClick={() => handleDelete(exploration.id, exploration.title)}>
