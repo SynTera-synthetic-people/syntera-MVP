@@ -102,63 +102,86 @@ const PopulationBuilder: React.FC = () => {
     let cancelled = false;
 
     (async () => {
+      // Sort newest first and limit to 5 most recent to avoid excessive API calls.
       const sorted = [...simulationList].sort(
         (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime(),
       );
-      const latest = sorted[0];
+      const simsToCheck = sorted.slice(0, 5);
+
       try {
-        const qRes = await getAllQuestionnaires({ workspaceId, explorationId, simulationId: latest.id });
-        const qData = qRes?.data;
+        // ── Parallel scan: check questionnaire + survey existence for each sim ──
+        // This finds the newest sim with a COMPLETED survey (questionnaire + survey sim)
+        // so users always land on their latest finished work rather than an in-progress one.
+        const checks = await Promise.all(
+          simsToCheck.map(async (sim) => {
+            try {
+              const [qRes, surveyRes] = await Promise.all([
+                getAllQuestionnaires({ workspaceId, explorationId, simulationId: sim.id }),
+                getSurveySimulationBySource({
+                  workspaceId,
+                  explorationId,
+                  simulationSourceId: sim.id,
+                }).catch(() => null),
+              ]);
+              return {
+                sim,
+                qData: Array.isArray(qRes?.data) ? qRes.data : [] as any[],
+                surveyId: (surveyRes as any)?.data?.id ?? '',
+              };
+            } catch {
+              return { sim, qData: [] as any[], surveyId: '' };
+            }
+          }),
+        );
+
         if (cancelled) return;
-        if (!Array.isArray(qData) || qData.length === 0) return;
+
+        // Pick best candidate: newest sim with both questionnaire AND completed survey.
+        // Fall back to newest sim with questionnaire only (will show survey animation).
+        let insightCandidate: { sim: any; qData: any[]; surveyId: string } | null = null;
+        let surveyCandidate: { sim: any; qData: any[] } | null = null;
+
+        for (const check of checks) {
+          // checks is already sorted newest-first
+          if (check.qData.length === 0) continue;
+          if (!surveyCandidate) surveyCandidate = { sim: check.sim, qData: check.qData };
+          if (check.surveyId) {
+            insightCandidate = check;
+            break;
+          }
+        }
+
+        const candidate = insightCandidate ?? surveyCandidate;
+        if (!candidate) return; // Nothing restorable — stay in setup
 
         restoredFromServerRef.current = true;
 
-        const pids: string[] = latest.persona_ids || [];
+        const { sim, qData } = candidate;
+        const surveyId = insightCandidate?.surveyId ?? '';
+
+        const pids: string[] = sim.persona_ids || [];
         const idSet = new Set(pids);
         const selected = personas.filter((p) => idSet.has(p.id)).map((p) => ({ id: p.id, name: p.name }));
-        const sd = latest.sample_distribution || {};
+        const sd = sim.sample_distribution || {};
         const nextSizes: SampleSizes = { ...sd };
         selected.forEach((p) => { if (nextSizes[p.id] == null) nextSizes[p.id] = 50; });
 
-        setSimulationId(latest.id);
+        setSimulationId(sim.id);
         setSimulationResult({
-          id: latest.id,
-          workspace_id: latest.workspace_id,
-          exploration_id: latest.exploration_id,
-          persona_ids: latest.persona_ids,
-          sample_distribution: latest.sample_distribution,
-          persona_scores: latest.persona_scores,
-          weighted_score: latest.weighted_score,
-          global_insights: latest.global_insights,
+          id: sim.id,
+          workspace_id: sim.workspace_id,
+          exploration_id: sim.exploration_id,
+          persona_ids: sim.persona_ids,
+          sample_distribution: sim.sample_distribution,
+          persona_scores: sim.persona_scores,
+          weighted_score: sim.weighted_score,
+          global_insights: sim.global_insights,
         });
         setQuestionnaireData(qData);
         setSelectedPersonas(selected);
         setSampleSizes(nextSizes);
-
-        // ── Check if survey simulation already exists in DB ───────────────
-        // If yes → skip animation entirely, jump directly to insights.
-        // If no  → show survey animation (first run or re-run needed).
-        try {
-          const surveyRes = await getSurveySimulationBySource({
-            workspaceId,
-            explorationId,
-            simulationSourceId: latest.id,
-          });
-          if (cancelled) return;
-          if (surveyRes?.data?.id) {
-            setSurveySimulationId(surveyRes.data.id);
-            setPhase('insights');
-          } else {
-            setSurveySimulationId('');
-            setPhase('survey');
-          }
-        } catch {
-          if (!cancelled) {
-            setSurveySimulationId('');
-            setPhase('survey');
-          }
-        }
+        setSurveySimulationId(surveyId);
+        setPhase(insightCandidate ? 'insights' : 'survey');
       } catch (e) {
         console.warn('Could not restore saved population/questionnaire', e);
       }
