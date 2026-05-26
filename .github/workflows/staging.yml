@@ -2,10 +2,12 @@ name: Deploy Frontend & Backend to EKS (syntera-mvp)
 
 on:
   push:
-    branches:
-      - staging
-
-  workflow_dispatch:
+    branches: [ "staging" ]
+    paths:
+      - "frontend/**"
+      - "backend/**"
+      - "k8sdeployment/**"
+  workflow_dispatch:   
 
 env:
   AWS_REGION: ap-south-1
@@ -16,32 +18,17 @@ env:
 
 jobs:
   deploy:
-    name: Build and Deploy
-
-    runs-on:
-      - self-hosted
-      - staging-runner
-
+    runs-on: [self-hosted, staging-runner]
     steps:
-      # Checkout Repository
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      # Configure AWS Credentials
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      # Login to Amazon ECR
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      # Build and Push Frontend Docker Image
-      - name: Build and Push Frontend
+      
+      - name: Build & Push Frontend
         id: build-frontend
         working-directory: frontend
         env:
@@ -50,11 +37,9 @@ jobs:
         run: |
           docker build -t $ECR_REGISTRY/$ECR_FRONTEND_REPO:$IMAGE_TAG .
           docker push $ECR_REGISTRY/$ECR_FRONTEND_REPO:$IMAGE_TAG
-
           echo "frontend_image=$ECR_REGISTRY/$ECR_FRONTEND_REPO:$IMAGE_TAG" >> $GITHUB_OUTPUT
-
-      # Build and Push Backend Docker Image
-      - name: Build and Push Backend
+      
+      - name: Build & Push Backend
         id: build-backend
         working-directory: backend
         env:
@@ -63,42 +48,26 @@ jobs:
         run: |
           docker build -t $ECR_REGISTRY/$ECR_BACKEND_REPO:$IMAGE_TAG .
           docker push $ECR_REGISTRY/$ECR_BACKEND_REPO:$IMAGE_TAG
-
           echo "backend_image=$ECR_REGISTRY/$ECR_BACKEND_REPO:$IMAGE_TAG" >> $GITHUB_OUTPUT
-
-      # Update kubeconfig
       - name: Update kubeconfig
-        run: |
-          aws eks update-kubeconfig \
-            --region $AWS_REGION \
-            --name $EKS_CLUSTER
+        run: aws eks update-kubeconfig --region $AWS_REGION --name $EKS_CLUSTER
 
-      # Deploy Frontend to EKS
-      - name: Deploy Frontend
+      - name: Deploy to EKS
         run: |
-          kubectl set image \
-          -f k8sdeployment/front-end-deployment.yml \
-          frontend=${{ steps.build-frontend.outputs.frontend_image }} \
-          -n $NAMESPACE
-
+          set -e
+          
+          kubectl set image -f k8sdeployment/front-end-deployment.yml frontend=${{ steps.build-frontend.outputs.frontend_image }} -n $NAMESPACE
           kubectl apply -f k8sdeployment/front-end-service.yml -n $NAMESPACE
           kubectl apply -f k8sdeployment/front-ingress.yml -n $NAMESPACE
-
-          kubectl rollout status \
-          -f k8sdeployment/front-end-deployment.yml \
-          -n $NAMESPACE
-
-      # Deploy Backend to EKS
-      - name: Deploy Backend
-        run: |
-          kubectl set image \
-          -f k8sdeployment/deployment.yml \
-          backend=${{ steps.build-backend.outputs.backend_image }} \
-          -n $NAMESPACE
-
+          if ! kubectl rollout status -f k8sdeployment/front-end-deployment.yml -n $NAMESPACE; then
+            echo "Frontend rollout failed, rolling back..."
+            kubectl rollout undo -f k8sdeployment/front-end-deployment.yml -n $NAMESPACE
+          fi
+          
+          kubectl set image -f k8sdeployment/deployment.yml backend=${{ steps.build-backend.outputs.backend_image }} -n $NAMESPACE
           kubectl apply -f k8sdeployment/service.yml -n $NAMESPACE
           kubectl apply -f k8sdeployment/ingress.yml -n $NAMESPACE
-
-          kubectl rollout status \
-          -f k8sdeployment/deployment.yml \
-          -n $NAMESPACE
+          if ! kubectl rollout status -f k8sdeployment/deployment.yml -n $NAMESPACE; then
+            echo "Backend rollout failed, rolling back..."
+            kubectl rollout undo -f k8sdeployment/deployment.yml -n $NAMESPACE
+          fi
