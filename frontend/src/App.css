@@ -1,9 +1,8 @@
 #root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
-  font-family: 'Calibri', sans-serif;
+  height: 100vh;
+  width: 100%;
+  overflow: hidden;
+  font-family: Inter;
 }
 
 .logo {

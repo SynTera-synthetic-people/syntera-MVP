@@ -5,7 +5,7 @@
 .ig-root {
   display: flex;
   flex-direction: column;
-  min-height: calc(100vh - 60px);
+  min-height: 100%;
   background: var(--T-Base-B1, #0E0F12);
   padding: 32px 40px 40px;
 }

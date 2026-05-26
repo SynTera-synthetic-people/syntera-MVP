@@ -95,7 +95,7 @@ const MainPage = () => {
           </div>
         </div> */}
         <div className="flex-1 overflow-y-auto relative no-scrollbar">
-          <div className="pt-16 md:pt-0 pb-20">
+          <div className="pt-16 md:pt-0">
             <Outlet />
           </div>
         </div>
