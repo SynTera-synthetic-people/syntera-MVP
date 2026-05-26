@@ -2,11 +2,19 @@ name: Deploy Frontend & Backend to EKS (syntera-mvp)
 
 on:
   push:
-    branches:
-      - staging
+    branches: [ "staging" ]
+    paths:
+      - "frontend/**"
+      - "backend/**"
+      - "k8sdeployment/**"
+      - ".github/workflows/**"
   pull_request:
-    branches:
-      - staging
+    branches: [ "staging" ]
+    paths:
+      - "frontend/**"
+      - "backend/**"
+      - "k8sdeployment/**"
+      - ".github/workflows/**"
   workflow_dispatch:
 
 env:
@@ -18,7 +26,7 @@ env:
 
 jobs:
   deploy:
-    runs-on: [self-hosted, staging-runner]
+    runs-on: [self-hosted, staging-runner]   # ✅ matches your runner labels
     steps:
       - name: Checkout
         uses: actions/checkout@v4
