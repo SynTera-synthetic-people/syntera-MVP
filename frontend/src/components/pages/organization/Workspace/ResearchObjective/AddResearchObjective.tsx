@@ -24,7 +24,7 @@ import { useOmniWorkflow } from '../../../../../hooks/useOmiWorkflow';
 // ── CHANGE 1: Import useAutoGeneratePersonas so we can fire the backend
 //             persona generation the moment the user clicks "Create with Omi"
 import { useAutoGeneratePersonas, usePersonas } from '../../../../../hooks/usePersonaBuilder';
-import OmiGreet from '../../../../../assets/Omi Animations/OmiGreeting.mp4';
+import OmiGreet from '../../../../../assets/Omi Animations/IdleStateMotion_Lite.mp4';
 import OmiPencil from '../../../../../assets/Omi Animations/OmiPencil.mp4';
 import OmiKeyboard from '../../../../../assets/Omi Animations/OmiKeyboard.mp4';
 import OmiCaution from '../../../../../assets/Omi Animations/OmiCaution.mp4';
