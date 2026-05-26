@@ -45,6 +45,12 @@ interface SimulateSurveyPayload extends QueryParams {
   forceRerun?: boolean;
 }
 
+interface EnsureSurveySimulationPayload extends QueryParams {
+  personaIds: string[];
+  simulationId: string;
+  forceRerun?: boolean;
+}
+
 interface DownloadPayload extends QueryParams {
   simulationId: string;
   personaName?: string;
@@ -79,6 +85,19 @@ const questionnaireQueryKey = (
     workspaceId,
     explorationId,
     simulationId,
+  ];
+
+const surveySimulationInFlight = new Map<string, Promise<any>>();
+
+export const surveySimulationBySourceQueryKey = (
+  workspaceId?: string,
+  explorationId?: string,
+  simulationSourceId?: string | null,
+) => [
+    'surveySimulationBySource',
+    workspaceId,
+    explorationId,
+    simulationSourceId,
   ];
 
 /**
@@ -247,6 +266,67 @@ export const useSimulateSurvey = () => {
   });
 };
 
+export const useEnsureSurveySimulation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      workspaceId,
+      explorationId,
+      personaIds,
+      simulationId,
+      forceRerun = false,
+    }: EnsureSurveySimulationPayload) => {
+      if (!workspaceId || !explorationId || !simulationId) {
+        throw new Error('Missing survey simulation context.');
+      }
+
+      const queryKey = surveySimulationBySourceQueryKey(workspaceId, explorationId, simulationId);
+      const inFlightKey = `${workspaceId}:${explorationId}:${simulationId}:${forceRerun ? 'force' : 'normal'}`;
+      const inFlight = surveySimulationInFlight.get(inFlightKey);
+      if (inFlight) return inFlight;
+
+      const promise = (async () => {
+        if (!forceRerun) {
+          const cached = queryClient.getQueryData<any>(queryKey);
+          if (cached?.data?.id) return cached;
+
+          const existing = await getSurveySimulationBySource({
+            workspaceId,
+            explorationId,
+            simulationSourceId: simulationId,
+          });
+          if (existing?.data?.id) {
+            queryClient.setQueryData(queryKey, existing);
+            return existing;
+          }
+        } else {
+          queryClient.removeQueries({ queryKey });
+        }
+
+        if (!personaIds.length) {
+          throw new Error('No personas available to run the survey simulation.');
+        }
+
+        const created = await simulateSurvey({
+          workspaceId,
+          explorationId,
+          personaId: personaIds,
+          simulationId,
+          forceRerun,
+        });
+        queryClient.setQueryData(queryKey, created);
+        return created;
+      })().finally(() => {
+        surveySimulationInFlight.delete(inFlightKey);
+      });
+
+      surveySimulationInFlight.set(inFlightKey, promise);
+      return promise;
+    },
+  });
+};
+
 /**
  * Fetch an already-completed survey simulation for a population simulation ID.
  */
@@ -258,7 +338,7 @@ export const useGetSurveySimulationBySource = (
   simulationSourceId?: string | null,
 ) => {
   return useQuery({
-    queryKey: ['surveySimulationBySource', workspaceId, explorationId, simulationSourceId],
+    queryKey: surveySimulationBySourceQueryKey(workspaceId, explorationId, simulationSourceId),
     queryFn: () =>
       getSurveySimulationBySource({
         workspaceId,

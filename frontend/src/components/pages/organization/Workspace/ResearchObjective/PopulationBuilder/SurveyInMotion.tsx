@@ -14,7 +14,7 @@ interface SurveyInMotionProps {
   simulationResult: any;
   questionnaireData: any[];
   questionnairesLoading: boolean;
-  onSurveyComplete: () => void;
+  onSurveyComplete: () => void | Promise<void>;
   onEditConfiguration: () => void;
   onModified: () => void;
   workspaceId: string;
@@ -69,11 +69,17 @@ const SurveyInMotion: React.FC<SurveyInMotionProps> = ({ onSurveyComplete }) => 
   const [currentStep, setCurrentStep] = useState(0);
   const [checkedItems, setCheckedItems] = useState<number[]>([]);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const onSurveyCompleteRef = useRef(onSurveyComplete);
+
+  useEffect(() => {
+    onSurveyCompleteRef.current = onSurveyComplete;
+  }, [onSurveyComplete]);
 
   // ── Auto-tick through items ──────────────────────────────────────────────
   useEffect(() => {
     let stepIndex = 0;
     let itemIndex = 0;
+    let completeTimeout: ReturnType<typeof setTimeout> | undefined;
 
     const interval = setInterval(() => {
       const stepData = SURVEY_STEPS[stepIndex];
@@ -90,12 +96,17 @@ const SurveyInMotion: React.FC<SurveyInMotionProps> = ({ onSurveyComplete }) => 
           setCurrentStep(stepIndex);
         } else {
           clearInterval(interval);
-          setTimeout(() => onSurveyComplete(), 1000);
+          completeTimeout = setTimeout(() => {
+            void onSurveyCompleteRef.current();
+          }, 1000);
         }
       }
     }, TICK_MS);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      if (completeTimeout) clearTimeout(completeTimeout);
+    };
   }, []);
 
   // ── Derived values ────────────────────────────────────────────────────────

@@ -316,9 +316,10 @@ Ensure this persona represents a distinct behavioral segment from other personas
                     "role": "system",
                     "content": [
                         {
-                            "type": "text",
-                            "text": PERSONA_GENERATION_BASE_INSTRUCTIONS,  # ← Cached
-                            "cache_control": {"type": "ephemeral"}
+                            # OpenAI Responses API: type must be "input_text"
+                            # Prompt caching is automatic in OpenAI — no cache_control needed
+                            "type": "input_text",
+                            "text": PERSONA_GENERATION_BASE_INSTRUCTIONS,
                         }
                     ]
                 },

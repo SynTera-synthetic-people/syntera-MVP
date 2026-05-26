@@ -1,18 +1,64 @@
 import asyncio
 import json
+import logging
 from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime
 from app.models.survey_simulation import SurveySimulation
 from app.utils.id_generator import generate_id
 from app.db import async_engine
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
+from sqlmodel import select
 from app.config import OPENAI_API_KEY, settings
 from openai import AsyncOpenAI
 from app.services.survey_simulation import _group_results_by_section, _fallback_simulation
 from app.utils.survey_results_normalize import build_canonical_survey_results, build_normalized_survey_results
 from app.services.question_engine import analysis_options_for_question
 
+logger = logging.getLogger(__name__)
+
 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+_survey_source_locks: Dict[str, asyncio.Lock] = {}
+
+
+def _survey_source_lock(source_id: str) -> asyncio.Lock:
+    lock = _survey_source_locks.get(source_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _survey_source_locks[source_id] = lock
+    return lock
+
+
+def _survey_result_payload(
+    sim_obj: SurveySimulation,
+    questions_sections: List[Dict],
+    *,
+    llm_source_explanation: Optional[Dict] = None,
+) -> Dict:
+    results = sim_obj.results if isinstance(sim_obj.results, dict) else {}
+    return {
+        "id": sim_obj.id,
+        "workspace_id": sim_obj.workspace_id,
+        "exploration_id": sim_obj.exploration_id,
+        "total_sample_size": sim_obj.total_sample_size,
+        "personas": (sim_obj.narrative or {}).get("personas", []),
+        "sections": _group_results_by_section(questions_sections, results),
+        "results": sim_obj.results,
+        "normalized_results": sim_obj.normalized_results,
+        "narrative": sim_obj.narrative,
+        "llm_source_explanation": llm_source_explanation or {},
+        "created_at": sim_obj.created_at.isoformat(),
+    }
+
+
+async def _get_existing_by_source(session: AsyncSession, simulation_source_id: str) -> Optional[SurveySimulation]:
+    stmt = (
+        select(SurveySimulation)
+        .where(SurveySimulation.simulation_source_id == simulation_source_id)
+        .order_by(SurveySimulation.created_at.desc())
+    )
+    res = await session.execute(stmt)
+    return res.scalars().first()
 
 
 def _simulation_question_type_code(question_type: Any) -> str:
@@ -661,6 +707,59 @@ async def simulate_combined_and_store(
     questions_sections: List[Dict],
     user_id: str,
     exploration_id: str,
+    replace_existing: bool = False,
+):
+    if not simulation_id:
+        return await _simulate_combined_and_store_unlocked(
+            workspace_id=workspace_id,
+            research_objective=research_objective,
+            personas_list=personas_list,
+            persona_samples=persona_samples,
+            simulation_id=simulation_id,
+            questions_sections=questions_sections,
+            user_id=user_id,
+            exploration_id=exploration_id,
+            replace_existing=replace_existing,
+        )
+
+    lock = _survey_source_lock(simulation_id)
+    async with lock:
+        async with AsyncSession(async_engine) as session:
+            existing = await _get_existing_by_source(session, simulation_id)
+            if existing and not replace_existing:
+                logger.info(
+                    "Combined survey simulation source lock hit existing row | survey_simulation_id=%s "
+                    "workspace_id=%s exploration_id=%s population_simulation_id=%s",
+                    existing.id,
+                    existing.workspace_id,
+                    existing.exploration_id,
+                    existing.simulation_source_id,
+                )
+                return _survey_result_payload(existing, questions_sections)
+
+        return await _simulate_combined_and_store_unlocked(
+            workspace_id=workspace_id,
+            research_objective=research_objective,
+            personas_list=personas_list,
+            persona_samples=persona_samples,
+            simulation_id=simulation_id,
+            questions_sections=questions_sections,
+            user_id=user_id,
+            exploration_id=exploration_id,
+            replace_existing=replace_existing,
+        )
+
+
+async def _simulate_combined_and_store_unlocked(
+    workspace_id: str,
+    research_objective: Any,
+    personas_list: List[Dict],
+    persona_samples: Dict[str, int],  # {persona_id: sample_size}
+    simulation_id: Optional[str],
+    questions_sections: List[Dict],
+    user_id: str,
+    exploration_id: str,
+    replace_existing: bool,
 ):
     """
     Generate ONE combined simulation for ALL personas in a single LLM call.
@@ -668,6 +767,18 @@ async def simulate_combined_and_store(
     Returns a dict containing the combined simulation result.
     """
     # Flatten questions — preserve question_type so normalizer can skip scaling for M
+    logger.info(
+        "Combined survey simulation service started | workspace_id=%s exploration_id=%s "
+        "population_simulation_id=%s persona_count=%s persona_samples=%s section_count=%s user_id=%s",
+        workspace_id,
+        exploration_id,
+        simulation_id,
+        len(personas_list),
+        persona_samples,
+        len(questions_sections or []),
+        user_id,
+    )
+
     flat_questions = []
     for sec in questions_sections:
         for q in sec.get("questions", []):
@@ -684,11 +795,29 @@ async def simulate_combined_and_store(
             })
     
     if not flat_questions:
+        logger.warning(
+            "Combined survey simulation blocked: no flattened questions | workspace_id=%s exploration_id=%s "
+            "population_simulation_id=%s section_count=%s user_id=%s",
+            workspace_id,
+            exploration_id,
+            simulation_id,
+            len(questions_sections or []),
+            user_id,
+        )
         raise ValueError("No questions provided to simulate")
     
     total_sample_size = sum(persona_samples.values())
     
     if total_sample_size <= 0:
+        logger.warning(
+            "Combined survey simulation blocked: non-positive sample size | workspace_id=%s exploration_id=%s "
+            "population_simulation_id=%s persona_samples=%s user_id=%s",
+            workspace_id,
+            exploration_id,
+            simulation_id,
+            persona_samples,
+            user_id,
+        )
         raise ValueError("Total sample size must be greater than 0")
     
     # Get research objective description
@@ -701,6 +830,17 @@ async def simulate_combined_and_store(
     else:
         ro_desc = str(getattr(research_objective, "description", "") or "")
         ro_id = str(getattr(research_objective, "id", ""))
+
+    logger.info(
+        "Combined survey simulation inputs prepared | workspace_id=%s exploration_id=%s stored_exploration_id=%s "
+        "population_simulation_id=%s flat_question_count=%s total_sample_size=%s",
+        workspace_id,
+        exploration_id,
+        ro_id,
+        simulation_id,
+        len(flat_questions),
+        total_sample_size,
+    )
 
     from .auto_generated_persona import get_description
     ro_description = await get_description(exploration_id)
@@ -775,6 +915,15 @@ You should provide the output based on that in a JSON format including Statistic
     prompt_internal_info = prompt + information_gathered_prompt
 
     survey_model = (settings.SURVEY_SIMULATION_MODEL or "gpt-4o-mini").strip()
+    logger.info(
+        "Combined survey simulation LLM calls starting | workspace_id=%s exploration_id=%s "
+        "population_simulation_id=%s model=%s prompt_chars=%s",
+        workspace_id,
+        exploration_id,
+        simulation_id,
+        survey_model,
+        len(prompt_output),
+    )
 
     async def _chat_json(user_content: str) -> Any:
         res = await client.chat.completions.create(
@@ -794,16 +943,63 @@ You should provide the output based on that in a JSON format including Statistic
         try:
             raw_data = await _chat_json(prompt_output)
             if not isinstance(raw_data, dict) or "question_results" not in raw_data:
+                logger.warning(
+                    "Combined survey simulation main LLM returned invalid shape; using fallback | "
+                    "workspace_id=%s exploration_id=%s population_simulation_id=%s response_type=%s keys=%s",
+                    workspace_id,
+                    exploration_id,
+                    simulation_id,
+                    type(raw_data).__name__,
+                    list(raw_data.keys()) if isinstance(raw_data, dict) else None,
+                )
                 return _fallback_simulation(total_sample_size, flat_questions), "Invalid LLM response shape"
             return raw_data, None
         except Exception as e:
+            logger.warning(
+                "Combined survey simulation main LLM failed; using fallback | workspace_id=%s exploration_id=%s "
+                "population_simulation_id=%s error=%s",
+                workspace_id,
+                exploration_id,
+                simulation_id,
+                e,
+            )
             return _fallback_simulation(total_sample_size, flat_questions), str(e)
 
     # Run both LLM calls in parallel (previously sequential — ~2× wall-clock time)
-    data_res_internal_info, (data, llm_error) = await asyncio.gather(
-        _chat_json(prompt_internal_info),
-        _run_main_simulation(),
-    )
+    try:
+        data_res_internal_info, (data, llm_error) = await asyncio.gather(
+            _chat_json(prompt_internal_info),
+            _run_main_simulation(),
+        )
+    except Exception:
+        logger.exception(
+            "Combined survey simulation LLM gather failed | workspace_id=%s exploration_id=%s "
+            "population_simulation_id=%s model=%s",
+            workspace_id,
+            exploration_id,
+            simulation_id,
+            survey_model,
+        )
+        raise
+
+    if llm_error:
+        logger.warning(
+            "Combined survey simulation continuing with fallback result | workspace_id=%s exploration_id=%s "
+            "population_simulation_id=%s llm_error=%s",
+            workspace_id,
+            exploration_id,
+            simulation_id,
+            llm_error,
+        )
+    else:
+        logger.info(
+            "Combined survey simulation LLM calls completed | workspace_id=%s exploration_id=%s "
+            "population_simulation_id=%s question_result_count=%s",
+            workspace_id,
+            exploration_id,
+            simulation_id,
+            len(data.get("question_results", [])) if isinstance(data, dict) else None,
+        )
     
     llm_source_explanation = data.get("llm_source_explanation", {})
 
@@ -858,21 +1054,89 @@ You should provide the output based on that in a JSON format including Statistic
         simulation_result=data_res_internal_info
     )
     
-    async with AsyncSession(async_engine) as session:
-        session.add(sim_obj)
-        await session.commit()
-        await session.refresh(sim_obj)
+    logger.info(
+        "Combined survey simulation DB insert starting | survey_simulation_id=%s workspace_id=%s "
+        "stored_exploration_id=%s population_simulation_id=%s total_sample_size=%s",
+        sim_obj.id,
+        workspace_id,
+        ro_id,
+        simulation_id,
+        total_sample_size,
+    )
+
+    try:
+        async with AsyncSession(async_engine) as session:
+            if simulation_id and replace_existing:
+                existing = await _get_existing_by_source(session, simulation_id)
+                if existing:
+                    logger.info(
+                        "Combined survey simulation DB update existing row | survey_simulation_id=%s "
+                        "workspace_id=%s stored_exploration_id=%s population_simulation_id=%s",
+                        existing.id,
+                        workspace_id,
+                        ro_id,
+                        simulation_id,
+                    )
+                    existing.workspace_id = workspace_id
+                    existing.exploration_id = ro_id
+                    existing.persona_id = persona_ids
+                    existing.persona_sample_sizes = persona_samples
+                    existing.total_sample_size = total_sample_size
+                    existing.results = normalized_results
+                    existing.normalized_results = canonical_results
+                    existing.narrative = narrative
+                    existing.created_by = user_id
+                    existing.created_at = datetime.utcnow()
+                    existing.simulation_result = data_res_internal_info
+                    await session.commit()
+                    await session.refresh(existing)
+                    sim_obj = existing
+                else:
+                    session.add(sim_obj)
+                    await session.commit()
+                    await session.refresh(sim_obj)
+            else:
+                session.add(sim_obj)
+                await session.commit()
+                await session.refresh(sim_obj)
+    except IntegrityError:
+        logger.warning(
+            "Combined survey simulation DB insert hit unique source constraint; returning existing row | "
+            "survey_simulation_id=%s workspace_id=%s stored_exploration_id=%s population_simulation_id=%s",
+            sim_obj.id,
+            workspace_id,
+            ro_id,
+            simulation_id,
+        )
+        async with AsyncSession(async_engine) as session:
+            if simulation_id:
+                existing = await _get_existing_by_source(session, simulation_id)
+                if existing:
+                    return _survey_result_payload(existing, questions_sections)
+        raise
+    except Exception:
+        logger.exception(
+            "Combined survey simulation DB insert failed | survey_simulation_id=%s workspace_id=%s "
+            "stored_exploration_id=%s population_simulation_id=%s",
+            sim_obj.id,
+            workspace_id,
+            ro_id,
+            simulation_id,
+        )
+        raise
+
+    logger.info(
+        "Combined survey simulation DB insert completed | survey_simulation_id=%s workspace_id=%s "
+        "stored_exploration_id=%s population_simulation_id=%s total_sample_size=%s",
+        sim_obj.id,
+        sim_obj.workspace_id,
+        sim_obj.exploration_id,
+        sim_obj.simulation_source_id,
+        sim_obj.total_sample_size,
+    )
     
-    return {
-        "id": sim_obj.id,
-        "workspace_id": sim_obj.workspace_id,
-        "exploration_id": sim_obj.exploration_id,
-        "total_sample_size": total_sample_size,
-        "personas": narrative["personas"],
-        "sections": grouped_output,
-        "results": sim_obj.results,
-        "normalized_results": sim_obj.normalized_results,
-        "narrative": sim_obj.narrative,
-        "llm_source_explanation": llm_source_explanation,
-        "created_at": sim_obj.created_at.isoformat()
-    }
+    return _survey_result_payload(
+        sim_obj,
+        questions_sections,
+        llm_source_explanation=llm_source_explanation,
+    )

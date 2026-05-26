@@ -32,6 +32,12 @@ interface Exploration {
   created_at: string;
   is_end?: boolean;
   audience_type?: string;
+  // Backend-computed routing fields (primary resume signal — DB-backed)
+  is_qualitative?: boolean | null;
+  is_quantitative?: boolean | null;
+  current_step?: string | null;  // "step_1"|"step_2"|"step_3"|"step_4"|"completed"
+  qual_step?: string | null;     // "guide"|"interviews"|"insights"
+  quant_step?: string | null;    // "questionnaire"|"population"|"survey"|"insights"
 }
 
 interface User {

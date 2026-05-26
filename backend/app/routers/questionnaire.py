@@ -1,3 +1,4 @@
+import logging
 from typing import Optional
 from io import BytesIO
 from fastapi import APIRouter, Depends, HTTPException
@@ -52,6 +53,8 @@ from app.services import workspace as ws_service
 from app.utils.questionnaire_csv import questionnaire_sections_to_csv_bytes
 from app.services.question_engine import analysis_options_for_question, get_question_type_catalog
 
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/explorations/{exploration_id}/questionnaire",
@@ -509,23 +512,79 @@ async def get_all(workspace_id: str, exploration_id: str):
 @router.post("/simulate", response_model=SuccessResponse)
 async def simulate_survey(
     workspace_id: str,
+    exploration_id: str,
     payload: SurveySimulationRequest,
     current_user: User = Depends(get_current_active_user),
     session: AsyncSession = Depends(get_session)
 ):
+    logger.info(
+        "Survey simulation POST received | workspace_id=%s route_exploration_id=%s payload_exploration_id=%s "
+        "population_simulation_id=%s persona_count=%s force_rerun=%s supplied_question_sections=%s user_id=%s",
+        workspace_id,
+        exploration_id,
+        payload.exploration_id,
+        payload.simulation_id,
+        len(payload.persona_id or []),
+        payload.force_rerun,
+        len(payload.questions or []),
+        current_user.id,
+    )
+    if exploration_id != payload.exploration_id:
+        logger.warning(
+            "Survey simulation route/payload exploration mismatch | workspace_id=%s route_exploration_id=%s "
+            "payload_exploration_id=%s population_simulation_id=%s user_id=%s",
+            workspace_id,
+            exploration_id,
+            payload.exploration_id,
+            payload.simulation_id,
+            current_user.id,
+        )
     objective = await get_exploration(session, payload.exploration_id)
     if not objective:
+        logger.warning(
+            "Survey simulation blocked: exploration not found | workspace_id=%s exploration_id=%s "
+            "population_simulation_id=%s user_id=%s",
+            workspace_id,
+            payload.exploration_id,
+            payload.simulation_id,
+            current_user.id,
+        )
         raise HTTPException(status_code=404, detail="Research objective not found")
 
     if not payload.persona_id:
+        logger.warning(
+            "Survey simulation blocked: missing persona_id | workspace_id=%s exploration_id=%s "
+            "population_simulation_id=%s user_id=%s",
+            workspace_id,
+            payload.exploration_id,
+            payload.simulation_id,
+            current_user.id,
+        )
         raise HTTPException(status_code=400, detail="persona_id must be provided")
 
     # Idempotency guard: if a survey simulation already exists for this population
     # simulation, return the stored result instead of re-running the AI simulation.
     # Skipped when force_rerun=True (user edited the questionnaire and wants a fresh run).
     if payload.simulation_id and not payload.force_rerun:
+        logger.info(
+            "Survey simulation idempotency lookup | workspace_id=%s exploration_id=%s "
+            "population_simulation_id=%s user_id=%s",
+            workspace_id,
+            payload.exploration_id,
+            payload.simulation_id,
+            current_user.id,
+        )
         existing = await get_survey_simulation_by_source_id(payload.simulation_id)
         if existing:
+            logger.info(
+                "Survey simulation idempotency hit | survey_simulation_id=%s workspace_id=%s "
+                "exploration_id=%s population_simulation_id=%s total_sample_size=%s",
+                existing.id,
+                existing.workspace_id,
+                existing.exploration_id,
+                existing.simulation_source_id,
+                existing.total_sample_size,
+            )
             sections = await build_survey_report_sections(existing)
             return SuccessResponse(
                 message="Survey simulation already exists for this population run",
@@ -550,6 +609,16 @@ async def simulate_survey(
             q_all = await get_questionnaire_by_simulation(workspace_id, payload.exploration_id, payload.simulation_id)
         else:
             q_all = await get_full_questionnaire(workspace_id, payload.exploration_id)
+
+        logger.info(
+            "Survey simulation questionnaire loaded | workspace_id=%s exploration_id=%s "
+            "population_simulation_id=%s section_count=%s question_count=%s",
+            workspace_id,
+            payload.exploration_id,
+            payload.simulation_id,
+            len(q_all or []),
+            sum(len(sec.get("questions", [])) for sec in (q_all or [])),
+        )
         
         questions = []
         for sec in q_all:
@@ -569,25 +638,53 @@ async def simulate_survey(
             })
 
     if not questions:
+        logger.warning(
+            "Survey simulation blocked: no questions available | workspace_id=%s exploration_id=%s "
+            "population_simulation_id=%s user_id=%s",
+            workspace_id,
+            payload.exploration_id,
+            payload.simulation_id,
+            current_user.id,
+        )
         raise HTTPException(status_code=400, detail="No questions available to simulate")
 
     personas_list = []
     persona_samples = {}
+    population_sim = None
+    if payload.simulation_id:
+        population_sim = await get_simulation(payload.simulation_id)
+        if not population_sim:
+            logger.warning(
+                "Survey simulation population source missing | workspace_id=%s exploration_id=%s "
+                "population_simulation_id=%s user_id=%s",
+                workspace_id,
+                payload.exploration_id,
+                payload.simulation_id,
+                current_user.id,
+            )
     
     for persona_id in payload.persona_id:
         persona = await get_persona(persona_id)
         if not persona:
+            logger.warning(
+                "Survey simulation skipped missing persona | workspace_id=%s exploration_id=%s "
+                "population_simulation_id=%s persona_id=%s user_id=%s",
+                workspace_id,
+                payload.exploration_id,
+                payload.simulation_id,
+                persona_id,
+                current_user.id,
+            )
             continue
 
         sample_size = payload.sample_size
         if not sample_size:
             if payload.simulation_id:
-                sim = await get_simulation(payload.simulation_id)
-                if sim:
+                if population_sim:
                     try:
-                        sample_size = int(sim.sample_distribution.get(persona_id, 50))
+                        sample_size = int(population_sim.sample_distribution.get(persona_id, 50))
                     except Exception:
-                        sample_size = int(sim.persona_scores.get(persona_id, 50)) if (sim.persona_scores and persona_id in sim.persona_scores) else 50
+                        sample_size = int(population_sim.persona_scores.get(persona_id, 50)) if (population_sim.persona_scores and persona_id in population_sim.persona_scores) else 50
                 else:
                     sample_size = 50
             else:
@@ -597,19 +694,65 @@ async def simulate_survey(
         persona_samples[persona_id] = sample_size
 
     if not personas_list:
+        logger.warning(
+            "Survey simulation blocked: no valid personas resolved | workspace_id=%s exploration_id=%s "
+            "population_simulation_id=%s requested_persona_ids=%s user_id=%s",
+            workspace_id,
+            payload.exploration_id,
+            payload.simulation_id,
+            payload.persona_id,
+            current_user.id,
+        )
         raise HTTPException(400, "No valid personas found")
 
     from app.services.survey_simulation_combined import simulate_combined_and_store
 
-    result = await simulate_combined_and_store(
-        workspace_id=workspace_id,
-        research_objective=objective,
-        personas_list=personas_list,
-        persona_samples=persona_samples,
-        simulation_id=payload.simulation_id,
-        questions_sections=questions,
-        user_id=current_user.id,
-        exploration_id=payload.exploration_id
+    logger.info(
+        "Survey simulation generation starting | workspace_id=%s exploration_id=%s population_simulation_id=%s "
+        "resolved_persona_count=%s persona_samples=%s section_count=%s question_count=%s user_id=%s",
+        workspace_id,
+        payload.exploration_id,
+        payload.simulation_id,
+        len(personas_list),
+        persona_samples,
+        len(questions),
+        sum(len(sec.get("questions", [])) for sec in questions),
+        current_user.id,
+    )
+
+    try:
+        result = await simulate_combined_and_store(
+            workspace_id=workspace_id,
+            research_objective=objective,
+            personas_list=personas_list,
+            persona_samples=persona_samples,
+            simulation_id=payload.simulation_id,
+            questions_sections=questions,
+            user_id=current_user.id,
+            exploration_id=payload.exploration_id,
+            replace_existing=payload.force_rerun,
+        )
+    except Exception:
+        logger.exception(
+            "Survey simulation generation failed | workspace_id=%s exploration_id=%s "
+            "population_simulation_id=%s persona_samples=%s user_id=%s",
+            workspace_id,
+            payload.exploration_id,
+            payload.simulation_id,
+            persona_samples,
+            current_user.id,
+        )
+        raise
+
+    logger.info(
+        "Survey simulation generation completed | survey_simulation_id=%s workspace_id=%s exploration_id=%s "
+        "population_simulation_id=%s total_sample_size=%s user_id=%s",
+        result.get("id"),
+        result.get("workspace_id"),
+        result.get("exploration_id"),
+        payload.simulation_id,
+        result.get("total_sample_size"),
+        current_user.id,
     )
 
     return SuccessResponse(
@@ -679,10 +822,36 @@ async def get_survey_simulation_by_source(
     Returns the same payload shape as POST /simulate so the frontend can
     treat both responses identically.
     """
+    logger.info(
+        "Survey simulation by-source GET received | workspace_id=%s exploration_id=%s "
+        "population_simulation_id=%s user_id=%s",
+        workspace_id,
+        exploration_id,
+        simulation_source_id,
+        current_user.id,
+    )
     existing = await get_survey_simulation_by_source_id(simulation_source_id)
     if not existing:
+        logger.warning(
+            "Survey simulation by-source cache miss | workspace_id=%s exploration_id=%s "
+            "population_simulation_id=%s user_id=%s",
+            workspace_id,
+            exploration_id,
+            simulation_source_id,
+            current_user.id,
+        )
         raise HTTPException(status_code=404, detail="No survey simulation found for this population run")
 
+    logger.info(
+        "Survey simulation by-source cache hit | survey_simulation_id=%s workspace_id=%s "
+        "exploration_id=%s population_simulation_id=%s total_sample_size=%s user_id=%s",
+        existing.id,
+        existing.workspace_id,
+        existing.exploration_id,
+        existing.simulation_source_id,
+        existing.total_sample_size,
+        current_user.id,
+    )
     sections = await build_survey_report_sections(existing)
     return SuccessResponse(
         message="Survey simulation fetched successfully",

@@ -438,6 +438,18 @@ async def _repair_core_public_schema(conn: AsyncConnection) -> None:
         "simulation_result JSONB NOT NULL DEFAULT '{}'::jsonb",
     ):
         await ensure_column(conn, "surveysimulation", column)
+    await ensure_unique_index_after_dedupe(
+        conn,
+        table="surveysimulation",
+        partition_by="simulation_source_id",
+        order_by="created_at DESC, id DESC",
+        index_sql=(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_surveysimulation_simulation_source_id "
+            "ON surveysimulation (simulation_source_id) WHERE simulation_source_id IS NOT NULL"
+        ),
+        label="surveysimulation.simulation_source_id",
+        where="simulation_source_id IS NOT NULL",
+    )
 
     await _repair_questionnaire_schema(conn)
     await _repair_persona_schema(conn)

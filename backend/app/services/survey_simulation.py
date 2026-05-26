@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 from typing import Dict, List, Optional, Tuple, Any
 from datetime import datetime
@@ -12,6 +13,8 @@ from sqlmodel import select
 from app.config import OPENAI_API_KEY
 from openai import AsyncOpenAI
 from app.services.question_engine import analysis_options_for_question
+
+logger = logging.getLogger(__name__)
 
 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
@@ -402,13 +405,33 @@ async def get_survey_simulation_by_id(simulation_id: str):
 async def get_survey_simulation_by_source_id(simulation_source_id: str):
     """Return the most recent SurveySimulation for a given population simulation_source_id."""
     async with AsyncSession(async_engine) as session:
+        logger.info(
+            "SurveySimulation lookup by source started | population_simulation_id=%s",
+            simulation_source_id,
+        )
         stmt = (
             select(SurveySimulation)
             .where(SurveySimulation.simulation_source_id == simulation_source_id)
             .order_by(SurveySimulation.created_at.desc())
         )
         res = await session.execute(stmt)
-        return res.scalars().first()
+        survey_simulation = res.scalars().first()
+        if survey_simulation:
+            logger.info(
+                "SurveySimulation lookup by source hit | survey_simulation_id=%s workspace_id=%s "
+                "exploration_id=%s population_simulation_id=%s created_at=%s",
+                survey_simulation.id,
+                survey_simulation.workspace_id,
+                survey_simulation.exploration_id,
+                survey_simulation.simulation_source_id,
+                survey_simulation.created_at,
+            )
+        else:
+            logger.warning(
+                "SurveySimulation lookup by source miss | population_simulation_id=%s",
+                simulation_source_id,
+            )
+        return survey_simulation
 
 
 async def get_latest_survey_results_map(simulation_source_id: str) -> Optional[Dict]:

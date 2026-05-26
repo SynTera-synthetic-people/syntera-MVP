@@ -6,7 +6,7 @@ import { TbLoader } from 'react-icons/tb';
 import SpIcon from '../../../../../SPIcon';
 import { useUpdateExplorationMethod } from '../../../../../../hooks/useExplorations';
 import {
-  useSimulateSurvey,
+  useEnsureSurveySimulation,
   useDownloadQuantTranscripts,
   useDownloadQuantDecisionIntelligence,
   useDownloadQuantBehaviorArchaeology,
@@ -20,6 +20,7 @@ interface InsightsGenerationProps {
   selectedPersonas: { id: string; name: string }[];
   simulationResult: any;
   questionnaireData: any[];
+  initialSurveySimulationId?: string;
   workspaceId: string;
   explorationId: string;
   onLaunchSurvey: () => void;
@@ -171,6 +172,7 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
   explorationId,
   workspaceId,
   simulationResult,
+  initialSurveySimulationId,
 }) => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -178,7 +180,7 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
 
   const populationSimulationId: string = simulationResult?.id ?? '';
 
-  const simulateSurveyMutation = useSimulateSurvey();
+  const ensureSurveySimulationMutation = useEnsureSurveySimulation();
   const downloadTranscriptsMutation = useDownloadQuantTranscripts();
   const downloadDecisionMutation = useDownloadQuantDecisionIntelligence();
   const downloadBehaviourMutation = useDownloadQuantBehaviorArchaeology();
@@ -186,7 +188,7 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
   const [cardStates, setCardStates] = useState<Record<string, CardState>>({});
   const [viewingCard, setViewingCard] = useState<ViewableCardId | null>(null);
   const [showImpactModal, setShowImpactModal] = useState(false);
-  const [surveySimulationId, setSurveySimulationId] = useState('');
+  const [surveySimulationId, setSurveySimulationId] = useState(initialSurveySimulationId ?? '');
   const ensureSurveyPromiseRef = useRef<Promise<string> | null>(null);
 
   useEffect(() => {
@@ -196,12 +198,22 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
   }, [explorationId]);
 
   useEffect(() => {
+    if (initialSurveySimulationId) {
+      setSurveySimulationId(initialSurveySimulationId);
+      if (explorationId) {
+        localStorage.setItem(`quant_sub3_${explorationId}`, '1');
+      }
+    }
+  }, [initialSurveySimulationId, explorationId]);
+
+  useEffect(() => {
     let cancelled = false;
 
     if (!workspaceId || !explorationId || !populationSimulationId) {
       setSurveySimulationId('');
       return undefined;
     }
+    if (surveySimulationId) return undefined;
 
     const hydrateSurveySimulation = async () => {
       try {
@@ -225,7 +237,7 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [workspaceId, explorationId, populationSimulationId]);
+  }, [workspaceId, explorationId, populationSimulationId, surveySimulationId]);
 
   const hasAnyInsightReady = Object.values(cardStates).some((s) => s === 'done');
 
@@ -253,31 +265,11 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
         throw new Error('Missing population simulation context.');
       }
 
-      const existing = await getSurveySimulationBySource({
-        workspaceId,
-        explorationId,
-        simulationSourceId: populationSimulationId,
-      });
-      const existingSurveyId = existing?.data?.id;
-      if (existingSurveyId) {
-        setSurveySimulationId(existingSurveyId);
-        queryClient.setQueryData(
-          ['surveySimulationBySource', workspaceId, explorationId, populationSimulationId],
-          existing,
-        );
-        localStorage.setItem(`quant_sub3_${explorationId}`, '1');
-        return existingSurveyId;
-      }
-
       const personaIds = getPersonaIds();
-      if (personaIds.length === 0) {
-        throw new Error('No personas available to run the survey simulation.');
-      }
-
-      const result = await simulateSurveyMutation.mutateAsync({
+      const result = await ensureSurveySimulationMutation.mutateAsync({
         workspaceId,
         explorationId,
-        personaId: personaIds,
+        personaIds,
         simulationId: populationSimulationId,
         forceRerun: false,
       });
@@ -398,7 +390,7 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
   };
 
   const isModalDownloading =
-    simulateSurveyMutation.isPending
+    ensureSurveySimulationMutation.isPending
       ? true
       : viewingCard === 'decision'
       ? downloadDecisionMutation.isPending

@@ -493,8 +493,12 @@ async def delete_exploration(
     from app.models.population import PopulationSimulation
     from app.models.traceability import TraceabilityReport
     from app.models.rebuttal import RebuttalSession
-    from app.models.questionnaire import QuestionnaireSection, QuestionnaireQuestion
-    from app.models.omi import OmiSession
+    from app.models.questionnaire import (
+        QuestionnaireQuestionAsset,
+        QuestionnaireSection,
+        QuestionnaireQuestion,
+    )
+    from app.models.omi import OmiMessage, OmiSession, OmiWorkflowAction
 
     eid = exploration.id
 
@@ -553,7 +557,12 @@ async def delete_exploration(
         delete(RebuttalSession).where(RebuttalSession.exploration_id == eid)
     )
 
-    # 4. Questionnaire questions → sections
+    # 4. Questionnaire assets, questions, then sections
+    await session.execute(
+        delete(QuestionnaireQuestionAsset).where(
+            QuestionnaireQuestionAsset.exploration_id == eid
+        )
+    )
     if q_section_ids:
         await session.execute(
             delete(QuestionnaireQuestion).where(
@@ -580,7 +589,18 @@ async def delete_exploration(
         delete(ResearchObjectives).where(ResearchObjectives.exploration_id == eid)
     )
 
-    # 7. OmiSession
+    # 7. Omi messages/actions, then sessions
+    omi_session_ids = select(OmiSession.id).where(OmiSession.exploration_id == eid)
+    await session.execute(
+        delete(OmiMessage)
+        .where(OmiMessage.session_id.in_(omi_session_ids))
+        .execution_options(synchronize_session=False)
+    )
+    await session.execute(
+        delete(OmiWorkflowAction)
+        .where(OmiWorkflowAction.session_id.in_(omi_session_ids))
+        .execution_options(synchronize_session=False)
+    )
     await session.execute(
         delete(OmiSession).where(OmiSession.exploration_id == eid)
     )

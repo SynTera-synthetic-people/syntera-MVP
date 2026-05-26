@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import {
@@ -7,8 +7,9 @@ import {
   useGenerateQuestionnaire,
   useQuestionnaires,
   usePopulationSimulations,
+  useEnsureSurveySimulation,
 } from '../../../../../../hooks/useQuantitativeQueries';
-import { getAllQuestionnaires } from '../../../../../../services/quantitativeServices';
+import { getAllQuestionnaires, getSurveySimulationBySource } from '../../../../../../services/quantitativeServices';
 import PopulationSetup from './PopulationSetup';
 import SurveyInMotion from './SurveyInMotion';
 import InsightsGeneration from './InsightGeneration';
@@ -39,14 +40,17 @@ const PopulationBuilder: React.FC = () => {
   const [simulationResult, setSimulationResult] = useState<any>(null);
   const [questionnaireData, setQuestionnaireData] = useState<any[]>([]);
   const [simulationId, setSimulationId] = useState<string | null>(null);
+  const [surveySimulationId, setSurveySimulationId] = useState<string>('');
   const [questionnaireModified, setQuestionnaireModified] = useState(false);
   const { trigger } = useOmniWorkflow();
   const restoredFromServerRef = useRef(false);
+  const surveyEnsurePromiseRef = useRef<Promise<string> | null>(null);
 
   const { data: personasData, isLoading: personasLoading } = usePersonas(workspaceId, explorationId);
   const { data: simulationList = [], isFetched: simulationsFetched } = usePopulationSimulations(workspaceId, explorationId);
   const simulatePopulationMutation = useSimulatePopulation();
   const generateQuestionnaireMutation = useGenerateQuestionnaire();
+  const ensureSurveySimulationMutation = useEnsureSurveySimulation();
   const isPopulationConfirmed = phase !== 'setup';
 
   const { data: questionnairesData, isLoading: questionnairesLoading } = useQuestionnaires(
@@ -69,6 +73,11 @@ const PopulationBuilder: React.FC = () => {
   useEffect(() => {
     if (questionnairesData?.data) setQuestionnaireData(questionnairesData.data);
   }, [questionnairesData]);
+
+  const hasQuestionnaireQuestions = Array.isArray(questionnaireData)
+    && questionnaireData.some(
+      (section) => Array.isArray(section?.questions) && section.questions.length > 0,
+    );
 
   // Mark quant sub-step 1 (Questionnaire Design) done when questionnaire data loads
   useEffect(() => {
@@ -126,7 +135,30 @@ const PopulationBuilder: React.FC = () => {
         setQuestionnaireData(qData);
         setSelectedPersonas(selected);
         setSampleSizes(nextSizes);
-        setPhase('survey');
+
+        // ── Check if survey simulation already exists in DB ───────────────
+        // If yes → skip animation entirely, jump directly to insights.
+        // If no  → show survey animation (first run or re-run needed).
+        try {
+          const surveyRes = await getSurveySimulationBySource({
+            workspaceId,
+            explorationId,
+            simulationSourceId: latest.id,
+          });
+          if (cancelled) return;
+          if (surveyRes?.data?.id) {
+            setSurveySimulationId(surveyRes.data.id);
+            setPhase('insights');
+          } else {
+            setSurveySimulationId('');
+            setPhase('survey');
+          }
+        } catch {
+          if (!cancelled) {
+            setSurveySimulationId('');
+            setPhase('survey');
+          }
+        }
       } catch (e) {
         console.warn('Could not restore saved population/questionnaire', e);
       }
@@ -180,6 +212,8 @@ const PopulationBuilder: React.FC = () => {
       if (simulationResponse.status === 'success') {
         setSimulationResult(simulationResponse.data);
         setSimulationId(simulationResponse.data.id);
+        setSurveySimulationId('');
+        surveyEnsurePromiseRef.current = null;
 
         // Mark sub-step 2 done (Population Calibration confirmed)
         localStorage.setItem(`quant_sub2_${explorationId}`, '1');
@@ -205,12 +239,84 @@ const PopulationBuilder: React.FC = () => {
     }
   };
 
-  const handleSurveyComplete = () => {
-    // Mark sub-step 3 done (Survey Execution complete)
-    if (explorationId) {
-      localStorage.setItem(`quant_sub3_${explorationId}`, '1');
+  const getPersonaIdsForSurvey = useCallback(() => {
+    const selectedIds = selectedPersonas.map((p) => p.id).filter(Boolean);
+    if (selectedIds.length > 0) return selectedIds;
+
+    if (Array.isArray(simulationResult?.persona_ids)) {
+      return simulationResult.persona_ids.filter(Boolean);
     }
-    setPhase('insights');
+
+    if (Array.isArray(simulationResult?.persona_id)) {
+      return simulationResult.persona_id.filter(Boolean);
+    }
+
+    return [];
+  }, [selectedPersonas, simulationResult]);
+
+  const ensureSurveyRun = useCallback(async () => {
+    if (surveySimulationId) return surveySimulationId;
+    if (surveyEnsurePromiseRef.current) return surveyEnsurePromiseRef.current;
+    if (!workspaceId || !explorationId || !simulationResult?.id) {
+      throw new Error('Missing survey simulation context.');
+    }
+
+    const personaIds = getPersonaIdsForSurvey();
+    const shouldForceRerun =
+      questionnaireModified ||
+      sessionStorage.getItem(`forceRerun_${explorationId}`) === 'true';
+
+    const promise = ensureSurveySimulationMutation.mutateAsync({
+      workspaceId,
+      explorationId,
+      personaIds,
+      simulationId: simulationResult.id,
+      forceRerun: shouldForceRerun,
+    }).then((result) => {
+      const nextSurveySimulationId = result?.data?.id;
+      if (!nextSurveySimulationId) {
+        throw new Error('Survey simulation did not return an ID.');
+      }
+
+      setSurveySimulationId(nextSurveySimulationId);
+      localStorage.setItem(`quant_sub3_${explorationId}`, '1');
+      sessionStorage.removeItem(`forceRerun_${explorationId}`);
+      setQuestionnaireModified(false);
+      return nextSurveySimulationId;
+    }).finally(() => {
+      surveyEnsurePromiseRef.current = null;
+    });
+
+    surveyEnsurePromiseRef.current = promise;
+    return promise;
+  }, [
+    surveySimulationId,
+    workspaceId,
+    explorationId,
+    simulationResult,
+    getPersonaIdsForSurvey,
+    questionnaireModified,
+    ensureSurveySimulationMutation,
+  ]);
+
+  useEffect(() => {
+    if (phase !== 'survey') return;
+    if (!hasQuestionnaireQuestions) return;
+    if (!simulationResult?.id) return;
+
+    void ensureSurveyRun().catch((error) => {
+      console.error('Error pre-running survey simulation:', error);
+    });
+  }, [phase, hasQuestionnaireQuestions, simulationResult?.id, ensureSurveyRun]);
+
+  const handleSurveyComplete = async () => {
+    try {
+      await ensureSurveyRun();
+      setPhase('insights');
+    } catch (error) {
+      console.error('Error completing survey simulation:', error);
+      alert('Survey simulation could not be completed. Please try again.');
+    }
   };
 
   const handleEditConfiguration = () => {
@@ -270,6 +376,8 @@ const PopulationBuilder: React.FC = () => {
             onEditConfiguration={handleEditConfiguration}
             onModified={() => {
               setQuestionnaireModified(true);
+              setSurveySimulationId('');
+              surveyEnsurePromiseRef.current = null;
               sessionStorage.setItem(`forceRerun_${explorationId}`, 'true');
             }}
             workspaceId={workspaceId ?? ''}
@@ -283,6 +391,7 @@ const PopulationBuilder: React.FC = () => {
             selectedPersonas={selectedPersonas}
             simulationResult={simulationResult}
             questionnaireData={questionnaireData}
+            initialSurveySimulationId={surveySimulationId}
             workspaceId={workspaceId ?? ''}
             explorationId={explorationId ?? ''}
             onLaunchSurvey={handleLaunchSurvey}

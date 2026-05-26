@@ -177,13 +177,29 @@ def _build_calibration_breakdown(persona_details: Optional[dict]) -> dict:
     multi_platform_conversations is populated from evidence_snapshot (per-persona).
     The other 3 sections are platform methodology constants with optional AI overrides.
     Always returns a full dict — never None.
+
+    Defensive: LLMs occasionally return evidence_snapshot as a JSON string instead
+    of a nested object (especially with reasoning models + web_search tools).
+    We parse it gracefully so the endpoint never 500s on malformed DB data.
     """
     details = persona_details or {}
-    evidence = details.get("evidence_snapshot") or {}
+    raw_evidence = details.get("evidence_snapshot") or {}
+
+    # Defensive: parse if the LLM stored evidence_snapshot as a JSON string
+    if isinstance(raw_evidence, str):
+        try:
+            raw_evidence = json.loads(raw_evidence)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            raw_evidence = {}
+
+    # Final guard — ensure it's a dict before calling .get()
+    evidence: dict = raw_evidence if isinstance(raw_evidence, dict) else {}
 
     # multi_platform_conversations — derive from web research evidence_snapshot
     total_convs = evidence.get("total_conversations", 0)
-    sources = evidence.get("sources") or []
+    raw_sources = evidence.get("sources") or []
+    # Defensive: sources must be a list of dicts; skip any non-dict entries
+    sources = [s for s in raw_sources if isinstance(s, dict)]
     platforms = [s.get("platform") for s in sources if s.get("platform")]
 
     conf_breakdown = evidence.get("confidence_breakdown") or {}

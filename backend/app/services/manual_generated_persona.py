@@ -491,15 +491,16 @@ async def manual_persona(exploration_id, workspace_id, current_user_id, payload)
                 "role": "system",
                 "content": [
                     {
-                        "type": "text",
-                        "text": MANUAL_PERSONA_BASE_INSTRUCTIONS,  # ← CACHED PART
-                        "cache_control": {"type": "ephemeral"}      # ← ENABLE CACHING
+                        # OpenAI Responses API: type must be "input_text"
+                        # Prompt caching is automatic in OpenAI — no cache_control needed
+                        "type": "input_text",
+                        "text": MANUAL_PERSONA_BASE_INSTRUCTIONS,
                     }
                 ]
             },
             {
                 "role": "user",
-                "content": dynamic_prompt  # ← DYNAMIC PART (NOT CACHED)
+                "content": dynamic_prompt
             }
         ],
     )
