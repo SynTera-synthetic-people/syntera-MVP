@@ -106,6 +106,17 @@
   gap: 8px;
 }
 
+/* Row layout for Q3 side-by-side buttons */
+.ihf-options--row {
+  flex-direction: row;
+  gap: 10px;
+}
+
+.ihf-options--row .ihf-option {
+  flex: 1;
+  justify-content: center;
+}
+
 .ihf-option {
   display: flex;
   align-items: center;
@@ -132,6 +143,11 @@
   border-color: #37FFCE;
   background: rgba(255, 255, 255, 0.06);
   color: #ffffff;
+}
+
+/* Flat variant — no radio dot, centred text (used by Q3) */
+.ihf-option--flat {
+  justify-content: center;
 }
 
 /* Radio dot */
@@ -173,7 +189,7 @@
   margin-top: 4px;
 }
 
-/* Enabled state — both questions answered */
+/* Enabled state — all required questions answered */
 .ihf-submit:not(:disabled) {
   background: #2563eb;
   border-color: transparent;

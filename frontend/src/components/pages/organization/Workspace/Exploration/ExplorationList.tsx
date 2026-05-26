@@ -203,6 +203,9 @@ const ExplorationList: React.FC = () => {
   const statusRef = useRef<HTMLDivElement>(null);
   const audienceRef = useRef<HTMLDivElement>(null);
 
+  // Ref for the table body — used to close row kebab menus on outside click
+  const tableBodyRef = useRef<HTMLDivElement>(null);
+
   // Delete modal
   const [deleteModalId, setDeleteModalId] = useState<string | null>(null);
   const [deleteModalTitle, setDeleteModalTitle] = useState<string>("");
@@ -223,12 +226,19 @@ const ExplorationList: React.FC = () => {
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
+      // Close top-bar kebab
       if (topKebabRef.current && !topKebabRef.current.contains(e.target as Node))
         setShowTopKebab(false);
+
+      // Close status / audience filter dropdowns
       if (statusRef.current && !statusRef.current.contains(e.target as Node))
         setShowStatusDrop(false);
       if (audienceRef.current && !audienceRef.current.contains(e.target as Node))
         setShowAudienceDrop(false);
+
+      // Close row kebab menu when clicking outside the table body
+      if (tableBodyRef.current && !tableBodyRef.current.contains(e.target as Node))
+        setOpenMenuId(null);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -541,7 +551,8 @@ const ExplorationList: React.FC = () => {
                     <div className="header-cell header-actions">Actions</div>
                   </div>
 
-                  <div className="table-body">
+                  {/* ↓ tableBodyRef added here so outside clicks close the open kebab */}
+                  <div className="table-body" ref={tableBodyRef}>
                     {visibleExplorations.map((exploration, index) => (
                       <motion.div
                         key={exploration.id}
@@ -599,6 +610,16 @@ const ExplorationList: React.FC = () => {
                                     }}
                                   >
                                     <SpIcon name="sp-File-File_Document" />Traceability
+                                  </div>
+                                )}
+                                {exploration.is_end && (
+                                  <div
+                                    className="menu-item"
+                                    onClick={() => {
+                                    // need to apply logic
+                                    }}
+                                  >
+                                    <SpIcon name="sp-File-File_Document" />View Exploration
                                   </div>
                                 )}
                                 <div className="menu-item menu-item-delete" onClick={() => handleDelete(exploration.id, exploration.title)}>

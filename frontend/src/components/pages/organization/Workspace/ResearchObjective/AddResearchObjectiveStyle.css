@@ -506,3 +506,23 @@
     transform: rotate(360deg);
   }
 }
+/* ── Additions to AddResearchObjectiveStyle.css ──────────────────────────── */
+
+/* Wrapper that lets us add a tooltip via the `title` attribute */
+.aro-btn-manual-wrap {
+  display: inline-flex;
+}
+
+/* Locked / greyed state for the Build Manually button (free & tier1) */
+.aro-btn-manual--locked {
+  opacity: 0.45;
+  cursor: not-allowed !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  color: #6b7280 !important;
+}
+
+.aro-btn-manual--locked:hover {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  color: #6b7280 !important;
+  transform: none !important;
+}

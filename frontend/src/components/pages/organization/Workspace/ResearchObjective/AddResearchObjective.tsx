@@ -11,6 +11,7 @@ import {
   TbLoader,
   TbSparkles,
   TbPencil,
+  TbLock,
 } from "react-icons/tb";
 import SpIcon from "../../../../SPIcon";
 import { useTheme } from "../../../../../context/ThemeContext";
@@ -21,9 +22,8 @@ import {
   useConversationHistory
 } from "../../../../../hooks/useOmiChat";
 import { useOmniWorkflow } from '../../../../../hooks/useOmiWorkflow';
-// ── CHANGE 1: Import useAutoGeneratePersonas so we can fire the backend
-//             persona generation the moment the user clicks "Create with Omi"
 import { useAutoGeneratePersonas, usePersonas } from '../../../../../hooks/usePersonaBuilder';
+import UpgradeModal from "../../../Upgrade/UpgradeModal";
 import OmiGreet from '../../../../../assets/Omi Animations/IdleStateMotion_Lite.mp4';
 import OmiPencil from '../../../../../assets/Omi Animations/OmiPencil.mp4';
 import OmiKeyboard from '../../../../../assets/Omi Animations/OmiKeyboard.mp4';
@@ -65,9 +65,26 @@ interface ResearchObjectiveState {
   error: any;
 }
 
+interface User {
+  account_tier?: string;
+  [key: string]: any;
+}
+
 interface RootState {
   researchObjective: ResearchObjectiveState;
+  auth: { user: User | null };
 }
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Returns true for tiers that can build manually (enterprise only).
+ * free and tier1 see the greyed-out / locked Build Manually button.
+ */
+const canBuildManually = (tier: string | undefined): boolean => {
+  const t = (tier ?? '').toLowerCase().trim();
+  return t === 'enterprise';
+};
 
 // ── Component ────────────────────────────────────────────────────────────────
 
@@ -83,17 +100,22 @@ const AddResearchObjective: React.FC = () => {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+
+  // ── Auth / tier ────────────────────────────────────────────────────────────
+  const { user } = useSelector((state: RootState) => state.auth);
+  const userTier = user?.account_tier ?? 'free';
+  const manualAllowed = canBuildManually(userTier);
+
+  // ── Upgrade modal ──────────────────────────────────────────────────────────
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+
   const [omiAnimation, setOmiAnimation] = useState<"greeting" | "writing" | "typing" | "error">("greeting");
   const getOmiVideo = () => {
     switch (omiAnimation) {
-      case "writing":
-        return OmiPencil;
-      case "typing":
-        return OmiKeyboard;
-      case "error":
-        return OmiCaution;
-      default:
-        return OmiGreet;
+      case "writing":  return OmiPencil;
+      case "typing":   return OmiKeyboard;
+      case "error":    return OmiCaution;
+      default:         return OmiGreet;
     }
   };
 
@@ -105,7 +127,6 @@ const AddResearchObjective: React.FC = () => {
     refetch: refetchSession
   } = useInitializeOmiSession(objectiveId);
 
-  // Conversation history hook
   const {
     data: conversationHistoryData,
     isLoading: isLoadingHistory,
@@ -121,11 +142,7 @@ const AddResearchObjective: React.FC = () => {
 
   const { mutate: createResearchObjective } = useCreateResearchObjective() as any;
 
-  // ── CHANGE 2: Add the hook with enabled:false so it doesn't fire on mount.
-  //             We call triggerPersonaGeneration() manually in handleCreateWithOmi.
-  const {
-    refetch: triggerPersonaGeneration,
-  } = useAutoGeneratePersonas(workspaceId, objectiveId, { enabled: false });
+  const { refetch: triggerPersonaGeneration } = useAutoGeneratePersonas(workspaceId, objectiveId, { enabled: false });
   const {
     data: existingPersonasData,
     refetch: refetchExistingPersonas,
@@ -151,10 +168,8 @@ const AddResearchObjective: React.FC = () => {
   const [prevMessagesLength, setPrevMessagesLength] = useState<number>(0);
   const [hasTriggeredInitialEvent, setHasTriggeredInitialEvent] = useState<boolean>(false);
 
-  // Transform API messages to component format
   const transformMessages = useCallback((apiMessages: any[]): Message[] => {
     if (!apiMessages || !Array.isArray(apiMessages)) return [];
-
     return apiMessages.map((msg: any, index: number) => ({
       id: msg.id || `msg-${index}`,
       sender: msg.role === 'omi' ? 'omi' : 'user',
@@ -168,47 +183,31 @@ const AddResearchObjective: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (
-      !isSubmitting &&
-      !isSendingMessage &&
-      omiAnimation !== "error" &&
-      inputValue.trim().length === 0
-    ) {
+    if (!isSubmitting && !isSendingMessage && omiAnimation !== "error" && inputValue.trim().length === 0) {
       setOmiAnimation("greeting");
     }
   }, [isSubmitting, isSendingMessage, omiAnimation, inputValue]);
 
   useEffect(() => {
-    if (inputValue.trim().length > 0 && !isSubmitting) {
-      setOmiAnimation("writing");
-    }
+    if (inputValue.trim().length > 0 && !isSubmitting) setOmiAnimation("writing");
   }, [inputValue, isSubmitting]);
 
   useEffect(() => {
     if (!hasTriggeredInitialEvent && sessionData) {
-      trigger({
-        stage: 'research_objective',
-        event: 'RESEARCH_OBJECTIVE_INIT',
-        payload: {},
-      });
+      trigger({ stage: 'research_objective', event: 'RESEARCH_OBJECTIVE_INIT', payload: {} });
       setHasTriggeredInitialEvent(true);
     }
   }, [sessionData, hasTriggeredInitialEvent, objectiveId, workspaceId, trigger]);
 
-  // Load conversation history when data is available
   useEffect(() => {
     if ((conversationHistoryData as any)?.status === "success" && (conversationHistoryData as any).data?.messages) {
       const transformedMessages = transformMessages((conversationHistoryData as any).data.messages);
       setMessages(transformedMessages);
       setPrevMessagesLength(transformedMessages.length);
-
-      // Update status based on last message
       if (transformedMessages.length > 0) {
         const lastMessage = transformedMessages[transformedMessages.length - 1] as Message | undefined;
         if (lastMessage?.sender === 'omi') {
-          setOmiStatus(lastMessage?.omiState === 'thinking'
-            ? "Omi is processing..."
-            : "Omi is ready");
+          setOmiStatus(lastMessage?.omiState === 'thinking' ? "Omi is processing..." : "Omi is ready");
         } else {
           setOmiStatus("Waiting for Omi's response...");
         }
@@ -216,7 +215,6 @@ const AddResearchObjective: React.FC = () => {
     }
   }, [conversationHistoryData, transformMessages]);
 
-  // Initialize chat with Omi session greeting if no history exists
   useEffect(() => {
     if ((sessionData as any)?.data?.greeting && messages.length === 0 && !isLoadingHistory) {
       const initialMessage: Message = {
@@ -237,7 +235,6 @@ const AddResearchObjective: React.FC = () => {
     lastMessage?.sender === "omi" &&
     lastMessage?.text?.includes("carry this forward into personas");
 
-  // Auto-adjust textarea height
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
@@ -245,14 +242,10 @@ const AddResearchObjective: React.FC = () => {
     }
   }, [inputValue]);
 
-  // Auto-scroll to bottom of chat when new messages arrive
   useEffect(() => {
     if (messagesContainerRef.current) {
       if (messages.length > prevMessagesLength) {
-        messagesContainerRef.current.scrollTo({
-          top: messagesContainerRef.current.scrollHeight,
-          behavior: 'smooth'
-        });
+        messagesContainerRef.current.scrollTo({ top: messagesContainerRef.current.scrollHeight, behavior: 'smooth' });
       }
       setPrevMessagesLength(messages.length);
     }
@@ -272,34 +265,16 @@ const AddResearchObjective: React.FC = () => {
 
   useEffect(() => {
     const lastMessage = messages[messages.length - 1] as Message | undefined;
-    if (lastMessage?.sender === 'omi' &&
-      lastMessage?.text?.includes("carry this forward into personas")) {
-
+    if (lastMessage?.sender === 'omi' && lastMessage?.text?.includes("carry this forward into personas")) {
       setOmiStatus("Research objective defined! Ready to create personas...");
-
-      trigger({
-        stage: 'research_objective',
-        event: 'RESEARCH_OBJECTIVE_SUMMARY_SHOWCASE',
-        payload: {},
-      });
+      trigger({ stage: 'research_objective', event: 'RESEARCH_OBJECTIVE_SUMMARY_SHOWCASE', payload: {} });
     }
   }, [messages, objectiveId, workspaceId]);
 
-  // ── CTA Handlers ────────────────────────────────────────────────────────
+  // ── CTA Handlers ────────────────────────────────────────────────────────────
 
-  // ── CHANGE 3: Fire persona generation API immediately on click, then
-  //             navigate to the loader. The backend starts building personas
-  //             while the user watches the ~7 min loader animation.
-  //             By the time the loader finishes and navigates to PersonaBuilder,
-  //             the personas are ready to fetch.
   const handleCreateWithOmi = async () => {
-    trigger({
-      stage: 'persona_builder',
-      event: 'PERSONA_WORKFLOW_LOADED',
-      payload: {},
-    });
-
-    // Mark Step 1 (Research Objective) as complete
+    trigger({ stage: 'persona_builder', event: 'PERSONA_WORKFLOW_LOADED', payload: {} });
     if (objectiveId) localStorage.setItem(`step1_done_${objectiveId}`, '1');
 
     const currentPersonas =
@@ -321,7 +296,6 @@ const AddResearchObjective: React.FC = () => {
           : [];
 
     if (savedPersonas.some((p: any) => p?.calibration_status !== "draft")) {
-      // Personas already exist; skip the loader so the UI does not look like Omi is regenerating.
       navigate(
         `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-builder`,
         { state: { fromLoader: true, flow: "omi", reusedExisting: true } }
@@ -329,33 +303,31 @@ const AddResearchObjective: React.FC = () => {
       return;
     }
 
-    // Fire-and-forget: kick off backend generation now, don't await.
-    // PersonaBuilder will fetch the completed result when the loader finishes.
-    try {
-      triggerPersonaGeneration();
-    } catch (err) {
-      console.error("Failed to kick off persona generation:", err);
-    }
+    try { triggerPersonaGeneration(); } catch (err) { console.error("Failed to kick off persona generation:", err); }
 
-    const targetUrl = `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-generating`;
-    navigate(targetUrl, { state: { flow: "omi" } });
+    navigate(
+      `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-generating`,
+      { state: { flow: "omi" } }
+    );
   };
 
   const handleBuildManually = () => {
-    trigger({
-      stage: 'persona_builder',
-      event: 'PERSONA_WORKFLOW_LOADED',
-      payload: {},
-    });
+    // Free / tier1 users — open the upgrade modal (enterprise only gets manual access)
+    if (!manualAllowed) {
+      setShowUpgradeModal(true);
+      return;
+    }
 
-    // Mark Step 1 (Research Objective) as complete
+    trigger({ stage: 'persona_builder', event: 'PERSONA_WORKFLOW_LOADED', payload: {} });
     if (objectiveId) localStorage.setItem(`step1_done_${objectiveId}`, '1');
 
-    const targetUrl = `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-builder/manual`;
-    navigate(targetUrl, { state: { flow: "manual" } });
+    navigate(
+      `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-builder/manual`,
+      { state: { flow: "manual" } }
+    );
   };
 
-  // ── Message sending ──────────────────────────────────────────────────────
+  // ── Message sending ──────────────────────────────────────────────────────────
 
   const handleSendMessage = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -372,12 +344,7 @@ const AddResearchObjective: React.FC = () => {
     };
 
     setMessages(prev => [...prev, userMessage]);
-
-    trigger({
-      stage: 'research_objective',
-      event: 'RESEARCH_OBJECTIVE_SUBMITTED',
-      payload: {},
-    });
+    trigger({ stage: 'research_objective', event: 'RESEARCH_OBJECTIVE_SUBMITTED', payload: {} });
 
     const messageToSend = inputValue;
     setInputValue("");
@@ -412,32 +379,16 @@ const AddResearchObjective: React.FC = () => {
             suggestions: response.data.suggestions,
             nextSteps: response.data.next_steps
           };
-
           setMessages(prev => [...prev, omiMessage]);
-
-          trigger({
-            stage: 'research_objective',
-            event: 'RESEARCH_OBJECTIVE_REFINING',
-            payload: {},
-          });
-
+          trigger({ stage: 'research_objective', event: 'RESEARCH_OBJECTIVE_REFINING', payload: {} });
           switch (response.data.omi_state) {
-            case 'thinking':
-              setOmiStatus("Omi is processing your input...");
-              break;
-            case 'greeting':
-              setOmiStatus("Omi is ready for the next step");
-              break;
-            default:
-              setOmiStatus("Omi responded");
+            case 'thinking': setOmiStatus("Omi is processing your input..."); break;
+            case 'greeting': setOmiStatus("Omi is ready for the next step"); break;
+            default:         setOmiStatus("Omi responded");
           }
-
-          setTimeout(() => {
-            refetchHistory();
-          }, 500);
+          setTimeout(() => { refetchHistory(); }, 500);
         } else {
           setOmiAnimation("error");
-
           const errorMessage: Message = {
             id: `error-${Date.now()}`,
             sender: 'omi',
@@ -470,27 +421,19 @@ const AddResearchObjective: React.FC = () => {
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      setUploadedFile(e.target.files[0] ?? null);
-    }
+    if (e.target.files && e.target.files.length > 0) setUploadedFile(e.target.files[0] ?? null);
   };
 
-  const handleRefreshHistory = () => {
-    refetchHistory();
-  };
+  const handleRefreshHistory = () => { refetchHistory(); };
 
   useEffect(() => {
-    if (sessionLoading) {
-      setOmiStatus("Initializing Omi session...");
-    }
-    if (sessionError) {
-      setOmiStatus("Failed to initialize Omi session");
-    }
+    if (sessionLoading) setOmiStatus("Initializing Omi session...");
+    if (sessionError)   setOmiStatus("Failed to initialize Omi session");
   }, [sessionLoading, sessionError]);
 
   const isLoading = sessionLoading || isLoadingHistory;
 
-  // ── Text formatting ──────────────────────────────────────────────────────
+  // ── Text formatting ──────────────────────────────────────────────────────────
 
   const formatText = (text: string): React.ReactNode => {
     if (!text) return null;
@@ -498,15 +441,13 @@ const AddResearchObjective: React.FC = () => {
     const processBold = (str: string): React.ReactNode[] => {
       const parts = str.split(/(\*\*.*?\*\*)/g);
       return parts.map((part, i) => {
-        if (part.startsWith('**') && part.endsWith('**')) {
+        if (part.startsWith('**') && part.endsWith('**'))
           return <strong key={i} className="font-bold text-gray-900 dark:text-white">{part.slice(2, -2)}</strong>;
-        }
         return part;
       });
     };
 
     const preparedText = text.replace(/(📌 Research Objective Summary:)/g, '\n$1\n');
-
     const lines = preparedText.split('\n');
     const elements: React.ReactNode[] = [];
     let currentList: React.ReactNode[] = [];
@@ -521,9 +462,7 @@ const AddResearchObjective: React.FC = () => {
         elements.push(<div key={`br-${index}`} className="h-4" />);
         return;
       }
-
       const isListItem = trimmed.startsWith('- ') || trimmed.startsWith('* ') || trimmed.startsWith('• ') || /^\d+\.\s/.test(trimmed);
-
       if (isListItem) {
         const content = trimmed.replace(/^([-*•]|\d+\.)\s+/, '');
         currentList.push(
@@ -536,46 +475,34 @@ const AddResearchObjective: React.FC = () => {
           elements.push(<ul key={`ul-${index}`} className="my-3 space-y-1">{currentList}</ul>);
           currentList = [];
         }
-
         const isHeader = trimmed.includes('📌 Research Objective Summary:');
-
         if (!isHeader && trimmed.length > 300 && trimmed.split(/[.!?]\s/).length > 3) {
           const sentences = trimmed.split(/([.!?]\s)/);
           const midPoint = Math.ceil(sentences.length / 4) * 2;
           const firstPart = sentences.slice(0, midPoint).join('').trim();
           const secondPart = sentences.slice(midPoint).join('').trim();
-
           if (firstPart && secondPart) {
             elements.push(<p key={`p-${index}-a`} className="mb-4 leading-relaxed text-gray-800 dark:text-gray-200">{processBold(firstPart)}</p>);
             elements.push(<p key={`p-${index}-b`} className="mb-4 last:mb-0 leading-relaxed text-gray-800 dark:text-gray-200">{processBold(secondPart)}</p>);
             return;
           }
         }
-
         elements.push(
-          <p
-            key={`p-${index}`}
-            className={`mb-4 last:mb-0 leading-relaxed text-gray-800 dark:text-gray-200 ${isHeader ? 'font-bold text-lg text-blue-600 dark:text-blue-400 mt-2' : ''}`}
-          >
+          <p key={`p-${index}`} className={`mb-4 last:mb-0 leading-relaxed text-gray-800 dark:text-gray-200 ${isHeader ? 'font-bold text-lg text-blue-600 dark:text-blue-400 mt-2' : ''}`}>
             {processBold(line)}
           </p>
         );
       }
     });
 
-    if (currentList.length > 0) {
-      elements.push(<ul key="ul-final" className="my-3 space-y-1">{currentList}</ul>);
-    }
-
+    if (currentList.length > 0) elements.push(<ul key="ul-final" className="my-3 space-y-1">{currentList}</ul>);
     return elements;
   };
 
   const renderMessageWithPersonaButton = (message: Message): React.ReactNode => {
     const text = message.text;
-
     if (message.sender === 'omi' && text.includes("carry this forward into personas")) {
       const parts = text.split("carry this forward into personas");
-
       return (
         <div className="space-y-1">
           {formatText(parts[0] ?? '')}
@@ -584,200 +511,194 @@ const AddResearchObjective: React.FC = () => {
         </div>
       );
     }
-
     return <div className="space-y-1">{formatText(text)}</div>;
   };
 
   const isSummaryMessage = (message: Message): boolean =>
     message.sender === 'omi' && message.text?.includes("carry this forward into personas");
 
-  // ── Render ───────────────────────────────────────────────────────────────
+  // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
-    <div className="aro-container">
-      <div className="aro-chat-wrapper">
+    <>
+      <div className="aro-container">
+        <div className="aro-chat-wrapper">
 
-        {/* Messages List */}
-        <div ref={messagesContainerRef} className="aro-messages">
-          {isLoading ? (
-            <div className="aro-state-center">
-              <div className="aro-state-inner">
-                <TbLoader className="aro-spinner" />
-                <p className="aro-state-text">
-                  {sessionLoading ? "Initializing Omi session..." : "Loading conversation history..."}
-                </p>
-              </div>
-            </div>
-          ) : sessionError ? (
-            <div className="aro-state-center">
-              <div className="aro-error-box">
-                <p className="aro-error-text">Failed to initialize chat session.</p>
-                <button onClick={() => refetchSession()} className="aro-retry-btn">
-                  Try again
-                </button>
-              </div>
-            </div>
-          ) : messages.length === 0 ? (
-            <div className="aro-state-center">
-              <div className="aro-state-inner">
-                <div className="aro-empty-avatar">
-                  <TbRobot size={32} />
+          {/* Messages List */}
+          <div ref={messagesContainerRef} className="aro-messages">
+            {isLoading ? (
+              <div className="aro-state-center">
+                <div className="aro-state-inner">
+                  <TbLoader className="aro-spinner" />
+                  <p className="aro-state-text">
+                    {sessionLoading ? "Initializing Omi session..." : "Loading conversation history..."}
+                  </p>
                 </div>
-                <p className="aro-state-text">Starting conversation with Omi...</p>
               </div>
-            </div>
-          ) : (
-            <>
-              {messages.map((message) => (
-                <motion.div
-                  key={message.id}
-                  initial={{ opacity: 0, y: 10, scale: 0.98 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  className={`aro-message-row ${message.sender === 'user' ? 'aro-message-row--user' : 'aro-message-row--omi'}`}
-                >
-                  <div className={`aro-bubble-wrapper ${message.sender === 'user' ? 'aro-bubble-wrapper--user' : 'aro-bubble-wrapper--omi'}`}>
-                    <div className={`aro-bubble ${message.sender === 'omi'
-                      ? message.isError
-                        ? 'aro-bubble--omi-error'
-                        : isSummaryMessage(message)
-                          ? 'aro-bubble--omi-summary'
-                          : 'aro-bubble--omi'
-                      : 'aro-bubble--user'
-                      }`}>
-                      {message.sender === 'omi' && !isSummaryMessage(message) && (
-                        <div className="aro-omi-avatar">
-                          <video
-                            key={message.isError ? "error" : omiAnimation}
-                            className="aro-omi-video"
-                            src={message.isError ? OmiCaution : getOmiVideo()}
-                            autoPlay
-                            loop
-                            muted
-                            playsInline
-                          />
-                        </div>
-                      )}
-                      <div className="aro-bubble-text">
-                        {renderMessageWithPersonaButton(message)}
-                        {message.file && (
-                          <div className="aro-bubble-file">
-                            <TbPaperclip size={16} />
-                            <span className="aro-bubble-file-name">{(message.file as File).name}</span>
+            ) : sessionError ? (
+              <div className="aro-state-center">
+                <div className="aro-error-box">
+                  <p className="aro-error-text">Failed to initialize chat session.</p>
+                  <button onClick={() => refetchSession()} className="aro-retry-btn">Try again</button>
+                </div>
+              </div>
+            ) : messages.length === 0 ? (
+              <div className="aro-state-center">
+                <div className="aro-state-inner">
+                  <div className="aro-empty-avatar"><TbRobot size={32} /></div>
+                  <p className="aro-state-text">Starting conversation with Omi...</p>
+                </div>
+              </div>
+            ) : (
+              <>
+                {messages.map((message) => (
+                  <motion.div
+                    key={message.id}
+                    initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    className={`aro-message-row ${message.sender === 'user' ? 'aro-message-row--user' : 'aro-message-row--omi'}`}
+                  >
+                    <div className={`aro-bubble-wrapper ${message.sender === 'user' ? 'aro-bubble-wrapper--user' : 'aro-bubble-wrapper--omi'}`}>
+                      <div className={`aro-bubble ${message.sender === 'omi'
+                          ? message.isError
+                            ? 'aro-bubble--omi-error'
+                            : isSummaryMessage(message)
+                              ? 'aro-bubble--omi-summary'
+                              : 'aro-bubble--omi'
+                          : 'aro-bubble--user'
+                        }`}>
+                        {message.sender === 'omi' && !isSummaryMessage(message) && (
+                          <div className="aro-omi-avatar">
+                            <video
+                              key={message.isError ? "error" : omiAnimation}
+                              className="aro-omi-video"
+                              src={message.isError ? OmiCaution : getOmiVideo()}
+                              autoPlay loop muted playsInline
+                            />
                           </div>
                         )}
+                        <div className="aro-bubble-text">
+                          {renderMessageWithPersonaButton(message)}
+                          {message.file && (
+                            <div className="aro-bubble-file">
+                              <TbPaperclip size={16} />
+                              <span className="aro-bubble-file-name">{(message.file as File).name}</span>
+                            </div>
+                          )}
+                        </div>
                       </div>
+                      <span className="aro-timestamp">
+                        {message.sender === 'omi' ? 'Omi' : 'You'} • {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
                     </div>
-                    <span className="aro-timestamp">
-                      {message.sender === 'omi' ? 'Omi' : 'You'} • {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                  </div>
-                </motion.div>
-              ))}
-              <div ref={chatEndRef} />
-            </>
-          )}
-        </div>
-
-        {isObjectiveConfirmed ? (
-          <motion.div
-            className="aro-cta-section"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.25 }}
-          >
-            <p className="aro-cta-heading">
-              All set. Now let's bring the personas to life.
-            </p>
-            <div className="aro-cta-buttons">
-              <motion.button
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.1 }}
-                onClick={handleCreateWithOmi}
-                className="aro-btn-omi"
-              >
-                <TbSparkles size={16} />
-                <span>Create with Omi</span>
-              </motion.button>
-
-              <motion.button
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.2 }}
-                onClick={handleBuildManually}
-                className="aro-btn-manual"
-              >
-                <TbPencil size={16} />
-                <span>Build Manually</span>
-              </motion.button>
-            </div>
-          </motion.div>
-        ) : (
-          <div className="aro-input-bar">
-            <form onSubmit={handleSendMessage} className="aro-input-form">
-
-              <label className="aro-input-file-label">
-                <SpIcon name= "sp-Edit-Paperclip_Attechment_Tilt"/>
-                <input
-                  type="file"
-                  className="hidden"
-                  onChange={handleFileChange}
-                  disabled={isSubmitting || isLoading || !sessionData}
-                />
-              </label>
-
-              <textarea
-                ref={textareaRef}
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSendMessage();
-                  }
-                }}
-                className="aro-textarea"
-                rows={1}
-                disabled={isSubmitting || isLoading || !sessionData}
-              />
-
-              <button
-                type="button"
-                className="aro-input-icon-btn"
-                disabled={isSubmitting || isLoading || !sessionData}
-              >
-                <SpIcon name="sp-Other-Mic"/>
-              </button>
-
-              <button
-                type="submit"
-                className="aro-send-btn"
-                disabled={isSubmitting || isLoading || !sessionData || (inputValue.trim() === "" && !uploadedFile)}
-              >
-                {isSubmitting || isSendingMessage
-                  ? <TbLoader className="aro-spinner" size={16} />
-                  : <SpIcon name="sp-Communication-Paper_Plane" size={16}/>
-                }
-              </button>
-            </form>
-
-            {uploadedFile && (
-              <div className="aro-file-pill">
-                <TbPaperclip size={14} />
-                <span className="aro-file-pill-name">{uploadedFile.name}</span>
-                <button
-                  className="aro-file-pill-remove"
-                  onClick={() => setUploadedFile(null)}
-                  disabled={isSubmitting}
-                >
-                  ×
-                </button>
-              </div>
+                  </motion.div>
+                ))}
+                <div ref={chatEndRef} />
+              </>
             )}
           </div>
-        )}
+
+          {/* ── CTA section (shown once objective is confirmed) ── */}
+          {isObjectiveConfirmed ? (
+            <motion.div
+              className="aro-cta-section"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.25 }}
+            >
+              <p className="aro-cta-heading">All set. Now let's bring the personas to life.</p>
+              <div className="aro-cta-buttons">
+
+                {/* Create with Omi — always available */}
+                <motion.button
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.1 }}
+                  onClick={handleCreateWithOmi}
+                  className="aro-btn-omi"
+                >
+                  <TbSparkles size={16} />
+                  <span>Create with Omi</span>
+                </motion.button>
+
+                {/* Build Manually — locked for free / tier1, opens upgrade modal */}
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.2 }}
+                  className="aro-btn-manual-wrap"
+                  title={!manualAllowed ? "Upgrade to Enterprise to build personas manually" : undefined}
+                >
+                  <button
+                    onClick={handleBuildManually}
+                    className={`aro-btn-manual ${!manualAllowed ? 'aro-btn-manual--locked' : ''}`}
+                  >
+                    {!manualAllowed
+                      ? <TbLock size={15} />
+                      : <TbPencil size={16} />
+                    }
+                    <span>Build Manually</span>
+                  </button>
+                </motion.div>
+
+              </div>
+            </motion.div>
+          ) : (
+            <div className="aro-input-bar">
+              <form onSubmit={handleSendMessage} className="aro-input-form">
+                <label className="aro-input-file-label">
+                  <SpIcon name="sp-Edit-Paperclip_Attechment_Tilt" />
+                  <input type="file" className="hidden" onChange={handleFileChange} disabled={isSubmitting || isLoading || !sessionData} />
+                </label>
+
+                <textarea
+                  ref={textareaRef}
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); }
+                  }}
+                  className="aro-textarea"
+                  rows={1}
+                  disabled={isSubmitting || isLoading || !sessionData}
+                />
+
+                <button type="button" className="aro-input-icon-btn" disabled={isSubmitting || isLoading || !sessionData}>
+                  <SpIcon name="sp-Other-Mic" />
+                </button>
+
+                <button
+                  type="submit"
+                  className="aro-send-btn"
+                  disabled={isSubmitting || isLoading || !sessionData || (inputValue.trim() === "" && !uploadedFile)}
+                >
+                  {isSubmitting || isSendingMessage
+                    ? <TbLoader className="aro-spinner" size={16} />
+                    : <SpIcon name="sp-Communication-Paper_Plane" size={16} />
+                  }
+                </button>
+              </form>
+
+              {uploadedFile && (
+                <div className="aro-file-pill">
+                  <TbPaperclip size={14} />
+                  <span className="aro-file-pill-name">{uploadedFile.name}</span>
+                  <button className="aro-file-pill-remove" onClick={() => setUploadedFile(null)} disabled={isSubmitting}>×</button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+
+      {/* ── Upgrade modal (enterprise only — shown when locked Build Manually is clicked) ── */}
+      <UpgradeModal
+        isOpen={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        onUpgradeSuccess={() => setShowUpgradeModal(false)}
+        showEnterpriseOnly={true}
+      />
+    </>
   );
 };
 

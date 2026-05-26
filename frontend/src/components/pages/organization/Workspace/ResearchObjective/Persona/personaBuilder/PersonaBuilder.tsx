@@ -1,6 +1,6 @@
-//all the commented code in here is part of OLD UI will remove it eventually 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { useSelector } from 'react-redux';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import {
   TbEdit, TbPlus, TbLoader, TbUsers, TbDownload,
@@ -32,6 +32,7 @@ import {
 } from './data';
 import { downloadPersonaCardsFrontend } from './DownloadPersonaCard';
 import type { PersonaCardData } from './PersonaCardRenderer';
+import AddPersonaModal from './AddPersonaModal';
 
 // Components
 // import Header from './components/Header';
@@ -72,6 +73,15 @@ interface SavedPersona {
   [key: string]: unknown;
 }
 
+interface User {
+  account_tier?: string;
+  [key: string]: any;
+}
+
+interface RootState {
+  auth: { user: User | null };
+}
+
 interface PersonaData {
   name: string;
   isAI?: boolean;
@@ -95,15 +105,21 @@ interface ValidationError {
   fromTab?: string;
   toTab?: string;
 }
+
 interface DownloadPersonaCardModalProps {
   show: boolean;
   personas: SavedPersona[];
   onClose: () => void;
   onDownload: (selectedIds: string[]) => Promise<void>;
 }
+
+// free / tier1: hard cap of 2 personas per exploration
+const FREE_PERSONA_LIMIT = 2;
+// tier2 / enterprise: soft cap before showing the paid "add more" modal
 const PERSONA_LIMIT = 4;
 
 // ── Confidence helpers ────────────────────────────────────────────────────────
+
 const DownloadPersonaCardModal: React.FC<DownloadPersonaCardModalProps> = ({
   show, personas, onClose, onDownload,
 }) => {
@@ -228,6 +244,7 @@ const DownloadPersonaCardModal: React.FC<DownloadPersonaCardModalProps> = ({
     </AnimatePresence>
   );
 };
+
 // ── DownloadSuccessToast ──────────────────────────────────────────────────────
 
 const DownloadSuccessToast: React.FC<{ onClose: () => void }> = ({ onClose }) => (
@@ -252,6 +269,7 @@ const DownloadSuccessToast: React.FC<{ onClose: () => void }> = ({ onClose }) =>
     </motion.div>
   </AnimatePresence>
 );
+
 const getConfidenceScore = (persona: SavedPersona): number | null => {
   const raw =
     persona.confidence_scoring?.confidence_calculation_detail?.weighted_total ??
@@ -796,6 +814,7 @@ interface CountryGroupProps {
   onReplicatePersona: (persona: SavedPersona) => void;
   onReplicateGroup: (country: string) => void;
   onDeletePersona: (persona: SavedPersona) => void;
+  /** Whether to render the "Create New Persona" tile in this group */
   showCreateNew: boolean;
   totalPersonaCount: number;
 }
@@ -847,7 +866,10 @@ const CountryGroup: React.FC<CountryGroupProps> = ({
           </motion.div>
         ))}
 
-        {/* "Create New Persona" tile — only in last group or if showCreateNew */}
+        {/* "Create New Persona" tile:
+            - hidden entirely for free users at/above limit (showCreateNew=false)
+            - shown for tier1 users at limit so they can buy more
+            - shown for tier2/enterprise as normal */}
         {showCreateNew && (
           <motion.div
             initial={{ opacity: 0, y: 16 }}
@@ -875,6 +897,8 @@ interface PersonasReadyGridProps {
   onReplicatePersona: (persona: SavedPersona) => void;
   onReplicateGroup: (country: string) => void;
   onDeletePersona: (persona: SavedPersona) => void;
+  /** Pass tier flags so the grid can hide the "Create New" tile for free users */
+  isFreeUser: boolean;
 }
 
 const PersonasReadyGrid: React.FC<PersonasReadyGridProps> = ({
@@ -888,6 +912,7 @@ const PersonasReadyGrid: React.FC<PersonasReadyGridProps> = ({
   onReplicatePersona,
   onReplicateGroup,
   onDeletePersona,
+  isFreeUser,
 }) => {
   // Group personas by country — prefer location_country (clean country name),
   // fall back to geography only if location_country is absent.
@@ -900,6 +925,9 @@ const PersonasReadyGrid: React.FC<PersonasReadyGridProps> = ({
 
   const countryKeys = Object.keys(grouped);
   const totalCount = savedPersonas.length;
+
+  // For free users who are at/above the persona limit, never show the create tile.
+  const freeAtLimit = isFreeUser && totalCount >= FREE_PERSONA_LIMIT;
 
   return (
     <div className="pb-grid-page">
@@ -934,6 +962,8 @@ const PersonasReadyGrid: React.FC<PersonasReadyGridProps> = ({
       <div className="pb-groups-container">
         {countryKeys.map((country, groupIdx) => {
           const isLast = groupIdx === countryKeys.length - 1;
+          // Show create tile only in the last group, and never for free users at limit
+          const showCreateNew = isLast && !freeAtLimit;
           return (
             <motion.div
               key={country}
@@ -950,14 +980,14 @@ const PersonasReadyGrid: React.FC<PersonasReadyGridProps> = ({
                 onReplicatePersona={onReplicatePersona}
                 onReplicateGroup={onReplicateGroup}
                 onDeletePersona={onDeletePersona}
-                showCreateNew={isLast}
+                showCreateNew={showCreateNew}
                 totalPersonaCount={totalCount}
               />
             </motion.div>
           );
         })}
 
-        {/* If no personas yet, just show create tile */}
+        {/* If no personas yet, just show create tile (always visible when empty) */}
         {countryKeys.length === 0 && (
           <div className="pb-empty-state">
             <p className="pb-empty-state__title">No personas yet</p>
@@ -1010,6 +1040,16 @@ const PersonaBuilder: React.FC = () => {
 
   const fromLoader = !!(location.state as Record<string, unknown>)?.fromLoader;
   const [showGrid, setShowGrid] = useState(fromLoader);
+
+  // ── Tier-gating ────────────────────────────────────────────────────────────
+  const { user } = useSelector((state: RootState) => state.auth);
+  const userTier = (user?.account_tier ?? 'free').toLowerCase().trim();
+  const isFreeUser = userTier === 'free';
+  const isTier1User = userTier === 'tier1';
+  const isFreeOrTier1 = isFreeUser || isTier1User;
+
+  // Modal for tier1 users who want to buy more personas ($49 each)
+  const [showAddPersonaModal, setShowAddPersonaModal] = useState(false);
 
   const {
     personas: fetchedPersonas,
@@ -1245,24 +1285,34 @@ const PersonaBuilder: React.FC = () => {
     }
   }, [navigate, workspaceId, objectiveId]);
 
-  // When "Create New Persona" tile clicked: check limit
+  // When "Create New Persona" tile is clicked:
+  //   - free user at limit      → no-op (tile is hidden, but guard defensively)
+  //   - tier1 user at limit     → open AddPersonaModal ($49/persona)
+  //   - tier2/enterprise at 4+  → open AddNewPersonaModal (existing paid flow)
+  //   - otherwise               → kick off generation + navigate to loader
   const handleGridCreateNew = useCallback(() => {
+    // free: tile is hidden so this should never fire, but guard just in case
+    if (isFreeUser && savedPersonasFromAPI.length >= FREE_PERSONA_LIMIT) return;
+
+    // tier1 at limit → buy-more modal
+    if (isTier1User && savedPersonasFromAPI.length >= FREE_PERSONA_LIMIT) {
+      setShowAddPersonaModal(true);
+      return;
+    }
+
+    // tier2 / enterprise at soft cap → existing paid add modal
     if (savedPersonasFromAPI.length >= PERSONA_LIMIT) {
       setShowAddNewPersonaModal(true);
       return;
     }
 
-    try {
-      generatePersonas();
-    } catch (err) {
-      console.error("Failed to kick off persona generation:", err);
-    }
+    try { generatePersonas(); } catch (err) { console.error("Failed to kick off persona generation:", err); }
 
     navigate(
       `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-generating`,
       { state: { flow: "omi" } }
     );
-  }, [savedPersonasFromAPI.length, generatePersonas, navigate, workspaceId, objectiveId]);
+  }, [isFreeUser, isTier1User, savedPersonasFromAPI.length, generatePersonas, navigate, workspaceId, objectiveId]);
 
   const handleAddNewPersonaConfirm = (count: number) => {
     setShowAddNewPersonaModal(false);
@@ -1776,12 +1826,13 @@ const PersonaBuilder: React.FC = () => {
           onPersonaClick={handleGridPersonaClick}
           onCreateNew={handleGridCreateNew}
           onExplorationMethod={handleDiscussionGuidelines}
-          onDownload={() => setShowDownloadModal(true)}   // ← changed
+          onDownload={() => setShowDownloadModal(true)}
           isLoadingMethod={updateExplorationMethodMutation.isPending}
           onViewPersona={handleViewPersona}
           onReplicatePersona={handleReplicatePersona}
           onReplicateGroup={handleReplicateGroup}
           onDeletePersona={handleDeletePersona}
+          isFreeUser={isFreeUser}
         />
 
         <AddNewPersonaModal
@@ -1798,6 +1849,20 @@ const PersonaBuilder: React.FC = () => {
           isLoading={isReplicating}
           preSelectedPersona={replicatePreSelectedPersona}
         />
+
+        {/* ── Buy-more personas modal (tier1 users at limit) ── */}
+        {workspaceId && objectiveId && (
+          <AddPersonaModal
+            isOpen={showAddPersonaModal}
+            onClose={() => setShowAddPersonaModal(false)}
+            onSuccess={async () => {
+              setShowAddPersonaModal(false);
+              await queryClient.invalidateQueries({ queryKey: personaKeys.list(workspaceId, objectiveId) });
+            }}
+            workspaceId={workspaceId}
+            objectiveId={objectiveId}
+          />
+        )}
 
         {/* ── Download modal ── */}
         <DownloadPersonaCardModal
