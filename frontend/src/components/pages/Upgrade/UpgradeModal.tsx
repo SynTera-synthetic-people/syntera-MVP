@@ -14,6 +14,11 @@ interface UpgradeModalProps {
   isOpen: boolean;
   onClose: () => void;
   onUpgradeSuccess?: () => void;
+  /**
+   * When true, only the Enterprise card is shown (e.g. when reached from
+   * the locked "Build Manually" button which is enterprise-only).
+   */
+  showEnterpriseOnly?: boolean;
 }
 
 type ModalView = 'plans' | 'loading' | 'thankyou';
@@ -91,6 +96,7 @@ const UpgradeModal: React.FC<UpgradeModalProps> = ({
   isOpen,
   onClose,
   onUpgradeSuccess,
+  showEnterpriseOnly = false,
 }) => {
   const dispatch = useDispatch();
   const { user } = useSelector((state: RootState) => state.auth);
@@ -108,9 +114,6 @@ const UpgradeModal: React.FC<UpgradeModalProps> = ({
   /**
    * isExplorerExhausted: user has already purchased the Explorer Pack but
    * has used up all 3 included explorations.
-   *
-   * exploration_count is now properly typed on AuthUser so this access
-   * is safe without any type assertion.
    */
   const explorationCount = user?.exploration_count ?? 0;
   const isExplorerExhausted =
@@ -120,11 +123,17 @@ const UpgradeModal: React.FC<UpgradeModalProps> = ({
 
   // ── Copy ──────────────────────────────────────────────────────────────────
 
-  const title = isTrialCase ? 'Trial Complete' : 'Explorer Pack Complete';
+  const title = showEnterpriseOnly
+    ? 'Unlock Manual Persona Building'
+    : isTrialCase
+      ? 'Trial Complete'
+      : 'Explorer Pack Complete';
 
-  const subtitle = isTrialCase
-    ? 'Your first exploration is complete. Continue running behavioural simulations to uncover why customers choose, hesitate, or switch.'
-    : 'You have completed 3 research explorations. Your reports and traceability logs remain available in your workspace. Continue running behavioural simulations to uncover why customers choose, hesitate, or switch.';
+  const subtitle = showEnterpriseOnly
+    ? 'Building personas manually is available on the Enterprise plan. Contact our team to get started.'
+    : isTrialCase
+      ? 'Your first exploration is complete. Continue running behavioural simulations to uncover why customers choose, hesitate, or switch.'
+      : 'You have completed 3 research explorations. Your reports and traceability logs remain available in your workspace. Continue running behavioural simulations to uncover why customers choose, hesitate, or switch.';
 
   const explorerBtnLabel = isTrialCase ? 'Instant access' : 'Renew Explorer Pack';
 
@@ -250,68 +259,66 @@ const UpgradeModal: React.FC<UpgradeModalProps> = ({
               {/* ── PLANS VIEW ── */}
               {view === 'plans' && (
                 <>
-                  {/* Header — only shown when user has hit a limit */}
-                  {(isTrialCase || isExplorerExhausted) && (
-                    <div className="px-8 pt-8 pb-4 text-center">
-                      <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-                        {title}
-                      </h2>
-                      <p className="text-sm text-gray-500 dark:text-gray-400 max-w-xl mx-auto">
-                        {subtitle}
-                      </p>
-                    </div>
-                  )}
+                  {/* Header */}
+                  <div className="px-8 pt-8 pb-4 text-center">
+                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+                      {title}
+                    </h2>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 max-w-xl mx-auto">
+                      {subtitle}
+                    </p>
+                  </div>
 
                   {/* Cards */}
-                  <div className="px-8 pb-8 grid grid-cols-1 md:grid-cols-2 gap-5 mt-4">
+                  <div className={`px-8 pb-8 grid gap-5 mt-4 ${showEnterpriseOnly ? 'grid-cols-1 max-w-md mx-auto' : 'grid-cols-1 md:grid-cols-2'}`}>
 
-                    {/* Explorer Pack */}
-                    <div className="relative rounded-2xl border-2 border-blue-500 bg-blue-50/50 dark:bg-blue-900/10 p-6 flex flex-col">
+                    {/* Explorer Pack — hidden when showEnterpriseOnly */}
+                    {!showEnterpriseOnly && (
+                      <div className="relative rounded-2xl border-2 border-blue-500 bg-blue-50/50 dark:bg-blue-900/10 p-6 flex flex-col">
 
-                      {/*
-                        ── "MOST POPULAR" badge — Figma style ──────────────────
-                        Sits on top edge of the card, centred, hot-pink pill with
-                        uppercase bold text. No icon, no rounded-full — matches
-                        the flat pill style in the Figma screenshot exactly.
-                      */}
-                      <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
-                        <span className="inline-block bg-[#E91E8C] text-white text-[10px] font-bold tracking-widest uppercase px-4 py-1 rounded-md shadow-lg whitespace-nowrap">
-                          MOST POPULAR
-                        </span>
+                        {/*
+                          ── "MOST POPULAR" badge ──────────────────────────────
+                          Sits on top edge of the card, centred, hot-pink pill.
+                        */}
+                        <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
+                          <span className="inline-block bg-[#E91E8C] text-white text-[10px] font-bold tracking-widest uppercase px-4 py-1 rounded-md shadow-lg whitespace-nowrap">
+                            MOST POPULAR
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2 mb-1 mt-2">
+                          <TbRocket className="w-5 h-5 text-blue-600" />
+                          <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+                            {isTrialCase ? 'Explorer Pack' : 'Renew Explorer Pack'}
+                          </h3>
+                        </div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+                          For teams beginning their behavioral discovery
+                        </p>
+
+                        <ul className="space-y-2 flex-1 mb-6">
+                          {EXPLORER_FEATURES.map((f) => (
+                            <li key={f} className="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300">
+                              <TbCheck className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
+                              {f}
+                            </li>
+                          ))}
+                        </ul>
+
+                        <div className="mb-4">
+                          <span className="text-2xl font-bold text-gray-900 dark:text-white">USD 899</span>
+                        </div>
+
+                        <button
+                          onClick={handleExplorerUpgrade}
+                          className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-colors shadow-lg shadow-blue-500/30"
+                        >
+                          {explorerBtnLabel}
+                        </button>
                       </div>
+                    )}
 
-                      <div className="flex items-center gap-2 mb-1 mt-2">
-                        <TbRocket className="w-5 h-5 text-blue-600" />
-                        <h3 className="text-lg font-bold text-gray-900 dark:text-white">
-                          {isTrialCase ? 'Explorer Pack' : 'Renew Explorer Pack'}
-                        </h3>
-                      </div>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-                        For teams beginning their behavioral discovery
-                      </p>
-
-                      <ul className="space-y-2 flex-1 mb-6">
-                        {EXPLORER_FEATURES.map((f) => (
-                          <li key={f} className="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300">
-                            <TbCheck className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
-                            {f}
-                          </li>
-                        ))}
-                      </ul>
-
-                      <div className="mb-4">
-                        <span className="text-2xl font-bold text-gray-900 dark:text-white">USD 899</span>
-                      </div>
-
-                      <button
-                        onClick={handleExplorerUpgrade}
-                        className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-colors shadow-lg shadow-blue-500/30"
-                      >
-                        {explorerBtnLabel}
-                      </button>
-                    </div>
-
-                    {/* Enterprise Pack */}
+                    {/* Enterprise Pack — always shown */}
                     <div className="rounded-2xl border-2 border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 p-6 flex flex-col">
                       <div className="flex items-center gap-2 mb-1">
                         <TbBuilding className="w-5 h-5 text-gray-600 dark:text-gray-300" />
@@ -339,6 +346,7 @@ const UpgradeModal: React.FC<UpgradeModalProps> = ({
                         Contact Sales
                       </button>
                     </div>
+
                   </div>
                 </>
               )}

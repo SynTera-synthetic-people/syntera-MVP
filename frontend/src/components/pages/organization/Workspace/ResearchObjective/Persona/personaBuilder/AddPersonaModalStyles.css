@@ -1,0 +1,199 @@
+/* ═══════════════════════════════════════════════════════════════
+   AddPersonaModalStyles.css
+   "Add New Persona" modal — mirrors AddExplorationModal exactly.
+   Prefix: apm-
+═══════════════════════════════════════════════════════════════ */
+
+/* ── Overlay ── */
+.apm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 700;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: apm-overlay-in 0.15s ease;
+}
+
+@keyframes apm-overlay-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ── Modal card ── */
+.apm-modal {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  background: var(--T-Base-B1, #000000);
+  border: 1px solid var(--T-GreyScale-Grey-700, #4F535F);
+  border-radius: 24px;
+  padding: 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.7);
+  animation: apm-modal-in 0.18s ease;
+}
+
+@keyframes apm-modal-in {
+  from { opacity: 0; transform: scale(0.96) translateY(10px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0); }
+}
+
+/* ── Close button ── */
+.apm-close-btn {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: #9ca3af;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.apm-close-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e5e7eb;
+}
+
+/* ── Title ── */
+.apm-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+  letter-spacing: -0.3px;
+  text-align: center;
+  line-height: 1.2;
+}
+
+/* ── Field ── */
+.apm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.apm-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #d1d5db;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.apm-info-icon {
+  color: #6b7280;
+  display: flex;
+  align-items: center;
+  cursor: default;
+}
+
+/* ── Counter row ── */
+.apm-counter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.apm-counter-btn {
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  border: 1px solid var(--T-GreyScale-Grey-700, #4F535F);
+  border-radius: 12px;
+  background: #000000;
+  color: #d1d5db;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.apm-counter-btn:hover:not(:disabled) {
+  background: #22263a;
+  border-color: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+.apm-counter-btn:disabled {
+  color: #3a3f4d;
+  border-color: rgba(255, 255, 255, 0.06);
+  cursor: not-allowed;
+}
+
+.apm-counter-input {
+  flex: 1;
+  height: 42px;
+  background: #000000;
+  border: 1px solid var(--T-GreyScale-Grey-700, #4F535F);
+  border-radius: 12px;
+  color: #f3f4f6;
+  font-size: 18px;
+  font-weight: 700;
+  text-align: center;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.apm-counter-input:focus { border-color: rgba(255, 255, 255, 0.28); }
+.apm-counter-input::-webkit-outer-spin-button,
+.apm-counter-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* ── Price card ── */
+.apm-breakdown {
+  background: var(--T-Base-B4, #1E2126);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.apm-breakdown-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+}
+.apm-breakdown-label { font-size: 14px; color: #9ca3af; font-weight: 400; }
+.apm-breakdown-price { font-size: 14px; color: #9ca3af; font-weight: 500; }
+
+.apm-divider {
+  height: 1px;
+  width: 90%;
+  margin: 8px auto;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.apm-total-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+}
+.apm-total-label { font-size: 15px; font-weight: 700; color: #f3f4f6; }
+.apm-total-price { font-size: 15px; font-weight: 700; color: #f3f4f6; }
+
+/* ── CTA button ── */
+.apm-cta-btn {
+  width: 100%;
+  padding: 14px 0;
+  border-radius: 10px;
+  border: none;
+  background: #2563eb;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+  letter-spacing: 0.1px;
+}
+.apm-cta-btn:hover:not(:disabled) { background: #1d4ed8; }
+.apm-cta-btn:disabled { opacity: 0.6; cursor: not-allowed; }

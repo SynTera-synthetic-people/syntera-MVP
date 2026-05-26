@@ -12,15 +12,17 @@ interface ImpactHighFiveModalProps {
 
 type Q1Answer = 'direct' | 'partial' | 'pending' | null;
 type Q2Answer = 'skip_human' | 'no_skip' | null;
+type Q3Answer = 'reduce_no' | 'reduce_yes' | null;
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
 const ImpactHighFiveModal: React.FC<ImpactHighFiveModalProps> = ({ onSubmit, onClose }) => {
   const [q1, setQ1] = useState<Q1Answer>(null);
   const [q2, setQ2] = useState<Q2Answer>(null);
+  const [q3, setQ3] = useState<Q3Answer>(null);
   const [submitting, setSubmitting] = useState<boolean>(false);
 
-  const canSubmit = q1 !== null && q2 !== null;
+  const canSubmit = q1 !== null && q2 !== null && (q2 !== 'no_skip' || q3 !== null);
 
   const handleSubmit = async () => {
     if (!canSubmit || submitting) return;
@@ -98,7 +100,7 @@ const ImpactHighFiveModal: React.FC<ImpactHighFiveModalProps> = ({ onSubmit, onC
               <button
                 key={opt.value}
                 className={`ihf-option ${q2 === opt.value ? 'ihf-option--selected' : ''}`}
-                onClick={() => setQ2(opt.value as Q2Answer)}
+                onClick={() => { setQ2(opt.value as Q2Answer); setQ3(null); }}
               >
                 <span className={`ihf-option__radio ${q2 === opt.value ? 'ihf-option__radio--selected' : ''}`} />
                 {opt.label}
@@ -106,6 +108,30 @@ const ImpactHighFiveModal: React.FC<ImpactHighFiveModalProps> = ({ onSubmit, onC
             ))}
           </div>
         </div>
+
+        {/* Q3 — shown only when Q2 = "No - still planning human study" */}
+        {q2 === 'no_skip' && (
+          <div className="ihf-question">
+            <p className="ihf-question__label">
+              <span className="ihf-question__num">Q.3</span>
+              Will this exploration let you reduce your planned human sample size?
+            </p>
+            <div className="ihf-options ihf-options--row">
+              {[
+                { value: 'reduce_no',  label: 'No'  },
+                { value: 'reduce_yes', label: 'Yes' },
+              ].map((opt) => (
+                <button
+                  key={opt.value}
+                  className={`ihf-option ihf-option--flat ${q3 === opt.value ? 'ihf-option--selected' : ''}`}
+                  onClick={() => setQ3(opt.value as Q3Answer)}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Submit */}
         <button
