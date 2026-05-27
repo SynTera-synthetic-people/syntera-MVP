@@ -125,6 +125,7 @@ const SurveyResults = () => {
   const navigate = useNavigate();
   const { workspaceId, objectiveId } = useParams();
   const location = useLocation();
+  const isViewOnly = Boolean(location.state?.viewOnly);
   const { theme } = useTheme();
   const { trigger } = useOmniWorkflow();
 
@@ -286,7 +287,8 @@ const SurveyResults = () => {
   useEffect(() => {
     if (location.state?.surveyConfig) {
       setSurveyConfig(location.state.surveyConfig);
-    } else {
+    } else if (!isViewOnly) {
+      // Only redirect when not in view-only mode (completed explorations won't have surveyConfig in state)
       navigate(
         `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/population-builder`,
         { replace: true }
@@ -593,7 +595,7 @@ const SurveyResults = () => {
               <button
                 onClick={() => {
                   if (surveyConfig) {
-                    navigate(`/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/rebuttal-mode`, {
+                    navigate(`/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/rebuttal-mode`, { state: { ...location.state },
                       state: {
                         personaId: surveyConfig.personaIds,
                         simulationId: surveyConfig.simulationId,

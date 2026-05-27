@@ -4,7 +4,7 @@ import ChatView from './ChatView';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TbLoader, TbX, TbPlus, TbAlertCircle } from 'react-icons/tb';
 import SpIcon from '../../../../../SPIcon';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import GuideValidationModal from './components/GuideValidationModal';
 import {
   useDiscussionGuideWithAutoGenerate,
@@ -219,6 +219,8 @@ const DepthInterview: React.FC = () => {
   const { objectives } = useObjectives();
   const { workspaceId, objectiveId } = useParams<{ workspaceId: string; objectiveId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  const isViewOnly = Boolean((location.state as any)?.viewOnly);
 
   const {
     data: guideData, isLoading: isGuideLoading, error: guideError,
@@ -277,7 +279,7 @@ const DepthInterview: React.FC = () => {
 
   useEffect(() => {
     const run = async () => {
-      if (shouldAutoGenerate && workspaceId && objectiveId) {
+      if (!isViewOnly && shouldAutoGenerate && workspaceId && objectiveId) {
         try {
           setLoaderMode('generate');
           setShowLoader(true);
@@ -449,7 +451,7 @@ const DepthInterview: React.FC = () => {
 
   const handleStartInterview = () => {
     if (objectiveId) localStorage.setItem(`qualitative_sub1_${objectiveId}`, '1');
-    navigate(`/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/chatview`);
+    navigate(`/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/chatview`, { state: { viewOnly: isViewOnly } });
   };
 
   // ── Upload error banner ───────────────────────────────────────────────────
@@ -513,11 +515,11 @@ const DepthInterview: React.FC = () => {
         )}
       </AnimatePresence>
 
-      <DiscussionGuideLoader
+      {!isViewOnly && <DiscussionGuideLoader
         mode={loaderMode}
         onComplete={handleLoaderComplete}
         isReady={loaderMode === 'upload' ? uploadReady : !isGenerating}
-      />
+      />}
     </>
   );
 
@@ -547,22 +549,24 @@ const DepthInterview: React.FC = () => {
 
   return (
     <div className="di-page">
-      {/* Hidden file input — updated accept to match allowed formats */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".pdf,.doc,.docx,.xls,.xlsx"
-        className="di-file-input"
-        onChange={handleFileChange}
-      />
+      {/* Hidden file input — only needed when not in view-only mode */}
+      {!isViewOnly && (
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".pdf,.doc,.docx,.xls,.xlsx"
+          className="di-file-input"
+          onChange={handleFileChange}
+        />
+      )}
 
       {/* Error banner portal — fixed top-center, above everything */}
       <div className="di-error-portal">
         <UploadErrorBanner />
       </div>
 
-      {/* ── Empty state ── */}
-      {guide.length === 0 && (
+      {/* ── Empty state — hidden entirely in view-only mode ── */}
+      {guide.length === 0 && !isViewOnly && (
         <div className="di-container">
           <motion.div
             className="di-empty-card"
@@ -636,21 +640,27 @@ const DepthInterview: React.FC = () => {
                   <div className="di-section__header-left">
                     <div className="di-section__num">{sectionIndex + 1}</div>
                     <h3 className="di-section__title">{section.title}</h3>
-                    <button
-                      className="di-icon-btn"
-                      title="Edit Section"
-                      onClick={() => setModal({ type: 'editSection', sectionId: section.section_id, currentTitle: section.title })}
-                    >
-                      <SpIcon name="sp-Edit-Edit_Pencil_01" size={16} />
-                    </button>
+                    {/* Edit section button — hidden in view-only mode */}
+                    {!isViewOnly && (
+                      <button
+                        className="di-icon-btn"
+                        title="Edit Section"
+                        onClick={() => setModal({ type: 'editSection', sectionId: section.section_id, currentTitle: section.title })}
+                      >
+                        <SpIcon name="sp-Edit-Edit_Pencil_01" size={16} />
+                      </button>
+                    )}
                   </div>
-                  <button
-                    className="di-icon-btn di-icon-btn--danger"
-                    title="Delete Section"
-                    onClick={() => setModal({ type: 'deleteSection', sectionId: section.section_id })}
-                  >
-                    <SpIcon name="sp-Interface-Trash_Full" size={18} />
-                  </button>
+                  {/* Delete section button — hidden in view-only mode */}
+                  {!isViewOnly && (
+                    <button
+                      className="di-icon-btn di-icon-btn--danger"
+                      title="Delete Section"
+                      onClick={() => setModal({ type: 'deleteSection', sectionId: section.section_id })}
+                    >
+                      <SpIcon name="sp-Interface-Trash_Full" size={18} />
+                    </button>
+                  )}
                 </div>
 
                 <div className="di-section__divider" />
@@ -660,58 +670,67 @@ const DepthInterview: React.FC = () => {
                     <div className="di-question" key={question.id}>
                       <span className="di-question__label">Q{qIndex + 1}.</span>
                       <p className="di-question__text">{question.text}</p>
-                      <div className="di-question__menu-wrap">
-                        <button
-                          className="di-question__menu-btn"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setOpenKebabId(openKebabId === question.id ? null : question.id);
-                          }}
-                          aria-label="Question options"
-                        >
-                          <SpIcon name="sp-Menu-More_Vertical" size={16} />
-                        </button>
-                        {openKebabId === question.id && (
-                          <div className="di-question__menu" onClick={(e) => e.stopPropagation()}>
-                            <button
-                              className="di-question__menu-item"
-                              onClick={() => {
-                                setOpenKebabId(null);
-                                setModal({ type: 'editQuestion', questionId: question.id, currentText: question.text });
-                              }}
-                            >
-                              <SpIcon name="sp-Edit-Edit_Pencil_01" size={14} /> Edit
-                            </button>
-                            <button
-                              className="di-question__menu-item di-question__menu-item--danger"
-                              onClick={() => {
-                                setOpenKebabId(null);
-                                setModal({ type: 'deleteQuestion', questionId: question.id });
-                              }}
-                            >
-                              <SpIcon name="sp-Interface-Trash_Empty" size={14} /> Delete
-                            </button>
-                          </div>
-                        )}
-                      </div>
+                      {/* Question kebab menu — hidden entirely in view-only mode */}
+                      {!isViewOnly && (
+                        <div className="di-question__menu-wrap">
+                          <button
+                            className="di-question__menu-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setOpenKebabId(openKebabId === question.id ? null : question.id);
+                            }}
+                            aria-label="Question options"
+                          >
+                            <SpIcon name="sp-Menu-More_Vertical" size={16} />
+                          </button>
+                          {openKebabId === question.id && (
+                            <div className="di-question__menu" onClick={(e) => e.stopPropagation()}>
+                              <button
+                                className="di-question__menu-item"
+                                onClick={() => {
+                                  setOpenKebabId(null);
+                                  setModal({ type: 'editQuestion', questionId: question.id, currentText: question.text });
+                                }}
+                              >
+                                <SpIcon name="sp-Edit-Edit_Pencil_01" size={14} /> Edit
+                              </button>
+                              <button
+                                className="di-question__menu-item di-question__menu-item--danger"
+                                onClick={() => {
+                                  setOpenKebabId(null);
+                                  setModal({ type: 'deleteQuestion', questionId: question.id });
+                                }}
+                              >
+                                <SpIcon name="sp-Interface-Trash_Empty" size={14} /> Delete
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
 
-                <button
-                  className="di-add-question-btn"
-                  onClick={() => setModal({ type: 'addQuestion', sectionId: section.section_id })}
-                >
-                  <TbPlus size={15} /> Add Question
-                </button>
+                {/* Add Question button — hidden in view-only mode */}
+                {!isViewOnly && (
+                  <button
+                    className="di-add-question-btn"
+                    onClick={() => setModal({ type: 'addQuestion', sectionId: section.section_id })}
+                  >
+                    <TbPlus size={15} /> Add Question
+                  </button>
+                )}
               </motion.div>
             ))}
 
-            <div className="di-guide-footer">
-              <button className="di-footer-add-section-btn" onClick={() => setModal({ type: 'addSection' })}>
-                <TbPlus size={18} /> Add New Section
-              </button>
-            </div>
+            {/* Add New Section footer — hidden in view-only mode */}
+            {!isViewOnly && (
+              <div className="di-guide-footer">
+                <button className="di-footer-add-section-btn" onClick={() => setModal({ type: 'addSection' })}>
+                  <TbPlus size={18} /> Add New Section
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="di-start-interview-bar">
@@ -727,7 +746,7 @@ const DepthInterview: React.FC = () => {
         </div>
       )}
 
-      {/* ── Modals ── */}
+      {/* ── Modals — never rendered in view-only mode since triggers are hidden ── */}
       <AnimatePresence>
         {modal?.type === 'editSection' && (
           <SectionModal mode="edit" initialValue={modal.currentTitle} isPending={updateSectionMutation.isPending}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TbLoader } from 'react-icons/tb';
@@ -175,6 +175,8 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
   initialSurveySimulationId,
 }) => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const isViewOnly = Boolean((location.state as any)?.viewOnly);
   const queryClient = useQueryClient();
   const updateExplorationMutation = useUpdateExplorationMethod();
 
@@ -464,13 +466,22 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
       {/* ── Footer ── */}
       <div className="ig-footer">
         <div className="ig-footer__left" />
-        <button
-          className="ig-footer__btn ig-footer__btn--end"
-          disabled={!hasAnyInsightReady}
-          onClick={handleEndExplorationClick}
-        >
-          End Exploration
-        </button>
+        {isViewOnly ? (
+          <button
+            className="ig-footer__btn ig-footer__btn--end"
+            onClick={() => navigate(`/main/organization/workspace/explorations/${workspaceId}`)}
+          >
+            End Journey
+          </button>
+        ) : (
+          <button
+            className="ig-footer__btn ig-footer__btn--end"
+            disabled={!hasAnyInsightReady}
+            onClick={handleEndExplorationClick}
+          >
+            End Exploration
+          </button>
+        )}
       </div>
 
       {/* ── Modals ── */}

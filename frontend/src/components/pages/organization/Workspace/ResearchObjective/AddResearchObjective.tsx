@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useDispatch, useSelector } from 'react-redux';
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -89,7 +89,10 @@ const canBuildManually = (tier: string | undefined): boolean => {
 // ── Component ────────────────────────────────────────────────────────────────
 
 const AddResearchObjective: React.FC = () => {
-  const navigate = useNavigate()
+  const navigate = useNavigate();
+  const location = useLocation();
+  // view-only: set by ExplorationList when opening a completed exploration
+  const isViewOnly = Boolean((location.state as any)?.viewOnly);
   const { trigger } = useOmniWorkflow();
   const { theme } = useTheme();
   const { workspaceId, objectiveId } = useParams<{
@@ -193,11 +196,11 @@ const AddResearchObjective: React.FC = () => {
   }, [inputValue, isSubmitting]);
 
   useEffect(() => {
-    if (!hasTriggeredInitialEvent && sessionData) {
+    if (!isViewOnly && !hasTriggeredInitialEvent && sessionData) {
       trigger({ stage: 'research_objective', event: 'RESEARCH_OBJECTIVE_INIT', payload: {} });
       setHasTriggeredInitialEvent(true);
     }
-  }, [sessionData, hasTriggeredInitialEvent, objectiveId, workspaceId, trigger]);
+  }, [isViewOnly, sessionData, hasTriggeredInitialEvent, objectiveId, workspaceId, trigger]);
 
   useEffect(() => {
     if ((conversationHistoryData as any)?.status === "success" && (conversationHistoryData as any).data?.messages) {
@@ -298,7 +301,7 @@ const AddResearchObjective: React.FC = () => {
     if (savedPersonas.some((p: any) => p?.calibration_status !== "draft")) {
       navigate(
         `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-builder`,
-        { state: { fromLoader: true, flow: "omi", reusedExisting: true } }
+        { state: { fromLoader: true, flow: "omi", reusedExisting: true, viewOnly: isViewOnly } }
       );
       return;
     }
@@ -307,7 +310,7 @@ const AddResearchObjective: React.FC = () => {
 
     navigate(
       `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-generating`,
-      { state: { flow: "omi" } }
+      { state: { flow: "omi", viewOnly: isViewOnly } }
     );
   };
 
@@ -323,7 +326,7 @@ const AddResearchObjective: React.FC = () => {
 
     navigate(
       `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-builder/manual`,
-      { state: { flow: "manual" } }
+      { state: { flow: "manual", viewOnly: isViewOnly } }
     );
   };
 
@@ -526,7 +529,7 @@ const AddResearchObjective: React.FC = () => {
 
           {/* Messages List */}
           <div ref={messagesContainerRef} className="aro-messages">
-            {isLoading ? (
+            {isLoading && !isViewOnly ? (
               <div className="aro-state-center">
                 <div className="aro-state-inner">
                   <TbLoader className="aro-spinner" />
@@ -535,7 +538,7 @@ const AddResearchObjective: React.FC = () => {
                   </p>
                 </div>
               </div>
-            ) : sessionError ? (
+            ) : sessionError && !isViewOnly ? (
               <div className="aro-state-center">
                 <div className="aro-error-box">
                   <p className="aro-error-text">Failed to initialize chat session.</p>
@@ -598,8 +601,40 @@ const AddResearchObjective: React.FC = () => {
             )}
           </div>
 
-          {/* ── CTA section (shown once objective is confirmed) ── */}
-          {isObjectiveConfirmed ? (
+          {/* ── CTA section / input bar ── */}
+          {isViewOnly ? (
+            /* ── View-only footer: navigate forward, never generate ── */
+            <motion.div
+              className="aro-cta-section"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.25 }}
+            >
+              <p className="aro-cta-heading">
+                {isObjectiveConfirmed
+                  ? 'Research objective recorded. View the personas below.'
+                  : 'This is a view-only walkthrough — the conversation above is read-only.'}
+              </p>
+              <div className="aro-cta-buttons">
+                <motion.button
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.1 }}
+                  onClick={() =>
+                    navigate(
+                      `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-builder`,
+                      { state: { viewOnly: true } }
+                    )
+                  }
+                  className="aro-btn-omi"
+                >
+                  <TbSparkles size={16} />
+                  <span>View Personas</span>
+                </motion.button>
+              </div>
+            </motion.div>
+          ) : isObjectiveConfirmed ? (
+            /* ── Normal mode: objective confirmed, show generate CTAs ── */
             <motion.div
               className="aro-cta-section"
               initial={{ opacity: 0, y: 10 }}
@@ -609,7 +644,6 @@ const AddResearchObjective: React.FC = () => {
               <p className="aro-cta-heading">All set. Now let's bring the personas to life.</p>
               <div className="aro-cta-buttons">
 
-                {/* Create with Omi — always available */}
                 <motion.button
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -621,7 +655,6 @@ const AddResearchObjective: React.FC = () => {
                   <span>Create with Omi</span>
                 </motion.button>
 
-                {/* Build Manually — locked for free / tier1, opens upgrade modal */}
                 <motion.div
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -633,10 +666,7 @@ const AddResearchObjective: React.FC = () => {
                     onClick={handleBuildManually}
                     className={`aro-btn-manual ${!manualAllowed ? 'aro-btn-manual--locked' : ''}`}
                   >
-                    {!manualAllowed
-                      ? <TbLock size={15} />
-                      : <TbPencil size={16} />
-                    }
+                    {!manualAllowed ? <TbLock size={15} /> : <TbPencil size={16} />}
                     <span>Build Manually</span>
                   </button>
                 </motion.div>
@@ -644,6 +674,7 @@ const AddResearchObjective: React.FC = () => {
               </div>
             </motion.div>
           ) : (
+            /* ── Normal mode: input bar ── */
             <div className="aro-input-bar">
               <form onSubmit={handleSendMessage} className="aro-input-form">
                 <label className="aro-input-file-label">

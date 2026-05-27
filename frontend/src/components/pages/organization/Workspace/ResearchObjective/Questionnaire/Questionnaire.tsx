@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TbLoader, TbX, TbAlertCircle } from 'react-icons/tb';
 import SpIcon from '../../../../../SPIcon';
@@ -86,6 +86,8 @@ const mapApiToSections = (apiSections: any[]): Section[] =>
 
 const Questionnaire: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const isViewOnly = Boolean((location.state as any)?.viewOnly);
   const { workspaceId, objectiveId } = useParams<{ workspaceId: string; objectiveId: string }>();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -243,7 +245,8 @@ const Questionnaire: React.FC = () => {
       localStorage.setItem(`quantitative_sub1_${objectiveId}`, '1');
     }
     navigate(
-      `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/population-builder`
+      `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/population-builder`,
+      { state: { viewOnly: isViewOnly } }
     );
   };
 
@@ -401,6 +404,7 @@ const Questionnaire: React.FC = () => {
         showReadyToast={showReadyToast}
         onDismissToast={() => setShowReadyToast(false)}
         initialSections={sections}
+        isViewOnly={isViewOnly}
       />
     </>
   );

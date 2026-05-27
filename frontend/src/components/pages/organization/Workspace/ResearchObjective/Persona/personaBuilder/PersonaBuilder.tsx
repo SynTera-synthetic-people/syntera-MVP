@@ -304,6 +304,9 @@ interface KebabMenuProps {
 
 const KebabMenu: React.FC<KebabMenuProps> = ({ items }) => {
   const [open, setOpen] = useState(false);
+
+  // Render nothing when there are no actions to show
+  if (items.length === 0) return null;
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -682,6 +685,7 @@ interface PersonaGridCardProps {
   onViewPersona?: (persona: SavedPersona) => void;
   onReplicatePersona?: (persona: SavedPersona) => void;
   onDeletePersona?: (persona: SavedPersona) => void;
+  isViewOnly?: boolean;
 }
 
 const PersonaGridCard: React.FC<PersonaGridCardProps> = ({
@@ -692,6 +696,7 @@ const PersonaGridCard: React.FC<PersonaGridCardProps> = ({
   onViewPersona,
   onReplicatePersona,
   onDeletePersona,
+  isViewOnly = false,
 }) => {
   if (isCreateNew) {
     return (
@@ -735,17 +740,19 @@ const PersonaGridCard: React.FC<PersonaGridCardProps> = ({
       icon: <TbEye size={14} />,
       onClick: () => onViewPersona?.(persona),
     },
-    {
-      label: 'Replicate Personas',
-      icon: <TbCopy size={14} />,
-      onClick: () => onReplicatePersona?.(persona),
-    },
-    {
-      label: 'Delete Persona',
-      icon: <TbTrash size={14} />,
-      onClick: () => onDeletePersona?.(persona),
-      danger: true,
-    },
+    ...(!isViewOnly ? [
+      {
+        label: 'Replicate Personas',
+        icon: <TbCopy size={14} />,
+        onClick: () => onReplicatePersona?.(persona),
+      },
+      {
+        label: 'Delete Persona',
+        icon: <TbTrash size={14} />,
+        onClick: () => onDeletePersona?.(persona),
+        danger: true,
+      },
+    ] : []),
   ];
 
   return (
@@ -817,6 +824,7 @@ interface CountryGroupProps {
   /** Whether to render the "Create New Persona" tile in this group */
   showCreateNew: boolean;
   totalPersonaCount: number;
+  isViewOnly?: boolean;
 }
 
 const CountryGroup: React.FC<CountryGroupProps> = ({
@@ -830,8 +838,9 @@ const CountryGroup: React.FC<CountryGroupProps> = ({
   onDeletePersona,
   showCreateNew,
   totalPersonaCount,
+  isViewOnly = false,
 }) => {
-  const countryKebabItems = [
+  const countryKebabItems = isViewOnly ? [] : [
     {
       label: 'Replicate Personas',
       icon: <TbCopy size={14} />,
@@ -862,6 +871,7 @@ const CountryGroup: React.FC<CountryGroupProps> = ({
               onViewPersona={onViewPersona}
               onReplicatePersona={onReplicatePersona}
               onDeletePersona={onDeletePersona}
+              isViewOnly={isViewOnly}
             />
           </motion.div>
         ))}
@@ -899,6 +909,8 @@ interface PersonasReadyGridProps {
   onDeletePersona: (persona: SavedPersona) => void;
   /** Pass tier flags so the grid can hide the "Create New" tile for free users */
   isFreeUser: boolean;
+  /** When true, hide the "Create New Persona" tile entirely (view-only mode) */
+  isViewOnly?: boolean;
 }
 
 const PersonasReadyGrid: React.FC<PersonasReadyGridProps> = ({
@@ -913,6 +925,7 @@ const PersonasReadyGrid: React.FC<PersonasReadyGridProps> = ({
   onReplicateGroup,
   onDeletePersona,
   isFreeUser,
+  isViewOnly = false,
 }) => {
   // Group personas by country — prefer location_country (clean country name),
   // fall back to geography only if location_country is absent.
@@ -962,8 +975,8 @@ const PersonasReadyGrid: React.FC<PersonasReadyGridProps> = ({
       <div className="pb-groups-container">
         {countryKeys.map((country, groupIdx) => {
           const isLast = groupIdx === countryKeys.length - 1;
-          // Show create tile only in the last group, and never for free users at limit
-          const showCreateNew = isLast && !freeAtLimit;
+          // Show create tile only in the last group, never for free users at limit, and never in view-only mode
+          const showCreateNew = isLast && !freeAtLimit && !isViewOnly;
           return (
             <motion.div
               key={country}
@@ -982,21 +995,24 @@ const PersonasReadyGrid: React.FC<PersonasReadyGridProps> = ({
                 onDeletePersona={onDeletePersona}
                 showCreateNew={showCreateNew}
                 totalPersonaCount={totalCount}
+                isViewOnly={isViewOnly}
               />
             </motion.div>
           );
         })}
 
-        {/* If no personas yet, just show create tile (always visible when empty) */}
+        {/* If no personas yet, show create tile — hidden in view-only mode */}
         {countryKeys.length === 0 && (
           <div className="pb-empty-state">
             <p className="pb-empty-state__title">No personas yet</p>
             <p className="pb-empty-state__subtitle">
               Get started by creating your first persona — Omi can build one for you.
             </p>
-            <div className="pb-personas-grid">
-              <PersonaGridCard isCreateNew onCreateNew={onCreateNew} />
-            </div>
+            {!isViewOnly && (
+              <div className="pb-personas-grid">
+                <PersonaGridCard isCreateNew onCreateNew={onCreateNew} />
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1039,6 +1055,7 @@ const PersonaBuilder: React.FC = () => {
   const { theme: _theme } = useTheme();
 
   const fromLoader = !!(location.state as Record<string, unknown>)?.fromLoader;
+  const isViewOnly = Boolean((location.state as Record<string, unknown>)?.viewOnly);
   const [showGrid, setShowGrid] = useState(fromLoader);
 
   // ── Tier-gating ────────────────────────────────────────────────────────────
@@ -1607,7 +1624,7 @@ const PersonaBuilder: React.FC = () => {
       ) {
         navigate(
           `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/population-builder`,
-          { state: { researchApproach: 'quantitative' } }
+          { state: { researchApproach: 'quantitative', viewOnly: isViewOnly } }
         );
       } else {
         navigate(
@@ -1619,6 +1636,7 @@ const PersonaBuilder: React.FC = () => {
                   (exploration as Record<string, unknown> | undefined)?.is_quantitative
                   ? 'both'
                   : 'qualitative',
+              viewOnly: isViewOnly,
             },
           }
         );
@@ -1649,12 +1667,12 @@ const PersonaBuilder: React.FC = () => {
       if (approach === 'quantitative') {
         navigate(
           `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/population-builder`,
-          { state: { researchApproach: approach } }
+          { state: { researchApproach: approach, viewOnly: isViewOnly } }
         );
       } else {
         navigate(
           `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/depth-interview`,
-          { state: { researchApproach: approach } }
+          { state: { researchApproach: approach, viewOnly: isViewOnly } }
         );
       }
       trigger({ stage: 'persona_builder', event: 'RESEARCH_APPROACH_SELECTED', payload: { approach } });
@@ -1833,6 +1851,7 @@ const PersonaBuilder: React.FC = () => {
           onReplicateGroup={handleReplicateGroup}
           onDeletePersona={handleDeletePersona}
           isFreeUser={isFreeUser}
+          isViewOnly={isViewOnly}
         />
 
         <AddNewPersonaModal

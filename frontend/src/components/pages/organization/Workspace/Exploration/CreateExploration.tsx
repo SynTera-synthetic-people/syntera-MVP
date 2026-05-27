@@ -336,12 +336,10 @@ const CreateExploration: React.FC<CreateExplorationProps> = ({ onClose, workspac
                   value={description}
                   onChange={(e) => setDescription(e.target.value.slice(0, 300))}
                   disabled={isLoading}
-                  maxLength={300}
+
                   rows={4}
                 />
                 <div className="ce-field-footer">
-                  <span />
-                  <span className="ce-char-count">{description.length}/300</span>
                 </div>
               </div>
 

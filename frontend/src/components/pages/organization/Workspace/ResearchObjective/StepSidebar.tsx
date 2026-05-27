@@ -25,6 +25,7 @@ interface StepSidebarProps {
   isStepUnlocked: (step: number) => boolean;
   completedSubSteps?: number[];
   completedQuantSubSteps?: number[];
+  isViewOnly?: boolean; // ← new prop
 }
 
 // ── Step definitions ──────────────────────────────────────────────────────────
@@ -124,6 +125,7 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
   isStepUnlocked,
   completedSubSteps = [],
   completedQuantSubSteps = [],
+  isViewOnly = false, // ← destructure with default
 }) => {
   const navigate = useNavigate();
   const { pathname } = useLocation();
@@ -189,11 +191,12 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
 
   isBackEnabled = isStepCompleted(activeStep);
 
-  // ── Navigation ──────────────────────────────────────────────────────────────
+  // ── Navigation — always carry viewOnly in state ─────────────────────────────
 
   const go = (path: string) =>
     navigate(
-      `/main/organization/workspace/research-objectives/${workspaceId}/${currentId}/${path}`
+      `/main/organization/workspace/research-objectives/${workspaceId}/${currentId}/${path}`,
+      { state: { viewOnly: isViewOnly } } // ← always forward viewOnly
     );
 
   const handleStepClick = (step: StepItem) => {
@@ -270,9 +273,6 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
 
           const locked = !isStepUnlocked(step.number) && !lsUnlocked;
 
-          // FIX: Sub-steps only expand when the step is CURRENTLY ACTIVE.
-          // A completed step collapses its sub-steps so e.g. Qualitative
-          // collapses once the user moves on to Quantitative.
           const showSubSteps = !!step.subSteps && active;
 
           return (
