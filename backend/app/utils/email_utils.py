@@ -84,7 +84,7 @@ async def send_verification_email(email: str, token: str):
     await send_email("Verify your Synthetic People account", [email], body)
 
 async def send_reset_password_email(email: str, token: str):
-    reset_link = f"{settings.FRONTEND_URL}/reset-password?token={token}"
+    reset_link = f"{settings.FRONTEND_URL}/reset-password/{token}"
 
     body = build_html_email(
         title="Reset Your Password",

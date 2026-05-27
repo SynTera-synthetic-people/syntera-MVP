@@ -405,6 +405,9 @@ const Questionnaire: React.FC = () => {
         onDismissToast={() => setShowReadyToast(false)}
         initialSections={sections}
         isViewOnly={isViewOnly}
+        workspaceId={workspaceId}
+        explorationId={objectiveId}
+        onSectionsChange={setSections}
       />
     </>
   );

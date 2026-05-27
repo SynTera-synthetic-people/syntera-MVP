@@ -9,6 +9,7 @@ from app.schemas.persona import (
 from app.schemas.response import SuccessResponse, ErrorResponse, DeleteResponse
 from app.services import persona as persona_service
 from app.services import auto_generated_persona, manual_generated_persona
+from app.services import persona_loader_context
 from app.services import interview as interview_service
 from app.services import report_orchestrator as report_cache
 from app.services import workspace as ws_service
@@ -60,6 +61,37 @@ def _to_dict(maybe_obj):
         return vars(maybe_obj)
     except Exception:
         return maybe_obj
+
+
+@router.get("/loader-context", response_model=SuccessResponse)
+async def get_persona_loader_context(
+    workspace_id: str,
+    exploration_id: str,
+    current_user: User = Depends(get_current_active_user),
+    session: AsyncSession = Depends(get_session),
+):
+    exp = await exploration_service.get_exploration(session, exploration_id)
+    if not exp:
+        raise HTTPException(status_code=404, detail="Exploration not found")
+
+    try:
+        await require_ro_exists(session, exploration_id)
+    except WorkflowError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=ErrorResponse(status="error", message=e.message).dict()
+        )
+
+    members = await ws_service.list_workspace_members(workspace_id)
+    if not any(m["user_id"] == current_user.id for m in members):
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    context = await persona_loader_context.build_persona_loader_context(
+        session,
+        workspace_id=workspace_id,
+        exploration_id=exploration_id,
+    )
+    return SuccessResponse(message="Persona loader context fetched", data=context)
 
 
 @router.get("/auto-generate", response_model=SuccessResponse)
@@ -418,9 +450,10 @@ async def delete_persona(
             detail=ErrorResponse(status="error", message="Not authorized to delete this persona").dict()
         )
 
-    await persona_service.delete_persona(persona_id)
-    # Removing a persona changes qualitative inputs; downstream generated data is stale.
+    # Removing a persona changes qualitative inputs. Clear dependent qualitative
+    # rows first so persona deletion does not fail on interview.persona_id FKs.
     await interview_service.clear_qualitative_outputs(workspace_id, exploration_id)
+    await persona_service.delete_persona(persona_id)
     await report_cache.invalidate_cache(exploration_id)
     return DeleteResponse(message="Persona deleted successfully")
 
