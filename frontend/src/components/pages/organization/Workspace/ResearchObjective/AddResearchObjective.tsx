@@ -83,7 +83,7 @@ interface RootState {
  */
 const canBuildManually = (tier: string | undefined): boolean => {
   const t = (tier ?? '').toLowerCase().trim();
-  return t === 'enterprise';
+  return t === 'enterprise' || t === 'enterprise_admin';
 };
 
 // ── Component ────────────────────────────────────────────────────────────────
