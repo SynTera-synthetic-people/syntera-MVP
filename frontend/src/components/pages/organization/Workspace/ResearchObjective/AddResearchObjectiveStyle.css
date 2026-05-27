@@ -117,7 +117,6 @@
   justify-content: flex-start;
 }
 
-
 /* ── Message bubble wrapper ── */
 .aro-bubble-wrapper {
   display: flex;
@@ -150,26 +149,20 @@
   gap: 16px;
   padding: 16px 20px;
   background: #16181C;
-  color: #e5e7eb;
+  color: #F8F9F9;
   border-radius: 8px 24px 24px 24px;
   width: 680px;
   box-sizing: border-box;
 }
 
-/*
-  Summary bubble (the "carry this forward into personas" message).
-  Constrained to ~460px to match Figma — the CTA lives outside this bubble
-  in the input bar area, so the bubble itself stays compact.
-*/
 .aro-bubble--omi-summary {
   display: flex;
   align-items: flex-start;
   gap: 16px;
   padding: 16px 20px;
   background: #16181C;
-  color: #e5e7eb;
+  color: #F8F9F9;
   border-radius: 8px 24px 24px 24px;
-  ;
   width: 680px;
   max-width: 100%;
   box-sizing: border-box;
@@ -191,14 +184,25 @@
 .aro-bubble--user {
   padding: 0.875rem 1.25rem;
   background: #2563eb;
-  color: #ffffff;
+  color: #F8F9F9;
   border-radius: 1rem;
+}
+
+/* ── Chat text — Figma colour #F8F9F9 ── */
+.aro-chat-text {
+  color: #F8F9F9;
+}
+
+.aro-chat-text-bold {
+  color: #F8F9F9;
+  font-weight: 700;
 }
 
 /* Text content inside bubble */
 .aro-bubble-text {
   flex: 1;
   min-width: 0;
+  color: #F8F9F9;
 }
 
 /* ── Omi avatar inside bubble ── */
@@ -253,14 +257,6 @@
   padding: 0 0.25rem;
 }
 
-
-/* .aro-cta-heading {
-  font-size: 1rem;
-  font-weight: 700;
-  color: #ffffff;
-  margin: 0 0 0.875rem 0;
-} */
-
 .aro-cta-buttons {
   display: flex;
   align-items: center;
@@ -274,7 +270,7 @@
   gap: 0.5rem;
   padding: 0.625rem 1.25rem;
   background: #2563eb;
-  color: #ffffff;
+  color: #F8F9F9;
   border: none;
   border-radius: 0.75rem;
   font-size: 0.875rem;
@@ -299,7 +295,7 @@
   gap: 0.5rem;
   padding: 0.625rem 1.25rem;
   background: transparent;
-  color: #d1d5db;
+  color: #F8F9F9;
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 0.75rem;
   font-size: 0.875rem;
@@ -310,7 +306,7 @@
 
 .aro-btn-manual:hover {
   border-color: rgba(255, 255, 255, 0.4);
-  color: #ffffff;
+  color: #F8F9F9;
   transform: scale(1.02);
 }
 
@@ -374,7 +370,7 @@
   resize: none;
   padding: 0.375rem 0;
   font-size: 0.875rem;
-  color: #e5e7eb;
+  color: #F8F9F9;
   min-height: 36px;
   max-height: 120px;
   font-family: inherit;
@@ -418,7 +414,7 @@
   width: 32px;
   height: 32px;
   background: #2563eb;
-  color: #ffffff;
+  color: #F8F9F9;
   border: none;
   border-radius: 50%;
   cursor: pointer;
@@ -506,14 +502,13 @@
     transform: rotate(360deg);
   }
 }
-/* ── Additions to AddResearchObjectiveStyle.css ──────────────────────────── */
 
-/* Wrapper that lets us add a tooltip via the `title` attribute */
+/* ── Button manual wrap & locked state ────────────────────────────────────── */
+
 .aro-btn-manual-wrap {
   display: inline-flex;
 }
 
-/* Locked / greyed state for the Build Manually button (free & tier1) */
 .aro-btn-manual--locked {
   opacity: 0.45;
   cursor: not-allowed !important;
