@@ -1,6 +1,7 @@
 import logging
 
 from sqlmodel import select
+from sqlalchemy import func
 from app.models.user import User
 from app.db import async_engine
 from app.utils.security import hash_password, verify_password
@@ -17,8 +18,9 @@ async def get_user_by_email(
     session: AsyncSession,
     email: str,
 ):
+    normalized_email = str(email or "").strip().lower()
     result = await session.execute(
-        select(User).where(User.email == email)
+        select(User).where(func.lower(User.email) == normalized_email)
     )
     return result.scalars().first()
 
@@ -38,6 +40,7 @@ async def create_user(
     must_change_password: bool = False,
     account_tier: str = "free",
 ):
+    email = str(email or "").strip().lower()
     hashed = hash_password(password)
     first_name, last_name = _split_name(full_name)
 
@@ -86,8 +89,9 @@ async def verify_user_token(token: str):
         return True
 
 async def create_reset_token(email: str):
+    normalized_email = str(email or "").strip().lower()
     async with AsyncSession(async_engine) as session:
-        resetToken = select(User).where(User.email == email)
+        resetToken = select(User).where(func.lower(User.email) == normalized_email)
         response = await session.execute(resetToken)
         user = response.scalars().first()
 

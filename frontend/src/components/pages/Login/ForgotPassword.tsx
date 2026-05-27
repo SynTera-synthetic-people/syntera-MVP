@@ -26,7 +26,8 @@ const ForgotPassword: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
-    const validationErrors = validateForgotPassword({ email });
+    const normalizedEmail = email.trim();
+    const validationErrors = validateForgotPassword({ email: normalizedEmail });
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors);
       return;
@@ -38,7 +39,7 @@ const ForgotPassword: React.FC = () => {
     setLoading(true);
 
     try {
-      const res = await sendResetEmail({ email });
+      const res = await sendResetEmail({ email: normalizedEmail });
       setMessage(res.data.message || "Password reset link sent to your email.");
     } catch (err: any) {
       setError(err.response?.data?.message || "Something went wrong.");
