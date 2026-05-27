@@ -83,13 +83,13 @@ interface RootState {
  */
 const canBuildManually = (tier: string | undefined): boolean => {
   const t = (tier ?? '').toLowerCase().trim();
-  return t === 'enterprise' || t === 'enterprise_admin';
+  return t === 'enterprise' || t === 'enterprise_admin' || t === 'tier1';
 };
 
 // ── Component ────────────────────────────────────────────────────────────────
 
 const AddResearchObjective: React.FC = () => {
-  const navigate = useNavigate();
+  const navigate = useNavigate()
   const { trigger } = useOmniWorkflow();
   const { theme } = useTheme();
   const { workspaceId, objectiveId } = useParams<{
