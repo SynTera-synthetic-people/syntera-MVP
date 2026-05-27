@@ -1,5 +1,6 @@
 from sqlmodel import SQLModel, Field, Column
 from sqlalchemy.dialects.postgresql import JSON
+from sqlalchemy import UniqueConstraint
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from app.utils.id_generator import generate_id
@@ -50,3 +51,29 @@ class QuestionnaireQuestionAsset(SQLModel, table=True):
     )
     uploaded_by: str = Field(foreign_key="user.id", index=True)
     uploaded_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class QuestionnaireGenerationJob(SQLModel, table=True):
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "exploration_id",
+            "source_key",
+            name="uq_questionnaire_generation_job_scope",
+        ),
+    )
+
+    id: str = Field(default_factory=generate_id, primary_key=True)
+    workspace_id: str = Field(foreign_key="workspace.id", index=True)
+    exploration_id: str = Field(foreign_key="explorations.id", index=True)
+    simulation_id: Optional[str] = Field(default=None, index=True)
+    source_key: str = Field(index=True)
+    status: str = Field(default="pending", index=True)
+    persona_ids: List[str] = Field(sa_column=Column(JSON), default_factory=list)
+    error_message: Optional[str] = Field(default=None)
+    questionnaire_section_ids: List[str] = Field(sa_column=Column(JSON), default_factory=list)
+    created_by: str = Field(foreign_key="user.id", index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None

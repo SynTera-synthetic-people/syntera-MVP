@@ -1,12 +1,19 @@
 import json
+import logging
 from typing import Optional
 from openai import AsyncOpenAI
 from app.config import OPENAI_API_KEY
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
+from sqlalchemy.exc import IntegrityError
 from app.db import async_engine
-from app.models.questionnaire import QuestionnaireQuestionAsset, QuestionnaireSection, QuestionnaireQuestion
-from datetime import datetime
+from app.models.questionnaire import (
+    QuestionnaireGenerationJob,
+    QuestionnaireQuestionAsset,
+    QuestionnaireSection,
+    QuestionnaireQuestion,
+)
+from datetime import datetime, timedelta
 from app.utils.id_generator import generate_id
 from app.services import report_orchestrator as _report_cache
 from app.services.question_engine import (
@@ -22,6 +29,7 @@ import aiofiles
 import mimetypes
 
 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+logger = logging.getLogger(__name__)
 
 QUESTION_ASSET_DIR = Path("uploads/questionnaire/assets")
 QUESTION_ASSET_DIR.mkdir(parents=True, exist_ok=True)
@@ -1644,6 +1652,266 @@ async def generate_questionnaire(objective, personas_list, population, explorati
         return data, None
     except:
         return None, "Invalid JSON from LLM"
+
+
+QUESTIONNAIRE_DESIGN_SOURCE_KEY = "exploration:questionnaire-design"
+QUESTIONNAIRE_JOB_STALE_AFTER = timedelta(minutes=30)
+
+
+def questionnaire_generation_source_key(simulation_id: Optional[str] = None) -> str:
+    return f"simulation:{simulation_id}" if simulation_id else QUESTIONNAIRE_DESIGN_SOURCE_KEY
+
+
+def questionnaire_generation_job_to_dict(job: QuestionnaireGenerationJob) -> dict:
+    return {
+        "job_id": job.id,
+        "workspace_id": job.workspace_id,
+        "exploration_id": job.exploration_id,
+        "simulation_id": job.simulation_id,
+        "status": job.status,
+        "persona_ids": job.persona_ids or [],
+        "error_message": job.error_message,
+        "questionnaire_section_ids": job.questionnaire_section_ids or [],
+        "created_at": job.created_at,
+        "updated_at": job.updated_at,
+        "started_at": job.started_at,
+        "completed_at": job.completed_at,
+    }
+
+
+def _job_is_stale(job: QuestionnaireGenerationJob) -> bool:
+    if job.status not in {"pending", "running"}:
+        return False
+    anchor = job.updated_at or job.started_at or job.created_at
+    return bool(anchor and datetime.utcnow() - anchor > QUESTIONNAIRE_JOB_STALE_AFTER)
+
+
+async def get_questionnaire_generation_job(
+    job_id: str,
+    workspace_id: str,
+    exploration_id: str,
+) -> Optional[QuestionnaireGenerationJob]:
+    async with AsyncSession(async_engine) as session:
+        result = await session.execute(
+            select(QuestionnaireGenerationJob).where(
+                QuestionnaireGenerationJob.id == job_id,
+                QuestionnaireGenerationJob.workspace_id == workspace_id,
+                QuestionnaireGenerationJob.exploration_id == exploration_id,
+            )
+        )
+        return result.scalars().first()
+
+
+async def enqueue_questionnaire_generation_job(
+    workspace_id: str,
+    exploration_id: str,
+    persona_ids: list[str],
+    user_id: str,
+    simulation_id: Optional[str] = None,
+) -> tuple[QuestionnaireGenerationJob, bool]:
+    """Create or reuse the one durable generation job for this questionnaire scope."""
+    source_key = questionnaire_generation_source_key(simulation_id)
+    now = datetime.utcnow()
+
+    async with AsyncSession(async_engine) as session:
+        result = await session.execute(
+            select(QuestionnaireGenerationJob).where(
+                QuestionnaireGenerationJob.workspace_id == workspace_id,
+                QuestionnaireGenerationJob.exploration_id == exploration_id,
+                QuestionnaireGenerationJob.source_key == source_key,
+            )
+        )
+        existing = result.scalars().first()
+        if existing:
+            should_start = existing.status == "pending"
+            if existing.status in {"completed", "failed"} or _job_is_stale(existing):
+                existing.status = "pending"
+                existing.persona_ids = persona_ids
+                existing.error_message = None
+                existing.questionnaire_section_ids = []
+                existing.updated_at = now
+                existing.started_at = None
+                existing.completed_at = None
+                session.add(existing)
+                await session.commit()
+                await session.refresh(existing)
+                should_start = True
+            return existing, should_start
+
+        job = QuestionnaireGenerationJob(
+            id=generate_id(),
+            workspace_id=workspace_id,
+            exploration_id=exploration_id,
+            simulation_id=simulation_id,
+            source_key=source_key,
+            status="pending",
+            persona_ids=persona_ids,
+            created_by=user_id,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(job)
+        try:
+            await session.commit()
+            await session.refresh(job)
+            return job, True
+        except IntegrityError:
+            await session.rollback()
+            result = await session.execute(
+                select(QuestionnaireGenerationJob).where(
+                    QuestionnaireGenerationJob.workspace_id == workspace_id,
+                    QuestionnaireGenerationJob.exploration_id == exploration_id,
+                    QuestionnaireGenerationJob.source_key == source_key,
+                )
+            )
+            job = result.scalars().first()
+            if not job:
+                raise
+            return job, False
+
+
+async def _set_generation_job_status(
+    job_id: str,
+    status: str,
+    *,
+    error_message: Optional[str] = None,
+    questionnaire_section_ids: Optional[list[str]] = None,
+) -> None:
+    async with AsyncSession(async_engine) as session:
+        result = await session.execute(
+            select(QuestionnaireGenerationJob).where(QuestionnaireGenerationJob.id == job_id)
+        )
+        job = result.scalars().first()
+        if not job:
+            return
+
+        now = datetime.utcnow()
+        job.status = status
+        job.updated_at = now
+        if status == "running" and not job.started_at:
+            job.started_at = now
+        if status in {"completed", "failed"}:
+            job.completed_at = now
+        if error_message is not None:
+            job.error_message = error_message[:4000]
+        if questionnaire_section_ids is not None:
+            job.questionnaire_section_ids = questionnaire_section_ids
+        session.add(job)
+        await session.commit()
+
+
+async def run_questionnaire_generation_job(job_id: str) -> None:
+    """Run questionnaire generation outside the request/response lifecycle."""
+    async with AsyncSession(async_engine) as session:
+        async with session.begin():
+            result = await session.execute(
+                select(QuestionnaireGenerationJob)
+                .where(QuestionnaireGenerationJob.id == job_id)
+                .with_for_update()
+            )
+            job = result.scalars().first()
+            if not job:
+                logger.warning("Questionnaire generation job not found | job_id=%s", job_id)
+                return
+            if job.status == "completed":
+                return
+            if job.status == "running" and not _job_is_stale(job):
+                return
+
+            now = datetime.utcnow()
+            job.status = "running"
+            job.error_message = None
+            job.updated_at = now
+            job.started_at = job.started_at or now
+            session.add(job)
+
+            workspace_id = job.workspace_id
+            exploration_id = job.exploration_id
+            simulation_id = job.simulation_id
+            persona_ids = list(job.persona_ids or [])
+            user_id = job.created_by
+
+    logger.info(
+        "Questionnaire generation job started | job_id=%s workspace_id=%s exploration_id=%s simulation_id=%s persona_count=%s",
+        job_id,
+        workspace_id,
+        exploration_id,
+        simulation_id,
+        len(persona_ids),
+    )
+
+    try:
+        existing = (
+            await get_questionnaire_by_simulation(workspace_id, exploration_id, simulation_id)
+            if simulation_id
+            else await get_full_questionnaire(workspace_id, exploration_id)
+        )
+        if existing:
+            await _set_generation_job_status(
+                job_id,
+                "completed",
+                questionnaire_section_ids=[s.get("id") for s in existing if s.get("id")],
+            )
+            return
+
+        from app.services.exploration import get_exploration
+        from app.services.persona import get_persona
+        from app.services.population import get_simulation
+
+        async with AsyncSession(async_engine) as session:
+            objective = await get_exploration(session, exploration_id)
+        if not objective:
+            raise ValueError("Research objective not found")
+
+        simulation = await get_simulation(simulation_id) if simulation_id else None
+        if simulation_id and not simulation:
+            raise ValueError("Population simulation not found")
+
+        personas_list = []
+        for persona_id in persona_ids:
+            persona = await get_persona(persona_id)
+            if persona:
+                personas_list.append(persona)
+        if not personas_list:
+            raise ValueError("No valid personas found")
+
+        output, error = await generate_questionnaire(
+            objective,
+            personas_list,
+            simulation,
+            exploration_id,
+        )
+        if error:
+            raise RuntimeError(error)
+
+        stored = await store_ai_generated_questionnaire(
+            workspace_id,
+            exploration_id,
+            output,
+            user_id,
+            simulation_id,
+        )
+        section_ids = [s.get("id") for s in stored if s.get("id")]
+        await _set_generation_job_status(
+            job_id,
+            "completed",
+            questionnaire_section_ids=section_ids,
+        )
+        logger.info(
+            "Questionnaire generation job completed | job_id=%s workspace_id=%s exploration_id=%s section_count=%s",
+            job_id,
+            workspace_id,
+            exploration_id,
+            len(section_ids),
+        )
+    except Exception as exc:
+        logger.exception(
+            "Questionnaire generation job failed | job_id=%s workspace_id=%s exploration_id=%s",
+            job_id,
+            workspace_id,
+            exploration_id,
+        )
+        await _set_generation_job_status(job_id, "failed", error_message=str(exc))
 
 
 async def store_ai_generated_questionnaire(workspace_id: str, objective_id: str, data: dict, user_id: str, simulation_id: str = None):

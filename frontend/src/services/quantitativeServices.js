@@ -54,13 +54,24 @@ export const simulatePopulation = async ({ workspaceId, explorationId, personaId
 };
 
 export const generateQuestionnaire = async ({ workspaceId, explorationId, personaIds, simulationId }) => {
+  const payload = {
+    exploration_id: explorationId,
+    persona_id: personaIds,
+  };
+  if (simulationId) {
+    payload.simulation_id = simulationId;
+  }
+
   const response = await axiosInstance.post(
     `/workspaces/${workspaceId}/explorations/${explorationId}/questionnaire/generate`,
-    {
-      exploration_id: explorationId,
-      persona_id: personaIds,
-      simulation_id: simulationId
-    }
+    payload
+  );
+  return response.data;
+};
+
+export const getQuestionnaireGenerationStatus = async ({ workspaceId, explorationId, jobId }) => {
+  const response = await axiosInstance.get(
+    `/workspaces/${workspaceId}/explorations/${explorationId}/questionnaire/generation/${jobId}`
   );
   return response.data;
 };
@@ -133,9 +144,10 @@ export const downloadSurveyPdf = async ({ workspaceId, explorationId, simulation
 export const uploadQuestionnaire = async ({ workspaceId, explorationId, simulationId, file }) => {
   const formData = new FormData();
   formData.append('file', file);
+  const query = simulationId ? `?simulation_id=${encodeURIComponent(simulationId)}` : "";
 
   const response = await axiosInstance.post(
-    `/workspaces/${workspaceId}/explorations/${explorationId}/questionnaire/upload?simulation_id=${simulationId}`,
+    `/workspaces/${workspaceId}/explorations/${explorationId}/questionnaire/upload${query}`,
     formData,
     {
       headers: {

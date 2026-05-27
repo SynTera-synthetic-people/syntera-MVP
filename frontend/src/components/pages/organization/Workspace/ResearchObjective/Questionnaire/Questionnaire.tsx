@@ -13,6 +13,7 @@ import {
 } from '../../../../../../hooks/useQuantitativeQueries';
 import {
   generateQuestionnaire,
+  getQuestionnaireGenerationStatus,
   uploadQuestionnaire,
   getAllQuestionnairesForExploration,
 } from '../../../../../../services/quantitativeServices';
@@ -40,6 +41,10 @@ const ALLOWED_MIME_TYPES = new Set([
 ]);
 
 const ALLOWED_EXTENSIONS = ['.pdf', '.doc', '.docx', '.xls', '.xlsx'];
+const GENERATION_POLL_INTERVAL_MS = 3_000;
+const GENERATION_MAX_WAIT_MS = 10 * 60_000;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 type UploadError = 'size' | 'format' | 'api' | null;
 
@@ -150,12 +155,43 @@ const Questionnaire: React.FC = () => {
       const personaIds: string[] = personas.map((p: any) => p.id).filter(Boolean);
 
       // Step 1: trigger LLM generation + DB store
-      await generateQuestionnaire({
+      const generationResponse = await generateQuestionnaire({
         workspaceId,
         explorationId: objectiveId,
         personaIds,
         simulationId: undefined, // not available at questionnaire-design step (pre-population)
       });
+      const generationData = generationResponse?.data ?? {};
+
+      let generatedSections: any[] = Array.isArray(generationData.questionnaire)
+        ? generationData.questionnaire
+        : [];
+
+      if (!generatedSections.length && generationData.job_id) {
+        const deadline = Date.now() + GENERATION_MAX_WAIT_MS;
+        while (Date.now() < deadline) {
+          await sleep(GENERATION_POLL_INTERVAL_MS);
+          const statusResponse = await getQuestionnaireGenerationStatus({
+            workspaceId,
+            explorationId: objectiveId,
+            jobId: generationData.job_id,
+          });
+          const statusData = statusResponse?.data ?? {};
+          if (statusData.status === 'completed') {
+            generatedSections = Array.isArray(statusData.questionnaire)
+              ? statusData.questionnaire
+              : [];
+            break;
+          }
+          if (statusData.status === 'failed') {
+            throw new Error(statusData.error_message || 'Questionnaire generation failed');
+          }
+        }
+
+        if (!generatedSections.length) {
+          throw new Error('Questionnaire generation timed out');
+        }
+      }
 
       // Step 2: fetch sections from the authoritative /all endpoint so we never
       // depend on the generate-response format (LLM may wrap output differently).
@@ -164,11 +200,25 @@ const Questionnaire: React.FC = () => {
         explorationId: objectiveId,
       });
       const apiSections: any[] = freshData?.data ?? [];
-      setSections(mapApiToSections(apiSections));
+      setSections(mapApiToSections(apiSections.length ? apiSections : generatedSections));
 
       setLoaderReady(true);
     } catch (err) {
       console.error('Questionnaire generation failed:', err);
+      try {
+        const freshData = await getAllQuestionnairesForExploration({
+          workspaceId,
+          explorationId: objectiveId,
+        });
+        const apiSections: any[] = freshData?.data ?? [];
+        if (apiSections.length > 0) {
+          setSections(mapApiToSections(apiSections));
+          setLoaderReady(true);
+          return;
+        }
+      } catch (fetchErr) {
+        console.error('Questionnaire fallback fetch failed:', fetchErr);
+      }
       setUploadError('api');
       setTimeout(() => setUploadError(null), 6_000);
       setShowLoader(false);
