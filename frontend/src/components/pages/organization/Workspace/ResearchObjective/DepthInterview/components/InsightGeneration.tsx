@@ -154,14 +154,20 @@ const InsightGeneration: React.FC = () => {
 
     setCardStates((prev) => {
       const next = { ...prev };
+
+      // DI — always reflect server truth, done always wins
       if (DI === 'done') next.decision = 'ready';
-      else if (DI === 'pending' && prev.decision === 'idle') next.decision = 'generating';
-      else if (DI === 'failed' && prev.decision === 'generating') next.decision = 'idle';
+      else if (DI === 'pending') next.decision = 'generating';
+      else if (DI === 'failed') next.decision = 'idle';
+
+      // BA — always reflect server truth, done always wins
       if (BA === 'done') next.behaviour = 'ready';
-      else if (BA === 'pending' && prev.behaviour === 'idle') next.behaviour = 'generating';
-      else if (BA === 'failed' && prev.behaviour === 'generating') next.behaviour = 'idle';
-      // Restore verbatim only if not currently generating (avoid race)
-      if (TR === 'done' && prev.verbatim !== 'generating') next.verbatim = 'ready';
+      else if (BA === 'pending') next.behaviour = 'generating';
+      else if (BA === 'failed') next.behaviour = 'idle';
+
+      // Verbatim — always restore if done, never block on prev state
+      if (TR === 'done') next.verbatim = 'ready';
+
       return next;
     });
 

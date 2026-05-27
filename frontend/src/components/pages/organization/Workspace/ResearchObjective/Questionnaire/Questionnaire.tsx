@@ -94,6 +94,9 @@ const Questionnaire: React.FC = () => {
   const location = useLocation();
   const isViewOnly = Boolean((location.state as any)?.viewOnly);
   const { workspaceId, objectiveId } = useParams<{ workspaceId: string; objectiveId: string }>();
+  if (!workspaceId || !objectiveId) {
+    return null;
+  }
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── State ─────────────────────────────────────────────────────────────────
