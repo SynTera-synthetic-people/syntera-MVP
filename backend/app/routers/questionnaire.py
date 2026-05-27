@@ -1,7 +1,7 @@
 import logging
 from typing import Optional
 from io import BytesIO
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import update
 from app.models.survey_simulation import SurveySimulation
 from app.schemas.response import SuccessResponse, ErrorResponse
@@ -131,11 +131,13 @@ async def reorder_questions(
 async def upload_questionnaire_file(
     workspace_id: str,
     exploration_id: str,
-    simulation_id: str,
     file: UploadFile = File(...),
+    simulation_id: Optional[str] = Query(None),
     current_user: User = Depends(get_current_active_user)
 ):
     await _ensure_workspace_member(workspace_id, current_user)
+    if simulation_id in {"", "undefined", "null"}:
+        simulation_id = None
 
     try:
         saved_path, stored_name, _ = await save_upload_file(file)
@@ -205,10 +207,16 @@ async def upload_questionnaire_file(
 @router.post("/generate", response_model=SuccessResponse)
 async def generate_questionnaire_api(
     workspace_id: str,
+    exploration_id: str,
     payload: QuestionnaireGenerateRequest,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_active_user),
     session: AsyncSession = Depends(get_session),
 ):
+    await _ensure_workspace_member(workspace_id, current_user)
+    if payload.exploration_id != exploration_id:
+        raise HTTPException(400, "Payload exploration_id does not match route exploration_id")
+
     objective = await get_exploration(session, payload.exploration_id)
     if not objective:
         raise HTTPException(404, "Research objective not found")
@@ -221,12 +229,21 @@ async def generate_questionnaire_api(
             raise HTTPException(404, "Population simulation not found")
 
     # Idempotency: reuse existing questionnaire instead of re-running the LLM.
-    if payload.simulation_id:
-        existing = await service.get_questionnaire_by_simulation(
+    existing = (
+        await service.get_questionnaire_by_simulation(
             workspace_id, payload.exploration_id, payload.simulation_id
         )
-        if existing:
-            return SuccessResponse(message="Questionnaire already exists", data={"questionnaire": existing})
+        if payload.simulation_id
+        else await service.get_full_questionnaire(workspace_id, payload.exploration_id)
+    )
+    if existing:
+        return SuccessResponse(
+            message="Questionnaire already exists",
+            data={
+                "status": "completed",
+                "questionnaire": existing,
+            },
+        )
 
     if not payload.persona_id:
         raise HTTPException(400, "persona_id must be provided")
@@ -243,23 +260,21 @@ async def generate_questionnaire_api(
     if not personas_list:
         raise HTTPException(400, "No valid personas found")
 
-    output, error = await generate_questionnaire(objective, personas_list, simulation, payload.exploration_id)
-
-    if error:
-        raise HTTPException(500, f"Failed to generate questionnaire: {error}")
-
-    stored = await service.store_ai_generated_questionnaire(
+    job, should_start = await service.enqueue_questionnaire_generation_job(
         workspace_id,
         payload.exploration_id,
-        output,
+        [p.get("id") for p in personas_list if p.get("id")],
         current_user.id,
-        payload.simulation_id
+        payload.simulation_id,
     )
+    if should_start:
+        background_tasks.add_task(service.run_questionnaire_generation_job, job.id)
 
     return SuccessResponse(
-        message=f"AI Questionnaire generated successfully considering {len(personas_list)} persona(s): {', '.join(persona_names)}",
+        message=f"AI questionnaire generation {job.status} for {len(personas_list)} persona(s): {', '.join(persona_names)}",
         data={
-            "questionnaire": stored,
+            **service.questionnaire_generation_job_to_dict(job),
+            "should_poll": True,
             "personas_considered": [
                 {
                     "persona_id": pid,
@@ -269,6 +284,32 @@ async def generate_questionnaire_api(
             ],
             "total_personas": len(personas_list)
         }
+    )
+
+
+@router.get("/generation/{job_id}", response_model=SuccessResponse)
+async def get_questionnaire_generation_status(
+    workspace_id: str,
+    exploration_id: str,
+    job_id: str,
+    current_user: User = Depends(get_current_active_user),
+):
+    await _ensure_workspace_member(workspace_id, current_user)
+    job = await service.get_questionnaire_generation_job(job_id, workspace_id, exploration_id)
+    if not job:
+        raise HTTPException(404, "Questionnaire generation job not found")
+
+    payload = service.questionnaire_generation_job_to_dict(job)
+    if job.status == "completed":
+        payload["questionnaire"] = (
+            await service.get_questionnaire_by_simulation(workspace_id, exploration_id, job.simulation_id)
+            if job.simulation_id
+            else await service.get_full_questionnaire(workspace_id, exploration_id)
+        )
+
+    return SuccessResponse(
+        message=f"Questionnaire generation status: {job.status}",
+        data=payload,
     )
 
 @router.get("/allquestionnaires/{simulation_id}", response_model=SuccessResponse)
