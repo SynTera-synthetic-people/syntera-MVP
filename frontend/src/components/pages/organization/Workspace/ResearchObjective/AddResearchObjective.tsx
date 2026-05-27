@@ -24,7 +24,7 @@ import {
 import { useOmniWorkflow } from '../../../../../hooks/useOmiWorkflow';
 import { useAutoGeneratePersonas, usePersonas } from '../../../../../hooks/usePersonaBuilder';
 import UpgradeModal from "../../../Upgrade/UpgradeModal";
-import OmiGreet from '../../../../../assets/Omi Animations/IdleStateMotion_Lite.mp4';
+import OmiGreet from '../../../../../assets/Omi Animations/OmiIdle.mp4';
 import OmiPencil from '../../../../../assets/Omi Animations/OmiPencil.mp4';
 import OmiKeyboard from '../../../../../assets/Omi Animations/OmiKeyboard.mp4';
 import OmiCaution from '../../../../../assets/Omi Animations/OmiCaution.mp4';
@@ -445,7 +445,7 @@ const AddResearchObjective: React.FC = () => {
       const parts = str.split(/(\*\*.*?\*\*)/g);
       return parts.map((part, i) => {
         if (part.startsWith('**') && part.endsWith('**'))
-          return <strong key={i} className="font-bold text-gray-900 dark:text-white">{part.slice(2, -2)}</strong>;
+          return <strong key={i} className="font-bold aro-chat-text-bold">{part.slice(2, -2)}</strong>;
         return part;
       });
     };
@@ -469,7 +469,7 @@ const AddResearchObjective: React.FC = () => {
       if (isListItem) {
         const content = trimmed.replace(/^([-*•]|\d+\.)\s+/, '');
         currentList.push(
-          <li key={`li-${index}`} className="ml-5 list-disc marker:text-blue-500 pl-1 mb-1 leading-relaxed text-gray-800 dark:text-gray-200">
+          <li key={`li-${index}`} className="ml-5 list-disc marker:text-blue-500 pl-1 mb-1 leading-relaxed aro-chat-text">
             {processBold(content)}
           </li>
         );
@@ -485,13 +485,13 @@ const AddResearchObjective: React.FC = () => {
           const firstPart = sentences.slice(0, midPoint).join('').trim();
           const secondPart = sentences.slice(midPoint).join('').trim();
           if (firstPart && secondPart) {
-            elements.push(<p key={`p-${index}-a`} className="mb-4 leading-relaxed text-gray-800 dark:text-gray-200">{processBold(firstPart)}</p>);
-            elements.push(<p key={`p-${index}-b`} className="mb-4 last:mb-0 leading-relaxed text-gray-800 dark:text-gray-200">{processBold(secondPart)}</p>);
+            elements.push(<p key={`p-${index}-a`} className="mb-4 leading-relaxed aro-chat-text">{processBold(firstPart)}</p>);
+            elements.push(<p key={`p-${index}-b`} className="mb-4 last:mb-0 leading-relaxed aro-chat-text">{processBold(secondPart)}</p>);
             return;
           }
         }
         elements.push(
-          <p key={`p-${index}`} className={`mb-4 last:mb-0 leading-relaxed text-gray-800 dark:text-gray-200 ${isHeader ? 'font-bold text-lg text-blue-600 dark:text-blue-400 mt-2' : ''}`}>
+          <p key={`p-${index}`} className={`mb-4 last:mb-0 leading-relaxed aro-chat-text ${isHeader ? 'font-bold text-lg text-blue-600 dark:text-blue-400 mt-2' : ''}`}>
             {processBold(line)}
           </p>
         );
@@ -505,12 +505,19 @@ const AddResearchObjective: React.FC = () => {
   const renderMessageWithPersonaButton = (message: Message): React.ReactNode => {
     const text = message.text;
     if (message.sender === 'omi' && text.includes("carry this forward into personas")) {
-      const parts = text.split("carry this forward into personas");
+      // Match both straight and curly apostrophe variants the LLM may produce
+      const markerMatch = text.match(/I['’]ll carry this forward into personas\.?/);
+      const splitIndex = markerMatch?.index ?? -1;
+      const markerLen  = markerMatch ? markerMatch[0].length : 0;
+      const beforeRaw  = splitIndex > -1 ? text.slice(0, splitIndex).trim() : text.trim();
+      const afterRaw   = splitIndex > -1 ? text.slice(splitIndex + markerLen).trim() : '';
       return (
         <div className="space-y-1">
-          {formatText(parts[0] ?? '')}
-          <span className="font-bold text-gray-900 dark:text-white inline-block mt-2">carry this forward into personas</span>
-          {formatText(parts[1] ?? '')}
+          {beforeRaw ? formatText(beforeRaw) : null}
+          <p className="font-bold text-white mt-2">
+            I'll carry this forward into personas.
+          </p>
+          {afterRaw ? formatText(afterRaw) : null}
         </div>
       );
     }
