@@ -7,6 +7,7 @@ metadata:
     app: synth-backend
 spec:
   replicas: 4
+  progressDeadlineSeconds: 1200  
   selector:
     matchLabels:
       app: synth-backend
@@ -23,7 +24,7 @@ spec:
           ports:
             - containerPort: 8000
 
-          #  IMPORTANT: make FastAPI respect ALB https headers
+          # IMPORTANT: make FastAPI respect ALB https headers
           args:
             - uvicorn
             - app.main:app
@@ -42,16 +43,28 @@ spec:
             - name: CORS_ORIGINS
               value: "https://staging-ui.synthetic-people.ai"
 
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 2Gi  
+
           readinessProbe:
             httpGet:
               path: /health
               port: 8000
-            initialDelaySeconds: 10
-            periodSeconds: 10
+            initialDelaySeconds: 120   
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 10
 
           livenessProbe:
             httpGet:
               path: /health
               port: 8000
-            initialDelaySeconds: 30
-            periodSeconds: 20
+            initialDelaySeconds: 180   
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 5
