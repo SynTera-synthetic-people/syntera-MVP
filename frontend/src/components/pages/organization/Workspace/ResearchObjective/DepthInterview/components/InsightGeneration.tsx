@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -74,6 +74,8 @@ const INSIGHT_CARDS: InsightCard[] = [
 const InsightGeneration: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const location = useLocation();
+  const isViewOnly = Boolean((location.state as any)?.viewOnly);
   const { workspaceId, objectiveId } = useParams<{
     workspaceId: string;
     objectiveId: string;
@@ -342,8 +344,8 @@ const InsightGeneration: React.FC = () => {
             </button>
           )}
 
-          {/* Begin Quant Exploration */}
-          {researchApproach === 'both' && (
+          {/* Begin Quant Exploration — hidden in view-only mode */}
+          {researchApproach === 'both' && !isViewOnly && (
             <button
               className="ig-footer__btn ig-footer__btn--white"
               onClick={handleBeginQuant}
@@ -354,13 +356,22 @@ const InsightGeneration: React.FC = () => {
           )}
         </div>
 
-        {/* End Exploration */}
-        <button
-          className="ig-footer__btn ig-footer__btn--end"
-          onClick={handleEndExplorationClick}
-        >
-          End Exploration
-        </button>
+        {/* End Journey (view-only) / End Exploration (normal) */}
+        {isViewOnly ? (
+          <button
+            className="ig-footer__btn ig-footer__btn--end"
+            onClick={() => navigate(`/main/organization/workspace/explorations/${workspaceId}`)}
+          >
+            End Journey
+          </button>
+        ) : (
+          <button
+            className="ig-footer__btn ig-footer__btn--end"
+            onClick={handleEndExplorationClick}
+          >
+            End Exploration
+          </button>
+        )}
       </div>
 
       {/* ── Modals ── */}

@@ -198,7 +198,7 @@ export const ManageUsersModal: React.FC<ManageUsersModalProps> = ({
     <ModalShell
       isOpen={isOpen} onClose={onClose}
       title="Manage Users"
-      subtitle={workspaceName ? `Members of ${workspaceName}` : 'Content goes here'}
+      subtitle={workspaceName ? `Members of ${workspaceName}` : ' '}
       maxWidth={520}
     >
       {error && <p className="sm-error-msg">{error}</p>}

@@ -52,21 +52,21 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
 
   // ── State ─────────────────────────────────────────────────────────────────
 
-  const [selectedPersona,     setSelectedPersona]     = useState<string>('');
+  const [selectedPersona, setSelectedPersona] = useState<string>('');
   const [selectedPersonaName, setSelectedPersonaName] = useState<string>('');
-  const [isDropdownOpen,      setIsDropdownOpen]      = useState<boolean>(false);
-  const [isChatActive,        setIsChatActive]        = useState<boolean>(false);
-  const [messages,            setMessages]            = useState<ChatMessage[]>([]);
-  const [inputValue,          setInputValue]          = useState<string>('');
-  const [interviewId,         setInterviewId]         = useState<string | null>(null);
+  const [isDropdownOpen, setIsDropdownOpen] = useState<boolean>(false);
+  const [isChatActive, setIsChatActive] = useState<boolean>(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [inputValue, setInputValue] = useState<string>('');
+  const [interviewId, setInterviewId] = useState<string | null>(null);
 
-  const chatEndRef    = useRef<HTMLDivElement>(null);
-  const dropdownRef   = useRef<HTMLDivElement>(null);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   // ── Hooks ─────────────────────────────────────────────────────────────────
 
   const startInterviewMutation = useStartInterview(workspaceId, objectiveId);
-  const sendMessageMutation    = useSendMessage(workspaceId, objectiveId, interviewId ?? '');
+  const sendMessageMutation = useSendMessage(workspaceId, objectiveId, interviewId ?? '');
 
   // Poll for new persona replies while the chat is active.
   const { data: interviewData, isLoading: isInterviewLoading } = useInterview(
@@ -201,9 +201,9 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
       .map((m) => `${m.sender === 'user' ? 'You' : selectedPersonaName}: ${m.text}`)
       .join('\n\n');
     const blob = new Blob([content], { type: 'text/plain' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href     = url;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
     a.download = `conversation-${selectedPersonaName}.txt`;
     a.click();
     URL.revokeObjectURL(url);
@@ -216,7 +216,7 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
   // ── Derived ───────────────────────────────────────────────────────────────
 
   const activePersona = personas.find((p) => p.id === selectedPersona);
-  const hasSelection  = !!selectedPersona;
+  const hasSelection = !!selectedPersona;
 
   const isStarting = startInterviewMutation.isPending;
 
@@ -244,8 +244,8 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
       <motion.div
         className="cs-panel"
         initial={{ opacity: 0, y: 32, scale: 0.98 }}
-        animate={{ opacity: 1, y: 0,   scale: 1    }}
-        exit={{   opacity: 0, y: 32,   scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 32, scale: 0.98 }}
         transition={{ duration: 0.22, ease: 'easeOut' }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -255,7 +255,7 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
           <div className="cs-panel-header__text">
             <h2 className="cs-panel-header__title">Conversation Studio</h2>
             <p className="cs-panel-header__subtitle">
-              {isChatActive ? 'Content goes here...' : 'Test scenarios. Validate assumptions. Explore what-ifs.'}
+              {isChatActive ? ' ' : 'Test scenarios. Validate assumptions. Explore what-ifs.'}
             </p>
           </div>
           <div className="cs-panel-header__actions">
@@ -277,8 +277,8 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
                     <motion.div
                       className="cs-dropdown-menu cs-dropdown-menu--right"
                       initial={{ opacity: 0, y: -6, scale: 0.97 }}
-                      animate={{ opacity: 1, y: 0,   scale: 1    }}
-                      exit={{   opacity: 0, y: -6,   scale: 0.97 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: -6, scale: 0.97 }}
                       transition={{ duration: 0.15 }}
                     >
                       {personas.map((p) => (
@@ -335,8 +335,8 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
                         <motion.div
                           className="cs-dropdown-menu"
                           initial={{ opacity: 0, y: -6, scale: 0.97 }}
-                          animate={{ opacity: 1, y: 0,   scale: 1    }}
-                          exit={{   opacity: 0, y: -6,   scale: 0.97 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: -6, scale: 0.97 }}
                           transition={{ duration: 0.15 }}
                         >
                           {personas.length > 0 ? (
@@ -477,7 +477,7 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
                         autoFocus
                       />
                     </div>
-                    <button className="cs-input-voice" title="Voice input" onClick={() => {}}>
+                    <button className="cs-input-voice" title="Voice input" onClick={() => { }}>
                       <TbMicrophone size={18} />
                     </button>
                     <button

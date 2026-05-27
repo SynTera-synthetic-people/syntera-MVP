@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Outlet, useParams } from 'react-router-dom';
+import { Outlet, useParams, useLocation } from 'react-router-dom';
 import StepSidebar from './StepSidebar';
 import { useStepProgress } from '../../../../../hooks/useStepProgress';
 import './ResearchObjectiveLayoutStyle.css';
@@ -10,6 +10,8 @@ const ResearchObjectiveLayout: React.FC = () => {
     workspaceId: string;
     objectiveId: string;
   }>();
+    const location = useLocation(); // ← add this
+  const isViewOnly = Boolean((location.state as any)?.viewOnly);
 
   const { completedSteps: rawCompletedSteps, isStepUnlocked } = useStepProgress(
     workspaceId,
@@ -77,6 +79,7 @@ const ResearchObjectiveLayout: React.FC = () => {
         isStepUnlocked={isStepUnlocked}
         completedSubSteps={completedSubSteps}
         completedQuantSubSteps={completedQuantSubSteps}
+        isViewOnly={isViewOnly} 
       />
 
       <div className="rol-content">

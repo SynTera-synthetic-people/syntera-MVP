@@ -622,10 +622,15 @@ const ExplorationList: React.FC = () => {
                                   <div
                                     className="menu-item"
                                     onClick={() => {
-                                    // need to apply logic
+                                      // Always start the view-only journey from Step 1 (research-mode)
+                                      navigate(
+                                        `/main/organization/workspace/research-objectives/${workspaceId}/${exploration.id}/research-mode`,
+                                        { state: { viewOnly: true } }
+                                      );
+                                      setOpenMenuId(null);
                                     }}
                                   >
-                                    <SpIcon name="sp-File-File_Document" />View Exploration
+                                    <SpIcon name="sp-File-Note_Search" />View Exploration
                                   </div>
                                 )}
                                 <div className="menu-item menu-item-delete" onClick={() => handleDelete(exploration.id, exploration.title)}>

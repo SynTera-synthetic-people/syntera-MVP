@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import {
   usePersonas,
@@ -30,6 +30,8 @@ interface SampleSizes {
 
 const PopulationBuilder: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const isViewOnly = Boolean((location.state as any)?.viewOnly);
   const { workspaceId, objectiveId } = useParams<{ workspaceId: string; objectiveId: string }>();
   const explorationId = objectiveId;
 
@@ -363,7 +365,7 @@ const PopulationBuilder: React.FC = () => {
     };
 
     navigate(`/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/survey-results`, {
-      state: { surveyConfig, fromPopulationBuilder: true, forceRerun: questionnaireModified },
+      state: { surveyConfig, fromPopulationBuilder: true, forceRerun: questionnaireModified, viewOnly: isViewOnly },
     });
     setQuestionnaireModified(false);
   };
