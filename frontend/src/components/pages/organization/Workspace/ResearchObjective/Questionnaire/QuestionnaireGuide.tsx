@@ -1,9 +1,17 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {TbX} from 'react-icons/tb';
 import SpIcon from '../../../../../SPIcon';
 import QuestionModal, { defaultQuestion, TYPE_META } from './QuestionModal';
 import type { Question } from './QuestionModal';
+import {
+    useCreateQuestionnaireQuestion,
+    useCreateQuestionnaireSection,
+    useDeleteQuestionnaireQuestion,
+    useDeleteQuestionnaireSection,
+    useUpdateQuestionnaireQuestion,
+    useUpdateQuestionnaireSection,
+} from '../../../../../../hooks/useQuantitativeQueries';
 import './QuestionnaireGuide.css';
 
 // ── Question Types ─────────────────────────────────────────────────────────────
@@ -22,6 +30,163 @@ interface Section {
 // ── Default demo data ─────────────────────────────────────────────────────────
 
 const makeId = () => Math.random().toString(36).slice(2, 8);
+
+const MODAL_TO_BACKEND_TYPE: Partial<Record<Question['type'], string>> = {
+    single_select_grid: 'grid_single_select',
+    rank_sort: 'ranking',
+    video_player_embed: 'video_player_url',
+};
+
+const buildQuestionApiPayload = (q: Question) => {
+    const question_type = MODAL_TO_BACKEND_TYPE[q.type] || q.type;
+
+    let options: string[] = [];
+    switch (q.type) {
+        case 'single_select':
+        case 'multi_select':
+        case 'dropdown':
+            options = (q.options || []).filter(Boolean);
+            break;
+        case 'button_rating':
+            options = (q.buttonRatingRows || []).filter(Boolean);
+            break;
+        case 'single_select_grid':
+            options = (q.rows || []).filter(Boolean);
+            break;
+        case 'this_or_that':
+            options = [...(q.leftOptions || []), ...(q.rightOptions || [])].filter(Boolean);
+            break;
+        case 'star_rating':
+            options = (q.starTooltips || []).filter(Boolean);
+            break;
+        case 'rating_scale':
+            options = (q.scaleRows || []).filter(Boolean);
+            break;
+        case 'card_rating':
+            options = (q.cardRatingCards || []).filter(Boolean);
+            break;
+        case 'slider_rating':
+        case 'slider':
+            options = (q.sliders || []).filter(Boolean);
+            break;
+        case 'rank_sort':
+            options = (q.rankItems || []).filter(Boolean);
+            break;
+        case 'card_sort':
+            options = (q.cards || []).filter(Boolean);
+            break;
+        case 'maxdiff':
+            options = (q.attributes || []).filter(Boolean);
+            break;
+        default:
+            options = [];
+    }
+
+    const config: Record<string, unknown> = {};
+    if (q.instruction) config.instruction = q.instruction;
+
+    switch (q.type) {
+        case 'single_select':
+            config.min_select = 1;
+            config.max_select = 1;
+            break;
+        case 'multi_select':
+            config.min_select = 1;
+            config.max_select = options.length || 1;
+            break;
+        case 'dropdown':
+            config.min_select = 1;
+            config.max_select = 1;
+            config.searchable = false;
+            break;
+        case 'this_or_that':
+            config.left_options = (q.leftOptions || []).filter(Boolean);
+            config.right_options = (q.rightOptions || []).filter(Boolean);
+            config.columns = (q.columns || []).filter(Boolean);
+            break;
+        case 'single_select_grid':
+            config.rows = (q.rows || []).filter(Boolean).map((row) => ({ text: row }));
+            config.columns = (q.columns || []).filter(Boolean).map((column) => ({ text: column }));
+            break;
+        case 'button_rating':
+            config.rows = (q.buttonRatingRows || []).filter(Boolean);
+            break;
+        case 'star_rating':
+            config.max_stars = (q.starTooltips || []).length || 5;
+            config.star_tooltip = q.starTooltips?.[0] || '';
+            config.rows = (q.starRows || []).filter(Boolean);
+            break;
+        case 'rating_scale':
+            config.rows = (q.scaleRows || []).filter(Boolean);
+            config.columns = (q.scaleColumns || []).filter(Boolean);
+            config.scale = { min: 1, max: (q.scaleColumns || []).length || 5, step: 1 };
+            break;
+        case 'card_rating':
+            config.cards = (q.cardRatingCards || []).filter(Boolean);
+            config.buttons = (q.cardRatingButtons || []).filter(Boolean);
+            break;
+        case 'slider_rating':
+            config.sliders = (q.sliders || []).filter(Boolean);
+            config.points = (q.sliderPoints || []).filter(Boolean);
+            config.scale = { min: 0, max: 100, step: 1 };
+            break;
+        case 'slider':
+            config.sliders = (q.sliders || []).filter(Boolean);
+            config.scale = { min: 0, max: 100, step: 1 };
+            break;
+        case 'rank_sort':
+            config.rank_labels = (q.rankLabels || []).filter(Boolean);
+            config.rankable_items = (q.rankItems || []).filter(Boolean);
+            break;
+        case 'card_sort':
+            config.cards = (q.cards || []).filter(Boolean);
+            config.buckets = (q.buckets || []).filter(Boolean);
+            break;
+        case 'maxdiff':
+            config.attributes = (q.attributes || []).filter(Boolean);
+            config.columns = (q.maxdiffColumns || []).filter(Boolean);
+            break;
+        case 'auto_suggest':
+            config.source_file_name = q.autoSuggestSourceFileName || '';
+            break;
+        case 'image_map':
+            config.markers = (q.imageMapMarkers || []).filter(Boolean);
+            config.images = (q.imageMapFiles || []).map((file) => ({ name: file.name }));
+            break;
+        case 'page_turner':
+            config.pages = (q.pageTurnerPages || []).map((file) => ({ name: file.name }));
+            break;
+        case 'video_player':
+            config.video_filename = q.videoFileName || '';
+            break;
+        case 'video_player_embed':
+            config.name = q.videoEmbedName || '';
+            config.url = q.videoEmbedUrl || '';
+            break;
+        case 'image_upload':
+            config.images = (q.imageUploadFiles || []).map((file) => ({ name: file.name }));
+            break;
+        case 'section':
+            config.section_name = q.sectionName || '';
+            break;
+        case 'note':
+            config.note_text = q.noteText || '';
+            break;
+        case 'exec':
+            config.exec_instruction = q.execInstruction || '';
+            break;
+        case 'autosum':
+            config.rows = (q.rows || []).filter(Boolean);
+            config.columns = (q.columns || []).filter(Boolean);
+            break;
+        default:
+            break;
+    }
+
+    return { text: q.text, options, question_type, config };
+};
+
+const unwrapMutationData = (response: any) => response?.data ?? response;
 
 // ── Question preview renderers ─────────────────────────────────────────────────
 
@@ -444,6 +609,9 @@ interface QuestionnaireGuideProps {
     initialSections?: Section[];
     /** When true, hides all edit/delete/add controls. */
     isViewOnly?: boolean;
+    workspaceId?: string;
+    explorationId?: string;
+    onSectionsChange?: (sections: Section[]) => void;
 }
 
 const QuestionnaireGuide: React.FC<QuestionnaireGuideProps> = ({
@@ -453,6 +621,9 @@ const QuestionnaireGuide: React.FC<QuestionnaireGuideProps> = ({
     onDismissToast,
     initialSections,
     isViewOnly = false,
+    workspaceId,
+    explorationId,
+    onSectionsChange,
 }) => {
     const [sections, setSections] = useState<Section[]>(initialSections ?? []);
 
@@ -463,26 +634,107 @@ const QuestionnaireGuide: React.FC<QuestionnaireGuideProps> = ({
 
     const [renamingSection, setRenamingSection] = useState<string | null>(null);
     const [renameValue, setRenameValue] = useState('');
+    const [creatingSection, setCreatingSection] = useState(false);
+    const [savingSectionId, setSavingSectionId] = useState<string | null>(null);
+    const [savingQuestionId, setSavingQuestionId] = useState<string | null>(null);
+    const [deletingSectionId, setDeletingSectionId] = useState<string | null>(null);
+    const [deletingQuestionId, setDeletingQuestionId] = useState<string | null>(null);
+    const pendingSectionSaveIds = useRef<Set<string>>(new Set());
+    const pendingQuestionSave = useRef(false);
+    const cancelRenameRef = useRef(false);
+
+    const createSectionMutation = useCreateQuestionnaireSection(workspaceId, explorationId);
+    const updateSectionMutation = useUpdateQuestionnaireSection(workspaceId, explorationId);
+    const deleteSectionMutation = useDeleteQuestionnaireSection(workspaceId, explorationId);
+    const createQuestionMutation = useCreateQuestionnaireQuestion(workspaceId, explorationId);
+    const updateQuestionMutation = useUpdateQuestionnaireQuestion(workspaceId, explorationId);
+    const deleteQuestionMutation = useDeleteQuestionnaireQuestion(workspaceId, explorationId);
+
+    const persistedSectionIds = useMemo(
+        () => new Set((initialSections ?? []).map((s) => s.id)),
+        [initialSections]
+    );
+
+    const persistedQuestionIds = useMemo(
+        () => new Set((initialSections ?? []).flatMap((s) => s.questions.map((q) => q.id))),
+        [initialSections]
+    );
+
+    useEffect(() => {
+        setSections(initialSections ?? []);
+    }, [initialSections]);
+
+    const updateSections = (updater: (prev: Section[]) => Section[]) => {
+        const next = updater(sections);
+        setSections(next);
+        onSectionsChange?.(next);
+    };
 
     // ── Section helpers ───────────────────────────────────────────────────────
 
-    const addSection = () => {
-        const newSection: Section = { id: makeId(), title: 'New Section', questions: [] };
-        setSections((prev) => [...prev, newSection]);
-        setRenamingSection(newSection.id);
-        setRenameValue('New Section');
+    const addSection = async () => {
+        if (creatingSection) return;
+        setCreatingSection(true);
+        try {
+            const savedSection = workspaceId && explorationId
+                ? unwrapMutationData(await createSectionMutation.mutateAsync({ title: 'New Section' }))
+                : null;
+            const newSection: Section = {
+                id: savedSection?.id || makeId(),
+                title: savedSection?.title || 'New Section',
+                questions: [],
+            };
+            updateSections((prev) => [...prev, newSection]);
+            cancelRenameRef.current = false;
+            setRenamingSection(newSection.id);
+            setRenameValue(newSection.title);
+        } catch (err) {
+            console.error('Failed to create questionnaire section:', err);
+        } finally {
+            setCreatingSection(false);
+        }
     };
 
-    const deleteSection = (sectionId: string) => {
-        setSections((prev) => prev.filter((s) => s.id !== sectionId));
+    const deleteSection = async (sectionId: string) => {
+        if (deletingSectionId) return;
+        setDeletingSectionId(sectionId);
+        try {
+            if (workspaceId && explorationId && persistedSectionIds.has(sectionId)) {
+                await deleteSectionMutation.mutateAsync({ sectionId });
+            }
+            updateSections((prev) => prev.filter((s) => s.id !== sectionId));
+        } catch (err) {
+            console.error('Failed to delete questionnaire section:', err);
+        } finally {
+            setDeletingSectionId(null);
+        }
     };
 
-    const commitRename = () => {
-        if (renamingSection) {
-            setSections((prev) => prev.map((s) =>
-                s.id === renamingSection ? { ...s, title: renameValue.trim() || 'New Section' } : s
+    const commitRename = async () => {
+        if (cancelRenameRef.current) {
+            cancelRenameRef.current = false;
+            return;
+        }
+        if (!renamingSection || pendingSectionSaveIds.current.has(renamingSection)) return;
+
+        const sectionId = renamingSection;
+        const title = renameValue.trim() || 'New Section';
+        pendingSectionSaveIds.current.add(sectionId);
+        setSavingSectionId(sectionId);
+
+        try {
+            if (workspaceId && explorationId && persistedSectionIds.has(sectionId)) {
+                await updateSectionMutation.mutateAsync({ sectionId, title });
+            }
+            updateSections((prev) => prev.map((s) =>
+                s.id === sectionId ? { ...s, title } : s
             ));
             setRenamingSection(null);
+        } catch (err) {
+            console.error('Failed to rename questionnaire section:', err);
+        } finally {
+            pendingSectionSaveIds.current.delete(sectionId);
+            setSavingSectionId(null);
         }
     };
 
@@ -503,27 +755,67 @@ const QuestionnaireGuide: React.FC<QuestionnaireGuideProps> = ({
         setEditTarget(null);
     };
 
-    const saveQuestion = (q: Question) => {
-        if (!editTarget) return;
-        setSections((prev) => prev.map((s) => {
-            if (s.id !== editTarget.sectionId) return s;
-            const exists = s.questions.some((eq) => eq.id === q.id);
-            return {
-                ...s,
-                questions: exists
-                    ? s.questions.map((eq) => eq.id === q.id ? q : eq)
-                    : [...s.questions, q],
+    const saveQuestion = async (q: Question) => {
+        if (!editTarget || pendingQuestionSave.current) return;
+
+        const target = editTarget;
+        const payload = buildQuestionApiPayload(q);
+        const existingQuestionId = target.question?.id;
+        pendingQuestionSave.current = true;
+        setSavingQuestionId(existingQuestionId || q.id);
+
+        try {
+            const savedQuestion = workspaceId && explorationId && existingQuestionId && persistedQuestionIds.has(existingQuestionId)
+                ? unwrapMutationData(await updateQuestionMutation.mutateAsync({ questionId: existingQuestionId, ...payload }))
+                : workspaceId && explorationId && persistedSectionIds.has(target.sectionId)
+                    ? unwrapMutationData(await createQuestionMutation.mutateAsync({ sectionId: target.sectionId, ...payload }))
+                    : null;
+
+            const nextQuestion: Question = {
+                ...q,
+                id: savedQuestion?.id || existingQuestionId || q.id,
+                text: savedQuestion?.text ?? q.text,
+                options: Array.isArray(savedQuestion?.options) ? savedQuestion.options.filter(Boolean) : q.options,
             };
-        }));
-        closeModal();
+
+            updateSections((prev) => prev.map((s) => {
+                if (s.id !== target.sectionId) return s;
+                const exists = existingQuestionId
+                    ? s.questions.some((eq) => eq.id === existingQuestionId)
+                    : s.questions.some((eq) => eq.id === nextQuestion.id);
+                return {
+                    ...s,
+                    questions: exists
+                        ? s.questions.map((eq) => eq.id === (existingQuestionId || nextQuestion.id) ? nextQuestion : eq)
+                        : [...s.questions, nextQuestion],
+                };
+            }));
+            closeModal();
+        } catch (err) {
+            console.error('Failed to save questionnaire question:', err);
+        } finally {
+            pendingQuestionSave.current = false;
+            setSavingQuestionId(null);
+        }
     };
 
-    const deleteQuestion = (sectionId: string, questionId: string) => {
-        setSections((prev) => prev.map((s) =>
-            s.id === sectionId
-                ? { ...s, questions: s.questions.filter((q) => q.id !== questionId) }
-                : s
-        ));
+    const deleteQuestion = async (sectionId: string, questionId: string) => {
+        if (deletingQuestionId) return;
+        setDeletingQuestionId(questionId);
+        try {
+            if (workspaceId && explorationId && persistedQuestionIds.has(questionId)) {
+                await deleteQuestionMutation.mutateAsync({ questionId });
+            }
+            updateSections((prev) => prev.map((s) =>
+                s.id === sectionId
+                    ? { ...s, questions: s.questions.filter((q) => q.id !== questionId) }
+                    : s
+            ));
+        } catch (err) {
+            console.error('Failed to delete questionnaire question:', err);
+        } finally {
+            setDeletingQuestionId(null);
+        }
     };
 
     const activeSectionTitle = editTarget
@@ -585,11 +877,15 @@ const QuestionnaireGuide: React.FC<QuestionnaireGuideProps> = ({
                                     autoFocus
                                     className="qdg-section__rename-input"
                                     value={renameValue}
+                                    disabled={savingSectionId === section.id}
                                     onChange={(e) => setRenameValue(e.target.value)}
                                     onBlur={commitRename}
                                     onKeyDown={(e) => {
                                         if (e.key === 'Enter') commitRename();
-                                        if (e.key === 'Escape') setRenamingSection(null);
+                                        if (e.key === 'Escape') {
+                                            cancelRenameRef.current = true;
+                                            setRenamingSection(null);
+                                        }
                                     }}
                                 />
                             ) : (
@@ -599,8 +895,9 @@ const QuestionnaireGuide: React.FC<QuestionnaireGuideProps> = ({
                                     {!isViewOnly && (
                                         <button
                                             className="qdg-section__pencil"
-                                            onClick={() => { setRenamingSection(section.id); setRenameValue(section.title); }}
+                                            onClick={() => { cancelRenameRef.current = false; setRenamingSection(section.id); setRenameValue(section.title); }}
                                             aria-label="Rename section"
+                                            disabled={savingSectionId === section.id}
                                         >
                                             <SpIcon name="sp-Edit-Edit_Pencil_01" size={16} />
                                         </button>
@@ -616,6 +913,7 @@ const QuestionnaireGuide: React.FC<QuestionnaireGuideProps> = ({
                                     className="qdg-section__icon-btn qdg-section__icon-btn--danger"
                                     onClick={() => deleteSection(section.id)}
                                     aria-label="Delete section"
+                                    disabled={deletingSectionId === section.id || savingSectionId === section.id}
                                 >
                                     <SpIcon name="sp-Interface-Trash_Full" size={15} />
                                 </button>
@@ -643,6 +941,7 @@ const QuestionnaireGuide: React.FC<QuestionnaireGuideProps> = ({
                                                         className="qdg-q-action-btn"
                                                         onClick={() => setOpenMenu(openMenu === q.id ? null : q.id)}
                                                         aria-label="More actions"
+                                                        disabled={deletingQuestionId === q.id || savingQuestionId === q.id}
                                                     >
                                                         <SpIcon name="sp-Menu-More_Vertical" size={15} />
                                                     </button>
@@ -675,7 +974,7 @@ const QuestionnaireGuide: React.FC<QuestionnaireGuideProps> = ({
 
                         {/* Add Question — hidden in view-only mode */}
                         {!isViewOnly && (
-                            <button className="qdg-add-question-btn" onClick={() => openAddModal(section.id)}>
+                            <button className="qdg-add-question-btn" onClick={() => openAddModal(section.id)} disabled={!!savingQuestionId}>
                                 <SpIcon name="sp-Edit-Add_Plus" size={13} />
                                 Add Question
                             </button>
@@ -685,7 +984,7 @@ const QuestionnaireGuide: React.FC<QuestionnaireGuideProps> = ({
 
                 {/* Add New Section — hidden in view-only mode */}
                 {!isViewOnly && (
-                    <button className="qdg-add-section-btn" onClick={addSection}>
+                    <button className="qdg-add-section-btn" onClick={addSection} disabled={creatingSection}>
                         <SpIcon name="sp-Edit-Add_Plus" size={14} />
                         Add New Section
                     </button>

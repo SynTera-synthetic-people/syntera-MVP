@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import OmiKeyboard from '../../../../../assets/Omi Animations/OmiKeyboard.mp4';
+import axiosInstance from "../../../../../utils/axiosConfig";
 
 import avatar1 from '../../../../../assets/Avatar/Avatar1.png';
 import avatar2 from '../../../../../assets/Avatar/Avatar2.png';
@@ -146,14 +147,46 @@ const PersonaGenerationLoader: React.FC<Props> = ({
     const [currentStep, setCurrentStep] = useState<number>(0);
     const [checkedItems, setCheckedItems] = useState<number[]>([]);
     const [isComplete, setIsComplete] = useState<boolean>(false);
+    const [backendDynamicValues, setBackendDynamicValues] = useState<DynamicValues | null>(null);
+
+    useEffect(() => {
+        if (!workspaceId || !objectiveId) return;
+
+        let cancelled = false;
+
+        const loadLoaderContext = async () => {
+            try {
+                const response = await axiosInstance.get(
+                    `/workspaces/${workspaceId}/explorations/${objectiveId}/personas/loader-context`
+                );
+                const contextValues = response.data?.data?.dynamic_values;
+                if (!cancelled && contextValues) {
+                    setBackendDynamicValues(contextValues);
+                }
+            } catch (error) {
+                console.warn("Persona loader context unavailable; using local fallback copy.", error);
+            }
+        };
+
+        loadLoaderContext();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [workspaceId, objectiveId]);
+
+    const resolvedDynamicValues = {
+        ...(backendDynamicValues || {}),
+        ...(dynamicValues || {}),
+    };
 
     const values = {
-        datasetSize: dynamicValues?.datasetSize || "ABC million",
-        peopleCount: dynamicValues?.peopleCount || "ABC",
-        neuroscienceCount: dynamicValues?.neuroscienceCount || "ABC million",
-        sourcesCount: dynamicValues?.sourcesCount || "ABC",
-        conversationsCount: dynamicValues?.conversationsCount || "ABC",
-        platforms: dynamicValues?.platforms || "XYZ platforms",
+        datasetSize: resolvedDynamicValues.datasetSize || "available behavioural datasets",
+        peopleCount: resolvedDynamicValues.peopleCount || "matching behavioural clusters",
+        neuroscienceCount: resolvedDynamicValues.neuroscienceCount || "available calibration signals",
+        sourcesCount: resolvedDynamicValues.sourcesCount || "available",
+        conversationsCount: resolvedDynamicValues.conversationsCount || "available",
+        platforms: resolvedDynamicValues.platforms || "source-bank channels",
     };
 
     const omiSteps: StepData[] = [
@@ -162,8 +195,8 @@ const PersonaGenerationLoader: React.FC<Props> = ({
             description: "Identifying real-world behavioural counterparts aligned to your research objective",
             items: [
                 "Interpreting your research intent and contextual signals",
-                `Scanning ${values.datasetSize} real people datasets to locate aligned population clusters`,
-                `Identified ${values.peopleCount} relevant people and detecting shared traits across choices, actions, intent, and consumption patterns`,
+                `Scanning ${values.datasetSize} to locate aligned population clusters`,
+                `Identified ${values.peopleCount} across choices, actions, intent, and consumption patterns`,
                 "Constructing archetypes based on how people act, not how they are described",
             ],
             outcome: "A grounded persona foundation built from behavioural alignment, not demographic approximation.",
@@ -183,9 +216,9 @@ const PersonaGenerationLoader: React.FC<Props> = ({
             description: "Embedding real-world context into decision-making",
             items: [
                 "Interpreting your research objective alongside foundational persona traits",
-                `Scanning our knowledge base of ${values.sourcesCount} high-quality sources`,
-                `Identified and analysed ${values.sourcesCount} relevant sources`,
-                `Learning from ${values.conversationsCount} conversations from ${values.platforms}`,
+                `Scanning our knowledge base across ${values.sourcesCount} high-quality sources`,
+                `Identified and analysed ${values.sourcesCount} context sources`,
+                `Learning from ${values.conversationsCount} evidence signals across ${values.platforms}`,
                 "Stress-testing consistency across scenarios and trade-offs",
             ],
             outcome: "A context-aware persona capable of nuanced reasoning, hesitation, and justification.",
@@ -209,10 +242,10 @@ const PersonaGenerationLoader: React.FC<Props> = ({
             description: "Grounding the persona in real-world patterns",
             items: [
                 "Interpreting the traits and constraints you provided",
-                `Matching against our ${values.datasetSize} peoples dataset`,
-                `Identified ${values.peopleCount} people aligning with our persona traits`,
+                `Matching against ${values.datasetSize}`,
+                `Identified ${values.peopleCount} aligning with your persona traits`,
                 "Analysing purchase patterns, intent signals, and behavioural trajectories",
-                `Ingested ${values.conversationsCount} billion datapoints to frame decision tendencies, risk tolerance, and habit structures`,
+                `Ingested ${values.conversationsCount} evidence signals to frame decision tendencies, risk tolerance, and habit structures`,
                 "Successfully created the foundational layer",
             ],
             outcome: "A foundational behavioural layer that reflects how this persona is likely to act, not just how they are described.",
@@ -232,9 +265,9 @@ const PersonaGenerationLoader: React.FC<Props> = ({
             description: "Embedding real-world context into decision-making",
             items: [
                 "Interpreting your research objective alongside foundational persona traits",
-                `Scanning our knowledge base of ${values.sourcesCount} high-quality sources`,
-                `Identified and analysed ${values.sourcesCount} relevant sources`,
-                `Learning from ${values.conversationsCount} conversations from ${values.platforms}`,
+                `Scanning our knowledge base across ${values.sourcesCount} high-quality sources`,
+                `Identified and analysed ${values.sourcesCount} context sources`,
+                `Learning from ${values.conversationsCount} evidence signals across ${values.platforms}`,
                 "Stress-testing consistency across scenarios and trade-offs",
             ],
             outcome: "A context-aware persona capable of nuanced reasoning, hesitation, and justification.",

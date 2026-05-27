@@ -460,6 +460,9 @@ export const useCreateQuestionnaireSection = (
           simulationId,
         ),
       });
+      queryClient.invalidateQueries({
+        queryKey: ['questionnairesAll', workspaceId, explorationId],
+      });
     },
   });
 };
@@ -491,6 +494,9 @@ export const useUpdateQuestionnaireSection = (
           simulationId,
         ),
       });
+      queryClient.invalidateQueries({
+        queryKey: ['questionnairesAll', workspaceId, explorationId],
+      });
     },
   });
 };
@@ -519,6 +525,9 @@ export const useDeleteQuestionnaireSection = (
           explorationId,
           simulationId,
         ),
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['questionnairesAll', workspaceId, explorationId],
       });
     },
   });
@@ -557,6 +566,9 @@ export const useCreateQuestionnaireQuestion = (
           simulationId,
         ),
       });
+      queryClient.invalidateQueries({
+        queryKey: ['questionnairesAll', workspaceId, explorationId],
+      });
     },
   });
 };
@@ -594,6 +606,9 @@ export const useUpdateQuestionnaireQuestion = (
           simulationId,
         ),
       });
+      queryClient.invalidateQueries({
+        queryKey: ['questionnairesAll', workspaceId, explorationId],
+      });
     },
   });
 };
@@ -622,6 +637,9 @@ export const useDeleteQuestionnaireQuestion = (
           explorationId,
           simulationId,
         ),
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['questionnairesAll', workspaceId, explorationId],
       });
     },
   });

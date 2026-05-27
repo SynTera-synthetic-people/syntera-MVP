@@ -13,6 +13,7 @@ import {
   usePersonaBuilder,
   useAutoGeneratePersonas,
   useUpdatePersona,
+  useDeletePersona,
   personaKeys,
   usePersonaPreview,
 } from '../../../../../../../hooks/usePersonaBuilder';
@@ -359,6 +360,14 @@ interface AddNewPersonaModalProps {
   onConfirm: (count: number) => void;
 }
 
+interface DeletePersonaModalProps {
+  persona: SavedPersona | null;
+  isLoading: boolean;
+  error?: string;
+  onClose: () => void;
+  onConfirm: () => void;
+}
+
 const AddNewPersonaModal: React.FC<AddNewPersonaModalProps> = ({ show, onClose, onConfirm }) => {
   const [count, setCount] = useState(1);
   const pricePerPersona = 199;
@@ -436,6 +445,68 @@ const AddNewPersonaModal: React.FC<AddNewPersonaModalProps> = ({ show, onClose, 
 };
 
 // ── ReplicatePersonaModal ─────────────────────────────────────────────────────
+
+const DeletePersonaModal: React.FC<DeletePersonaModalProps> = ({
+  persona,
+  isLoading,
+  error,
+  onClose,
+  onConfirm,
+}) => {
+  if (!persona) return null;
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        className="pb-modal-overlay"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={isLoading ? undefined : onClose}
+      >
+        <motion.div
+          className="pb-modal-box pb-delete-modal-box"
+          initial={{ opacity: 0, scale: 0.93, y: 16 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.93, y: 16 }}
+          transition={{ duration: 0.2, ease: 'easeOut' }}
+          onClick={e => e.stopPropagation()}
+        >
+          <button className="pb-modal-close" onClick={onClose} disabled={isLoading}>
+            <TbX size={18} />
+          </button>
+          <h2 className="pb-modal-title">Delete Persona</h2>
+          <p className="pb-modal-subtitle">
+            Delete "{persona.name || 'this persona'}"? This action cannot be undone.
+          </p>
+
+          <div className="pb-delete-warning-box">
+            <TbTrash size={16} className="pb-delete-warning-icon" />
+            <p className="pb-delete-warning-text">
+              Related qualitative outputs for this exploration will be cleared.
+            </p>
+          </div>
+
+          {error && <p className="pb-modal-error-text">{error}</p>}
+
+          <div className="pb-modal-actions">
+            <button className="pb-modal-cancel-btn" onClick={onClose} disabled={isLoading}>
+              Cancel
+            </button>
+            <button
+              className="pb-modal-danger-btn"
+              onClick={onConfirm}
+              disabled={isLoading}
+            >
+              {isLoading ? <TbLoader size={14} className="pb-btn-spinner" /> : <TbTrash size={14} />}
+              Delete Persona
+            </button>
+          </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
+  );
+};
 
 interface ReplicatePersonaModalProps {
   show: boolean;
@@ -1134,12 +1205,16 @@ const PersonaBuilder: React.FC = () => {
   const [showReplicateModal, setShowReplicateModal] = useState(false);
   const [replicatePreSelectedPersona, setReplicatePreSelectedPersona] = useState<SavedPersona | null>(null);
   const [isReplicating, setIsReplicating] = useState(false);
+  const [deletingPersonaId, setDeletingPersonaId] = useState<string | null>(null);
+  const [pendingDeletePersona, setPendingDeletePersona] = useState<SavedPersona | null>(null);
+  const [deletePersonaError, setDeletePersonaError] = useState('');
 
   const processedPersonaRef = useRef(new Set<string>());
   const hasInitializedRef = useRef(false);
 
   const updatePersonaMutation = useUpdatePersona(workspaceId, objectiveId, selectedPersonaId);
   const isUpdating = updatePersonaMutation.isPending;
+  const deletePersonaMutation = useDeletePersona(workspaceId, objectiveId);
   const updateExplorationMethodMutation = useUpdateExplorationMethod();
   const { data: explorationData } = useExploration(objectiveId);
 
@@ -1355,9 +1430,53 @@ const PersonaBuilder: React.FC = () => {
   }, []);
 
   const handleDeletePersona = useCallback((persona: SavedPersona) => {
-    // TODO: implement delete API call
-    console.log('Delete persona:', persona.id);
-  }, []);
+    if (!persona.id || deletingPersonaId) return;
+    setDeletePersonaError('');
+    setPendingDeletePersona(persona);
+  }, [deletingPersonaId]);
+
+  const handleConfirmDeletePersona = useCallback(async () => {
+    const persona = pendingDeletePersona;
+    if (!persona?.id || deletingPersonaId) return;
+
+    setDeletingPersonaId(persona.id);
+    setDeletePersonaError('');
+    try {
+      type DeleteFn = (id: string) => Promise<unknown>;
+      await (deletePersonaMutation.mutateAsync as unknown as DeleteFn)(persona.id);
+
+      setPersonaIds(prev => prev.filter(id => id !== persona.id));
+      setPersonaDataById(prev => {
+        const next = { ...prev };
+        delete next[persona.id as string];
+        return next;
+      });
+
+      if (selectedPersonaId === persona.id) {
+        const nextPersona = savedPersonasFromAPI.find(p => p.id && p.id !== persona.id);
+        setSelectedPersonaId(nextPersona?.id ?? null);
+      }
+
+      await queryClient.invalidateQueries({
+        queryKey: personaKeys.list(workspaceId, objectiveId),
+      });
+      setPendingDeletePersona(null);
+    } catch (error) {
+      console.error('Failed to delete persona:', error);
+      setDeletePersonaError('Failed to delete persona. Please try again.');
+    } finally {
+      setDeletingPersonaId(null);
+    }
+  }, [
+    deletePersonaMutation.mutateAsync,
+    deletingPersonaId,
+    objectiveId,
+    pendingDeletePersona,
+    queryClient,
+    savedPersonasFromAPI,
+    selectedPersonaId,
+    workspaceId,
+  ]);
 
   const handleReplicateConfirm = async (selectedPersonaIds: string[], country: string) => {
     if (!workspaceId || !objectiveId || selectedPersonaIds.length === 0 || !country) return;
@@ -1867,6 +1986,18 @@ const PersonaBuilder: React.FC = () => {
           onConfirm={handleReplicateConfirm}
           isLoading={isReplicating}
           preSelectedPersona={replicatePreSelectedPersona}
+        />
+
+        <DeletePersonaModal
+          persona={pendingDeletePersona}
+          isLoading={!!deletingPersonaId}
+          error={deletePersonaError}
+          onClose={() => {
+            if (deletingPersonaId) return;
+            setPendingDeletePersona(null);
+            setDeletePersonaError('');
+          }}
+          onConfirm={handleConfirmDeletePersona}
         />
 
         {/* ── Buy-more personas modal (tier1 users at limit) ── */}
