@@ -81,7 +81,7 @@ export const interviewKeys = {
     ] as const,
 };
 
-// ── Internal helper ───────────────────────────────────────────────────────────
+// ── Internal helpers ──────────────────────────────────────────────────────────
 
 function _triggerBlobDownload(blob: Blob, filename: string): void {
   const url = window.URL.createObjectURL(blob);
@@ -95,6 +95,22 @@ function _triggerBlobDownload(blob: Blob, filename: string): void {
     window.URL.revokeObjectURL(url);
     document.body.removeChild(a);
   }, 150);
+}
+
+function _makeQualDownloadErrorHandler(
+  notReadyMessage: string,
+  queryClient: ReturnType<typeof useQueryClient>,
+  workspaceId: string | undefined,
+  explorationId: string | undefined,
+) {
+  return (err: any) => {
+    if (err?.response?.status === 404) {
+      toast.error(notReadyMessage);
+      queryClient.invalidateQueries({ queryKey: interviewKeys.reportStatus(workspaceId, explorationId) });
+    } else {
+      toast.error('Failed to download report. Please try again.');
+    }
+  };
 }
 
 // ── Hooks ────────────────────────────────────────────────────────────────────
@@ -361,13 +377,13 @@ export const useDownloadQualDecisionIntelligence = (
   workspaceId?: string,
   explorationId?: string
 ) => {
+  const queryClient = useQueryClient();
   return useMutation<Blob, Error, void>({
     mutationFn: () =>
       interviewService.downloadQualDecisionIntelligence(workspaceId, explorationId),
     onSuccess: (blob) =>
       _triggerBlobDownload(blob, `decision_intelligence_${explorationId}.pdf`),
-    onError: () =>
-      toast.error('Failed to download Decision Intelligence report. Please try again.'),
+    onError: _makeQualDownloadErrorHandler('Report not ready. Please regenerate Decision Intelligence.', queryClient, workspaceId, explorationId),
   });
 };
 
@@ -376,13 +392,13 @@ export const useDownloadQualBehaviorArchaeology = (
   workspaceId?: string,
   explorationId?: string
 ) => {
+  const queryClient = useQueryClient();
   return useMutation<Blob, Error, void>({
     mutationFn: () =>
       interviewService.downloadQualBehaviorArchaeology(workspaceId, explorationId),
     onSuccess: (blob) =>
       _triggerBlobDownload(blob, `behavior_archaeology_${explorationId}.pdf`),
-    onError: () =>
-      toast.error('Failed to download Behaviour Archaeology report. Please try again.'),
+    onError: _makeQualDownloadErrorHandler('Report not ready. Please regenerate Behaviour Archaeology.', queryClient, workspaceId, explorationId),
   });
 };
 
@@ -391,11 +407,13 @@ export const useDownloadQualAllCombined = (
   workspaceId?: string,
   explorationId?: string
 ) => {
+  const queryClient = useQueryClient();
   return useMutation<Blob, Error, void>({
     mutationFn: () =>
       interviewService.downloadQualAllCombined(workspaceId, explorationId),
     onSuccess: (blob) =>
       _triggerBlobDownload(blob, `all_combined_report_${explorationId}.pdf`),
+    onError: _makeQualDownloadErrorHandler('Report not ready. Please regenerate the combined report.', queryClient, workspaceId, explorationId),
   });
 };
 

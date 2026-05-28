@@ -318,18 +318,12 @@ async def qual_decision_intelligence(
 ):
     """Decision Intelligence PDF for qualitative interviews."""
     cached = await cache.get_cached_report(exploration_id, QUAL_DI_CACHE_KEY)
-    if cached and cached.pdf_path and os.path.exists(cached.pdf_path):
-        content = _read_file(cached.pdf_path)
-    else:
-        out_path = generate_pdf_path(prefix="qual_di")
-        pdf_path = await generate_combined_interviews_pdf(
-            objective_id=exploration_id,
-            out_path=out_path,
-            cta="DECISION_INTELLIGENCE",
+    if not _cached_file_ready(cached):
+        raise HTTPException(
+            status_code=404,
+            detail="Report not ready. Please generate it first using the /prepare endpoint.",
         )
-        content = _read_file(pdf_path)
-        await cache.store_report_cache(exploration_id, QUAL_DI_CACHE_KEY, pdf_path, "qual")
-
+    content = _read_file(cached.pdf_path)
     return Response(
         content=content,
         media_type="application/pdf",
@@ -345,18 +339,12 @@ async def qual_behavior_archaeology(
 ):
     """Behavior Archaeology PDF for qualitative interviews."""
     cached = await cache.get_cached_report(exploration_id, QUAL_BA_CACHE_KEY)
-    if cached and cached.pdf_path and os.path.exists(cached.pdf_path):
-        content = _read_file(cached.pdf_path)
-    else:
-        out_path = generate_pdf_path(prefix="qual_ba")
-        pdf_path = await generate_combined_interviews_pdf(
-            objective_id=exploration_id,
-            out_path=out_path,
-            cta="BEHAVIORAL_ARCHAEOLOGY",
+    if not _cached_file_ready(cached):
+        raise HTTPException(
+            status_code=404,
+            detail="Report not ready. Please generate it first using the /prepare endpoint.",
         )
-        content = _read_file(pdf_path)
-        await cache.store_report_cache(exploration_id, QUAL_BA_CACHE_KEY, pdf_path, "qual")
-
+    content = _read_file(cached.pdf_path)
     return Response(
         content=content,
         media_type="application/pdf",
@@ -375,18 +363,12 @@ async def qual_all_combined(
     Uses CTA=ALL_COMBINED which instructs the LLM to generate every section.
     """
     cached = await cache.get_cached_report(exploration_id, QUAL_ALL_CACHE_KEY)
-    if cached and cached.pdf_path and os.path.exists(cached.pdf_path):
-        content = _read_file(cached.pdf_path)
-    else:
-        out_path = generate_pdf_path(prefix="qual_all_combined")
-        pdf_path = await generate_combined_interviews_pdf(
-            objective_id=exploration_id,
-            out_path=out_path,
-            cta="ALL_COMBINED",
+    if not _cached_file_ready(cached):
+        raise HTTPException(
+            status_code=404,
+            detail="Report not ready. Please generate it first using the /prepare endpoint.",
         )
-        content = _read_file(pdf_path)
-        await cache.store_report_cache(exploration_id, QUAL_ALL_CACHE_KEY, pdf_path, "qual")
-
+    content = _read_file(cached.pdf_path)
     return Response(
         content=content,
         media_type="application/pdf",
