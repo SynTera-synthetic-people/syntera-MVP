@@ -5,6 +5,7 @@ from openai import AsyncOpenAI
 from app.config import OPENAI_API_KEY
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
+from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from app.db import async_engine
 from app.models.questionnaire import (
@@ -2456,6 +2457,40 @@ async def get_questionnaire_by_simulation(workspace_id: str, exploration_id: str
             result.append(section_model_to_dict(sec, questions))
 
         return result
+
+
+async def get_unlinked_questionnaire(workspace_id: str, exploration_id: str) -> list:
+    """Sections uploaded before any simulation existed (simulation_id IS NULL) that have questions."""
+    async with AsyncSession(async_engine) as session:
+        stmt = select(QuestionnaireSection).where(
+            QuestionnaireSection.workspace_id == workspace_id,
+            QuestionnaireSection.exploration_id == exploration_id,
+            QuestionnaireSection.simulation_id.is_(None),
+        ).order_by(QuestionnaireSection.order_index, QuestionnaireSection.created_at)
+        sections = (await session.execute(stmt)).scalars().all()
+        result = []
+        for sec in sections:
+            q_stmt = select(QuestionnaireQuestion).where(
+                QuestionnaireQuestion.section_id == sec.id
+            ).order_by(QuestionnaireQuestion.order_index, QuestionnaireQuestion.created_at)
+            questions = (await session.execute(q_stmt)).scalars().all()
+            result.append(section_model_to_dict(sec, questions))
+        return result
+
+
+async def link_questionnaire_to_simulation(workspace_id: str, exploration_id: str, simulation_id: str) -> None:
+    """Attach unlinked questionnaire sections to a simulation so they are discoverable by simulation_id."""
+    async with AsyncSession(async_engine) as session:
+        await session.execute(
+            update(QuestionnaireSection)
+            .where(
+                QuestionnaireSection.workspace_id == workspace_id,
+                QuestionnaireSection.exploration_id == exploration_id,
+                QuestionnaireSection.simulation_id.is_(None),
+            )
+            .values(simulation_id=simulation_id)
+        )
+        await session.commit()
 
 
 async def store_parsed_json(workspace_id, objective_id, parsed, user_id, simulation_id=None):

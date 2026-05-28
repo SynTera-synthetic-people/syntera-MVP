@@ -229,13 +229,26 @@ async def generate_questionnaire_api(
             raise HTTPException(404, "Population simulation not found")
 
     # Idempotency: reuse existing questionnaire instead of re-running the LLM.
-    existing = (
-        await service.get_questionnaire_by_simulation(
+    if payload.simulation_id:
+        existing = await service.get_questionnaire_by_simulation(
             workspace_id, payload.exploration_id, payload.simulation_id
         )
-        if payload.simulation_id
-        else await service.get_full_questionnaire(workspace_id, payload.exploration_id)
-    )
+        # Fallback: questionnaire was uploaded before any population simulation existed.
+        # Only treat as existing if sections actually contain questions (guard against empty uploads).
+        if not existing:
+            unlinked = await service.get_unlinked_questionnaire(workspace_id, payload.exploration_id)
+            has_questions = any(q for s in unlinked for q in s.get("questions", []))
+            if unlinked and has_questions:
+                # Attach uploaded sections to this simulation so allquestionnaires/{sim_id} finds them.
+                await service.link_questionnaire_to_simulation(
+                    workspace_id, payload.exploration_id, payload.simulation_id
+                )
+                existing = await service.get_questionnaire_by_simulation(
+                    workspace_id, payload.exploration_id, payload.simulation_id
+                )
+    else:
+        existing = await service.get_full_questionnaire(workspace_id, payload.exploration_id)
+
     if existing:
         return SuccessResponse(
             message="Questionnaire already exists",
@@ -324,6 +337,25 @@ async def get_questionnaire_by_simulation(
     return SuccessResponse(
         message="Questionnaires fetched successfully",
         data=questionnaires
+    )
+
+
+@router.get("/export-csv", response_model=None)
+async def export_questionnaire_csv_for_exploration(
+    workspace_id: str,
+    exploration_id: str,
+    current_user: User = Depends(get_current_active_user),
+):
+    """Download all questionnaire sections for an exploration as CSV (no simulation needed)."""
+    await _ensure_workspace_member(workspace_id, current_user)
+    questionnaires = await service.get_full_questionnaire(workspace_id, exploration_id)
+    if not questionnaires:
+        raise HTTPException(status_code=404, detail="No questionnaire found for this exploration")
+    body = questionnaire_sections_to_csv_bytes(questionnaires, None)
+    return StreamingResponse(
+        BytesIO(body),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="questionnaire.csv"'},
     )
 
 

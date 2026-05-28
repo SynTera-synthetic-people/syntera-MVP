@@ -12,6 +12,7 @@ import {
     useUpdateQuestionnaireQuestion,
     useUpdateQuestionnaireSection,
 } from '../../../../../../hooks/useQuantitativeQueries';
+import { downloadExplorationQuestionnaireCsv } from '../../../../../../services/quantitativeServices';
 import './QuestionnaireGuide.css';
 
 // ── Question Types ─────────────────────────────────────────────────────────────
@@ -626,6 +627,19 @@ const QuestionnaireGuide: React.FC<QuestionnaireGuideProps> = ({
     onSectionsChange,
 }) => {
     const [sections, setSections] = useState<Section[]>(initialSections ?? []);
+    const [isDownloading, setIsDownloading] = useState(false);
+
+    const handleDownload = async () => {
+        if (!workspaceId || !explorationId || isDownloading) return;
+        setIsDownloading(true);
+        try {
+            await downloadExplorationQuestionnaireCsv({ workspaceId, explorationId });
+        } catch (err) {
+            console.error('Download questionnaire failed', err);
+        } finally {
+            setIsDownloading(false);
+        }
+    };
 
     const [modalOpen, setModalOpen] = useState(false);
     const [editTarget, setEditTarget] = useState<{ sectionId: string; question: Question | null } | null>(null);
@@ -993,8 +1007,8 @@ const QuestionnaireGuide: React.FC<QuestionnaireGuideProps> = ({
 
             {/* ── Bottom action bar ── */}
             <div className="qdg-launch-bar">
-                <button className="qdg-btn--outline" onClick={() => { }}>
-                    Download Questionnaire
+                <button className="qdg-btn--outline" onClick={handleDownload} disabled={isDownloading}>
+                    {isDownloading ? 'Downloading…' : 'Download Questionnaire'}
                     <SpIcon name="sp-File-File_Download" size={15} />
                 </button>
                 <button className="qdg-launch-btn" onClick={onConfirm}>

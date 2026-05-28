@@ -15,6 +15,23 @@ export const listPopulationSimulations = async ({ workspaceId, explorationId }) 
   return Array.isArray(payload?.data) ? payload.data : [];
 };
 
+/** Download all questionnaire sections for an exploration as CSV (no simulation needed — questionnaire design page). */
+export const downloadExplorationQuestionnaireCsv = async ({ workspaceId, explorationId }) => {
+  const response = await axiosInstance.get(
+    `/workspaces/${workspaceId}/explorations/${explorationId}/questionnaire/export-csv`,
+    { responseType: "blob" }
+  );
+  const blob = new Blob([response.data], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "questionnaire.csv";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+
 /** Download questionnaire CSV from server (Q No., Question, Options, Count; counts from latest or chosen survey run). */
 export const downloadQuestionnaireCsvExport = async ({
   workspaceId,
