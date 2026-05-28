@@ -207,6 +207,10 @@ class PersonaBulkDownloadRequest(BaseModel):
     persona_ids: list[str] = Field(..., min_items=1, max_items=20)
 
 
+class PersonaPurchaseRequest(BaseModel):
+    count: int = Field(..., ge=1, le=20)
+
+
 class PersonaBackstoryOut(BaseModel):
     persona_id: str
     backstory: str

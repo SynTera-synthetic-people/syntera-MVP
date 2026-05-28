@@ -360,7 +360,7 @@ interface DeletePersonaModalProps {
 const AddNewPersonaModal: React.FC<AddNewPersonaModalProps> = ({ show, onClose, onConfirm }) => {
   const [count, setCount] = useState(1);
   const pricePerPersona = 199;
-  const total = 99; // as shown in figma (discounted total)
+  const total = count * pricePerPersona;
 
   if (!show) return null;
 
@@ -1186,8 +1186,9 @@ const PersonaBuilder: React.FC = () => {
   const { user } = useSelector((state: RootState) => state.auth);
   const userTier = (user?.account_tier ?? 'free').toLowerCase().trim();
   const isFreeUser = userTier === 'free';
-  const isTier1User = userTier === 'tier1';
+  const isTier1User = userTier === 'tier1' || userTier === 'explorer';
   const isFreeOrTier1 = isFreeUser || isTier1User;
+  const basePersonaLimitForTier = isFreeOrTier1 ? FREE_PERSONA_LIMIT : PERSONA_LIMIT;
 
   // Enterprise users get the "Build Manually" option (mirrors AddResearchObjective)
   const isEnterpriseUser = userTier === 'enterprise' || userTier === 'enterprise_admin';
@@ -1197,6 +1198,8 @@ const PersonaBuilder: React.FC = () => {
 
   const {
     personas: fetchedPersonas,
+    personaQuota: fetchedPersonaQuota,
+    refetchPersonaQuota,
     submitCompletePersona,
     isSubmitting,
     validateTraits,
@@ -1211,6 +1214,8 @@ const PersonaBuilder: React.FC = () => {
   const savedPersonasFromAPI: SavedPersona[] = Array.isArray(fetchedPersonas)
     ? (fetchedPersonas as SavedPersona[])
     : (((fetchedPersonas as Record<string, unknown>)?.data as SavedPersona[]) ?? []);
+  const quotaData = ((fetchedPersonaQuota as Record<string, unknown>)?.data ?? {}) as Record<string, unknown>;
+  const personaLimitForTier = Number(quotaData.limit ?? basePersonaLimitForTier) || basePersonaLimitForTier;
 
   useEffect(() => {
     setShowGrid(true);
@@ -1449,13 +1454,13 @@ const PersonaBuilder: React.FC = () => {
     if (isFreeUser && savedPersonasFromAPI.length >= FREE_PERSONA_LIMIT) return;
 
     // tier1 at limit → buy-more modal
-    if (isTier1User && savedPersonasFromAPI.length >= FREE_PERSONA_LIMIT) {
+    // tier2 / enterprise at soft cap → existing paid add modal
+    if (isTier1User && savedPersonasFromAPI.length >= personaLimitForTier) {
       setShowAddPersonaModal(true);
       return;
     }
 
-    // non-enterprise tier2 at soft cap → existing paid add modal
-    if (!isEnterpriseUser && savedPersonasFromAPI.length >= PERSONA_LIMIT) {
+    if (!isFreeOrTier1 && savedPersonasFromAPI.length >= personaLimitForTier) {
       setShowAddNewPersonaModal(true);
       return;
     }
@@ -1474,24 +1479,32 @@ const PersonaBuilder: React.FC = () => {
       `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-generating`,
       { state: { flow: 'omi' } }
     );
-  }, [generatePersonas, navigate, workspaceId, objectiveId, trigger]);
-
-  // ── Called when user picks "Build Manually" from the method modal ───────────
+  }, [isFreeUser, isTier1User, isFreeOrTier1, personaLimitForTier, savedPersonasFromAPI.length, generatePersonas, navigate, workspaceId, objectiveId]);
   const handleBuildManually = useCallback(() => {
-    if (!isEnterpriseUser) return; // locked — shouldn't reach here but guard defensively
+  if (!isEnterpriseUser) {
+    // shouldn't reach here normally (button is locked in modal),
+    // but guard defensively
+    return;
+  }
+  navigate(
+    `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-builder/manual`,
+    { state: { flow: 'manual', viewOnly: isViewOnly } }
+  );
+}, [isEnterpriseUser, navigate, workspaceId, objectiveId, isViewOnly]);
 
-    trigger({ stage: 'persona_builder', event: 'PERSONA_WORKFLOW_LOADED', payload: {} });
+  const handleAddNewPersonaConfirm = async (count: number) => {
+    if (!workspaceId || !objectiveId) return;
 
-    navigate(
-      `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-builder/manual`,
-      { state: { flow: 'manual', viewOnly: isViewOnly } }
-    );
-  }, [isEnterpriseUser, navigate, workspaceId, objectiveId, isViewOnly, trigger]);
-
-  const handleAddNewPersonaConfirm = (count: number) => {
-    setShowAddNewPersonaModal(false);
-    setShowGrid(false);
-    handleAddPersona();
+    try {
+      await personaService.purchasePersonas(workspaceId, objectiveId, count);
+      await refetchPersonaQuota();
+      await queryClient.invalidateQueries({ queryKey: personaKeys.list(workspaceId, objectiveId) });
+      setShowAddNewPersonaModal(false);
+      setShowGrid(false);
+      handleAddPersona();
+    } catch (error) {
+      console.error('Failed to add persona credits:', error);
+    }
   };
 
   // ── Replicate handlers ──────────────────────────────────────────────────────
@@ -1619,7 +1632,9 @@ const PersonaBuilder: React.FC = () => {
 
   const handleAIGenerate = async () => {
     try {
-      if (savedPersonasFromAPI.some(p => p?.calibration_status !== "draft")) {
+      const usablePersonaCount = savedPersonasFromAPI.filter(p => p?.calibration_status !== "draft").length;
+      if (usablePersonaCount >= personaLimitForTier) {
+        // Existing personas are reusable once the tier limit is reached.
         setShowGrid(true);
         return;
       }
@@ -2096,7 +2111,20 @@ const PersonaBuilder: React.FC = () => {
             onClose={() => setShowAddPersonaModal(false)}
             onSuccess={async () => {
               setShowAddPersonaModal(false);
+              if (isTier1User) {
+                navigate(
+                  `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-generating`,
+                  { state: { flow: "omi" } }
+                );
+                try {
+                  await personaService.getAutoGeneratedPersonas(workspaceId, objectiveId);
+                } catch (err) {
+                  console.error("Failed to generate paid Omi persona:", err);
+                }
+              }
+              await refetchPersonaQuota();
               await queryClient.invalidateQueries({ queryKey: personaKeys.list(workspaceId, objectiveId) });
+              await queryClient.invalidateQueries({ queryKey: personaKeys.listGenerated(workspaceId, objectiveId) });
             }}
             workspaceId={workspaceId}
             objectiveId={objectiveId}

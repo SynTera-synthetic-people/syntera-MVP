@@ -7,7 +7,7 @@ metadata:
     app: synth-backend
 spec:
   replicas: 4
-  progressDeadlineSeconds: 1200  
+  progressDeadlineSeconds: 1800  
   selector:
     matchLabels:
       app: synth-backend
@@ -49,13 +49,13 @@ spec:
               memory: 512Mi
             limits:
               cpu: 500m
-              memory: 2Gi  
+              memory: 3Gi   
 
           readinessProbe:
             httpGet:
               path: /health
               port: 8000
-            initialDelaySeconds: 120   
+            initialDelaySeconds: 300   
             periodSeconds: 20
             timeoutSeconds: 5
             failureThreshold: 10
@@ -64,7 +64,7 @@ spec:
             httpGet:
               path: /health
               port: 8000
-            initialDelaySeconds: 180   
+            initialDelaySeconds: 360  
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 5

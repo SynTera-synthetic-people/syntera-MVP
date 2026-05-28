@@ -51,24 +51,83 @@ class MLPredictor:
         print(f"   Meta-model: {'Yes' if self.meta_model else 'No'}")
         print(f"   Features: {len(self.feature_columns) if self.feature_columns else 0}")
     
-    def predict(self, features_dict):
+    def predict(self, X):
         """
-        Make prediction for a user
+        Make prediction 
         
         Args:
-            features_dict: Dictionary of 15 features
+            X: DataFrame or dict of features
+        
+        Returns:
+            Predicted value (float)
+        """
+        
+        # Handle DataFrame input (from test/batch)
+        if isinstance(X, pd.DataFrame):
+            # Ensure numeric types
+            X = X.apply(pd.to_numeric, errors='coerce')
+            X = X.fillna(0)
+            X = X.astype(float)
+            
+            # Get base model predictions
+            base_predictions = {}
+            for name, model in self.base_models.items():
+                try:
+                    pred = model.predict(X)
+                    base_predictions[name] = float(pred[0])
+                except Exception as e:
+                    print(f"⚠️  Error in {name}: {e}")
+                    base_predictions[name] = 0.0
+        
+        # Handle dict input (from API)
+        elif isinstance(X, dict):
+            X_df = pd.DataFrame([[X[col] for col in self.feature_columns]],
+                         columns=self.feature_columns)
+            
+            # Get base model predictions
+            base_predictions = {}
+            for name, model in self.base_models.items():
+                try:
+                    base_predictions[name] = float(model.predict(X_df)[0])
+                except Exception as e:
+                    print(f"⚠️  Error in {name}: {e}")
+                    base_predictions[name] = 0.0
+        
+        else:
+            raise ValueError(f"Invalid input type: {type(X)}")
+        
+        # Meta-model prediction
+        if self.meta_model:
+            try:
+                meta_features = np.array([[base_predictions.get(name, 0.0) for name in 
+                                         ['xgboost', 'lightgbm', 'catboost', 'random_forest']]])
+                final_prediction = float(self.meta_model.predict(meta_features)[0])
+            except Exception as e:
+                print(f"⚠️  Meta-model error: {e}")
+                final_prediction = np.mean(list(base_predictions.values()))
+        else:
+            # Fallback: simple average
+            final_prediction = np.mean(list(base_predictions.values()))
+        
+        return final_prediction
+    
+    def predict_with_explanation(self, features_dict):
+        """
+        Make prediction with full explanation (for API)
+        
+        Args:
+            features_dict: Dictionary of features
         
         Returns:
             Dict with prediction, confidence, explanation, base_predictions
         """
-        # Convert to DataFrame to preserve feature names (avoids LightGBM warning)
-        X = pd.DataFrame([[features_dict[col] for col in self.feature_columns]],
-                         columns=self.feature_columns)
-
+        X_df = pd.DataFrame([[features_dict[col] for col in self.feature_columns]],
+                     columns=self.feature_columns)
+        
         # Get base model predictions
         base_predictions = {}
         for name, model in self.base_models.items():
-            base_predictions[name] = float(model.predict(X)[0])
+            base_predictions[name] = float(model.predict(X_df)[0])
         
         # Meta-model prediction
         if self.meta_model:
@@ -76,7 +135,6 @@ class MLPredictor:
                                      ['xgboost', 'lightgbm', 'catboost', 'random_forest']]])
             final_prediction = float(self.meta_model.predict(meta_features)[0])
         else:
-            # Fallback: simple average
             final_prediction = np.mean(list(base_predictions.values()))
         
         # Calculate confidence
@@ -141,7 +199,7 @@ class MLPredictor:
         explanation = f"Prediction: {prediction:.2f} orders/week\n"
         explanation += f"Confidence: {confidence*100:.1f}% ({conf_label})\n\n"
         explanation += "Based on:\n"
-        explanation += "• 15 behavioral features from transaction history\n"
+        explanation += "• 28 behavioral features from transaction history\n"
         explanation += "• 4 ML models (XGBoost, LightGBM, CatBoost, RF)\n"
         explanation += "• Meta-model optimal combination\n\n"
         explanation += "Individual model predictions:\n"
@@ -191,7 +249,7 @@ if __name__ == "__main__":
                 feature_dict[col] = sample[col]
             
             # Make prediction
-            result = predictor.predict(feature_dict)
+            result = predictor.predict_with_explanation(feature_dict)
             
             print(f"\nUser: {sample['subject_key']}")
             print(f"Actual transactions: {sample['total_transactions']}")

@@ -1,3 +1,4 @@
+import asyncio
 import json
 from typing import Dict, List, Optional, Callable
 from sqlmodel import select
@@ -622,21 +623,28 @@ async def get_research_objective(
     return result.scalars().first()
 
 
+async def _score_persona(pid: str, research_obj, sample_distribution: dict) -> tuple:
+    persona = await get_persona(pid)
+    sample_n = sample_distribution.get(pid, 50)
+    llm_result = await _call_llm(persona, research_obj, sample_n)
+    return pid, llm_result
+
+
 async def create_population_simulation(workspace_id, exploration_id, persona_ids,
                                        sample_distribution, user_id, session: AsyncSession):
     research_obj = await get_research_objective(session, exploration_id)
 
+    # Run all per-persona LLM calls in parallel — sequential calls were causing
+    # 30 s Axios timeouts when persona_count >= 4 (4 × ~8 s = 32 s > 30 s limit).
+    results = await asyncio.gather(
+        *[_score_persona(pid, research_obj, sample_distribution) for pid in persona_ids]
+    )
+
     persona_scores = {}
     global_insights = {}
 
-    for pid in persona_ids:
-        persona = await get_persona(pid)
-        sample_n = sample_distribution.get(pid, 50)
-
-        llm_result = await _call_llm(persona, research_obj, sample_n)
-
+    for pid, llm_result in results:
         persona_scores[pid] = llm_result["confidence_score"]
-
         global_insights[pid] = {
             "analysis": llm_result["analysis"],
             "sources_used": llm_result["sources_used"],

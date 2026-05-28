@@ -19,6 +19,7 @@ class Exploration(SQLModel, table=True):
     created_by: str = Field(foreign_key="user.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: Optional[datetime] = None
+    additional_persona_limit: int = Field(default=0, nullable=False)
     is_end: bool = Field(default=False, nullable=False)
     is_deleted: bool = Field(default=False, index=True)
     deleted_at: Optional[datetime] = None
