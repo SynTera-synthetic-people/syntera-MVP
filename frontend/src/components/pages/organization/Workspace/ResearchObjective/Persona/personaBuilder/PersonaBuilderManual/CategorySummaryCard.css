@@ -155,9 +155,8 @@
   max-width: 100%;
   box-sizing: border-box;
   display: -webkit-box;
-  -webkit-line-clamp: 8;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  max-height: 160px;      
+  overflow-y: auto;
 }
 
 /* ── Formative remove button ── */

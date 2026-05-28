@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -44,7 +44,7 @@ interface TraitMap {
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
-const TABS = [
+const BASE_TABS = [
   {
     key: 'demographics',
     label: 'Demographics',
@@ -76,7 +76,10 @@ const TABS = [
   { key: 'calibration', label: 'Calibration Breakdown', fields: [] },
 ] as const;
 
-type TabKey = typeof TABS[number]['key'];
+const FORMATIVE_TAB = { key: 'formative', label: 'Formative Experience', fields: [] } as const;
+
+type BaseTabKey = typeof BASE_TABS[number]['key'];
+type TabKey = BaseTabKey | 'formative';
 
 // ── Calibration static data definitions ───────────────────────────────────────
 
@@ -136,7 +139,6 @@ const MULTIPLATFORM_ATTRS: CalibParamItem[] = [
   { icon: <SpIcon name="sp-System-Wifi_High" size={14} />, label: 'Signal Clarity' },
 ];
 
-// Platform icons row
 const PLATFORM_ICONS = [
   { icon: <SiLinkedin size={18} />, key: 'linkedin' },
   { icon: <SiQuora size={18} />, key: 'quora' },
@@ -213,7 +215,11 @@ const mapApiTraitsToUi = (
     'Digital Activity': c(['digital_activity', 'Digital Activity']),
     Preferences: c(['preferences', 'Preferences']),
     'Professional Traits': c(['professional_traits', 'Professional Traits']),
-    backstory: coerce(traits.backstory),
+    backstory: coerce(
+      traits.backstory ??
+      traits.formative_experience ??
+      traits.formativeExperience
+    ),
     isAI: !!(
       traits.isAI ||
       traits.auto_generated_persona ||
@@ -228,12 +234,14 @@ const mapApiTraitsToUi = (
     'brand_sensitivity', 'price_sensitivity', 'decision_making_style', 'purchase_patterns',
     'purchase_channel', 'mobility', 'accommodation', 'marital_status', 'daily_rhythm',
     'hobbies', 'professional_traits', 'digital_activity', 'preferences', 'backstory',
+    'formative_experience', 'formativeExperience',
     'isAI', 'id', 'research_objective_id', 'exploration_id', 'sample_size',
     'auto_generated_persona', 'created_at', 'created_by', 'workspace_id',
     'persona_details', 'behaviors', 'attitudes_toward_category', 'barriers_pain_points',
     'triggers_opportunities', 'journey_stage_mapping', 'ocean_profile',
     'persona_generation_method', 'reference_sites_with_usage', 'confidence_scoring',
     'researched_sites', 'evidence_snapshot',
+    'confidence_calculation_detail',
   ]);
 
   const additionalKeys: string[] = [];
@@ -266,7 +274,6 @@ const flatten = (obj: unknown): string[] => {
 const confColor = (score: number) =>
   score >= 80 ? '#22c55e' : score >= 60 ? '#f59e0b' : '#ef4444';
 
-// Renders text that may contain markdown links [label](url) as clickable <a> tags
 const renderWithLinks = (text: string): React.ReactNode => {
   const parts: React.ReactNode[] = [];
   const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
@@ -308,16 +315,12 @@ const ErrorPage: React.FC<{ onBack: () => void }> = ({ onBack }) => (
   </div>
 );
 
-// ── Calibration param list item ────────────────────────────────────────────────
-
 const CalibParamRow: React.FC<{ item: CalibParamItem }> = ({ item }) => (
   <div className="pp-calib-param-row">
     <span className="pp-calib-param-icon">{item.icon}</span>
     <span className="pp-calib-param-label">{item.label}</span>
   </div>
 );
-
-// ── Key Attribute row (with blue dot indicator) ────────────────────────────────
 
 const KeyAttrRow: React.FC<{ item: CalibParamItem }> = ({ item }) => (
   <div className="pp-calib-param-row">
@@ -326,8 +329,6 @@ const KeyAttrRow: React.FC<{ item: CalibParamItem }> = ({ item }) => (
     <span className="pp-key-attr-dot" />
   </div>
 );
-
-// ── Calibration card ───────────────────────────────────────────────────────────
 
 interface CalibCardProps {
   title: string;
@@ -346,17 +347,12 @@ const CalibCard: React.FC<CalibCardProps> = ({
   title, subtitle, count, countLabel, sections, extraFooter,
 }) => (
   <div className="pp-calib-card">
-    {/* Card header */}
     <div className="pp-calib-card-header">
       <h3 className="pp-calib-card-title">{title}</h3>
       <p className="pp-calib-card-subtitle">{subtitle}</p>
     </div>
-
-    {/* Big number */}
     <div className="pp-calib-card-count">{count}</div>
     <div className="pp-calib-card-count-label">{countLabel}</div>
-
-    {/* Sections */}
     {sections.map((section, si) => (
       <div key={si} className="pp-calib-section">
         <h4 className="pp-calib-section-heading">{section.heading}</h4>
@@ -369,10 +365,10 @@ const CalibCard: React.FC<CalibCardProps> = ({
         </div>
       </div>
     ))}
-
     {extraFooter}
   </div>
 );
+
 const OCEAN_DESCRIPTIONS: Record<string, { getLevel: (s: number) => string; description: string }> = {
   openness: {
     getLevel: (s) => s >= 0.7 ? 'High' : s >= 0.4 ? 'Medium' : 'Low',
@@ -395,6 +391,7 @@ const OCEAN_DESCRIPTIONS: Record<string, { getLevel: (s: number) => string; desc
     description: 'Tendency toward emotional instability and stress sensitivity',
   },
 };
+
 // ── Main component ─────────────────────────────────────────────────────────────
 
 const PersonaPreview: React.FC = () => {
@@ -422,6 +419,37 @@ const PersonaPreview: React.FC = () => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>('demographics');
 
+  // ── Tab bar scroll arrows ──────────────────────────────────────────────────
+  const tabBarRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const updateScrollState = useCallback(() => {
+    const el = tabBarRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 0);
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
+  }, []);
+
+  useEffect(() => {
+    const el = tabBarRef.current;
+    if (!el) return;
+    updateScrollState();
+    el.addEventListener('scroll', updateScrollState);
+    const ro = new ResizeObserver(updateScrollState);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener('scroll', updateScrollState);
+      ro.disconnect();
+    };
+  }, [updateScrollState]);
+
+  const scrollTabs = useCallback((dir: 'left' | 'right') => {
+    const el = tabBarRef.current;
+    if (!el) return;
+    el.scrollBy({ left: dir === 'left' ? -160 : 160, behavior: 'smooth' });
+  }, []);
+
   useEffect(() => {
     if (workspaceId && objectiveId && personaId) refetch();
   }, [workspaceId, objectiveId, personaId, refetch]);
@@ -442,6 +470,7 @@ const PersonaPreview: React.FC = () => {
 
   const mergedTraits = smartMerge(
     personaDetails,
+    rawTraits,
     rawData?.traits as Record<string, unknown> ?? {},
     rawData ?? {},
     manualPersona ?? {},
@@ -571,13 +600,14 @@ const PersonaPreview: React.FC = () => {
   const oceanProfile = (
     rawTraits?.ocean_profile ??
     (rawData?.traits as Record<string, unknown>)?.ocean_profile ??
+    (rawData as Record<string, unknown>)?.ocean_profile ??
+    mergedTraits?.ocean_profile ??
+    personaDetails?.ocean_profile ??
     {}
   ) as Record<string, unknown>;
 
-  // Shape 1: ocean_profile.scores  →  { openness: 0.78, ... }
   const oceanScores = (oceanProfile?.scores ?? {}) as Record<string, number>;
 
-  // Shape 2: ocean_profile.traits  →  [{ name, score, level, description, interpretation }, ...]
   const oceanTraits = (oceanProfile?.traits ?? []) as Array<{
     name: string;
     score: number;
@@ -586,13 +616,11 @@ const PersonaPreview: React.FC = () => {
     interpretation?: string;
   }>;
 
-  // Resolve to a single scores map, preferring Shape 1, falling back to Shape 2
   const resolvedOceanScores: Record<string, number> =
     Object.keys(oceanScores).length > 0
       ? oceanScores
       : Object.fromEntries(oceanTraits.map(t => [t.name.toLowerCase(), t.score]));
 
-  // Summary text that sometimes comes on the profile object
   const oceanSummary = (oceanProfile?.summary ?? oceanProfile?.description ?? '') as string;
   const oceanItems = oceanTraits.length > 0
     ? oceanTraits.map(t => ({
@@ -615,7 +643,6 @@ const PersonaPreview: React.FC = () => {
       };
     });
 
-  // Change radarData to use 0-100 scale instead of 0-1
   const radarData = [
     { subject: 'Openness', A: Math.round((resolvedOceanScores.openness ?? 0) * 100), fullMark: 100 },
     { subject: 'Conscientiousness', A: Math.round((resolvedOceanScores.conscientiousness ?? 0) * 100), fullMark: 100 },
@@ -624,12 +651,43 @@ const PersonaPreview: React.FC = () => {
     { subject: 'Neuroticism', A: Math.round((resolvedOceanScores.neuroticism ?? 0) * 100), fullMark: 100 },
   ];
 
-  const barriersList = flatten(mergedTraits.barriers_pain_points);
-  const triggersList = flatten(mergedTraits.triggers_opportunities);
+  // ── Psychometric ───────────────────────────────────────────────────────────
+
+  const barriersList = flatten(
+    mergedTraits.barriers_pain_points ??
+    rawData?.barriers_pain_points ??
+    rawTraits?.barriers_pain_points ??
+    personaDetails?.barriers_pain_points
+  );
+
+  const triggersList = flatten(
+    mergedTraits.triggers_opportunities ??
+    rawData?.triggers_opportunities ??
+    rawTraits?.triggers_opportunities ??
+    personaDetails?.triggers_opportunities
+  );
+
+  // ── Persona meta ───────────────────────────────────────────────────────────
 
   const personaName = (mergedTraits.name as string) ?? 'Unnamed Persona';
   const isAI = !!(mergedTraits.auto_generated_persona || !!(uiTraits.isAI));
   const createdByLabel = isAI ? 'Omi' : String(mergedTraits.created_by_name ?? mergedTraits.created_by ?? 'You');
+
+  // ── Formative experience ───────────────────────────────────────────────────
+
+  const formativeText = String(uiTraits.backstory ?? '').trim();
+
+  // ── Active tabs ────────────────────────────────────────────────────────────
+  // For manual personas: insert Formative Experience right after Behavioural
+  // Traits (index 2), before Ocean, Psychometric and Calibration.
+  // For AI personas: keep the original BASE_TABS order unchanged.
+  const activeTabs = isAI
+    ? BASE_TABS
+    : [
+      ...BASE_TABS.slice(0, 3),  // demographics, psychographic, behavioral
+      FORMATIVE_TAB,             // ← inserted here, after behavioral
+      ...BASE_TABS.slice(3),     // ocean, psychometric, calibration
+    ];
 
   const tagSource = [
     ...(Array.isArray(mergedTraits.interests) ? mergedTraits.interests as string[] : [String(mergedTraits.interests ?? '')].filter(Boolean)),
@@ -668,7 +726,6 @@ const PersonaPreview: React.FC = () => {
     }
   };
 
-  // ── Derive display count for calibration cards from API data ──────────────
   const getCalibCount = (key: string): string => {
     const entry = breakdownEntries.find(e =>
       e.label.toLowerCase().includes(key.toLowerCase())
@@ -681,47 +738,47 @@ const PersonaPreview: React.FC = () => {
     return '1,23,456';
   };
 
- if (isLoading && !previewData) {
-  return (
-    <div className="pp-root" style={{ 
-      display: 'flex', 
-      alignItems: 'center', 
-      justifyContent: 'center', 
-      minHeight: '100vh',
-    }}>
-      <div style={{
+  if (isLoading && !previewData) {
+    return (
+      <div className="pp-root" style={{
         display: 'flex',
-        flexDirection: 'column',
         alignItems: 'center',
-        gap: '20px',
+        justifyContent: 'center',
+        minHeight: '100vh',
       }}>
-        <video
-          src={omiTransitionSrc}
-          autoPlay
-          loop
-          muted
-          playsInline
-          style={{
-            width: 700,
-            height: 100,
-            objectFit: 'cover',     
-            mixBlendMode: 'screen',  
-            borderRadius: '50%',   
-          }}
-        />
-        <p style={{
-          color: 'rgba(255,255,255,0.4)',
-          fontSize: '14px',
-          fontWeight: 500,
-          letterSpacing: '0.02em',
-          margin: 0,
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '20px',
         }}>
-          Loading persona...
-        </p>
+          <video
+            src={omiTransitionSrc}
+            autoPlay
+            loop
+            muted
+            playsInline
+            style={{
+              width: 700,
+              height: 100,
+              objectFit: 'cover',
+              mixBlendMode: 'screen',
+              borderRadius: '0px',
+            }}
+          />
+          <p style={{
+            color: 'rgba(255,255,255,0.4)',
+            fontSize: '14px',
+            fontWeight: 500,
+            letterSpacing: '0.02em',
+            margin: 0,
+          }}>
+            Loading persona...
+          </p>
+        </div>
       </div>
-    </div>
-  );
-}
+    );
+  }
 
   if (error) {
     return <div className="pp-root"><ErrorPage onBack={() => navigate(-1)} /></div>;
@@ -780,13 +837,6 @@ const PersonaPreview: React.FC = () => {
               </span>
             )}
           </div>
-          {/* {tagSource.length > 0 && (
-            <div className="pp-tags">
-              {tagSource.map((tag, i) => (
-                <span key={i} className="pp-tag">{tag}</span>
-              ))}
-            </div>
-          )} */}
         </div>
 
         <div className="pp-confidence-panel">
@@ -829,19 +879,39 @@ const PersonaPreview: React.FC = () => {
       <div className="pp-showcase">
         <h2 className="pp-showcase-title">Attributes Showcase</h2>
 
-        <div className="pp-tab-bar">
-          {TABS.map(tab => (
+        <div className={`pp-tab-bar-wrap${canScrollLeft ? ' pp-can-scroll-left' : ''}${canScrollRight ? ' pp-can-scroll-right' : ''}`}>
+          <div className="pp-tab-bar" ref={tabBarRef}>
+            {activeTabs.map(tab => (
+              <button
+                key={tab.key}
+                className={`pp-tab${activeTab === tab.key ? ' pp-tab--active' : ''}`}
+                onClick={() => setActiveTab(tab.key as TabKey)}
+              >
+                {tab.label}
+                {activeTab === tab.key && (
+                  <motion.div layoutId="pp-active-tab" className="pp-tab-underline" />
+                )}
+              </button>
+            ))}
+          </div>
+          {canScrollLeft && (
             <button
-              key={tab.key}
-              className={`pp-tab${activeTab === tab.key ? ' pp-tab--active' : ''}`}
-              onClick={() => setActiveTab(tab.key)}
+              className="pp-tab-scroll-btn pp-tab-scroll-btn--left"
+              onClick={() => scrollTabs('left')}
+              aria-label="Scroll tabs left"
             >
-              {tab.label}
-              {activeTab === tab.key && (
-                <motion.div layoutId="pp-active-tab" className="pp-tab-underline" />
-              )}
+              <TbArrowLeft size={13} />
             </button>
-          ))}
+          )}
+          {canScrollRight && (
+            <button
+              className="pp-tab-scroll-btn pp-tab-scroll-btn--right"
+              onClick={() => scrollTabs('right')}
+              aria-label="Scroll tabs right"
+            >
+              <TbArrowRight size={13} />
+            </button>
+          )}
         </div>
 
         <AnimatePresence mode="wait">
@@ -858,7 +928,7 @@ const PersonaPreview: React.FC = () => {
             {(activeTab === 'demographics' ||
               activeTab === 'psychographic' ||
               activeTab === 'behavioral') && ((): React.ReactElement => {
-                const tab = TABS.find(t => t.key === activeTab) ?? TABS[0];
+                const tab = BASE_TABS.find(t => t.key === activeTab) ?? BASE_TABS[0];
                 const rows = (tab.fields as readonly string[])
                   .map(f => ({ label: f, value: String(uiTraits[f] ?? '') }))
                   .filter(r => r.value);
@@ -871,17 +941,27 @@ const PersonaPreview: React.FC = () => {
                 );
               })()}
 
+            {/* ── Formative Experience (manual personas only) ── */}
+            {activeTab === 'formative' && (
+              <div className="pp-formative">
+                {formativeText !== '' ? (
+                  <div className="pp-formative-card">
+                    <p className="pp-formative-text">"{formativeText}"</p>
+                  </div>
+                ) : (
+                  <p className="pp-empty">No formative experience provided for this persona.</p>
+                )}
+              </div>
+            )}
+
             {/* ── Ocean Personality Profile ── */}
             {activeTab === 'ocean' && (
               <div className="pp-ocean">
                 {oceanSummary && (
                   <p className="pp-ocean-summary">{oceanSummary}</p>
                 )}
-
                 {Object.keys(resolvedOceanScores).length > 0 ? (
-                  <div className="pp-ocean-card">  {/* new wrapper card */}
-
-                    {/* Left: Radar */}
+                  <div className="pp-ocean-card">
                     <div className="pp-radar-wrap">
                       <ResponsiveContainer width="100%" height={340}>
                         <RadarChart cx="50%" cy="50%" outerRadius="60%" data={radarData}>
@@ -919,8 +999,6 @@ const PersonaPreview: React.FC = () => {
                         </RadarChart>
                       </ResponsiveContainer>
                     </div>
-
-                    {/* Right: Score Interpretation */}
                     <div className="pp-ocean-interp-side">
                       <h4 className="pp-ocean-interp-title">Score Interpretation</h4>
                       <div className="pp-ocean-interp-grid">
@@ -943,7 +1021,6 @@ const PersonaPreview: React.FC = () => {
                         ))}
                       </div>
                     </div>
-
                   </div>
                 ) : (
                   <p className="pp-empty">OCEAN profile not available for this persona.</p>
@@ -999,10 +1076,7 @@ const PersonaPreview: React.FC = () => {
             {/* ── Calibration Breakdown ── */}
             {activeTab === 'calibration' && (
               <div className="pp-calib-grid">
-
-                {/* ── LEFT COLUMN ── */}
                 <div className="pp-calib-col">
-
                   <CalibCard
                     title="Real Actions Signal"
                     subtitle="Anchored in real people's action patterns, not self-reported opinions."
@@ -1013,7 +1087,6 @@ const PersonaPreview: React.FC = () => {
                       { heading: 'Technique Used', items: REAL_ACTIONS_TECHNIQUES },
                     ]}
                   />
-
                   <CalibCard
                     title="Validated Studies"
                     subtitle="Calibrated against credible consumer and behavioural studies."
@@ -1023,12 +1096,8 @@ const PersonaPreview: React.FC = () => {
                       { heading: 'Technology Used', items: VALIDATED_TECH },
                     ]}
                   />
-
                 </div>
-
-                {/* ── RIGHT COLUMN ── */}
                 <div className="pp-calib-col">
-
                   <CalibCard
                     title="Emotional & Neural Layers"
                     subtitle="Models emotional responses that shape decisions before rationalization appears."
@@ -1039,7 +1108,6 @@ const PersonaPreview: React.FC = () => {
                       { heading: 'Technology Used', items: EMOTIONAL_TECH },
                     ]}
                   />
-
                   <CalibCard
                     title="Multiple-platform Conversation"
                     subtitle="Calibrated against credible consumer and behavioural studies."
@@ -1061,7 +1129,6 @@ const PersonaPreview: React.FC = () => {
                       </div>
                     }
                   />
-
                 </div>
               </div>
             )}
@@ -1072,22 +1139,22 @@ const PersonaPreview: React.FC = () => {
 
       {/* ── Bottom nav — cycles through tabs ── */}
       {(() => {
-        const tabIndex = TABS.findIndex(t => t.key === activeTab);
+        const tabIndex = activeTabs.findIndex(t => t.key === activeTab);
         const hasPrev = tabIndex > 0;
-        const hasNext = tabIndex < TABS.length - 1;
+        const hasNext = tabIndex < activeTabs.length - 1;
         return (
           <div className="pp-bottom-nav">
             <button
               className="pp-nav-arrow"
               disabled={!hasPrev}
-              onClick={() => hasPrev && setActiveTab(TABS[tabIndex - 1]!.key)}
+              onClick={() => hasPrev && setActiveTab(activeTabs[tabIndex - 1]!.key as TabKey)}
             >
               <TbArrowLeft size={18} />
             </button>
             <button
               className="pp-nav-arrow"
               disabled={!hasNext}
-              onClick={() => hasNext && setActiveTab(TABS[tabIndex + 1]!.key)}
+              onClick={() => hasNext && setActiveTab(activeTabs[tabIndex + 1]!.key as TabKey)}
             >
               <TbArrowRight size={18} />
             </button>

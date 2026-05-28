@@ -298,3 +298,51 @@
   width: 100%;
   margin-bottom: 0;
 }
+.ri-persona-avatar {
+  display: flex;
+  flex-direction: column;      /* ← KEY: stacks ring on top, name below */
+  align-items: center;
+  justify-content: flex-start;
+  position: relative;
+  gap: 8px;                    /* space between ring and name */
+}
+ 
+/* ── Grid: give rows enough height for ring + name ───────────────────────── */
+.ri-persona-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 120px);
+  gap: 24px 20px;
+  row-gap: 28px;
+  margin-bottom: 40px;
+  margin-left: auto;
+  margin-right: auto;
+}
+ 
+.ri-persona-grid--few {
+  grid-template-columns: repeat(2, 120px);
+}
+ 
+/* ── Name label — clean, below ring, no overflow ─────────────────────────── */
+.ri-persona-name {
+  font-size: 0.6875rem;        /* 11px */
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.55);
+  margin: 0;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 110px;
+  letter-spacing: 0.015em;
+  line-height: 1;
+}
+ 
+/* ── Skeleton placeholder ────────────────────────────────────────────────── */
+.ri-persona-avatar--skeleton .ri-persona-ring {
+  background: rgba(255, 255, 255, 0.06);
+  border: 2.5px solid rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  width: 100px;
+  height: 100px;
+  animation: ri-pulse 1.8s ease-in-out infinite;
+}

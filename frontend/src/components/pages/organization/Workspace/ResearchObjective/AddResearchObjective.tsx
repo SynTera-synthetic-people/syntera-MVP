@@ -77,10 +77,6 @@ interface RootState {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/**
- * Returns true for tiers that can build manually (enterprise only).
- * free and tier1 see the greyed-out / locked Build Manually button.
- */
 const canBuildManually = (tier: string | undefined): boolean => {
   const t = (tier ?? '').toLowerCase().trim();
   return t === 'enterprise' || t === 'enterprise_admin' || t === 'tier1';
@@ -91,7 +87,6 @@ const canBuildManually = (tier: string | undefined): boolean => {
 const AddResearchObjective: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  // view-only: set by ExplorationList when opening a completed exploration
   const isViewOnly = Boolean((location.state as any)?.viewOnly);
   const { trigger } = useOmniWorkflow();
   const { theme } = useTheme();
@@ -112,13 +107,18 @@ const AddResearchObjective: React.FC = () => {
   // ── Upgrade modal ──────────────────────────────────────────────────────────
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
-  const [omiAnimation, setOmiAnimation] = useState<"greeting" | "writing" | "typing" | "error">("greeting");
-  const getOmiVideo = () => {
+  // ── Animation state ────────────────────────────────────────────────────────
+  // "greeting" = OmiIdle (default), "writing" = OmiPencil (user typing),
+  // "error" = OmiCaution. "typing" (LLM thinking) is now shown as a
+  // separate typing-indicator row — NOT inside any bubble.
+  const [omiAnimation, setOmiAnimation] = useState<"greeting" | "writing" | "error">("greeting");
+
+  const getOmiVideo = (forError = false) => {
+    if (forError) return OmiCaution;
     switch (omiAnimation) {
-      case "writing":  return OmiPencil;
-      case "typing":   return OmiKeyboard;
-      case "error":    return OmiCaution;
-      default:         return OmiGreet;
+      case "writing": return OmiPencil;
+      case "error":   return OmiCaution;
+      default:        return OmiGreet;
     }
   };
 
@@ -171,6 +171,18 @@ const AddResearchObjective: React.FC = () => {
   const [prevMessagesLength, setPrevMessagesLength] = useState<number>(0);
   const [hasTriggeredInitialEvent, setHasTriggeredInitialEvent] = useState<boolean>(false);
 
+  // ── Typing indicator text cycling ─────────────────────────────────────────
+  const thinkingPhrases = ["Working on a response", "Thinking", "Analyzing your input", "Processing"];
+  const [thinkingPhraseIndex, setThinkingPhraseIndex] = useState(0);
+
+  useEffect(() => {
+    if (!isSendingMessage && !isSubmitting) return;
+    const interval = setInterval(() => {
+      setThinkingPhraseIndex(i => (i + 1) % thinkingPhrases.length);
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [isSendingMessage, isSubmitting]);
+
   const transformMessages = useCallback((apiMessages: any[]): Message[] => {
     if (!apiMessages || !Array.isArray(apiMessages)) return [];
     return apiMessages.map((msg: any, index: number) => ({
@@ -185,12 +197,14 @@ const AddResearchObjective: React.FC = () => {
     }));
   }, []);
 
+  // ── Animation: revert to greeting when idle ────────────────────────────────
   useEffect(() => {
     if (!isSubmitting && !isSendingMessage && omiAnimation !== "error" && inputValue.trim().length === 0) {
       setOmiAnimation("greeting");
     }
   }, [isSubmitting, isSendingMessage, omiAnimation, inputValue]);
 
+  // ── Animation: writing while user types ───────────────────────────────────
   useEffect(() => {
     if (inputValue.trim().length > 0 && !isSubmitting) setOmiAnimation("writing");
   }, [inputValue, isSubmitting]);
@@ -254,6 +268,13 @@ const AddResearchObjective: React.FC = () => {
     }
   }, [messages, prevMessagesLength]);
 
+  // Auto-scroll when typing indicator appears/disappears
+  useEffect(() => {
+    if (messagesContainerRef.current && (isSendingMessage || isSubmitting)) {
+      messagesContainerRef.current.scrollTo({ top: messagesContainerRef.current.scrollHeight, behavior: 'smooth' });
+    }
+  }, [isSendingMessage, isSubmitting]);
+
   const handleTemplateSelect = (template: Template) => {
     setShowTemplates(false);
   };
@@ -315,7 +336,6 @@ const AddResearchObjective: React.FC = () => {
   };
 
   const handleBuildManually = () => {
-    // Free / tier1 users — open the upgrade modal (enterprise only gets manual access)
     if (!manualAllowed) {
       setShowUpgradeModal(true);
       return;
@@ -334,7 +354,6 @@ const AddResearchObjective: React.FC = () => {
 
   const handleSendMessage = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    setOmiAnimation("typing");
     if (inputValue.trim() === "" && !uploadedFile) return;
 
     const userMessage: Message = {
@@ -352,6 +371,8 @@ const AddResearchObjective: React.FC = () => {
     const messageToSend = inputValue;
     setInputValue("");
     setUploadedFile(null);
+    // Revert animation to greeting while waiting for LLM (typing indicator takes over)
+    setOmiAnimation("greeting");
     setOmiStatus("Omi is thinking...");
 
     if (!sessionId) {
@@ -436,6 +457,11 @@ const AddResearchObjective: React.FC = () => {
 
   const isLoading = sessionLoading || isLoadingHistory;
 
+  // ── Derived: index of the last Omi message ─────────────────────────────────
+  const lastOmiMessageIndex = messages.reduce((lastIdx, msg, idx) =>
+    msg.sender === 'omi' ? idx : lastIdx, -1
+  );
+
   // ── Text formatting ──────────────────────────────────────────────────────────
 
   const formatText = (text: string): React.ReactNode => {
@@ -505,8 +531,7 @@ const AddResearchObjective: React.FC = () => {
   const renderMessageWithPersonaButton = (message: Message): React.ReactNode => {
     const text = message.text;
     if (message.sender === 'omi' && text.includes("carry this forward into personas")) {
-      // Match both straight and curly apostrophe variants the LLM may produce
-      const markerMatch = text.match(/I['’]ll carry this forward into personas\.?/);
+      const markerMatch = text.match(/I['']ll carry this forward into personas\.?/);
       const splitIndex = markerMatch?.index ?? -1;
       const markerLen  = markerMatch ? markerMatch[0].length : 0;
       const beforeRaw  = splitIndex > -1 ? text.slice(0, splitIndex).trim() : text.trim();
@@ -561,48 +586,111 @@ const AddResearchObjective: React.FC = () => {
               </div>
             ) : (
               <>
-                {messages.map((message) => (
-                  <motion.div
-                    key={message.id}
-                    initial={{ opacity: 0, y: 10, scale: 0.98 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    className={`aro-message-row ${message.sender === 'user' ? 'aro-message-row--user' : 'aro-message-row--omi'}`}
-                  >
-                    <div className={`aro-bubble-wrapper ${message.sender === 'user' ? 'aro-bubble-wrapper--user' : 'aro-bubble-wrapper--omi'}`}>
-                      <div className={`aro-bubble ${message.sender === 'omi'
-                          ? message.isError
-                            ? 'aro-bubble--omi-error'
-                            : isSummaryMessage(message)
-                              ? 'aro-bubble--omi-summary'
-                              : 'aro-bubble--omi'
-                          : 'aro-bubble--user'
-                        }`}>
-                        {message.sender === 'omi' && !isSummaryMessage(message) && (
-                          <div className="aro-omi-avatar">
+                {messages.map((message, index) => {
+                  // Only the latest Omi message gets the animated video;
+                  // all older Omi messages show the static greeting video (frozen/poster).
+                  const isLatestOmi = message.sender === 'omi' && index === lastOmiMessageIndex;
+
+                  return (
+                    <motion.div
+                      key={message.id}
+                      initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      className={`aro-message-row ${message.sender === 'user' ? 'aro-message-row--user' : 'aro-message-row--omi'}`}
+                    >
+                      <div className={`aro-bubble-wrapper ${message.sender === 'user' ? 'aro-bubble-wrapper--user' : 'aro-bubble-wrapper--omi'}`}>
+                        <div className={`aro-bubble ${message.sender === 'omi'
+                            ? message.isError
+                              ? 'aro-bubble--omi-error'
+                              : isSummaryMessage(message)
+                                ? 'aro-bubble--omi-summary'
+                                : 'aro-bubble--omi'
+                            : 'aro-bubble--user'
+                          }`}>
+                          {message.sender === 'omi' && !isSummaryMessage(message) && (
+                            <div className="aro-omi-avatar">
+                              {/* Static poster for old messages; animated only on latest */}
+                              {isLatestOmi ? (
+                                <video
+                                  key={message.isError ? "error" : omiAnimation}
+                                  className="aro-omi-video"
+                                  src={message.isError ? OmiCaution : getOmiVideo()}
+                                  autoPlay loop muted playsInline
+                                />
+                              ) : (
+                                /* Older messages: show the idle video but paused via CSS */
+                                <video
+                                  className="aro-omi-video aro-omi-video--static"
+                                  src={message.isError ? OmiCaution : OmiGreet}
+                                  muted playsInline
+                                />
+                              )}
+                            </div>
+                          )}
+                          <div className="aro-bubble-text">
+                            {renderMessageWithPersonaButton(message)}
+                            {message.file && (
+                              <div className="aro-bubble-file">
+                                <TbPaperclip size={16} />
+                                <span className="aro-bubble-file-name">{(message.file as File).name}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <span className="aro-timestamp">
+                          {message.sender === 'omi' ? 'Omi' : 'You'} • {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+
+                {/* ── Typing indicator row (shown while LLM is responding) ── */}
+                <AnimatePresence>
+                  {(isSendingMessage || isSubmitting) && (
+                    <motion.div
+                      key="typing-indicator"
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 4 }}
+                      transition={{ duration: 0.2 }}
+                      className="aro-message-row aro-message-row--omi"
+                    >
+                      <div className="aro-bubble-wrapper aro-bubble-wrapper--omi">
+                        <div className="aro-typing-indicator">
+                          {/* Omi animated avatar */}
+                          <div className="aro-omi-avatar aro-omi-avatar--typing">
                             <video
-                              key={message.isError ? "error" : omiAnimation}
                               className="aro-omi-video"
-                              src={message.isError ? OmiCaution : getOmiVideo()}
+                              src={OmiKeyboard}
                               autoPlay loop muted playsInline
                             />
                           </div>
-                        )}
-                        <div className="aro-bubble-text">
-                          {renderMessageWithPersonaButton(message)}
-                          {message.file && (
-                            <div className="aro-bubble-file">
-                              <TbPaperclip size={16} />
-                              <span className="aro-bubble-file-name">{(message.file as File).name}</span>
-                            </div>
-                          )}
+                          {/* Cycling thinking text */}
+                          <div className="aro-typing-text-wrap">
+                            <AnimatePresence mode="wait">
+                              <motion.span
+                                key={thinkingPhraseIndex}
+                                initial={{ opacity: 0, y: 4 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -4 }}
+                                transition={{ duration: 0.25 }}
+                                className="aro-typing-text"
+                              >
+                                {thinkingPhrases[thinkingPhraseIndex]}
+                              </motion.span>
+                            </AnimatePresence>
+                            {/* Animated dots */}
+                            <span className="aro-typing-dots">
+                              <span /><span /><span />
+                            </span>
+                          </div>
                         </div>
                       </div>
-                      <span className="aro-timestamp">
-                        {message.sender === 'omi' ? 'Omi' : 'You'} • {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    </div>
-                  </motion.div>
-                ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
                 <div ref={chatEndRef} />
               </>
             )}
@@ -610,7 +698,6 @@ const AddResearchObjective: React.FC = () => {
 
           {/* ── CTA section / input bar ── */}
           {isViewOnly ? (
-            /* ── View-only footer: navigate forward, never generate ── */
             <motion.div
               className="aro-cta-section"
               initial={{ opacity: 0, y: 10 }}
@@ -641,7 +728,6 @@ const AddResearchObjective: React.FC = () => {
               </div>
             </motion.div>
           ) : isObjectiveConfirmed ? (
-            /* ── Normal mode: objective confirmed, show generate CTAs ── */
             <motion.div
               className="aro-cta-section"
               initial={{ opacity: 0, y: 10 }}
@@ -681,7 +767,7 @@ const AddResearchObjective: React.FC = () => {
               </div>
             </motion.div>
           ) : (
-            /* ── Normal mode: input bar ── */
+            /* ── Input bar ── */
             <div className="aro-input-bar">
               <form onSubmit={handleSendMessage} className="aro-input-form">
                 <label className="aro-input-file-label">
@@ -705,15 +791,13 @@ const AddResearchObjective: React.FC = () => {
                   <SpIcon name="sp-Other-Mic" />
                 </button>
 
+                {/* Send button — always shows the send icon, no spinner */}
                 <button
                   type="submit"
                   className="aro-send-btn"
                   disabled={isSubmitting || isLoading || !sessionData || (inputValue.trim() === "" && !uploadedFile)}
                 >
-                  {isSubmitting || isSendingMessage
-                    ? <TbLoader className="aro-spinner" size={16} />
-                    : <SpIcon name="sp-Communication-Paper_Plane" size={16} />
-                  }
+                  <SpIcon name="sp-Communication-Paper_Plane" size={16} />
                 </button>
               </form>
 
@@ -729,7 +813,6 @@ const AddResearchObjective: React.FC = () => {
         </div>
       </div>
 
-      {/* ── Upgrade modal (enterprise only — shown when locked Build Manually is clicked) ── */}
       <UpgradeModal
         isOpen={showUpgradeModal}
         onClose={() => setShowUpgradeModal(false)}
