@@ -226,6 +226,20 @@ export const useQuestionnaires = (
         simulationId,
       }),
     enabled: enabled && !!workspaceId && !!explorationId && !!simulationId,
+    // Poll every 5 s when no questionnaire data has loaded yet.
+    // This covers the async background-job generation window: the generate
+    // endpoint returns immediately (should_poll=true) so the first fetch
+    // returns empty; polling ensures we pick up the data once it's in the DB.
+    // Polling stops automatically as soon as the query returns non-empty data.
+    refetchInterval: (query) => {
+      const sections = (query.state.data as any)?.data;
+      const hasData =
+        Array.isArray(sections) &&
+        sections.some(
+          (s: any) => Array.isArray(s?.questions) && s.questions.length > 0,
+        );
+      return hasData ? false : 5_000;
+    },
   });
 };
 

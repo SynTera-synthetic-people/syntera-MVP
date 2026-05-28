@@ -555,6 +555,7 @@ async def simulate_survey(
     workspace_id: str,
     exploration_id: str,
     payload: SurveySimulationRequest,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_active_user),
     session: AsyncSession = Depends(get_session)
 ):
@@ -749,7 +750,7 @@ async def simulate_survey(
     from app.services.survey_simulation_combined import simulate_combined_and_store
 
     logger.info(
-        "Survey simulation generation starting | workspace_id=%s exploration_id=%s population_simulation_id=%s "
+        "Survey simulation dispatching to background | workspace_id=%s exploration_id=%s population_simulation_id=%s "
         "resolved_persona_count=%s persona_samples=%s section_count=%s question_count=%s user_id=%s",
         workspace_id,
         payload.exploration_id,
@@ -761,44 +762,35 @@ async def simulate_survey(
         current_user.id,
     )
 
-    try:
-        result = await simulate_combined_and_store(
-            workspace_id=workspace_id,
-            research_objective=objective,
-            personas_list=personas_list,
-            persona_samples=persona_samples,
-            simulation_id=payload.simulation_id,
-            questions_sections=questions,
-            user_id=current_user.id,
-            exploration_id=payload.exploration_id,
-            replace_existing=payload.force_rerun,
-        )
-    except Exception:
-        logger.exception(
-            "Survey simulation generation failed | workspace_id=%s exploration_id=%s "
-            "population_simulation_id=%s persona_samples=%s user_id=%s",
-            workspace_id,
-            payload.exploration_id,
-            payload.simulation_id,
-            persona_samples,
-            current_user.id,
-        )
-        raise
+    # Convert ORM object to a plain dict so the background task does not hold a
+    # reference to a detached SQLAlchemy session object after the request closes.
+    objective_data = {
+        "id": getattr(objective, "id", None),
+        "description": getattr(objective, "description", "") or "",
+    }
 
-    logger.info(
-        "Survey simulation generation completed | survey_simulation_id=%s workspace_id=%s exploration_id=%s "
-        "population_simulation_id=%s total_sample_size=%s user_id=%s",
-        result.get("id"),
-        result.get("workspace_id"),
-        result.get("exploration_id"),
-        payload.simulation_id,
-        result.get("total_sample_size"),
-        current_user.id,
+    # Run the heavy LLM work as a background task.  The client must poll
+    # GET /simulation/by-source/{simulation_source_id} until the row appears.
+    background_tasks.add_task(
+        simulate_combined_and_store,
+        workspace_id=workspace_id,
+        research_objective=objective_data,
+        personas_list=personas_list,
+        persona_samples=persona_samples,
+        simulation_id=payload.simulation_id,
+        questions_sections=questions,
+        user_id=current_user.id,
+        exploration_id=payload.exploration_id,
+        replace_existing=payload.force_rerun,
     )
 
     return SuccessResponse(
-        message=f"Combined survey simulation created for {len(personas_list)} persona(s) with {result['total_sample_size']} total respondents",
-        data=result
+        message=f"Survey simulation started for {len(personas_list)} persona(s). Poll simulation/by-source/{payload.simulation_id} for results.",
+        data={
+            "should_poll": True,
+            "simulation_source_id": payload.simulation_id,
+            "status": "pending",
+        },
     )
 
 

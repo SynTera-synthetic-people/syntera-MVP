@@ -609,8 +609,8 @@ interface QuestionnaireGuideProps {
     initialSections?: Section[];
     /** When true, hides all edit/delete/add controls. */
     isViewOnly?: boolean;
-    workspaceId?: string;
-    explorationId?: string;
+    workspaceId?: string | undefined;
+    explorationId?: string | undefined;
     onSectionsChange?: (sections: Section[]) => void;
 }
 

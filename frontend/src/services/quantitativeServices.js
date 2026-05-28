@@ -127,7 +127,26 @@ export const simulateSurvey = async ({ workspaceId, explorationId, personaId, si
       force_rerun: forceRerun,
     }
   );
-  return response.data;
+
+  const payload = response.data;
+
+  // Backend offloads to a background task and returns {should_poll: true}.
+  // Poll by-source until the simulation row is written (up to 10 min).
+  if (payload?.data?.should_poll && simulationId) {
+    const MAX_ATTEMPTS = 120; // 120 × 5 s = 10 min ceiling
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      await new Promise((r) => setTimeout(r, 5000));
+      const existing = await getSurveySimulationBySource({
+        workspaceId,
+        explorationId,
+        simulationSourceId: simulationId,
+      });
+      if (existing?.data?.id) return existing;
+    }
+    throw new Error('Survey simulation timed out after 10 minutes. Please try again.');
+  }
+
+  return payload;
 };
 
 

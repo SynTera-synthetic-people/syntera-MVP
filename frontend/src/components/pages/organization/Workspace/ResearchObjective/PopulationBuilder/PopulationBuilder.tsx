@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   usePersonas,
   useSimulatePopulation,
@@ -9,7 +10,7 @@ import {
   usePopulationSimulations,
   useEnsureSurveySimulation,
 } from '../../../../../../hooks/useQuantitativeQueries';
-import { getAllQuestionnaires, getSurveySimulationBySource } from '../../../../../../services/quantitativeServices';
+import { getAllQuestionnaires, getSurveySimulationBySource, getQuestionnaireGenerationStatus } from '../../../../../../services/quantitativeServices';
 import PopulationSetup from './PopulationSetup';
 import SurveyInMotion from './SurveyInMotion';
 import InsightsGeneration from './InsightGeneration';
@@ -45,8 +46,12 @@ const PopulationBuilder: React.FC = () => {
   const [surveySimulationId, setSurveySimulationId] = useState<string>('');
   const [questionnaireModified, setQuestionnaireModified] = useState(false);
   const { trigger } = useOmniWorkflow();
+  const queryClient = useQueryClient();
   const restoredFromServerRef = useRef(false);
   const surveyEnsurePromiseRef = useRef<Promise<string> | null>(null);
+  // Tracks whether the questionnaire has loaded so handleSurveyComplete can
+  // wait for it when the animation finishes before the background job does.
+  const questionnaireReadyRef = useRef(false);
 
   const { data: personasData, isLoading: personasLoading } = usePersonas(workspaceId, explorationId);
   const { data: simulationList = [], isFetched: simulationsFetched } = usePopulationSimulations(workspaceId, explorationId);
@@ -81,6 +86,12 @@ const PopulationBuilder: React.FC = () => {
       (section) => Array.isArray(section?.questions) && section.questions.length > 0,
     );
 
+  // Keep the readiness ref in sync so async callbacks can read it without
+  // capturing a stale closure value.
+  useEffect(() => {
+    questionnaireReadyRef.current = hasQuestionnaireQuestions;
+  }, [hasQuestionnaireQuestions]);
+
   // Mark quant sub-step 1 (Questionnaire Design) done when questionnaire data loads
   useEffect(() => {
     if (explorationId && questionnairesData?.data?.length) {
@@ -97,6 +108,14 @@ const PopulationBuilder: React.FC = () => {
 
   // Restore latest saved population from DB
   useEffect(() => {
+    console.log('[PB] restoration effect fired', {
+      restoredRef: restoredFromServerRef.current,
+      simulationsFetched,
+      listLen: simulationList?.length,
+      personasLen: personas?.length,
+      workspaceId,
+      explorationId,
+    });
     if (restoredFromServerRef.current) return;
     if (!simulationsFetched || !workspaceId || !explorationId) return;
     if (!simulationList?.length || !personas?.length) return;
@@ -104,13 +123,58 @@ const PopulationBuilder: React.FC = () => {
     let cancelled = false;
 
     (async () => {
-      // Sort newest first and limit to 5 most recent to avoid excessive API calls.
-      const sorted = [...simulationList].sort(
-        (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime(),
-      );
-      const simsToCheck = sorted.slice(0, 5);
-
       try {
+        // ── Fast-path: honour an in-progress Start Survey that survived a remount ──
+        // handleStartSurvey writes activeSurveySim_<explorationId> to sessionStorage
+        // when the population simulation succeeds and clears it once survey simulation
+        // completes.  If the key is present we skip the expensive server scan and lock
+        // directly onto that simulation so the questionnaire polling can finish.
+        const SESSION_KEY = `activeSurveySim_${explorationId}`;
+        const activeSimId = sessionStorage.getItem(SESSION_KEY);
+        console.log('[PB] restoration: sessionStorage activeSimId =', activeSimId);
+        if (activeSimId) {
+          const activeSim = simulationList.find((s: any) => s.id === activeSimId);
+          if (activeSim) {
+            console.log('[PB] restoration: fast-path matched activeSim', activeSim.id, '→ setting phase=survey');
+            restoredFromServerRef.current = true;
+            const pids: string[] = activeSim.persona_ids || [];
+            const idSet = new Set(pids);
+            const selected = personas
+              .filter((p) => idSet.has(p.id))
+              .map((p) => ({ id: p.id, name: p.name }));
+            const sd = activeSim.sample_distribution || {};
+            const nextSizes: SampleSizes = { ...sd };
+            selected.forEach((p) => { if (nextSizes[p.id] == null) nextSizes[p.id] = 50; });
+
+            setSimulationId(activeSimId);
+            setSimulationResult({
+              id: activeSim.id,
+              workspace_id: activeSim.workspace_id,
+              exploration_id: activeSim.exploration_id,
+              persona_ids: activeSim.persona_ids,
+              sample_distribution: activeSim.sample_distribution,
+              persona_scores: activeSim.persona_scores,
+              weighted_score: activeSim.weighted_score,
+              global_insights: activeSim.global_insights,
+            });
+            setSelectedPersonas(selected);
+            setSampleSizes(nextSizes);
+            setSurveySimulationId('');
+            questionnaireReadyRef.current = false;
+            setPhase('survey');
+            return;
+          }
+          // Sim not in the list yet — wait for next simulationList update.
+          console.log('[PB] restoration: fast-path activeSimId not yet in simulationList, waiting');
+          return;
+        }
+
+        // ── Normal scan: find the newest sim with a completed survey or questionnaire ──
+        const sorted = [...simulationList].sort(
+          (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime(),
+        );
+        const simsToCheck = sorted.slice(0, 5);
+
         // ── Parallel scan: check questionnaire + survey existence for each sim ──
         // This finds the newest sim with a COMPLETED survey (questionnaire + survey sim)
         // so users always land on their latest finished work rather than an in-progress one.
@@ -154,6 +218,11 @@ const PopulationBuilder: React.FC = () => {
         }
 
         const candidate = insightCandidate ?? surveyCandidate;
+        console.log('[PB] restoration: scan complete', {
+          insightCandidate: insightCandidate?.sim?.id ?? null,
+          surveyCandidate: surveyCandidate?.sim?.id ?? null,
+          chosen: candidate?.sim?.id ?? null,
+        });
         if (!candidate) return; // Nothing restorable — stay in setup
 
         restoredFromServerRef.current = true;
@@ -183,9 +252,11 @@ const PopulationBuilder: React.FC = () => {
         setSelectedPersonas(selected);
         setSampleSizes(nextSizes);
         setSurveySimulationId(surveyId);
-        setPhase(insightCandidate ? 'insights' : 'survey');
+        const restoredPhase = insightCandidate ? 'insights' : 'survey';
+        console.log('[PB] restoration: setting phase =', restoredPhase, '| surveyId =', surveyId, '| simId =', candidate.sim.id);
+        setPhase(restoredPhase);
       } catch (e) {
-        console.warn('Could not restore saved population/questionnaire', e);
+        console.warn('[PB] restoration: error during scan', e);
       }
     })();
 
@@ -223,10 +294,26 @@ const PopulationBuilder: React.FC = () => {
     if (selectedPersonas.length === 0) return;
     if (!workspaceId || !explorationId) return;
 
+    console.log('[PB] handleStartSurvey: fired', {
+      personaCount: selectedPersonas.length,
+      personaIds: selectedPersonas.map((p) => p.id),
+      sampleSizes,
+      workspaceId,
+      explorationId,
+    });
+
+    // Lock restoration BEFORE the mutation starts.  The population simulation
+    // takes 30–80 s; without this, React Query background refetches update
+    // simulationList mid-wait, the restoration effect fires while the ref is
+    // still false, and it overwrites simulationResult.id with an old sim ID.
+    restoredFromServerRef.current = true;
+    console.log('[PB] handleStartSurvey: restoredFromServerRef locked');
+
     try {
       const personaIds = selectedPersonas.map((p) => p.id);
       const sampleDistribution = { ...sampleSizes };
 
+      console.log('[PB] handleStartSurvey: calling simulatePopulation');
       const simulationResponse = await simulatePopulationMutation.mutateAsync({
         workspaceId,
         explorationId,
@@ -234,11 +321,23 @@ const PopulationBuilder: React.FC = () => {
         sampleDistribution,
       });
 
+      console.log('[PB] handleStartSurvey: simulatePopulation response', {
+        status: simulationResponse?.status,
+        data: simulationResponse?.data,
+        full: simulationResponse,
+      });
+
       if (simulationResponse.status === 'success') {
+        // Persist active sim ID across remounts so the restoration fast-path
+        // reattaches to this simulation instead of scanning old ones.
+        sessionStorage.setItem(`activeSurveySim_${explorationId}`, simulationResponse.data.id);
+
+        console.log('[PB] handleStartSurvey: status=success, simId =', simulationResponse.data?.id);
         setSimulationResult(simulationResponse.data);
         setSimulationId(simulationResponse.data.id);
         setSurveySimulationId('');
         surveyEnsurePromiseRef.current = null;
+        questionnaireReadyRef.current = false; // new questionnaire incoming
 
         // Mark sub-step 2 done (Population Calibration confirmed)
         localStorage.setItem(`quant_sub2_${explorationId}`, '1');
@@ -246,8 +345,10 @@ const PopulationBuilder: React.FC = () => {
         trigger({ stage: 'questionnaire', event: 'QUESTIONAIRE_BUILD', payload: {} });
 
         // Move to survey phase immediately — globe shows while questionnaire generates
+        console.log('[PB] handleStartSurvey: setting phase = survey');
         setPhase('survey');
 
+        console.log('[PB] handleStartSurvey: calling generateQuestionnaire');
         const generateResponse = await generateQuestionnaireMutation.mutateAsync({
           workspaceId,
           explorationId,
@@ -255,12 +356,62 @@ const PopulationBuilder: React.FC = () => {
           simulationId: simulationResponse.data.id,
         });
 
-        if (generateResponse.status === 'success') {
-          // questionnaires query auto-refetches via simulationId
+        console.log('[PB] handleStartSurvey: generateQuestionnaire response', {
+          shouldPoll: generateResponse?.data?.should_poll,
+          jobId: generateResponse?.data?.job_id,
+          id: generateResponse?.data?.id,
+          full: generateResponse,
+        });
+
+        // Questionnaire generation runs as a background job — poll until done so
+        // hasQuestionnaireQuestions becomes true and ensureSurveyRun can fire.
+        // Backend returns job_id (not id) in the questionnaire_generation_job_to_dict shape.
+        const genJobId = (generateResponse?.data?.job_id ?? generateResponse?.data?.id) as string | undefined;
+        if (generateResponse?.data?.should_poll && genJobId) {
+          const jobId = genJobId;
+          const MAX_ATTEMPTS = 40; // 40 × 3 s = 2 min ceiling
+          let attempts = 0;
+          const pollUntilDone = async (): Promise<void> => {
+            if (attempts++ >= MAX_ATTEMPTS) return; // give up gracefully
+            try {
+              const statusRes = await getQuestionnaireGenerationStatus({
+                workspaceId,
+                explorationId,
+                jobId,
+              });
+              const status = statusRes?.data?.status as string | undefined;
+              console.log('[PB] questionnaire job poll attempt', attempts, '| status =', status);
+              if (status === 'completed') {
+                console.log('[PB] questionnaire job completed, invalidating cache');
+                // Questionnaire is in the DB — refresh the cache so the
+                // useQuestionnaires query picks up the new data.
+                queryClient.invalidateQueries({
+                  queryKey: ['questionnaires', workspaceId, explorationId],
+                });
+                return;
+              }
+              if (status !== 'failed') {
+                await new Promise<void>((res) => setTimeout(res, 3_000));
+                return pollUntilDone();
+              }
+            } catch {
+              // swallow transient errors and keep polling
+              await new Promise<void>((res) => setTimeout(res, 3_000));
+              return pollUntilDone();
+            }
+          };
+          // Run polling in the background — don't await so the survey
+          // animation can play concurrently.
+          void pollUntilDone();
         }
       }
-    } catch (error) {
-      console.error('Error in population setup:', error);
+    } catch (error: any) {
+      console.error('[PB] handleStartSurvey: CAUGHT ERROR', {
+        message: error?.message,
+        status: error?.response?.status,
+        responseData: error?.response?.data,
+        full: error,
+      });
     }
   };
 
@@ -280,9 +431,17 @@ const PopulationBuilder: React.FC = () => {
   }, [selectedPersonas, simulationResult]);
 
   const ensureSurveyRun = useCallback(async () => {
+    console.log('[PB] ensureSurveyRun called', {
+      surveySimulationId,
+      simulationResultId: simulationResult?.id,
+      workspaceId,
+      explorationId,
+      hasExistingPromise: !!surveyEnsurePromiseRef.current,
+    });
     if (surveySimulationId) return surveySimulationId;
     if (surveyEnsurePromiseRef.current) return surveyEnsurePromiseRef.current;
     if (!workspaceId || !explorationId || !simulationResult?.id) {
+      console.error('[PB] ensureSurveyRun: missing context', { workspaceId, explorationId, simulationResultId: simulationResult?.id });
       throw new Error('Missing survey simulation context.');
     }
 
@@ -291,6 +450,12 @@ const PopulationBuilder: React.FC = () => {
       questionnaireModified ||
       sessionStorage.getItem(`forceRerun_${explorationId}`) === 'true';
 
+    console.log('[PB] ensureSurveyRun: firing mutateAsync', {
+      personaIds,
+      simulationId: simulationResult.id,
+      shouldForceRerun,
+    });
+
     const promise = ensureSurveySimulationMutation.mutateAsync({
       workspaceId,
       explorationId,
@@ -298,16 +463,27 @@ const PopulationBuilder: React.FC = () => {
       simulationId: simulationResult.id,
       forceRerun: shouldForceRerun,
     }).then((result) => {
+      console.log('[PB] ensureSurveyRun: mutateAsync resolved', { result });
       const nextSurveySimulationId = result?.data?.id;
       if (!nextSurveySimulationId) {
+        console.error('[PB] ensureSurveyRun: no id in result', result);
         throw new Error('Survey simulation did not return an ID.');
       }
 
       setSurveySimulationId(nextSurveySimulationId);
       localStorage.setItem(`quant_sub3_${explorationId}`, '1');
+      // Survey simulation is now complete — clean up the cross-remount signal.
+      sessionStorage.removeItem(`activeSurveySim_${explorationId}`);
       sessionStorage.removeItem(`forceRerun_${explorationId}`);
       setQuestionnaireModified(false);
       return nextSurveySimulationId;
+    }).catch((err: any) => {
+      console.error('[PB] ensureSurveyRun: CAUGHT ERROR', {
+        message: err?.message,
+        status: err?.response?.status,
+        responseData: err?.response?.data,
+      });
+      throw err;
     }).finally(() => {
       surveyEnsurePromiseRef.current = null;
     });
@@ -335,11 +511,34 @@ const PopulationBuilder: React.FC = () => {
   }, [phase, hasQuestionnaireQuestions, simulationResult?.id, ensureSurveyRun]);
 
   const handleSurveyComplete = async () => {
+    console.log('[PB] handleSurveyComplete: fired', {
+      questionnaireReady: questionnaireReadyRef.current,
+      surveySimulationId,
+      simulationResultId: simulationResult?.id,
+    });
     try {
+      // If the animation finished before questionnaire generation completed,
+      // wait up to 90 s for it to arrive (polled via refetchInterval + manual
+      // invalidation in handleStartSurvey) before running the survey simulation.
+      if (!questionnaireReadyRef.current) {
+        const WAIT_MS = 90_000;
+        const TICK_MS = 2_000;
+        let waited = 0;
+        while (!questionnaireReadyRef.current && waited < WAIT_MS) {
+          await new Promise<void>((r) => setTimeout(r, TICK_MS));
+          waited += TICK_MS;
+        }
+      }
+      console.log('[PB] handleSurveyComplete: questionnaire ready, calling ensureSurveyRun');
       await ensureSurveyRun();
+      console.log('[PB] handleSurveyComplete: ensureSurveyRun done, setting phase = insights');
       setPhase('insights');
-    } catch (error) {
-      console.error('Error completing survey simulation:', error);
+    } catch (error: any) {
+      console.error('[PB] handleSurveyComplete: CAUGHT ERROR', {
+        message: error?.message,
+        status: error?.response?.status,
+        responseData: error?.response?.data,
+      });
       alert('Survey simulation could not be completed. Please try again.');
     }
   };
