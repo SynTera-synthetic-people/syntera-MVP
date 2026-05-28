@@ -1,6 +1,7 @@
 import React from "react";
 import { useNavigate, useLocation, useParams } from "react-router-dom";
 import SpIcon from "../../../../SPIcon";
+import { useExplorations } from "../../../../../hooks/useExplorations";
 import "./StepSidebarStyle.css";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -237,6 +238,14 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
     if (workspaceId) navigate(`/main/organization/workspace/explorations/${workspaceId}`);
     else navigate(-1);
   };
+  const { data: explorationsData } = useExplorations(workspaceId);
+
+  const explorationTitle = React.useMemo(() => {
+    if (!explorationsData || !currentId) return null;
+    const match = (explorationsData as Array<{ id: string; title: string }>)
+      .find((e) => e.id === currentId);
+    return match?.title ?? null;
+  }, [explorationsData, currentId]);
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
@@ -251,7 +260,14 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
         <span>Back</span>
       </button>
 
-      <h2 className="step-sidebar__title">Research Exploration</h2>
+      <h2 className="step-sidebar__title">
+        Research Exploration :
+      </h2>
+      {explorationTitle && (
+        <p className="step-sidebar__exploration-name" title={explorationTitle}>
+          {explorationTitle}
+        </p>
+      )}
 
       <nav className="step-sidebar__steps">
         {STEPS.map((step) => {

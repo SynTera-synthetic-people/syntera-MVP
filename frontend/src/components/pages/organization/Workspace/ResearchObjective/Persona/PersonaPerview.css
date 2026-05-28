@@ -281,7 +281,12 @@
   margin: 0 0 20px;
 }
 
-/* Tab bar */
+/* ── Tab bar wrapper with inside scroll arrows ── */
+.pp-tab-bar-wrap {
+  position: relative;
+  margin-bottom: 24px;
+}
+
 .pp-tab-bar {
   display: flex;
   gap: 6px;
@@ -289,12 +294,82 @@
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
-  width: fit-content;
-  margin-bottom: 24px;
+  width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 .pp-tab-bar::-webkit-scrollbar {
   display: none;
+}
+
+/* Arrow buttons — absolutely positioned inside the tab bar */
+.pp-tab-scroll-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: #1a1d24;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 3;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.pp-tab-scroll-btn:hover {
+  background: #22262f;
+  color: #f1f5f9;
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.pp-tab-scroll-btn--left {
+  left: 8px;
+}
+
+.pp-tab-scroll-btn--right {
+  right: 8px;
+}
+
+/* Fade gradient on the side where the arrow sits so tabs don't peek under it */
+.pp-tab-bar-wrap::before,
+.pp-tab-bar-wrap::after {
+  content: '';
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  width: 56px;
+  pointer-events: none;
+  z-index: 2;
+  border-radius: 12px;
+}
+
+.pp-tab-bar-wrap::before {
+  left: 1px;
+  background: linear-gradient(to right, rgba(18, 19, 24, 0.95) 40%, transparent);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.pp-tab-bar-wrap::after {
+  right: 1px;
+  background: linear-gradient(to left, rgba(18, 19, 24, 0.95) 40%, transparent);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.pp-tab-bar-wrap.pp-can-scroll-left::before {
+  opacity: 1;
+}
+
+.pp-tab-bar-wrap.pp-can-scroll-right::after {
+  opacity: 1;
 }
 
 .pp-tab {
@@ -365,6 +440,57 @@
   line-height: 1.5;
 }
 
+/* ── Formative Experience ────────────────────────────────────── */
+.pp-formative {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.pp-formative-card {
+  position: relative;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 48px 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+}
+
+.pp-formative-quote {
+  position: absolute;
+  font-size: 80px;
+  font-weight: 800;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.12);
+  font-family: Georgia, serif;
+  user-select: none;
+  pointer-events: none;
+}
+
+.pp-formative-quote--open {
+  top: 16px;
+  left: 24px;
+}
+
+.pp-formative-quote--close {
+  bottom: -8px;
+  right: 24px;
+}
+
+.pp-formative-text {
+  font-size: 15px;
+  font-style: italic;
+  color: #ffffff;
+  line-height: 1.85;
+  white-space: pre-wrap;
+  margin: 0;
+  text-align: center;
+  max-width: 780px;
+}
+
 /* ── OCEAN ─────────────────────────────────────────────────────── */
 .pp-ocean {
   display: flex;
@@ -389,7 +515,6 @@
   padding: 28px 24px;
   align-items: flex-start;
   overflow: hidden;
-  /* ← add this, clips the SVG overflow */
 }
 
 @media (max-width: 900px) {
@@ -407,7 +532,6 @@
 
 .pp-radar-wrap svg {
   overflow: visible;
-  /* keep visible on SVG itself */
 }
 
 /* Right side */
@@ -426,11 +550,10 @@
   margin: 0 0 4px;
 }
 
-/* Grid: 2 columns like Figma */
 .pp-ocean-interp-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 14px;
+  gap: 0 32px;
   align-content: start;
 }
 
@@ -448,17 +571,8 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  /* tighten gap between name/level/desc */
 }
 
-.pp-ocean-interp-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0 32px;
-  align-content: start;
-}
-
-/* Remove the progress bars from cards — Figma doesn't show them */
 .pp-ocean-bar-track {
   display: none;
 }
@@ -477,7 +591,6 @@
   color: #64748b;
   font-weight: 500;
   display: block;
-  /* forces onto own line */
   margin-top: 0;
 }
 
@@ -486,7 +599,6 @@
   color: #64748b;
   line-height: 1.55;
   margin: 2px 0 0 0;
-  /* tighten top margin */
 }
 
 /* ── Psychometric ─────────────────────────────────────────────── */
