@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   TbX, TbCheck, TbChevronDown, TbInfoCircle,
   TbGripVertical, TbPlus, TbCloudUpload, TbLink,
-  TbFile, TbPhoto, TbPlayerPlay, TbDatabase,
+  TbFile, TbPhoto, TbPlayerPlay, TbDatabase, TbSearch,
 } from 'react-icons/tb';
 import './QuestionModal.css';
 
@@ -11,94 +11,94 @@ import './QuestionModal.css';
 
 export type QuestionType =
   // Open-End
-  | 'text'                         // E1 Short Text
-  | 'essay'                        // E2 Long Text / Essay
-  | 'number'                       // E3 Numeric Input (Integer)
-  | 'number_decimal'               // E4 Numeric Input (Decimal / Currency / %)  
-  | 'date_picker'                  // E5 Date / Time Picker
-  | 'validated_input'              // E6 Validated Format Input                  
-  | 'auto_suggest'                 // (platform-specific auto-suggest)
+  | 'text'
+  | 'essay'
+  | 'number'
+  | 'number_decimal'
+  | 'date_picker'
+  | 'validated_input'
+  | 'auto_suggest'
   // Single-Choice Selection
-  | 'single_select'                // A1 Radio-Button Single Select
-  | 'button_single_select'         // A3 Button Single Select                    
-  | 'image_single_select'          // A4 Image Single Select                     
-  | 'binary_yes_no'                // A5 Binary Yes / No                         
-  | 'dropdown'                     // A2 Dropdown Menu
+  | 'single_select'
+  | 'button_single_select'
+  | 'image_single_select'
+  | 'binary_yes_no'
+  | 'dropdown'
   // Multi-Choice Selection
-  | 'multi_select'                 // B1 Checkbox Multi-Select
-  | 'button_multi_select'          // B2 Button Multi-Select                     
-  | 'image_multi_select'           // B3 Image Multi-Select                      
-  | 'top_n_select'                 // B4 Top-N Selection                         
-  | 'constant_n_select'            // B5 Constant-N Selection                    
+  | 'multi_select'
+  | 'button_multi_select'
+  | 'image_multi_select'
+  | 'top_n_select'
+  | 'constant_n_select'
   // Grid / Matrix
-  | 'single_select_grid'           // C1 Single-Select Grid
-  | 'multi_select_grid'            // C2 Multi-Select Grid                       
-  | 'mixed_format_grid'            // C3 Mixed-Format Grid                       
-  | 'bipolar_grid'                 // C4 Bipolar Grid / Semantic Differential     
-  | 'this_or_that'                 // C5 This-or-That / Forced Bipolar
-  | 'side_by_side_grid'            // C6 Side-By-Side Comparison Grid            
+  | 'single_select_grid'
+  | 'multi_select_grid'
+  | 'mixed_format_grid'
+  | 'bipolar_grid'
+  | 'this_or_that'
+  | 'side_by_side_grid'
   // Rating Scales
-  | 'likert_scale'                 // D1 Likert Agreement Scale                  
-  | 'importance_scale'             // D2 Importance Scale                        
-  | 'satisfaction_scale'           // D3 Satisfaction / Performance Scale        
-  | 'frequency_scale'              // D4 Frequency Scale                         
-  | 'star_rating'                  // D5 Star Rating
-  | 'emoji_scale'                  // D6 Emoji / Smiley Scale                    
-  | 'slider'                       // D7 Slider (Discrete)
-  | 'slider_continuous'            // D8 Slider (Continuous / Decimal)           
-  | 'vas_scale'                    // D9 Visual Analog Scale (VAS)               
-  | 'nps'                          // D10 Net Promoter Score                     
-  | 'button_rating'                // D11 Numeric Single-Row Rating
-  | 'rating_scale'                 // (grid-style rating — existing)
-  | 'card_rating'                  // (card drag rating — existing)
-  | 'slider_rating'                // (multi-slider rating — existing)
+  | 'likert_scale'
+  | 'importance_scale'
+  | 'satisfaction_scale'
+  | 'frequency_scale'
+  | 'star_rating'
+  | 'emoji_scale'
+  | 'slider'
+  | 'slider_continuous'
+  | 'vas_scale'
+  | 'nps'
+  | 'button_rating'
+  | 'rating_scale'
+  | 'card_rating'
+  | 'slider_rating'
   // Allocation / Summation
-  | 'constant_sum'                 // F1 Constant Sum                            
-  | 'autosum'                      // F2 Autosum / Running Total
-  | 'chip_allocation'              // F3 Chip / Token Allocation                 
-  | 'sum_locked_sliders'           // F4 Sum-Locked Sliders                      
+  | 'constant_sum'
+  | 'autosum'
+  | 'chip_allocation'
+  | 'sum_locked_sliders'
   // Ranking
-  | 'rank_sort'                    // G1 Full Rank Sort
-  | 'top_n_ranking'                // G2 Top-N Ranking                           
-  | 'forced_distribution_ranking'  // G3 Forced Distribution Ranking             
-  | 'pairwise_comparison'          // G4 Pairwise Comparison                     
+  | 'rank_sort'
+  | 'top_n_ranking'
+  | 'forced_distribution_ranking'
+  | 'pairwise_comparison'
   // Trade-Off and Choice Modeling
-  | 'maxdiff'                      // H1 MaxDiff / Best-Worst Scaling
-  | 'pairwise_modeled'             // H2 Pairwise Comparison (Modeled)           
-  | 'cbc_conjoint'                 // H3 Choice-Based Conjoint (CBC)             
-  | 'acbc_conjoint'                // H4 Adaptive Conjoint (ACBC)               
-  | 'menu_conjoint'                // H5 Menu-Based Conjoint (MBC)               
+  | 'maxdiff'
+  | 'pairwise_modeled'
+  | 'cbc_conjoint'
+  | 'acbc_conjoint'
+  | 'menu_conjoint'
   // Sorting and Classification
-  | 'card_sort'                    // I1 Card Sort (Closed)
-  | 'card_sort_open'               // I2 Card Sort (Open)                        
-  | 'q_sort'                       // I3 Q-Sort                                  
-  | 'drag_classify'                // I4 Drag-to-Classify (General)              
+  | 'card_sort'
+  | 'card_sort_open'
+  | 'q_sort'
+  | 'drag_classify'
   // Spatial and Visual Input
-  | 'image_map'                    // J1 Image Hotspot
-  | 'heatmap'                      // J2 Heatmap (Free-Form Click)               
-  | 'map_pin'                      // J3 Map Pin / Geolocation                   
-  | 'text_highlight'               // J4 Text Highlight / Annotation             
+  | 'image_map'
+  | 'heatmap'
+  | 'map_pin'
+  | 'text_highlight'
   // Media Capture and Stimulus
-  | 'image_upload'                 // K1 Image Upload
-  | 'audio_capture'                // K2 Audio Capture                           
-  | 'video_capture'                // K3 Video Capture (Testimonial)             
-  | 'video_player'                 // K4 Audio / Video Stimulus Player
-  | 'video_player_embed'           // K4 Embed variant
-  | 'page_turner'                  // (platform-specific)
-  | 'signature_capture'            // K5 Signature Capture                       
+  | 'image_upload'
+  | 'audio_capture'
+  | 'video_capture'
+  | 'video_player'
+  | 'video_player_embed'
+  | 'page_turner'
+  | 'signature_capture'
   // Special and Advanced
-  | 'ai_probed_open'               // L1 AI-Probed Open-End                      
-  | 'chatbot_dialog'               // L2 Chatbot / Multi-Turn Dialog             
-  | 'iat'                          // L3 Implicit Association Test               
-  | 'reaction_time'                // L4 Reaction-Time Task                      
-  | 'calculator_input'             // L5 Calculator / Formula Input              
+  | 'ai_probed_open'
+  | 'chatbot_dialog'
+  | 'iat'
+  | 'reaction_time'
+  | 'calculator_input'
   // Structural / Display
-  | 'section'                      // M1 Descriptive Content
-  | 'note'                         // M1 Note variant
-  | 'stimulus_display'             // M2 Stimulus Display                        
-  | 'exec'                         // (platform routing block)
-  | 'import_data'                  // (background data import)
-  | 'captcha_check';               // M5 Captcha / Quality Check                 
+  | 'section'
+  | 'note'
+  | 'stimulus_display'
+  | 'exec'
+  | 'import_data'
+  | 'captcha_check';
 
 interface TypeMeta {
   label: string;
@@ -107,7 +107,6 @@ interface TypeMeta {
 }
 
 export const TYPE_META: Record<QuestionType, TypeMeta> = {
-  // ── Open-End ───────────────────────────────────────────────────────────────
   text: { label: 'Short Text', tooltip: 'Single-line open-ended text response. Best for names, short phrases, or brand mentions.', instructionPlaceholder: 'Please be as precise as possible' },
   essay: { label: 'Long Text / Essay', tooltip: 'Multi-line text area for longer open-ended responses. Plan AI-assisted coding for large volumes.', instructionPlaceholder: 'Please be as detailed as possible' },
   number: { label: 'Number (Integer)', tooltip: 'Numeric field accepting whole numbers only. Always set a sensible min/max range.', instructionPlaceholder: 'Please enter a whole number' },
@@ -115,26 +114,22 @@ export const TYPE_META: Record<QuestionType, TypeMeta> = {
   date_picker: { label: 'Date / Time Picker', tooltip: 'Structured date or time selection via a calendar or clock widget.', instructionPlaceholder: 'Select a date' },
   validated_input: { label: 'Validated Format Input', tooltip: 'Text field with format validation — covers email, phone, URL, postal code, and address. Strong PII implications.', instructionPlaceholder: 'Please enter a valid value' },
   auto_suggest: { label: 'Auto Suggest', tooltip: 'Participants type and receive auto-suggested answers from an uploaded source file.', instructionPlaceholder: 'Be specific' },
-  // ── Single-Choice Selection ────────────────────────────────────────────────
   single_select: { label: 'Single Select', tooltip: 'Default single-answer format with radio buttons. Randomize options unless the list is ordered.', instructionPlaceholder: 'Select one' },
   button_single_select: { label: 'Button Single Select', tooltip: 'Options as large tappable tiles. Mobile-optimised. Best for 2–8 short options.', instructionPlaceholder: 'Select one' },
   image_single_select: { label: 'Image Single Select', tooltip: 'Options are images; respondent taps one. Use for logo tests, packaging preference, concept selection.', instructionPlaceholder: 'Select the option that best applies' },
   binary_yes_no: { label: 'Binary Yes / No', tooltip: 'Exactly two options (Yes / No or True / False). Add a "Don\'t know" option if uncertainty is plausible.', instructionPlaceholder: 'Select one' },
   dropdown: { label: 'Dropdown', tooltip: 'Single-answer from a collapsed dropdown list. Best for long fixed lists (country, industry).', instructionPlaceholder: 'Select one' },
-  // ── Multi-Choice Selection ─────────────────────────────────────────────────
   multi_select: { label: 'Multi-Select', tooltip: 'Respondent checks all options that apply. Add a "None of these" exclusive option for clean data.', instructionPlaceholder: 'Select all that apply' },
   button_multi_select: { label: 'Button Multi-Select', tooltip: 'Multi-select rendered as tappable tiles. Mobile-first. Up to 10 options with short labels.', instructionPlaceholder: 'Tap all that apply' },
   image_multi_select: { label: 'Image Multi-Select', tooltip: 'Multi-answer image select. Respondent taps all images that apply. Normalise image quality.', instructionPlaceholder: 'Tap all that apply' },
   top_n_select: { label: 'Top-N Selection', tooltip: 'Multi-select capped at a maximum N (e.g. pick top 3). Forces prioritisation without full ranking burden.', instructionPlaceholder: 'Select your top options' },
   constant_n_select: { label: 'Constant-N Selection', tooltip: 'Multi-select requiring exactly N selections. Higher respondent friction than Top-N — use only when precise count is needed.', instructionPlaceholder: 'Select exactly the required number' },
-  // ── Grid / Matrix ──────────────────────────────────────────────────────────
   single_select_grid: { label: 'Single Select Grid', tooltip: 'Each row is a sub-question; columns are scale points; one selection per row. Randomise rows to reduce straight-lining.', instructionPlaceholder: 'Select one per row' },
   multi_select_grid: { label: 'Multi-Select Grid', tooltip: 'Each row is an attribute; each column is an entity. Respondent ticks every cell that applies. Add a "None" column.', instructionPlaceholder: 'Tick all that apply in each row' },
   mixed_format_grid: { label: 'Mixed-Format Grid', tooltip: 'Different response types per column (e.g. rating + yes/no + open-end). Limit to 3 columns and 5 rows on mobile.', instructionPlaceholder: 'Complete each column for every row' },
   bipolar_grid: { label: 'Bipolar Grid / Semantic Differential', tooltip: 'Each row has two opposing labels flanking a symmetric scale. Classical tool for brand personality and perceptual mapping.', instructionPlaceholder: 'Rate each dimension between the two poles' },
   this_or_that: { label: 'This or That', tooltip: 'Constrained bipolar scale — respondents must lean toward one of two poles on each dimension.', instructionPlaceholder: 'Please select the option you prefer between the two shown below' },
   side_by_side_grid: { label: 'Side-By-Side Comparison Grid', tooltip: 'Two parallel grids comparing two entities on the same attributes. Use desktop only — breaks on mobile.', instructionPlaceholder: 'Rate both options on each dimension' },
-  // ── Rating Scales ──────────────────────────────────────────────────────────
   likert_scale: { label: 'Likert Agreement Scale', tooltip: 'Symmetric agree-disagree scale (5 or 7 points) for attitude statements. Avoid for importance or satisfaction.', instructionPlaceholder: 'Select your level of agreement' },
   importance_scale: { label: 'Importance Scale', tooltip: 'Unipolar scale from "not at all important" to "critical". Pair with MaxDiff for genuine prioritisation.', instructionPlaceholder: 'Rate the importance of each item' },
   satisfaction_scale: { label: 'Satisfaction / Performance Scale', tooltip: 'Unipolar scale from "very dissatisfied" to "very satisfied". Analyse using top-2-box scoring.', instructionPlaceholder: 'Rate your level of satisfaction' },
@@ -149,33 +144,27 @@ export const TYPE_META: Record<QuestionType, TypeMeta> = {
   rating_scale: { label: 'Rating Scale (Grid)', tooltip: 'Grid-style rating with configurable rows and columns.', instructionPlaceholder: 'Please keep it open' },
   card_rating: { label: 'Card Rating', tooltip: 'Participants rate cards by dragging them into rating buckets.', instructionPlaceholder: 'Rate the following products by dragging cards' },
   slider_rating: { label: 'Slider Rating', tooltip: 'Multiple sliders each capturing a separate rating dimension.', instructionPlaceholder: 'Slide to rate your satisfaction' },
-  // ── Allocation / Summation ─────────────────────────────────────────────────
   constant_sum: { label: 'Constant Sum', tooltip: 'Respondent allocates exactly 100 points (or another fixed total) across options. Limit to 5–8 options.', instructionPlaceholder: 'Allocate your points across the options — must total 100' },
   autosum: { label: 'Autosum / Running Total', tooltip: 'Respondent enters numeric values per option with a live running total displayed. Total is not forced.', instructionPlaceholder: 'Enter values — a running total will be displayed' },
   chip_allocation: { label: 'Chip / Token Allocation', tooltip: 'Constant sum rendered visually as draggable chips placed onto buckets. Mobile-friendly. Requires custom scripting.', instructionPlaceholder: 'Drag chips onto the options to allocate your budget' },
   sum_locked_sliders: { label: 'Sum-Locked Sliders', tooltip: 'Multiple sliders linked so moving one auto-adjusts others to maintain a fixed total. User-test before fielding.', instructionPlaceholder: 'Adjust sliders — the total will always equal 100%' },
-  // ── Ranking ────────────────────────────────────────────────────────────────
   rank_sort: { label: 'Full Rank Sort', tooltip: 'All items must be assigned a rank position from 1 to N, no ties. Best for 4–8 items.', instructionPlaceholder: 'Rank the following brands in order of preference' },
   top_n_ranking: { label: 'Top-N Ranking', tooltip: 'Respondent ranks only the top N items from a longer list. Remaining items left unranked.', instructionPlaceholder: 'Rank your top items in order of preference' },
   forced_distribution_ranking: { label: 'Forced Distribution Ranking', tooltip: 'Items distributed into fixed buckets in fixed quantities (e.g. exactly 3 in top, 4 in middle, 3 in bottom).', instructionPlaceholder: 'Place each item into the correct group' },
   pairwise_comparison: { label: 'Pairwise Comparison', tooltip: 'Respondent picks the preferred item from a pair, shown repeatedly. Use balanced incomplete block designs for >10 items.', instructionPlaceholder: 'Select the option you prefer' },
-  // ── Trade-Off and Choice Modeling ─────────────────────────────────────────
   maxdiff: { label: 'MaxDiff / Best-Worst Scaling', tooltip: 'Respondent picks the best and worst from subsets of items. Design balance is critical.', instructionPlaceholder: 'Select the MOST and LEAST important feature' },
   pairwise_modeled: { label: 'Pairwise Comparison (Modeled)', tooltip: 'Pairwise choices fed into a Bradley-Terry model to estimate latent preference scores across all items.', instructionPlaceholder: 'Select the option that matters more to you' },
   cbc_conjoint: { label: 'Choice-Based Conjoint (CBC)', tooltip: 'Respondent picks from sets of product profiles (attribute combinations). Requires statistical design and HB estimation.', instructionPlaceholder: 'Choose the option you would most prefer, or "None"' },
   acbc_conjoint: { label: 'Adaptive Conjoint (ACBC)', tooltip: 'Conjoint with an adaptive front-end customised per respondent. Best for large attribute lists (8+).', instructionPlaceholder: 'Select the option closest to your ideal' },
   menu_conjoint: { label: 'Menu-Based Conjoint (MBC)', tooltip: 'Respondent builds their own bundle from a menu at given prices. Use only when real purchase context is menu-based.', instructionPlaceholder: 'Build your ideal bundle from the options below' },
-  // ── Sorting and Classification ─────────────────────────────────────────────
   card_sort: { label: 'Card Sort (Closed)', tooltip: 'Items must be placed into pre-defined buckets. Limit to ~15 cards and 3–5 buckets on mobile.', instructionPlaceholder: 'Drag each card into the correct bucket' },
   card_sort_open: { label: 'Card Sort (Open)', tooltip: 'Respondent creates their own categories and assigns cards. Used for taxonomy discovery and mental model research.', instructionPlaceholder: 'Create your own groups and name them' },
   q_sort: { label: 'Q-Sort', tooltip: 'Items sorted into a fixed forced-normal distribution. Niche method for psychographic profiling.', instructionPlaceholder: 'Sort the statements into the distribution shown' },
   drag_classify: { label: 'Drag-to-Classify', tooltip: 'Generic drag-and-drop for assigning items to one or more groupings. May allow multi-tagging.', instructionPlaceholder: 'Drag each item to the appropriate category' },
-  // ── Spatial and Visual Input ───────────────────────────────────────────────
   image_map: { label: 'Image Hotspot', tooltip: 'Image with pre-defined invisible regions; respondent clicks to indicate a region of interest.', instructionPlaceholder: 'Click on the part of the image that best applies' },
   heatmap: { label: 'Heatmap (Free-Form Click)', tooltip: 'Image shown; respondent clicks any pixel. Coordinates captured; aggregated heatmap shows attention patterns.', instructionPlaceholder: 'Click anywhere on the image to show where your eye is drawn' },
   map_pin: { label: 'Map Pin / Geolocation', tooltip: 'Interactive map where respondent drops a pin or selects a geographic region. Provide a text search fallback.', instructionPlaceholder: 'Drop a pin on the map to indicate the location' },
   text_highlight: { label: 'Text Highlight / Annotation', tooltip: 'Block of text shown; respondent highlights words or phrases to indicate a specific reaction.', instructionPlaceholder: 'Highlight any words or phrases that apply' },
-  // ── Media Capture and Stimulus ─────────────────────────────────────────────
   image_upload: { label: 'Image Upload', tooltip: 'Respondent uploads an image from device library or captures one in-the-moment via camera.', instructionPlaceholder: 'Please upload a photo as your response' },
   audio_capture: { label: 'Audio Capture', tooltip: 'Respondent records an audio clip. Plan ASR transcription pipeline before fielding at scale.', instructionPlaceholder: 'Record a short voice message in response to the prompt' },
   video_capture: { label: 'Video Capture (Testimonial)', tooltip: 'Respondent records a video response using their front-facing camera. Drop-off rates are high — provide clear consent.', instructionPlaceholder: 'Record a short video response' },
@@ -183,13 +172,11 @@ export const TYPE_META: Record<QuestionType, TypeMeta> = {
   video_player_embed: { label: 'Video Player (YouTube / Vimeo)', tooltip: 'Participants watch an embedded YouTube or Vimeo video. Enforce minimum view before continuing.', instructionPlaceholder: 'Watch the video and answer the questions below' },
   page_turner: { label: 'Page Turner', tooltip: 'Participants page through a set of uploaded images or pages.', instructionPlaceholder: 'Click on the part of the image you like most' },
   signature_capture: { label: 'Signature Capture', tooltip: 'Touch or mouse-drawn signature on a canvas. Used for research consent flows and acknowledgement of terms.', instructionPlaceholder: 'Please sign to confirm your consent' },
-  // ── Special and Advanced ───────────────────────────────────────────────────
   ai_probed_open: { label: 'AI-Probed Open-End', tooltip: 'Standard open-end with an LLM-driven follow-up that probes for depth based on the initial response. Audit probe quality regularly.', instructionPlaceholder: 'Answer in your own words — follow-up questions may appear based on your response' },
   chatbot_dialog: { label: 'Chatbot / Multi-Turn Dialog', tooltip: 'Entire question or section delivered as a chat conversation. Build structured validators on top of the free conversation output.', instructionPlaceholder: 'Type your replies in the chat' },
   iat: { label: 'Implicit Association Test (IAT)', tooltip: 'Timed categorisation task where reaction-time differences reveal implicit attitudes. Requires trained research design.', instructionPlaceholder: 'Sort the words as quickly as possible' },
   reaction_time: { label: 'Reaction-Time Task', tooltip: 'Response latency is the key measure alongside content. Use only on calibrated research platforms.', instructionPlaceholder: 'Respond as quickly as possible' },
   calculator_input: { label: 'Calculator / Formula Input', tooltip: 'Field whose value is computed from other fields, or validated against a formula. Always show the live calculated result.', instructionPlaceholder: 'Enter values — totals will be calculated automatically' },
-  // ── Structural / Display ───────────────────────────────────────────────────
   section: { label: 'Section', tooltip: 'Display a section header or intro block. No response is collected. Keep under 4 lines on mobile.', instructionPlaceholder: 'Content goes...' },
   note: { label: 'Note', tooltip: 'Display a note or instruction to participants. No response is collected.', instructionPlaceholder: 'Please answer honestly' },
   stimulus_display: { label: 'Stimulus Display', tooltip: 'Image, video, or rich-media stimulus shown with no captured response. Enforce minimum view time for video.', instructionPlaceholder: 'Review the stimulus carefully before continuing' },
@@ -201,6 +188,21 @@ export const TYPE_META: Record<QuestionType, TypeMeta> = {
 // ── Grouped options for the type dropdown ─────────────────────────────────────
 
 const TYPE_GROUPS: { label: string; types: QuestionType[] }[] = [
+  // ── Common — pinned at top ──────────────────────────────────────────────────
+  {
+    label: 'Common',
+    types: [
+      'single_select',
+      'multi_select',
+      'text',
+      'number_decimal',
+      'dropdown',
+      'single_select_grid',
+      'multi_select_grid',
+      'rating_scale',
+      'rank_sort',
+    ],
+  },
   {
     label: 'Open-End',
     types: ['text', 'essay', 'number', 'number_decimal', 'date_picker', 'validated_input', 'auto_suggest'],
@@ -263,128 +265,66 @@ export interface Question {
   text: string;
   required: boolean;
   instruction?: string;
-
-  // ── Generic option lists ───────────────────────────────────────────────────
-  options?: string[];           // single_select / multi_select / dropdown / button variants / binary
-  rows?: string[];              // grid rows, autosum rows, likert/importance/satisfaction/frequency rows
-  columns?: string[];           // grid columns, scale labels
-  leftOptions?: string[];       // this_or_that / bipolar left poles
-  rightOptions?: string[];      // this_or_that / bipolar right poles
-
-  // ── N-selection constraints ────────────────────────────────────────────────
-  nValue?: number;              // top_n_select, constant_n_select, top_n_ranking
-
-  // ── Rank Sort ─────────────────────────────────────────────────────────────
+  options?: string[];
+  rows?: string[];
+  columns?: string[];
+  leftOptions?: string[];
+  rightOptions?: string[];
+  nValue?: number;
   rankLabels?: string[];
   rankItems?: string[];
-
-  // ── Card Sort ─────────────────────────────────────────────────────────────
   cards?: string[];
   buckets?: string[];
-
-  // ── Q-Sort ────────────────────────────────────────────────────────────────
   qSortItems?: string[];
-  qSortBuckets?: string[];      // bucket names + required counts e.g. "Most like me (2)"
-  qSortDistribution?: number[]; // count per bucket
-
-  // ── Forced Distribution Ranking ───────────────────────────────────────────
+  qSortBuckets?: string[];
+  qSortDistribution?: number[];
   rankingItems?: string[];
   rankingBuckets?: string[];
   rankingDistribution?: number[];
-
-  // ── Pairwise ──────────────────────────────────────────────────────────────
   pairItems?: string[];
-
-  // ── MaxDiff ───────────────────────────────────────────────────────────────
   attributes?: string[];
   maxdiffColumns?: string[];
-
-  // ── CBC / ACBC / MBC Conjoint ─────────────────────────────────────────────
-  conjointAttributes?: string[];   // attribute names
-  conjointLevels?: string[];        // "Attribute | Level" entries
-
-  // ── Constant Sum / Chip / Sum-Locked ──────────────────────────────────────
+  conjointAttributes?: string[];
+  conjointLevels?: string[];
   allocationItems?: string[];
   allocationTotal?: number;
-
-  // ── Star Rating ───────────────────────────────────────────────────────────
   starTooltips?: string[];
   starRows?: string[];
-
-  // ── Emoji Scale ───────────────────────────────────────────────────────────
   emojiRows?: string[];
-
-  // ── NPS ───────────────────────────────────────────────────────────────────
   npsLowLabel?: string;
   npsHighLabel?: string;
-
-  // ── Rating Scale (grid) ───────────────────────────────────────────────────
   scaleRows?: string[];
   scaleColumns?: string[];
-
-  // ── Likert / Importance / Satisfaction / Frequency grids ──────────────────
-  scaleItems?: string[];        // the row items being rated
-  scalePoints?: string[];       // the column labels
-
-  // ── Side-by-Side Grid ─────────────────────────────────────────────────────
-  sxsEntities?: string[];       // e.g. ["Brand A", "Brand B"]
+  scaleItems?: string[];
+  scalePoints?: string[];
+  sxsEntities?: string[];
   sxsAttributes?: string[];
   sxsScalePoints?: string[];
-
-  // ── Card Rating ───────────────────────────────────────────────────────────
   cardRatingCards?: string[];
   cardRatingButtons?: string[];
-
-  // ── Slider Rating ─────────────────────────────────────────────────────────
   sliderPoints?: string[];
   sliders?: string[];
-
-  // ── Slider (discrete / continuous / VAS) ──────────────────────────────────
   sliderMin?: string;
   sliderMax?: string;
   sliderStep?: string;
-
-  // ── Button Rating ─────────────────────────────────────────────────────────
   buttonRatingRows?: string[];
-
-  // ── Heatmap ───────────────────────────────────────────────────────────────
   heatmapFiles?: FileItem[];
-
-  // ── Map Pin ───────────────────────────────────────────────────────────────
-  mapCenter?: string;           // default location hint
-
-  // ── Text Highlight ────────────────────────────────────────────────────────
+  mapCenter?: string;
   highlightText?: string;
-  highlightReactions?: string[]; // labels respondents assign to highlights
-
-  // ── Validated Input ───────────────────────────────────────────────────────
-  validatedFormat?: string;     // 'email' | 'phone' | 'url' | 'postcode' | 'address'
-
-  // ── Number Decimal ────────────────────────────────────────────────────────
-  numberPrefix?: string;        // e.g. "$"
-  numberSuffix?: string;        // e.g. "%"
-
-  // ── Calculator / Formula ──────────────────────────────────────────────────
-  calcFields?: string[];        // input field labels
-
-  // ── IAT ───────────────────────────────────────────────────────────────────
+  highlightReactions?: string[];
+  validatedFormat?: string;
+  numberPrefix?: string;
+  numberSuffix?: string;
+  calcFields?: string[];
   iatCategories?: string[];
   iatStimuli?: string[];
-
-  // ── AI-Probed open-end ────────────────────────────────────────────────────
   aiProbeInstructions?: string;
-
-  // ── Structural ────────────────────────────────────────────────────────────
   sectionName?: string;
   noteText?: string;
   execInstruction?: string;
   captchaInstruction?: string;
-
-  // ── Auto Suggest ──────────────────────────────────────────────────────────
   autoSuggestSourceFile?: File | null;
   autoSuggestSourceFileName?: string;
-
-  // ── File-based types ──────────────────────────────────────────────────────
   imageMapFiles?: FileItem[];
   imageMapMarkers?: string[];
   pageTurnerPages?: FileItem[];
@@ -393,7 +333,7 @@ export interface Question {
   videoEmbedName?: string;
   videoEmbedUrl?: string;
   imageUploadFiles?: FileItem[];
-  stimulusFiles?: FileItem[];   // stimulus_display
+  stimulusFiles?: FileItem[];
 }
 
 interface FileItem {
@@ -636,7 +576,6 @@ const UploadZone: React.FC<UploadZoneProps> = ({ label, accept = '*', onFiles })
   );
 };
 
-// Reusable multi-file upload field (upload zone → chips)
 interface MultiFileFieldProps {
   label: string;
   files: FileItem[];
@@ -691,7 +630,6 @@ const MultiFileField: React.FC<MultiFileFieldProps> = ({
   </div>
 );
 
-// Single-file upload field
 interface SingleFileFieldProps {
   label: string;
   fileName: string;
@@ -774,7 +712,6 @@ const PairEditor: React.FC<PairEditorProps> = ({ leftItems, rightItems, onChange
   );
 };
 
-// Small number input field
 const NumberInput: React.FC<{
   label: string;
   value: string | number;
@@ -801,8 +738,6 @@ const TypeFields: React.FC<{
   set: <K extends keyof Question>(k: K, v: Question[K]) => void;
 }> = ({ q, set }) => {
   switch (q.type) {
-
-    // ── Open-End ──────────────────────────────────────────────────────────────
     case 'text':
     case 'essay':
     case 'number':
@@ -867,7 +802,6 @@ const TypeFields: React.FC<{
       );
     }
 
-    // ── Single-Choice Selection ────────────────────────────────────────────────
     case 'single_select':
     case 'button_single_select':
     case 'dropdown':
@@ -893,7 +827,6 @@ const TypeFields: React.FC<{
         <ListEditor label="Options" items={q.options ?? ['Yes', 'No']} onChange={(v) => set('options', v)} addLabel="Add Option" placeholder="Text" minItems={2} showImport={false} />
       );
 
-    // ── Multi-Choice Selection ─────────────────────────────────────────────────
     case 'multi_select':
     case 'button_multi_select':
       return (
@@ -929,7 +862,6 @@ const TypeFields: React.FC<{
         </>
       );
 
-    // ── Grid / Matrix ──────────────────────────────────────────────────────────
     case 'single_select_grid':
       return (
         <>
@@ -989,7 +921,6 @@ const TypeFields: React.FC<{
         </>
       );
 
-    // ── Rating Scales ──────────────────────────────────────────────────────────
     case 'likert_scale':
       return (
         <>
@@ -1098,7 +1029,6 @@ const TypeFields: React.FC<{
         </>
       );
 
-    // ── Allocation / Summation ─────────────────────────────────────────────────
     case 'constant_sum':
     case 'chip_allocation':
     case 'sum_locked_sliders':
@@ -1117,7 +1047,6 @@ const TypeFields: React.FC<{
         </>
       );
 
-    // ── Ranking ────────────────────────────────────────────────────────────────
     case 'rank_sort':
       return (
         <>
@@ -1148,7 +1077,6 @@ const TypeFields: React.FC<{
         <ListEditor label="Items to Compare" required items={q.pairItems ?? ['', '']} onChange={(v) => set('pairItems', v)} addLabel="Add Item" placeholder="Item" minItems={2} showImport />
       );
 
-    // ── Trade-Off & Choice Modeling ────────────────────────────────────────────
     case 'maxdiff':
       return (
         <>
@@ -1167,7 +1095,6 @@ const TypeFields: React.FC<{
         </>
       );
 
-    // ── Sorting & Classification ───────────────────────────────────────────────
     case 'card_sort':
       return (
         <>
@@ -1197,7 +1124,6 @@ const TypeFields: React.FC<{
         </>
       );
 
-    // ── Spatial & Visual Input ─────────────────────────────────────────────────
     case 'image_map': {
       const files = q.imageMapFiles ?? [];
       return (
@@ -1256,7 +1182,6 @@ const TypeFields: React.FC<{
         </>
       );
 
-    // ── Media Capture & Stimulus ───────────────────────────────────────────────
     case 'image_upload': {
       const imgs = q.imageUploadFiles ?? [];
       return (
@@ -1275,7 +1200,7 @@ const TypeFields: React.FC<{
     case 'audio_capture':
     case 'video_capture':
     case 'signature_capture':
-      return null; // Capture-only — no pre-configuration needed beyond question text
+      return null;
 
     case 'video_player':
       return (
@@ -1330,7 +1255,6 @@ const TypeFields: React.FC<{
       );
     }
 
-    // ── Special & Advanced ─────────────────────────────────────────────────────
     case 'chatbot_dialog':
     case 'reaction_time':
       return null;
@@ -1348,7 +1272,6 @@ const TypeFields: React.FC<{
         <ListEditor label="Input Fields" required items={q.calcFields ?? ['Field 1', 'Field 2']} onChange={(v) => set('calcFields', v)} addLabel="Add Field" placeholder="Field label" showImport={false} />
       );
 
-    // ── Structural ─────────────────────────────────────────────────────────────
     case 'section':
       return (
         <div className="qm-field">
@@ -1375,7 +1298,7 @@ const TypeFields: React.FC<{
 
     case 'import_data':
       return (
-        <UploadZone label="Upload Data" onFiles={() => { /* wire as needed */ }} />
+        <UploadZone label="Upload Data" onFiles={() => { }} />
       );
 
     case 'captcha_check':
@@ -1417,21 +1340,44 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ initial, sectionTitle, on
     initial ? { ...defaultQuestion(), ...initial } : defaultQuestion()
   );
   const [typeOpen, setTypeOpen] = useState(false);
+  const [typeSearch, setTypeSearch] = useState('');
   const typeRef = useRef<HTMLDivElement>(null);
+  const typeSearchRef = useRef<HTMLInputElement>(null);
 
+  // ── Outside click closes dropdown ──────────────────────────────────────────
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (typeRef.current && !typeRef.current.contains(e.target as Node)) setTypeOpen(false);
+      if (typeRef.current && !typeRef.current.contains(e.target as Node)) {
+        setTypeOpen(false);
+        setTypeSearch('');
+      }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
+  // ── Escape closes modal ────────────────────────────────────────────────────
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (typeOpen) {
+          setTypeOpen(false);
+          setTypeSearch('');
+        } else {
+          onClose();
+        }
+      }
+    };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [onClose]);
+  }, [onClose, typeOpen]);
+
+  // ── Auto-focus search input when dropdown opens ────────────────────────────
+  useEffect(() => {
+    if (typeOpen) {
+      setTimeout(() => typeSearchRef.current?.focus(), 50);
+    }
+  }, [typeOpen]);
 
   const set = <K extends keyof Question>(key: K, val: Question[K]) =>
     setQ((prev) => ({ ...prev, [key]: val }));
@@ -1446,7 +1392,24 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ initial, sectionTitle, on
       instruction: '',
     }));
     setTypeOpen(false);
+    setTypeSearch('');
   };
+
+  // ── Filtered groups based on search query ──────────────────────────────────
+  const filteredTypeGroups = typeSearch.trim()
+    ? [
+        {
+          label: `Results for "${typeSearch}"`,
+          types: TYPE_GROUPS
+            .flatMap((g) => g.types)
+            // dedupe while preserving order
+            .filter((type, i, arr) => arr.indexOf(type) === i)
+            .filter((type) =>
+              TYPE_META[type].label.toLowerCase().includes(typeSearch.toLowerCase())
+            ),
+        },
+      ]
+    : TYPE_GROUPS;
 
   const currentMeta = TYPE_META[q.type];
   const isValid = canSave(q);
@@ -1483,12 +1446,20 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ initial, sectionTitle, on
           <div className="qm-field" ref={typeRef}>
             <label className="qm-label">Type of question <span className="qm-required">*</span></label>
             <div className="qm-type-wrap">
-              <button type="button" className="qm-type-trigger" onClick={() => setTypeOpen((o) => !o)}>
+              <button
+                type="button"
+                className="qm-type-trigger"
+                onClick={() => setTypeOpen((o) => !o)}
+              >
                 <span className="qm-type-trigger__left">
                   <span>{currentMeta.label}</span>
                   <InfoTooltip type={q.type} />
                 </span>
-                <TbChevronDown size={15} className="qm-type-trigger__chevron" style={{ transform: typeOpen ? 'rotate(180deg)' : 'none' }} />
+                <TbChevronDown
+                  size={15}
+                  className="qm-type-trigger__chevron"
+                  style={{ transform: typeOpen ? 'rotate(180deg)' : 'none' }}
+                />
               </button>
 
               <AnimatePresence>
@@ -1500,9 +1471,47 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ initial, sectionTitle, on
                     exit={{ opacity: 0, y: 6 }}
                     transition={{ duration: 0.13 }}
                   >
-                    {TYPE_GROUPS.map((group) => (
+                    {/* ── Search bar ── */}
+                    <div className="qm-type-search-wrap">
+                      <TbSearch size={13} className="qm-type-search-icon" />
+                      <input
+                        ref={typeSearchRef}
+                        className="qm-type-search-input"
+                        placeholder="Search question types…"
+                        value={typeSearch}
+                        onChange={(e) => setTypeSearch(e.target.value)}
+                        onKeyDown={(e) => {
+                          // Prevent Escape from bubbling up and closing the modal
+                          if (e.key === 'Escape') {
+                            e.stopPropagation();
+                            setTypeOpen(false);
+                            setTypeSearch('');
+                          }
+                        }}
+                      />
+                      {typeSearch && (
+                        <button
+                          className="qm-type-search-clear"
+                          type="button"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            setTypeSearch('');
+                            typeSearchRef.current?.focus();
+                          }}
+                          aria-label="Clear search"
+                        >
+                          <TbX size={12} />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* ── Groups ── */}
+                    {filteredTypeGroups.map((group) => (
                       <React.Fragment key={group.label}>
                         <div className="qm-type-group-label">{group.label}</div>
+                        {group.types.length === 0 && (
+                          <div className="qm-type-no-results">No matching question types</div>
+                        )}
                         {group.types.map((type) => (
                           <button
                             key={type}

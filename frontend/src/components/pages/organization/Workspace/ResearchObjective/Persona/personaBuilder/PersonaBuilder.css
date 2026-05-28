@@ -817,6 +817,7 @@
 /* Scrollbar utility */
 .pb-scrollbar-none::-webkit-scrollbar { display: none; }
 .pb-scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
+
 /* ════════════════════════════════════════════════════════════════
    DOWNLOAD PERSONA CARD MODAL
 ════════════════════════════════════════════════════════════════ */
@@ -983,6 +984,10 @@
   transition: color 0.12s;
 }
 .pb-download-toast-close:hover { color: #fff; }
+
+/* ════════════════════════════════════════════════════════════════
+   EMPTY STATE
+════════════════════════════════════════════════════════════════ */
 .pb-empty-state {
   display: flex;
   flex-direction: column;
@@ -1004,4 +1009,106 @@
   margin: 0 0 32px;
   max-width: 420px;
   line-height: 1.6;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   CREATE PERSONA METHOD MODAL
+════════════════════════════════════════════════════════════════ */
+.pb-method-modal-box {
+  max-width: 460px;
+}
+
+.pb-method-options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pb-method-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 14px;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  background: transparent;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.pb-method-option--omi {
+  background: #004BC3;
+  border: 1px solid #004BC3;
+  color: #fff;
+}
+.pb-method-option--omi:hover {
+  background: #0057E0;
+  border-color: #0057E0;
+}
+
+.pb-method-option--manual {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.pb-method-option--manual:hover:not(.pb-method-option--locked) {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.pb-method-option--locked {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.pb-method-option-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.pb-method-option-icon--omi {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+.pb-method-option-icon--manual {
+  background: rgba(255, 255, 255, 0.07);
+  color: #94a3b8;
+}
+
+.pb-method-option-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pb-method-option-title {
+  color:#fff;
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pb-method-option-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  background: rgba(37, 99, 235, 0.15);
+  border: 1px solid rgba(37, 99, 235, 0.3);
+  border-radius: 99px;
+  color: #60a5fa;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.pb-method-option-desc {
+  color: white;
+  font-size: 12px;
+  line-height: 1.55;
 }

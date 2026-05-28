@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   TbArrowLeft,
@@ -31,7 +31,7 @@ import {
   usePersonas,
 } from '../../../../../../hooks/usePersonaBuilder';
 import { useTheme } from '../../../../../../context/ThemeContext';
-
+import omiTransitionSrc from '../../../../../../assets/Omi Animations/OmiTransition.mp4';
 import omiDarkImg from '../../../../../../assets/OMI_Dark.png';
 import './PersonaPerview.css';
 
@@ -373,11 +373,33 @@ const CalibCard: React.FC<CalibCardProps> = ({
     {extraFooter}
   </div>
 );
-
+const OCEAN_DESCRIPTIONS: Record<string, { getLevel: (s: number) => string; description: string }> = {
+  openness: {
+    getLevel: (s) => s >= 0.7 ? 'High' : s >= 0.4 ? 'Medium' : 'Low',
+    description: 'Creativity, curiosity, appreciation for art and adventure',
+  },
+  conscientiousness: {
+    getLevel: (s) => s >= 0.7 ? 'High' : s >= 0.4 ? 'Medium' : 'Low',
+    description: 'Organised, dependable, goal-directed and disciplined',
+  },
+  extraversion: {
+    getLevel: (s) => s >= 0.7 ? 'High' : s >= 0.4 ? 'Medium' : 'Low',
+    description: 'Sociable, assertive, energised by social interaction',
+  },
+  agreeableness: {
+    getLevel: (s) => s >= 0.7 ? 'High' : s >= 0.4 ? 'Medium' : 'Low',
+    description: 'Cooperative, trusting, empathetic and helpful',
+  },
+  neuroticism: {
+    getLevel: (s) => s >= 0.7 ? 'High' : s >= 0.4 ? 'Medium' : 'Low',
+    description: 'Tendency toward emotional instability and stress sensitivity',
+  },
+};
 // ── Main component ─────────────────────────────────────────────────────────────
 
 const PersonaPreview: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { workspaceId, objectiveId, personaId } = useParams<{
     workspaceId: string;
     objectiveId: string;
@@ -572,13 +594,34 @@ const PersonaPreview: React.FC = () => {
 
   // Summary text that sometimes comes on the profile object
   const oceanSummary = (oceanProfile?.summary ?? oceanProfile?.description ?? '') as string;
+  const oceanItems = oceanTraits.length > 0
+    ? oceanTraits.map(t => ({
+      trait: t.name.toLowerCase(),
+      label: t.name.charAt(0).toUpperCase() + t.name.slice(1).toLowerCase(),
+      score: t.score,
+      pct: Math.round(t.score * 100),
+      level: t.level,
+      description: t.description ?? t.interpretation,
+    }))
+    : Object.entries(resolvedOceanScores).map(([trait, score]) => {
+      const meta = OCEAN_DESCRIPTIONS[trait.toLowerCase()];
+      return {
+        trait,
+        label: trait.charAt(0).toUpperCase() + trait.slice(1),
+        score,
+        pct: Math.round(score * 100),
+        level: meta ? meta.getLevel(score) : undefined,
+        description: meta?.description,
+      };
+    });
 
+  // Change radarData to use 0-100 scale instead of 0-1
   const radarData = [
-    { subject: 'Openness', A: resolvedOceanScores.openness ?? 0, fullMark: 1 },
-    { subject: 'Conscientiousness', A: resolvedOceanScores.conscientiousness ?? 0, fullMark: 1 },
-    { subject: 'Extraversion', A: resolvedOceanScores.extraversion ?? 0, fullMark: 1 },
-    { subject: 'Agreeableness', A: resolvedOceanScores.agreeableness ?? 0, fullMark: 1 },
-    { subject: 'Neuroticism', A: resolvedOceanScores.neuroticism ?? 0, fullMark: 1 },
+    { subject: 'Openness', A: Math.round((resolvedOceanScores.openness ?? 0) * 100), fullMark: 100 },
+    { subject: 'Conscientiousness', A: Math.round((resolvedOceanScores.conscientiousness ?? 0) * 100), fullMark: 100 },
+    { subject: 'Extraversion', A: Math.round((resolvedOceanScores.extraversion ?? 0) * 100), fullMark: 100 },
+    { subject: 'Agreeableness', A: Math.round((resolvedOceanScores.agreeableness ?? 0) * 100), fullMark: 100 },
+    { subject: 'Neuroticism', A: Math.round((resolvedOceanScores.neuroticism ?? 0) * 100), fullMark: 100 },
   ];
 
   const barriersList = flatten(mergedTraits.barriers_pain_points);
@@ -638,9 +681,47 @@ const PersonaPreview: React.FC = () => {
     return '1,23,456';
   };
 
-  if (isLoading && !previewData) {
-    return <div className="pp-root"><LoadingPage /></div>;
-  }
+ if (isLoading && !previewData) {
+  return (
+    <div className="pp-root" style={{ 
+      display: 'flex', 
+      alignItems: 'center', 
+      justifyContent: 'center', 
+      minHeight: '100vh',
+    }}>
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: '20px',
+      }}>
+        <video
+          src={omiTransitionSrc}
+          autoPlay
+          loop
+          muted
+          playsInline
+          style={{
+            width: 700,
+            height: 100,
+            objectFit: 'cover',     
+            mixBlendMode: 'screen',  
+            borderRadius: '50%',   
+          }}
+        />
+        <p style={{
+          color: 'rgba(255,255,255,0.4)',
+          fontSize: '14px',
+          fontWeight: 500,
+          letterSpacing: '0.02em',
+          margin: 0,
+        }}>
+          Loading persona...
+        </p>
+      </div>
+    </div>
+  );
+}
 
   if (error) {
     return <div className="pp-root"><ErrorPage onBack={() => navigate(-1)} /></div>;
@@ -699,13 +780,13 @@ const PersonaPreview: React.FC = () => {
               </span>
             )}
           </div>
-          {tagSource.length > 0 && (
+          {/* {tagSource.length > 0 && (
             <div className="pp-tags">
               {tagSource.map((tag, i) => (
                 <span key={i} className="pp-tag">{tag}</span>
               ))}
             </div>
-          )}
+          )} */}
         </div>
 
         <div className="pp-confidence-panel">
@@ -793,74 +874,77 @@ const PersonaPreview: React.FC = () => {
             {/* ── Ocean Personality Profile ── */}
             {activeTab === 'ocean' && (
               <div className="pp-ocean">
+                {oceanSummary && (
+                  <p className="pp-ocean-summary">{oceanSummary}</p>
+                )}
+
                 {Object.keys(resolvedOceanScores).length > 0 ? (
-                  <>
-                    {/* Optional summary paragraph */}
-                    {oceanSummary && (
-                      <p className="pp-ocean-summary">{oceanSummary}</p>
-                    )}
+                  <div className="pp-ocean-card">  {/* new wrapper card */}
 
-                    <div className="pp-ocean-body">
-                      {/* Radar chart */}
-                      <div className="pp-radar-wrap">
-                        <ResponsiveContainer width="100%" height={280}>
-                          <RadarChart cx="50%" cy="50%" outerRadius="75%" data={radarData}>
-                            <PolarGrid stroke={theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'} />
-                            <PolarAngleAxis
-                              dataKey="subject"
-                              tick={{ fill: theme === 'dark' ? '#9ca3af' : '#6b7280', fontSize: 12, fontWeight: 600 }}
-                            />
-                            <PolarRadiusAxis
-                              angle={30} domain={[0, 1]} tickCount={6}
-                              tick={{ fill: theme === 'dark' ? '#6b7280' : '#9ca3af', fontSize: 10 }}
-                            />
-                            <Radar
-                              name={personaName} dataKey="A"
-                              stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.45} strokeWidth={2}
-                            />
-                          </RadarChart>
-                        </ResponsiveContainer>
-                      </div>
+                    {/* Left: Radar */}
+                    <div className="pp-radar-wrap">
+                      <ResponsiveContainer width="100%" height={340}>
+                        <RadarChart cx="50%" cy="50%" outerRadius="60%" data={radarData}>
+                          <PolarGrid stroke="rgba(255,255,255,0.1)" />
+                          <PolarAngleAxis
+                            dataKey="subject"
+                            tick={(props) => {
+                              const { x, y, textAnchor, payload } = props;
+                              const words = (payload.value as string).split(' ');
+                              return (
+                                <text x={x} y={y} textAnchor={textAnchor} fill="#9ca3af" fontSize={11} fontWeight={600}>
+                                  {words.map((word: string, i: number) => (
+                                    <tspan key={i} x={x} dy={i === 0 ? 0 : 14}>
+                                      {word}
+                                    </tspan>
+                                  ))}
+                                </text>
+                              );
+                            }}
+                          />
+                          <PolarRadiusAxis
+                            domain={[0, 100]}
+                            tick={false}
+                            axisLine={false}
+                            tickLine={false}
+                          />
+                          <Radar
+                            name={personaName}
+                            dataKey="A"
+                            stroke="#0E63EC"
+                            fill="rgba(14, 99, 236, 0.50)"
+                            fillOpacity={0.45}
+                            strokeWidth={2}
+                          />
+                        </RadarChart>
+                      </ResponsiveContainer>
+                    </div>
 
-                      {/* Score interpretation cards grid */}
+                    {/* Right: Score Interpretation */}
+                    <div className="pp-ocean-interp-side">
+                      <h4 className="pp-ocean-interp-title">Score Interpretation</h4>
                       <div className="pp-ocean-interp-grid">
-                        {Object.entries(resolvedOceanScores).map(([trait, score]) => {
-                          const detail = oceanTraits.find(
-                            t => t.name.toLowerCase() === trait.toLowerCase()
-                          );
-                          const pct = Math.round(score * 100);
-                          const traitLabel = trait.charAt(0).toUpperCase() + trait.slice(1);
-                          return (
-                            <div key={trait} className="pp-ocean-interp-card">
-                              <div className="pp-ocean-interp-header">
-                                <span className="pp-ocean-interp-name">
-                                  {traitLabel} — {pct}%
+                        {oceanItems.map(({ trait, label, pct, level, description }) => (
+                          <div key={trait} className="pp-ocean-interp-card">
+                            <div className="pp-ocean-interp-header">
+                              <span className="pp-ocean-interp-name">
+                                {label.toUpperCase()} — {pct}%
+                              </span>
+                              {level && (
+                                <span className="pp-ocean-interp-level">
+                                  {level} (Score: {(pct / 100).toFixed(2)}/1)
                                 </span>
-                                {detail?.level && (
-                                  <span className="pp-ocean-interp-level">
-                                    {detail.level} (Score: {score.toFixed(2)}/1)
-                                  </span>
-                                )}
-                              </div>
-                              <div className="pp-ocean-bar-track">
-                                <motion.div
-                                  className="pp-ocean-bar-fill"
-                                  initial={{ width: 0 }}
-                                  animate={{ width: `${pct}%` }}
-                                  transition={{ duration: 1, ease: 'easeOut' }}
-                                />
-                              </div>
-                              {(detail?.description ?? detail?.interpretation) && (
-                                <p className="pp-ocean-interp-desc">
-                                  {detail?.description ?? detail?.interpretation}
-                                </p>
                               )}
                             </div>
-                          );
-                        })}
+                            {description && (
+                              <p className="pp-ocean-interp-desc">{description}</p>
+                            )}
+                          </div>
+                        ))}
                       </div>
                     </div>
-                  </>
+
+                  </div>
                 ) : (
                   <p className="pp-empty">OCEAN profile not available for this persona.</p>
                 )}
