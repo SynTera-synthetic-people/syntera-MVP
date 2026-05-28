@@ -396,6 +396,7 @@ async def _repair_core_public_schema(conn: AsyncConnection) -> None:
         "is_quantitative BOOLEAN NOT NULL DEFAULT FALSE",
         "is_qualitative BOOLEAN NOT NULL DEFAULT FALSE",
         "updated_at TIMESTAMP WITHOUT TIME ZONE",
+        "additional_persona_limit INTEGER NOT NULL DEFAULT 0",
         "is_end BOOLEAN NOT NULL DEFAULT FALSE",
         "is_deleted BOOLEAN NOT NULL DEFAULT FALSE",
         "deleted_at TIMESTAMP WITHOUT TIME ZONE",

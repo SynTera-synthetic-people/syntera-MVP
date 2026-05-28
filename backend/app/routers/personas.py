@@ -4,7 +4,7 @@ from typing import List
 from app.schemas.persona import (
     PersonaCreate, PersonaOut, PersonaUpdate, PersonaPreview,
     PersonaBackstoryIn, PersonaReplicateRequest, PersonaBulkDownloadRequest,
-    ManualPersonaCreate,
+    ManualPersonaCreate, PersonaPurchaseRequest,
 )
 from app.schemas.response import SuccessResponse, ErrorResponse, DeleteResponse
 from app.services import persona as persona_service
@@ -63,6 +63,105 @@ def _to_dict(maybe_obj):
         return maybe_obj
 
 
+NON_ENTERPRISE_OMI_PERSONA_LIMIT = 2
+ENTERPRISE_PERSONA_LIMIT = 4
+
+
+def _normalised_account_tier(user: User) -> str:
+    return (getattr(user, "account_tier", None) or "free").lower().strip()
+
+
+def _is_enterprise_user(user: User) -> bool:
+    return _normalised_account_tier(user) == "enterprise"
+
+
+def _base_persona_limit_for(user: User) -> int:
+    return ENTERPRISE_PERSONA_LIMIT if _is_enterprise_user(user) else NON_ENTERPRISE_OMI_PERSONA_LIMIT
+
+
+def _persona_limit_for(user: User, exp: Any) -> int:
+    additional_limit = int(getattr(exp, "additional_persona_limit", 0) or 0)
+    return _base_persona_limit_for(user) + additional_limit
+
+
+def _additional_personas_supported(user: User) -> bool:
+    tier = _normalised_account_tier(user)
+    return tier in {"tier1", "explorer", "enterprise"}
+
+
+async def _count_primary_personas(
+    session: AsyncSession,
+    workspace_id: str,
+    exploration_id: str,
+) -> tuple[int, int]:
+    """Return total and Omi-generated primary persona counts for an exploration."""
+    from app.models.persona import Persona as _Persona
+    from sqlalchemy import func as _func
+
+    base_filters = (
+        _Persona.workspace_id == workspace_id,
+        _Persona.exploration_id == exploration_id,
+        _Persona.parent_persona_id.is_(None),
+    )
+
+    total_result = await session.execute(
+        select(_func.count()).select_from(_Persona).where(*base_filters)
+    )
+    omi_result = await session.execute(
+        select(_func.count()).select_from(_Persona).where(
+            *base_filters,
+            _Persona.auto_generated_persona.is_(True),
+        )
+    )
+    return int(total_result.scalar() or 0), int(omi_result.scalar() or 0)
+
+
+def _manual_personas_not_allowed_response() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=ErrorResponse(
+            status="error",
+            message=(
+                "Manual persona creation is available only on Enterprise. "
+                "Free and Explorer plans can create up to 2 Omi-generated personas."
+            ),
+        ).dict(),
+    )
+
+
+def _persona_limit_response(limit: int) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=ErrorResponse(
+            status="error",
+            message=f"Maximum of {limit} personas already reached for this exploration",
+        ).dict(),
+    )
+
+
+async def _build_persona_quota(
+    session: AsyncSession,
+    user: User,
+    workspace_id: str,
+    exploration_id: str,
+    exp: Any,
+) -> dict[str, Any]:
+    total_count, omi_count = await _count_primary_personas(session, workspace_id, exploration_id)
+    base_limit = _base_persona_limit_for(user)
+    purchased_additional = int(getattr(exp, "additional_persona_limit", 0) or 0)
+    limit = base_limit + purchased_additional
+    return {
+        "account_tier": _normalised_account_tier(user),
+        "base_limit": base_limit,
+        "purchased_additional": purchased_additional,
+        "limit": limit,
+        "used": total_count,
+        "omi_used": omi_count,
+        "remaining": max(limit - total_count, 0),
+        "can_purchase_additional": _additional_personas_supported(user),
+    }
+
+
 @router.get("/loader-context", response_model=SuccessResponse)
 async def get_persona_loader_context(
     workspace_id: str,
@@ -117,28 +216,27 @@ async def auto_generate_personas(
     if not any(m["user_id"] == current_user.id for m in members):
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    existing_personas = await persona_service.list_non_draft_personas(workspace_id, exploration_id)
-    if existing_personas:
-        # Personas are downstream output; reuse them so repeated clicks do not rerun Omi.
-        return SuccessResponse(
-            message="Personas already exist",
-            data={"personas": existing_personas}
-        )
+    persona_limit = _persona_limit_for(current_user, exp)
+    total_count, omi_count = await _count_primary_personas(session, workspace_id, exploration_id)
 
-    # Enforce max 4 Omi-generated personas per exploration
-    from app.models.persona import Persona as _Persona
-    from sqlalchemy import func as _func
-    omi_count_r = await session.execute(
-        select(_func.count()).select_from(_Persona).where(
-            _Persona.exploration_id == exploration_id,
-            _Persona.auto_generated_persona.is_(True),
-            _Persona.parent_persona_id.is_(None),  # don't count replicas
-        )
-    )
-    if omi_count_r.scalar() >= 4:
-        raise HTTPException(
-            status_code=400,
-            detail=ErrorResponse(status="error", message="Maximum of 4 Omi-generated personas already reached for this exploration").dict()
+    # Free/Explorer: 2 Omi personas only. Enterprise: 4 total personas,
+    # created either through Omi or the manual flow.
+    remaining_slots = max(persona_limit - total_count, 0)
+    remaining_omi_slots = max(persona_limit - omi_count, 0)
+    personas_to_generate = min(remaining_slots, remaining_omi_slots)
+
+    if personas_to_generate <= 0:
+        existing_personas = await persona_service.list_non_draft_personas(workspace_id, exploration_id)
+        return SuccessResponse(
+            message="Persona limit already reached",
+            data={
+                "personas": existing_personas,
+                "consumer_personas": [
+                    p.get("persona_details") or p for p in existing_personas
+                ],
+                "limit": persona_limit,
+                "generated_count": 0,
+            },
         )
 
     try:
@@ -146,11 +244,22 @@ async def auto_generate_personas(
 
         # personas = await persona_service.generate_auto_personas(exp, exploration_id)
         current_user_id = current_user.id
-        personas = await auto_generated_persona.ai_generate_persona(exploration_id, workspace_id, current_user_id)
+        personas = await auto_generated_persona.ai_generate_persona(
+            exploration_id,
+            workspace_id,
+            current_user_id,
+            target_count=personas_to_generate,
+            total_persona_goal=persona_limit,
+            starting_persona_number=total_count + 1,
+        )
 
         return SuccessResponse(
             message="Auto generated personas",
-            data=personas
+            data={
+                **personas,
+                "limit": persona_limit,
+                "generated_count": len(personas.get("personas", [])),
+            },
         )
 
     except Exception as e:
@@ -228,6 +337,13 @@ async def create_persona(
             detail=ErrorResponse(status="error", message="Exploration is not part of the provided workspace").dict()
         )
 
+    if not _is_enterprise_user(current_user):
+        raise _manual_personas_not_allowed_response()
+
+    persona_limit = _persona_limit_for(current_user, exp)
+    total_count, _ = await _count_primary_personas(session, workspace_id, exploration_id)
+    if total_count >= persona_limit:
+        raise _persona_limit_response(persona_limit)
 
     # Validate persona traits with Omi AI
     try:
@@ -296,18 +412,111 @@ async def list_personas(
     return SuccessResponse(message="Personas fetched successfully", data=personas)
 
 
+@router.get("/quota", response_model=SuccessResponse)
+async def get_persona_quota(
+    workspace_id: str,
+    exploration_id: str,
+    current_user: User = Depends(get_current_active_user),
+    session: AsyncSession = Depends(get_session),
+):
+    exp = await exploration_service.get_exploration(session, exploration_id)
+    if not exp or str(exp.workspace_id) != str(workspace_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=ErrorResponse(status="error", message="Exploration not found").dict(),
+        )
+
+    members = await ws_service.list_workspace_members(workspace_id)
+    if not any(m["user_id"] == current_user.id for m in members):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=ErrorResponse(status="error", message="You are not a member of this workspace").dict(),
+        )
+
+    quota = await _build_persona_quota(session, current_user, workspace_id, exploration_id, exp)
+    return SuccessResponse(message="Persona quota fetched successfully", data=quota)
+
+
+@router.post("/purchase", response_model=SuccessResponse)
+async def purchase_additional_personas(
+    workspace_id: str,
+    exploration_id: str,
+    payload: PersonaPurchaseRequest,
+    current_user: User = Depends(get_current_active_user),
+    session: AsyncSession = Depends(get_session),
+):
+    if not _additional_personas_supported(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=ErrorResponse(
+                status="error",
+                message="Additional personas are available on Explorer and Enterprise plans.",
+            ).dict(),
+        )
+
+    if not await ws_service.is_workspace_admin(workspace_id, current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=ErrorResponse(status="error", message="Only workspace admins can add personas").dict(),
+        )
+
+    exp = await exploration_service.get_exploration(session, exploration_id)
+    if not exp or str(exp.workspace_id) != str(workspace_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=ErrorResponse(status="error", message="Exploration not found").dict(),
+        )
+
+    exp.additional_persona_limit = int(getattr(exp, "additional_persona_limit", 0) or 0) + payload.count
+    session.add(exp)
+    await session.commit()
+    await session.refresh(exp)
+
+    quota = await _build_persona_quota(session, current_user, workspace_id, exploration_id, exp)
+    tier = _normalised_account_tier(current_user)
+    unit_amount_cents = 19900 if tier == "enterprise" else 4900
+    return SuccessResponse(
+        message="Additional persona credits added successfully",
+        data={
+            **quota,
+            "purchased_count": payload.count,
+            "unit_amount_cents": unit_amount_cents,
+            "total_amount_cents": unit_amount_cents * payload.count,
+            "currency": "USD",
+            "payment_provider_connected": False,
+            "checkout_available": False,
+        },
+    )
+
+
 @router.post("/validate", response_model=SuccessResponse)
 async def validate_persona_plausibility(
     workspace_id: str,
     exploration_id: str,
     payload: ManualPersonaCreate,
     current_user: User = Depends(get_current_active_user),
+    session: AsyncSession = Depends(get_session),
 ):
     """
     Soft plausibility check for manual persona traits.
     Returns a list of warnings — never blocks creation.
     Call this before or after POST /manual to show a warning modal.
     """
+    exp = await exploration_service.get_exploration(session, exploration_id)
+    if not exp or str(exp.workspace_id) != str(workspace_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=ErrorResponse(status="error", message="Exploration not found").dict(),
+        )
+
+    if not _is_enterprise_user(current_user):
+        raise _manual_personas_not_allowed_response()
+
+    persona_limit = _persona_limit_for(current_user, exp)
+    total_count, _ = await _count_primary_personas(session, workspace_id, exploration_id)
+    if total_count >= persona_limit:
+        raise _persona_limit_response(persona_limit)
+
     warnings = evaluate_from_schema(payload)
     return SuccessResponse(
         message="Plausibility check complete",
@@ -348,6 +557,12 @@ async def create_manual_persona_draft(
             detail=ErrorResponse(status="error", message="Exploration not found").dict()
         )
 
+    if str(exp.workspace_id) != str(workspace_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=ErrorResponse(status="error", message="Exploration is not part of the provided workspace").dict()
+        )
+
     try:
         await require_ro_exists(session, exploration_id)
     except WorkflowError as e:
@@ -358,6 +573,14 @@ async def create_manual_persona_draft(
 
     # Run plausibility checks before saving — zero DB cost, never blocks
     warnings = evaluate_from_schema(payload)
+
+    if not _is_enterprise_user(current_user):
+        raise _manual_personas_not_allowed_response()
+
+    persona_limit = _persona_limit_for(current_user, exp)
+    total_count, _ = await _count_primary_personas(session, workspace_id, exploration_id)
+    if total_count >= persona_limit:
+        raise _persona_limit_response(persona_limit)
 
     draft = await persona_service.create_manual_persona_draft(
         exploration_id, workspace_id, current_user.id, payload,

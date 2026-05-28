@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { TbX, TbPlus, TbMinus, TbInfoCircle } from 'react-icons/tb';
+import { toast } from 'react-toastify';
+import { personaService } from '../../../../../../../services/personaService';
 import './AddPersonaModalStyles.css';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -13,7 +15,7 @@ interface AddPersonaModalProps {
   isOpen: boolean;
   onClose: () => void;
   /** Called after a successful purchase so the parent can refetch personas */
-  onSuccess?: () => void;
+  onSuccess?: (count: number) => void | Promise<void>;
   workspaceId?: string;
   objectiveId?: string;
 }
@@ -57,14 +59,20 @@ const AddPersonaModal: React.FC<AddPersonaModalProps> = ({
   };
 
   const handleAdd = async () => {
+    if (!workspaceId || !objectiveId) return;
+
     setAdding(true);
     try {
-      // TODO: wire up your personaService.purchasePersonas({ workspaceId, objectiveId, count })
-      // const res = await personaService.purchasePersonas({ workspaceId, objectiveId, count });
-      onSuccess?.();
-      onClose();
+      await personaService.purchasePersonas(workspaceId, objectiveId, count);
+      toast.success(`${count} persona${count > 1 ? 's' : ''} added successfully!`);
+      if (onSuccess) {
+        await onSuccess(count);
+      } else {
+        onClose();
+      }
     } catch (err: any) {
       console.error('Failed to add personas:', err);
+      toast.error(err?.response?.data?.detail?.message || 'Failed to add personas. Please try again.');
     } finally {
       setAdding(false);
     }
