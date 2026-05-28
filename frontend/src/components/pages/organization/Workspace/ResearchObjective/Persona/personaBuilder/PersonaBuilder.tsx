@@ -5,7 +5,7 @@ import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import {
   TbEdit, TbPlus, TbLoader, TbUsers, TbDownload,
   TbChevronRight, TbEye, TbCopy, TbTrash, TbDotsVertical,
-  TbMinus, TbInfoCircle, TbCheck, TbX,
+  TbMinus, TbInfoCircle, TbCheck, TbX, TbLock, TbSparkles,
 } from 'react-icons/tb';
 import SpIcon from '../../../../../../SPIcon';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -34,17 +34,6 @@ import {
 import { downloadPersonaCardsFrontend } from './DownloadPersonaCard';
 import type { PersonaCardData } from './PersonaCardRenderer';
 import AddPersonaModal from './AddPersonaModal';
-
-// Components
-// import Header from './components/Header';
-// import TabsNavigation from './components/TabsNavigation';
-// import EmptyState from './components/EmptyState';
-// import PersonaListItem from './components/PersonaListItem';
-// import BackstoryModal from './components/BackstoryModal';
-// import ValidationModal from './components/ValidationModal';
-// import ApproachSelectionModal from './components/ApproachSelectionPage';
-// import AttributeItem from './components/AttributeItem';
-// import SelectionPanel from './components/SelectionPanel';
 
 import './PersonaBuilder.css';
 
@@ -444,7 +433,7 @@ const AddNewPersonaModal: React.FC<AddNewPersonaModalProps> = ({ show, onClose, 
   );
 };
 
-// ── ReplicatePersonaModal ─────────────────────────────────────────────────────
+// ── DeletePersonaModal ────────────────────────────────────────────────────────
 
 const DeletePersonaModal: React.FC<DeletePersonaModalProps> = ({
   persona,
@@ -508,6 +497,8 @@ const DeletePersonaModal: React.FC<DeletePersonaModalProps> = ({
   );
 };
 
+// ── ReplicatePersonaModal ─────────────────────────────────────────────────────
+
 interface ReplicatePersonaModalProps {
   show: boolean;
   personas: SavedPersona[];
@@ -551,7 +542,6 @@ const ReplicatePersonaModal: React.FC<ReplicatePersonaModalProps> = ({
     setCountryDropdownOpen(false);
   }, [show, preSelectedPersona]);
 
-  // Close dropdowns on outside click
   useEffect(() => {
     if (!personaDropdownOpen && !countryDropdownOpen) return;
     const handleClickOutside = (e: MouseEvent) => {
@@ -564,7 +554,6 @@ const ReplicatePersonaModal: React.FC<ReplicatePersonaModalProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [personaDropdownOpen, countryDropdownOpen]);
 
-  // Auto-close persona dropdown when all personas selected
   const togglePersona = (id: string) => {
     setSelectedPersonaIds(prev => {
       const next = prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id];
@@ -610,7 +599,6 @@ const ReplicatePersonaModal: React.FC<ReplicatePersonaModalProps> = ({
               Test the same audience in multiple countries to uncover how behavior, preferences, and decisions shift by market.
             </p>
 
-            {/* Wrapper div with ref to catch outside clicks for both dropdowns */}
             <div ref={dropdownRef}>
               {/* Persona selector */}
               <div className="pb-dropdown-wrap">
@@ -643,7 +631,6 @@ const ReplicatePersonaModal: React.FC<ReplicatePersonaModalProps> = ({
                     </motion.div>
                   )}
                 </AnimatePresence>
-                {/* Tags */}
                 {selectedPersonaIds.length > 0 && (
                   <div className="pb-tag-row">
                     {selectedPersonaIds.map(id => {
@@ -737,6 +724,90 @@ const ReplicatePersonaModal: React.FC<ReplicatePersonaModalProps> = ({
               >
                 {isLoading ? <TbLoader size={14} className="pb-btn-spinner" /> : null}
                 Add & Calibrate
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+};
+
+// ── CreatePersonaMethodModal ──────────────────────────────────────────────────
+
+interface CreatePersonaMethodModalProps {
+  show: boolean;
+  onClose: () => void;
+  onCreateWithOmi: () => void;
+  onBuildManually: () => void;
+  /** When true the "Build Manually" option renders as locked */
+  manualAllowed: boolean;
+}
+
+const CreatePersonaMethodModal: React.FC<CreatePersonaMethodModalProps> = ({
+  show, onClose, onCreateWithOmi, onBuildManually, manualAllowed,
+}) => {
+  if (!show) return null;
+
+  return (
+    <AnimatePresence>
+      {show && (
+        <motion.div
+          className="pb-modal-overlay"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          onClick={onClose}
+        >
+          <motion.div
+            className="pb-modal-box pb-method-modal-box"
+            initial={{ opacity: 0, scale: 0.93, y: 16 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.93, y: 16 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <button className="pb-modal-close" onClick={onClose}><TbX size={18} /></button>
+            <h2 className="pb-modal-title">Create New Persona</h2>
+            <p className="pb-modal-subtitle">Choose how you'd like to build your next persona.</p>
+
+            <div className="pb-method-options">
+              {/* Create with Omi */}
+              <button
+                className="pb-method-option pb-method-option--omi"
+                onClick={() => { onClose(); onCreateWithOmi(); }}
+              >
+                <div className="pb-method-option-icon pb-method-option-icon--omi">
+                  <TbSparkles size={20} />
+                </div>
+                <div className="pb-method-option-text">
+                  <span className="pb-method-option-title">Create with Omi</span>
+                  <span className="pb-method-option-desc">
+                    Let Omi calibrate personas from your research objective.
+                  </span>
+                </div>
+              </button>
+
+              {/* Build Manually */}
+              <button
+                className={`pb-method-option pb-method-option--manual${!manualAllowed ? ' pb-method-option--locked' : ''}`}
+                onClick={() => { onClose(); onBuildManually(); }}
+                title={!manualAllowed ? 'Upgrade to Enterprise to build personas manually' : undefined}
+              >
+                <div className="pb-method-option-icon pb-method-option-icon--manual">
+                  {manualAllowed ? <TbEdit size={20} /> : <TbLock size={20} />}
+                </div>
+                <div className="pb-method-option-text">
+                  <span className="pb-method-option-title">
+                    Build Manually
+                    {!manualAllowed && (
+                      <span className="pb-method-option-badge">Enterprise</span>
+                    )}
+                  </span>
+                  <span className="pb-method-option-desc">
+                    Configure traits step by step and craft personas tailored to your spec.
+                  </span>
+                </div>
               </button>
             </div>
           </motion.div>
@@ -892,7 +963,6 @@ interface CountryGroupProps {
   onReplicatePersona: (persona: SavedPersona) => void;
   onReplicateGroup: (country: string) => void;
   onDeletePersona: (persona: SavedPersona) => void;
-  /** Whether to render the "Create New Persona" tile in this group */
   showCreateNew: boolean;
   totalPersonaCount: number;
   isViewOnly?: boolean;
@@ -921,13 +991,11 @@ const CountryGroup: React.FC<CountryGroupProps> = ({
 
   return (
     <div className="pb-country-group">
-      {/* Country header */}
       <div className="pb-country-header">
         <span className="pb-country-name">{country}</span>
         <KebabMenu items={countryKebabItems} />
       </div>
 
-      {/* Cards grid */}
       <div className="pb-personas-grid">
         {personas.map((persona, idx) => (
           <motion.div
@@ -947,10 +1015,6 @@ const CountryGroup: React.FC<CountryGroupProps> = ({
           </motion.div>
         ))}
 
-        {/* "Create New Persona" tile:
-            - hidden entirely for free users at/above limit (showCreateNew=false)
-            - shown for tier1 users at limit so they can buy more
-            - shown for tier2/enterprise as normal */}
         {showCreateNew && (
           <motion.div
             initial={{ opacity: 0, y: 16 }}
@@ -978,9 +1042,7 @@ interface PersonasReadyGridProps {
   onReplicatePersona: (persona: SavedPersona) => void;
   onReplicateGroup: (country: string) => void;
   onDeletePersona: (persona: SavedPersona) => void;
-  /** Pass tier flags so the grid can hide the "Create New" tile for free users */
   isFreeUser: boolean;
-  /** When true, hide the "Create New Persona" tile entirely (view-only mode) */
   isViewOnly?: boolean;
 }
 
@@ -998,8 +1060,6 @@ const PersonasReadyGrid: React.FC<PersonasReadyGridProps> = ({
   isFreeUser,
   isViewOnly = false,
 }) => {
-  // Group personas by country — prefer location_country (clean country name),
-  // fall back to geography only if location_country is absent.
   const grouped = savedPersonas.reduce<Record<string, SavedPersona[]>>((acc, persona) => {
     const country = persona.location_country ?? persona.geography ?? 'Other';
     if (!acc[country]) acc[country] = [];
@@ -1010,12 +1070,10 @@ const PersonasReadyGrid: React.FC<PersonasReadyGridProps> = ({
   const countryKeys = Object.keys(grouped);
   const totalCount = savedPersonas.length;
 
-  // For free users who are at/above the persona limit, never show the create tile.
   const freeAtLimit = isFreeUser && totalCount >= FREE_PERSONA_LIMIT;
 
   return (
     <div className="pb-grid-page">
-      {/* Hero Omi avatar */}
       <motion.div
         initial={{ scale: 0.8, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
@@ -1032,7 +1090,6 @@ const PersonasReadyGrid: React.FC<PersonasReadyGridProps> = ({
         />
       </motion.div>
 
-      {/* Heading */}
       <motion.h2
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -1042,11 +1099,9 @@ const PersonasReadyGrid: React.FC<PersonasReadyGridProps> = ({
         Your Personas are ready
       </motion.h2>
 
-      {/* Country groups */}
       <div className="pb-groups-container">
         {countryKeys.map((country, groupIdx) => {
           const isLast = groupIdx === countryKeys.length - 1;
-          // Show create tile only in the last group, never for free users at limit, and never in view-only mode
           const showCreateNew = isLast && !freeAtLimit && !isViewOnly;
           return (
             <motion.div
@@ -1072,7 +1127,6 @@ const PersonasReadyGrid: React.FC<PersonasReadyGridProps> = ({
           );
         })}
 
-        {/* If no personas yet, show create tile — hidden in view-only mode */}
         {countryKeys.length === 0 && (
           <div className="pb-empty-state">
             <p className="pb-empty-state__title">No personas yet</p>
@@ -1088,7 +1142,6 @@ const PersonasReadyGrid: React.FC<PersonasReadyGridProps> = ({
         )}
       </div>
 
-      {/* Bottom action bar */}
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
@@ -1136,6 +1189,9 @@ const PersonaBuilder: React.FC = () => {
   const isTier1User = userTier === 'tier1' || userTier === 'explorer';
   const isFreeOrTier1 = isFreeUser || isTier1User;
   const basePersonaLimitForTier = isFreeOrTier1 ? FREE_PERSONA_LIMIT : PERSONA_LIMIT;
+
+  // Enterprise users get the "Build Manually" option (mirrors AddResearchObjective)
+  const isEnterpriseUser = userTier === 'enterprise' || userTier === 'enterprise_admin';
 
   // Modal for tier1 users who want to buy more personas ($49 each)
   const [showAddPersonaModal, setShowAddPersonaModal] = useState(false);
@@ -1205,7 +1261,7 @@ const PersonaBuilder: React.FC = () => {
   const [isNavigatingToPreview, setIsNavigatingToPreview] = useState(false);
   const [isMockGenerating, setIsMockGenerating] = useState(false);
 
-  // New modal states
+  // Modal states
   const [showAddNewPersonaModal, setShowAddNewPersonaModal] = useState(false);
   const [showReplicateModal, setShowReplicateModal] = useState(false);
   const [replicatePreSelectedPersona, setReplicatePreSelectedPersona] = useState<SavedPersona | null>(null);
@@ -1213,6 +1269,9 @@ const PersonaBuilder: React.FC = () => {
   const [deletingPersonaId, setDeletingPersonaId] = useState<string | null>(null);
   const [pendingDeletePersona, setPendingDeletePersona] = useState<SavedPersona | null>(null);
   const [deletePersonaError, setDeletePersonaError] = useState('');
+
+  // ── NEW: method selection modal ────────────────────────────────────────────
+  const [showMethodModal, setShowMethodModal] = useState(false);
 
   const processedPersonaRef = useRef(new Set<string>());
   const hasInitializedRef = useRef(false);
@@ -1382,11 +1441,14 @@ const PersonaBuilder: React.FC = () => {
     }
   }, [navigate, workspaceId, objectiveId]);
 
-  // When "Create New Persona" tile is clicked:
-  //   - free user at limit      → no-op (tile is hidden, but guard defensively)
-  //   - tier1 user at limit     → open AddPersonaModal ($49/persona)
-  //   - tier2/enterprise at 4+  → open AddNewPersonaModal (existing paid flow)
-  //   - otherwise               → kick off generation + navigate to loader
+  // ── "Create New Persona" tile click ────────────────────────────────────────
+  //
+  // Tier matrix:
+  //   free at/above limit        → no-op (tile is hidden)
+  //   tier1 at limit             → AddPersonaModal ($49/persona buy-more)
+  //   tier2/others at soft cap   → AddNewPersonaModal (existing paid flow)
+  //   enterprise / enterprise_admin → CreatePersonaMethodModal (Omi | Manual)
+  //   everyone else under limit  → CreatePersonaMethodModal (Omi | Manual)
   const handleGridCreateNew = useCallback(() => {
     // free: tile is hidden so this should never fire, but guard just in case
     if (isFreeUser && savedPersonasFromAPI.length >= FREE_PERSONA_LIMIT) return;
@@ -1403,13 +1465,32 @@ const PersonaBuilder: React.FC = () => {
       return;
     }
 
-    try { generatePersonas(); } catch (err) { console.error("Failed to kick off persona generation:", err); }
+    // All other cases (including enterprise at any count) → method selection
+    setShowMethodModal(true);
+  }, [isFreeUser, isTier1User, isEnterpriseUser, savedPersonasFromAPI.length]);
+
+  // ── Called when user picks "Create with Omi" from the method modal ──────────
+  const handleCreateWithOmi = useCallback(() => {
+    trigger({ stage: 'persona_builder', event: 'PERSONA_WORKFLOW_LOADED', payload: {} });
+
+    try { generatePersonas(); } catch (err) { console.error('Failed to kick off persona generation:', err); }
 
     navigate(
       `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-generating`,
-      { state: { flow: "omi" } }
+      { state: { flow: 'omi' } }
     );
   }, [isFreeUser, isTier1User, isFreeOrTier1, personaLimitForTier, savedPersonasFromAPI.length, generatePersonas, navigate, workspaceId, objectiveId]);
+  const handleBuildManually = useCallback(() => {
+  if (!isEnterpriseUser) {
+    // shouldn't reach here normally (button is locked in modal),
+    // but guard defensively
+    return;
+  }
+  navigate(
+    `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-builder/manual`,
+    { state: { flow: 'manual', viewOnly: isViewOnly } }
+  );
+}, [isEnterpriseUser, navigate, workspaceId, objectiveId, isViewOnly]);
 
   const handleAddNewPersonaConfirm = async (count: number) => {
     if (!workspaceId || !objectiveId) return;
@@ -1987,6 +2068,15 @@ const PersonaBuilder: React.FC = () => {
           isViewOnly={isViewOnly}
         />
 
+        {/* ── Create Persona Method Modal (enterprise / enterprise_admin) ── */}
+        <CreatePersonaMethodModal
+          show={showMethodModal}
+          onClose={() => setShowMethodModal(false)}
+          onCreateWithOmi={handleCreateWithOmi}
+          onBuildManually={handleBuildManually}
+          manualAllowed={isEnterpriseUser}
+        />
+
         <AddNewPersonaModal
           show={showAddNewPersonaModal}
           onClose={() => setShowAddNewPersonaModal(false)}
@@ -2057,192 +2147,8 @@ const PersonaBuilder: React.FC = () => {
     );
   }
 
-  // ── Trait builder view ──────────────────────────────────────────────────────
-
-  // return (
-  //   <div className="p-4 md:p-8 relative min-h-[calc(100vh-100px)] flex flex-col">
-  //     <div className="max-w-7xl mx-auto relative z-10 w-full flex-grow flex flex-col">
-
-  //       {/* <Header
-  //         personas={personas()}
-  //         onBack={handleBack}
-  //         onAIGenerate={memoizedHandleAIGenerate}
-  //         isGeneratingAI={isGeneratingPersonas}
-  //         showAIGenerate={personaIds.length > 0}
-  //       /> */}
-
-  //       {savedPersonasFromAPI.length > 0 && (
-  //         <button className="pb-view-all-btn" onClick={() => setShowGrid(true)}>
-  //           <TbUsers size={14} />
-  //           View all personas ({savedPersonasFromAPI.length})
-  //         </button>
-  //       )}
-
-  //       <motion.div
-  //         initial={{ opacity: 0, y: 20 }}
-  //         animate={{ opacity: 1, y: 0 }}
-  //         transition={{ delay: 0.1 }}
-  //         className="bg-white/95 dark:bg-white/5 backdrop-blur-xl border-2 border-gray-200 dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden p-6 md:p-8 min-h-[600px] relative z-10"
-  //       >
-  //         {/* {personaIds.length > 0 && (
-  //           <TabsNavigation tabs={tabs} activeTab={activeTab} onTabChange={handleTabChange} />
-  //         )} */}
-
-  //         {personaIds.length === 0 ? (
-  //           <EmptyState
-  //             onAddPersona={handleAddPersona}
-  //             onAIGenerate={memoizedHandleAIGenerate}
-  //             isGeneratingAI={isGeneratingPersonas || isMockGenerating}
-  //           />
-  //         ) : (
-  //           <div className="flex flex-col lg:flex-row gap-8">
-  //             <div className="w-full lg:w-64 flex-shrink-0 space-y-4 bg-gray-50/50 dark:bg-black/10 p-4 rounded-2xl border border-gray-100 dark:border-white/5">
-  //               {/* <div className="space-y-2">
-  //                 {personaIds.map(id => {
-  //                   const persona = personaDataById[id];
-  //                   if (!persona) return null;
-  //                   return (
-  //                     <PersonaListItem
-  //                       key={id}
-  //                       name={persona.name}
-  //                       isSelected={selectedPersonaId === id}
-  //                       isEditing={editingPersonaId === id}
-  //                       newName={newPersonaName}
-  //                       isAIPersona={!!(persona.isAI || persona.isAIGenerated)}
-  //                       savedPersona={savedPersonasFromAPI?.find(p => p.id === id)}
-  //                       onSelect={() => handleSelectPersona(id)}
-  //                       onDoubleClick={() => handleDoubleClick(id)}
-  //                       onNameChange={handleNameChange}
-  //                       onNameBlur={handleNameBlur}
-  //                       onNameKeyDown={handleNameKeyDown}
-  //                       onPreview={() => handlePreviewPersona(id)}
-  //                       onEditClick={(e: React.MouseEvent<HTMLButtonElement>) => {
-  //                         e.stopPropagation();
-  //                         handleDoubleClick(id);
-  //                       }}
-  //                     />
-  //                   );
-  //                 })}
-  //               </div> */}
-
-  //               {/* <button
-  //                 onClick={handleAddPersona}
-  //                 className={`w-full flex items-center justify-center gap-2 p-3 rounded-xl border-2 border-dashed transition-all font-medium ${personaIds.length === 0
-  //                   ? 'bg-blue-600 border-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-500/20'
-  //                   : 'border-gray-300 dark:border-white/10 text-gray-500 dark:text-gray-400 hover:border-blue-500 dark:hover:border-blue-500/50 hover:text-blue-600 dark:hover:text-blue-400'
-  //                   }`}
-  //               >
-  //                 <TbPlus size={20} />
-  //                 <span>{personaIds.length === 0 ? 'Create Your First Persona' : 'Add Persona'}</span>
-  //               </button> */}
-  //             </div>
-
-  //             <div className="flex-grow flex flex-col gap-6">
-  //               {/* <div className="flex-grow flex flex-col md:flex-row gap-8 bg-gray-50/80 dark:bg-black/10 p-6 rounded-2xl border border-gray-100 dark:border-white/5 h-full relative min-h-[500px]">
-  //                 {isTraitLoading ? (
-  //                   <div className="absolute inset-0 flex flex-col items-center justify-center z-50 bg-gray-50/50 dark:bg-black/20 backdrop-blur-sm rounded-2xl">
-  //                     <TbLoader className="animate-spin text-blue-600 dark:text-blue-400 mb-4" size={48} />
-  //                     <p className="text-sm font-medium text-gray-500 dark:text-gray-400 animate-pulse">
-  //                       Loading attributes...
-  //                     </p>
-  //                   </div>
-  //                 ) : (
-  //                   <>
-  //                     {activeTab !== 'Persona' && (
-  //                       <div className={`w-full flex-shrink-0 space-y-3 transition-all duration-300 ${editingItem ? 'md:w-64' : 'md:w-[440px]'}`}>
-  //                         <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Attributes</h3>
-  //                         <AnimatePresence mode="wait">
-  //                           <motion.div
-  //                             key={activeTab}
-  //                             initial={{ opacity: 0, x: 20 }}
-  //                             animate={{ opacity: 1, x: 0 }}
-  //                             exit={{ opacity: 0, x: -20 }}
-  //                             className={`grid gap-3 transition-all duration-300 ${editingItem ? 'grid-cols-1' : 'grid-cols-2'}`}
-  //                           >
-  //                             {((contentData as Record<string, { items: string[] }>)[activeTab])?.items?.map((item: string) => {
-  //                               const isAIPersona = !!(
-  //                                 currentPersonaData?.isAI || currentPersonaData?.isAIGenerated ||
-  //                                 selectedPersonaId?.toLowerCase().includes('ai') ||
-  //                                 selectedPersonaId?.toLowerCase().includes('mock')
-  //                               );
-  //                               return (
-  //                                 <AttributeItem
-  //                                   key={item}
-  //                                   item={item}
-  //                                   currentValue={currentPersonaData[item]}
-  //                                   isEditing={editingItem?.item === item}
-  //                                   onClick={() => handleItemClick(activeTab, item)}
-  //                                   disabled={isAIPersona}
-  //                                 />
-  //                               );
-  //                             })}
-  //                           </motion.div>
-  //                         </AnimatePresence>
-  //                       </div>
-  //                     )}
-
-  //                     <SelectionPanel
-  //                       editingItem={editingItem}
-  //                       currentValue={currentPersonaData[editingItem?.item ?? '']}
-  //                       onSelect={handleSave}
-  //                     />
-
-  //                     {!editingItem && activeTab !== 'Persona' && (
-  //                       <div className="flex-grow flex items-center justify-center p-12 text-center text-gray-500 dark:text-gray-400 bg-gray-50/50 dark:bg-white/5 rounded-2xl border border-dashed border-gray-200 dark:border-white/10">
-  //                         <div>
-  //                           <TbEdit size={48} className="mx-auto mb-4 opacity-20" />
-  //                           <p>Select an attribute on the left to configure it.</p>
-  //                         </div>
-  //                       </div>
-  //                     )}
-  //                   </>
-  //                 )}
-  //               </div> */}
-
-  //               <div className="flex gap-2 justify-end">
-  //                 {/* {!currentPersonaData?.isAI && !currentPersonaData?.isAIGenerated && (
-  //                   <button
-  //                     onClick={handleSubmit}
-  //                     disabled={isProcessing || !hasSelectedTraits}
-  //                     className="flex items-center gap-2 px-10 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-bold shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-  //                   >
-  //                     {isProcessing ? 'Processing...' : currentPersonaData.isSaved ? 'Update' : 'Submit'}
-  //                   </button>
-  //                 )} */}
-  //                 {/* {savedPersonasFromAPI.length > 0 && (
-  //                   <button
-  //                     onClick={handleDiscussionGuidelines}
-  //                     disabled={updateExplorationMethodMutation.isPending}
-  //                     className="flex items-center gap-2 px-10 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-bold shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-  //                   >
-  //                     {updateExplorationMethodMutation.isPending ? 'Processing...' : 'Next step'}
-  //                   </button>
-  //                 )} */}
-  //               </div>
-  //             </div>
-  //           </div>
-  //         )}
-  //       </motion.div>
-  //     </div>
-
-  //     {/* <BackstoryModal
-  //       show={showBackstoryPopup}
-  //       selectedPersona={currentPersonaData.name ?? selectedPersonaId}
-  //       backstory={backstory}
-  //       isSubmitting={isProcessing}
-  //       onBackstoryChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setBackstory(e.target.value)}
-  //       onSubmit={handleBackstorySubmit}
-  //       onClose={() => setShowBackstoryPopup(false)}
-  //     />
-
-  //     <ValidationModal
-  //       show={showValidationModal}
-  //       validationError={validationError}
-  //       onContinue={handleValidationModalContinue}
-  //       onClose={handleValidationModalClose}
-  //     /> */}
-  //   </div>
-  // );
+  // ── Trait builder view (currently commented out in original) ────────────────
+  return null;
 };
 
 export default PersonaBuilder;

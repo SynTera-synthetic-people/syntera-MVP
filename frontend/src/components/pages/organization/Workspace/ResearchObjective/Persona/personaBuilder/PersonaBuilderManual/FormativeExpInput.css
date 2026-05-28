@@ -56,7 +56,7 @@
   max-height: 400px;
   padding: 1rem;
   background: rgba(0, 0, 0, 0.2);
-  border:  1px solid var(--T-GreyScale-Grey-800, #393C45);
+  border: 1px solid var(--T-GreyScale-Grey-800, #393C45);
   border-radius: 20px;
   color: #ffff;
   font-size: 0.875rem;
@@ -75,7 +75,7 @@
 
 .formative-input__textarea:focus {
   background: rgba(0, 0, 0, 0.3);
-  border-color:  1px solid var(--T-GreyScale-Grey-800, #393C45);
+  border-color: 1px solid var(--T-GreyScale-Grey-800, #393C45);
   box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
 }
 
