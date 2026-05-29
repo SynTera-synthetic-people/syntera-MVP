@@ -128,9 +128,18 @@ const InsightGeneration: React.FC = () => {
     const qual = (reportStatusData as any)?.qual;
     if (!qual) return;
 
-    const DI = qual.DECISION_INTELLIGENCE?.status as string | undefined;
-    const BA = qual.BEHAVIORAL_ARCHAEOLOGY?.status as string | undefined;
-    const TR = qual.TRANSCRIPTS?.status as string | undefined;
+    const diStatus = qual.DECISION_INTELLIGENCE;
+    const baStatus = qual.BEHAVIORAL_ARCHAEOLOGY;
+    const trStatus = qual.TRANSCRIPTS;
+    const DI = diStatus?.status as string | undefined;
+    const BA = baStatus?.status as string | undefined;
+    const TR = trStatus?.status as string | undefined;
+    const diReady = Boolean(diStatus?.available) || DI === 'done';
+    const baReady = Boolean(baStatus?.available) || BA === 'done';
+    const trReady = Boolean(trStatus?.available) || TR === 'done';
+    const diPending = DI === 'pending' || DI === 'generating';
+    const baPending = BA === 'pending' || BA === 'generating';
+    const trPending = TR === 'pending' || TR === 'generating';
 
     // Toast only on actual pending → failed transitions, not stale page load
     if (DI === 'failed' && prevStatusRef.current.DI === 'pending') {
@@ -156,23 +165,25 @@ const InsightGeneration: React.FC = () => {
       const next = { ...prev };
 
       // DI — always reflect server truth, done always wins
-      if (DI === 'done') next.decision = 'ready';
-      else if (DI === 'pending') next.decision = 'generating';
-      else if (DI === 'failed') next.decision = 'idle';
+      if (diReady) next.decision = 'ready';
+      else if (diPending) next.decision = 'generating';
+      else if (diStatus) next.decision = 'idle';
 
       // BA — always reflect server truth, done always wins
-      if (BA === 'done') next.behaviour = 'ready';
-      else if (BA === 'pending') next.behaviour = 'generating';
-      else if (BA === 'failed') next.behaviour = 'idle';
+      if (baReady) next.behaviour = 'ready';
+      else if (baPending) next.behaviour = 'generating';
+      else if (baStatus) next.behaviour = 'idle';
 
       // Verbatim — always restore if done, never block on prev state
-      if (TR === 'done') next.verbatim = 'ready';
+      if (trReady) next.verbatim = 'ready';
+      else if (trPending) next.verbatim = 'generating';
+      else if (trStatus) next.verbatim = 'idle';
 
       return next;
     });
 
     // Re-enable polling when tasks are in flight (handles re-navigation case)
-    if (DI === 'pending' || BA === 'pending') {
+    if (diPending || baPending || trPending) {
       setPollingEnabled(true);
     } else {
       setPollingEnabled(false);
