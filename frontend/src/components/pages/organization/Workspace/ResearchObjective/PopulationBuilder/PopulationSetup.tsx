@@ -49,7 +49,7 @@ const PopulationSetup: React.FC<PopulationSetupProps> = ({
     onStartSurvey,
     isPending = false,
 }) => {
-    const [currentStep, setCurrentStep] = useState(0);
+    // const [currentStep, setCurrentStep] = useState(0);
     const [showAll, setShowAll] = useState(false);
 
     // Dropdown open state: null = all closed, 'add' = add-new row, number = row index
@@ -57,19 +57,19 @@ const PopulationSetup: React.FC<PopulationSetupProps> = ({
 
     const rowDropdownRefs = useRef<(HTMLDivElement | null)[]>([]);
     const addDropdownRef = useRef<HTMLDivElement | null>(null);
-    const videoRef = useRef<HTMLVideoElement>(null);
+    // const videoRef = useRef<HTMLVideoElement>(null);
 
     const hasValidSelection =
         selectedPersonas.length > 0 &&
         selectedPersonas.every((p) => (sampleSizes[p.id] ?? 0) > 0);
 
     // Step cycling
-    useEffect(() => {
-        const interval = setInterval(() => {
-            setCurrentStep((prev) => (prev + 1) % SETUP_STEPS.length);
-        }, 3000);
-        return () => clearInterval(interval);
-    }, []);
+    // useEffect(() => {
+    //     const interval = setInterval(() => {
+    //         setCurrentStep((prev) => (prev + 1) % SETUP_STEPS.length);
+    //     }, 3000);
+    //     return () => clearInterval(interval);
+    // }, []);
 
     // Close dropdowns on outside click
     useEffect(() => {
@@ -330,9 +330,8 @@ const PopulationSetup: React.FC<PopulationSetupProps> = ({
                 </button>
             </div>
 
-            {/* ── Omi step card ────────────────────────────────── */}
-            <div className="ps-omi-card">
-                {/* Left: arc + video + step label */}
+            {/* ── Omi step card — hidden for now ────────────────────────────────── */}
+            {/* <div className="ps-omi-card">
                 <div className="ps-omi-card__left">
                     <div className="ps-omi-arc-wrap">
                         <video
@@ -345,12 +344,8 @@ const PopulationSetup: React.FC<PopulationSetupProps> = ({
                             className="ps-omi-card__video"
                         />
                     </div>
-                    {/* <span className="ps-omi-card__step-label">
-                        Step {SETUP_STEPS[currentStep]!.step}/{SETUP_STEPS.length}
-                    </span> */}
                 </div>
 
-                {/* Right: animated text + dots */}
                 <div className="ps-omi-card__content">
                     <AnimatePresence mode="wait">
                         <motion.div
@@ -364,9 +359,9 @@ const PopulationSetup: React.FC<PopulationSetupProps> = ({
                             {SETUP_STEPS[currentStep]!.label}
                         </motion.div>
                     </AnimatePresence>
-
                 </div>
-            </div>
+            </div> */}
+
         </motion.div>
     );
 };
