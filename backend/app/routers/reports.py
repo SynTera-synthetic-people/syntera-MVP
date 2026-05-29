@@ -9,8 +9,12 @@ URL pattern:
   /workspaces/{workspace_id}/explorations/{exploration_id}/reports/quant/{simulation_id}/<type>
 """
 import asyncio
+import base64
+import json
 import logging
 import os
+import shutil
+import tempfile
 from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
@@ -28,6 +32,7 @@ from app.services.report_generation_qual_claude import (
     generate_docx_path,
     generate_qual_transcripts_docx,
     generate_pdf_path,
+    llm_md_to_pdf,
 )
 from app.services.report_generation_quant_claude import generate_md_report
 from app.services.survey_simulation import (
@@ -50,8 +55,15 @@ router = APIRouter(
 )
 
 QUAL_TRANSCRIPTS_CACHE_KEY = "TRANSCRIPTS_QA_DOCX_V3"
+QUAL_TRANSCRIPTS_LEGACY_CACHE_KEYS = ("TRANSCRIPTS", "QUAL_VERBATIM_V1")
 QUAL_DI_CACHE_KEY = "DECISION_INTELLIGENCE_V8"
+QUAL_DI_LEGACY_CACHE_KEYS = ("QUAL_DECISION_INTELLIGENCE_V1",)
 QUAL_BA_CACHE_KEY = "BEHAVIORAL_ARCHAEOLOGY_V8"
+QUAL_BA_LEGACY_CACHE_KEYS = (
+    "QUAL_BEHAVIOUR_ARCHAEOLOGY_V1",
+    "QUAL_BEHAVIORAL_ARCHAEOLOGY_V1",
+    "IN_DEPTH_ALL_INTERVIEWS_BA_V1",
+)
 QUAL_ALL_CACHE_KEY = "ALL_COMBINED_V4"
 QUANT_TRANSCRIPTS_CACHE_KEY = "TRANSCRIPTS"
 QUANT_DI_CACHE_KEY = "DECISION_INTELLIGENCE_V2"
@@ -84,6 +96,7 @@ class ShareReportRequest(BaseModel):
     recipient_email: EmailStr
 
 QUAL_PENDING_STALE_SECONDS = int(os.getenv("QUAL_REPORT_PENDING_STALE_SECONDS", "1800"))
+FILE_CACHE_KIND = "report_file_b64_v1"
 _qual_report_tasks: dict[tuple[str, str], asyncio.Task] = {}
 
 
@@ -100,12 +113,301 @@ def _write_file(path: str, content: bytes) -> None:
         f.write(content)
 
 
+def _pack_cached_file(content: bytes, media_type: str, filename: str) -> str:
+    return json.dumps(
+        {
+            "kind": FILE_CACHE_KIND,
+            "media_type": media_type,
+            "filename": filename,
+            "content_b64": base64.b64encode(content).decode("ascii"),
+        },
+        separators=(",", ":"),
+    )
+
+
+def _unpack_cached_file(content_md: Optional[str]) -> Optional[dict]:
+    if not content_md:
+        return None
+    try:
+        payload = json.loads(content_md)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(payload, dict) or payload.get("kind") != FILE_CACHE_KIND:
+        return None
+    encoded = payload.get("content_b64")
+    if not isinstance(encoded, str) or not encoded:
+        return None
+    try:
+        content = base64.b64decode(encoded.encode("ascii"), validate=True)
+    except Exception:
+        return None
+    return {
+        "content": content,
+        "media_type": payload.get("media_type") or "application/octet-stream",
+        "filename": payload.get("filename") or "report",
+    }
+
+
 def _cached_file_ready(cached) -> bool:
-    return bool(cached and cached.pdf_path and os.path.exists(cached.pdf_path))
+    return bool(
+        cached
+        and (
+            (cached.pdf_path and os.path.exists(cached.pdf_path))
+            or _unpack_cached_file(cached.content_md)
+        )
+    )
+
+
+def _legacy_content_ready(cached) -> bool:
+    return bool(cached and cached.status == "done" and cached.content_md)
+
+
+def _legacy_report_ready(cached) -> bool:
+    return _cached_file_ready(cached) or _legacy_content_ready(cached)
+
+
+def _read_cached_file(cached) -> bytes:
+    if cached and cached.pdf_path and os.path.exists(cached.pdf_path):
+        return _read_file(cached.pdf_path)
+    unpacked = _unpack_cached_file(getattr(cached, "content_md", None))
+    if unpacked:
+        return unpacked["content"]
+    raise FileNotFoundError("Cached report file is not available")
+
+
+def _safe_attachment_name(filename: str) -> str:
+    return os.path.basename(filename or "report") or "report"
+
+
+def _materialize_cached_file(cached, fallback_filename: str) -> tuple[str, Optional[str]]:
+    if cached and cached.pdf_path and os.path.exists(cached.pdf_path):
+        return cached.pdf_path, None
+
+    unpacked = _unpack_cached_file(getattr(cached, "content_md", None))
+    if not unpacked:
+        raise FileNotFoundError("Cached report file is not available")
+
+    temp_dir = tempfile.mkdtemp(prefix="shared_report_")
+    filename = _safe_attachment_name(unpacked.get("filename") or fallback_filename)
+    file_path = os.path.join(temp_dir, filename)
+    _write_file(file_path, unpacked["content"])
+    return file_path, temp_dir
+
+
+async def _send_share_report_email_with_cleanup(
+    *,
+    cleanup_dir: Optional[str] = None,
+    **kwargs,
+) -> None:
+    try:
+        await send_share_report_email(**kwargs)
+    finally:
+        if cleanup_dir:
+            shutil.rmtree(cleanup_dir, ignore_errors=True)
+
+
+async def _store_file_report_cache(
+    exploration_id: str,
+    cta_type: str,
+    path: Optional[str],
+    report_type: str,
+    content: bytes,
+    media_type: str,
+    filename: str,
+    simulation_id: Optional[str] = None,
+):
+    return await cache.store_report_cache(
+        exploration_id,
+        cta_type,
+        path,
+        report_type,
+        simulation_id,
+        content_md=_pack_cached_file(content, media_type, filename),
+    )
+
+
+async def _first_ready_cached_report(
+    exploration_id: str,
+    cta_types: tuple[str, ...],
+    simulation_id: Optional[str] = None,
+):
+    for cta_type in cta_types:
+        cached = await cache.get_cached_report(exploration_id, cta_type, simulation_id)
+        if _cached_file_ready(cached):
+            return cached
+    return None
+
+
+async def _first_legacy_ready_report(
+    exploration_id: str,
+    cta_types: tuple[str, ...],
+    simulation_id: Optional[str] = None,
+):
+    for cta_type in cta_types:
+        cached = await cache.get_cached_report(exploration_id, cta_type, simulation_id)
+        if _legacy_report_ready(cached):
+            return cached
+    return None
+
+
+async def _latest_report_for_keys(
+    exploration_id: str,
+    cta_types: tuple[str, ...],
+    simulation_id: Optional[str] = None,
+):
+    for cta_type in cta_types:
+        latest = await cache.get_latest_report(exploration_id, cta_type, simulation_id)
+        if latest:
+            return latest, cta_type
+    return None, cta_types[0]
+
+
+def _qual_transcripts_filename(exploration_id: str) -> str:
+    return f"transcripts_{exploration_id}.docx"
+
+
+def _qual_pdf_filename(report_slug: str, exploration_id: str) -> str:
+    return f"{report_slug}_{exploration_id}.pdf"
+
+
+def _legacy_markdown(content_md: Optional[str]) -> Optional[str]:
+    if not content_md:
+        return None
+    try:
+        parsed = json.loads(content_md)
+    except (TypeError, ValueError):
+        return content_md.strip() or None
+
+    if isinstance(parsed, str):
+        return parsed.strip() or None
+    if isinstance(parsed, dict):
+        for key in ("markdown", "content", "report", "text"):
+            value = parsed.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return None
+
+
+async def _ensure_legacy_qual_pdf_cached(
+    exploration_id: str,
+    cache_key: str,
+    legacy_cache_keys: tuple[str, ...],
+    prefix: str,
+    filename: str,
+):
+    current = await cache.get_cached_report(exploration_id, cache_key)
+    if _cached_file_ready(current):
+        return current
+
+    current_markdown = _legacy_markdown(getattr(current, "content_md", None))
+    if current and current.status == "done" and current_markdown:
+        out_path = generate_pdf_path(prefix=prefix)
+        pdf_path = await asyncio.to_thread(
+            llm_md_to_pdf,
+            current_markdown,
+            out_path,
+            "app/css/report_generation.css",
+        )
+        content = _read_file(pdf_path)
+        return await _store_file_report_cache(
+            exploration_id=exploration_id,
+            cta_type=cache_key,
+            path=pdf_path,
+            report_type="qual",
+            content=content,
+            media_type="application/pdf",
+            filename=filename,
+        )
+
+    for legacy_key in legacy_cache_keys:
+        legacy = await cache.get_cached_report(exploration_id, legacy_key)
+        if not legacy:
+            continue
+
+        if _cached_file_ready(legacy):
+            content = _read_cached_file(legacy)
+            return await _store_file_report_cache(
+                exploration_id=exploration_id,
+                cta_type=cache_key,
+                path=legacy.pdf_path,
+                report_type="qual",
+                content=content,
+                media_type="application/pdf",
+                filename=filename,
+            )
+
+        markdown_content = _legacy_markdown(legacy.content_md)
+        if legacy.status == "done" and markdown_content:
+            out_path = generate_pdf_path(prefix=prefix)
+            pdf_path = await asyncio.to_thread(
+                llm_md_to_pdf,
+                markdown_content,
+                out_path,
+                "app/css/report_generation.css",
+            )
+            content = _read_file(pdf_path)
+            return await _store_file_report_cache(
+                exploration_id=exploration_id,
+                cta_type=cache_key,
+                path=pdf_path,
+                report_type="qual",
+                content=content,
+                media_type="application/pdf",
+                filename=filename,
+            )
+
+    return current
+
+
+async def _ensure_qual_transcripts_cached(exploration_id: str):
+    current = await cache.get_cached_report(exploration_id, QUAL_TRANSCRIPTS_CACHE_KEY)
+    if _cached_file_ready(current):
+        if _unpack_cached_file(current.content_md):
+            return current
+        content = _read_cached_file(current)
+        return await _store_file_report_cache(
+            exploration_id=exploration_id,
+            cta_type=QUAL_TRANSCRIPTS_CACHE_KEY,
+            path=current.pdf_path,
+            report_type="qual",
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            filename=_qual_transcripts_filename(exploration_id),
+        )
+
+    for legacy_key in QUAL_TRANSCRIPTS_LEGACY_CACHE_KEYS:
+        legacy = await cache.get_cached_report(exploration_id, legacy_key)
+        if _cached_file_ready(legacy):
+            content = _read_cached_file(legacy)
+            return await _store_file_report_cache(
+                exploration_id=exploration_id,
+                cta_type=QUAL_TRANSCRIPTS_CACHE_KEY,
+                path=legacy.pdf_path,
+                report_type="qual",
+                content=content,
+                media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                filename=_qual_transcripts_filename(exploration_id),
+            )
+
+    out_path = generate_docx_path(prefix="qual_transcripts")
+    docx_path = await generate_qual_transcripts_docx(
+        objective_id=exploration_id,
+        out_path=out_path,
+    )
+    content = _read_file(docx_path)
+    return await _store_file_report_cache(
+        exploration_id=exploration_id,
+        cta_type=QUAL_TRANSCRIPTS_CACHE_KEY,
+        path=docx_path,
+        report_type="qual",
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename=_qual_transcripts_filename(exploration_id),
+    )
 
 
 def _is_stale_pending_report(report) -> bool:
-    if not report or report.status != "pending" or not report.created_at:
+    if not report or report.status not in {"pending", "generating"} or not report.created_at:
         return False
 
     created_at = report.created_at
@@ -167,7 +469,16 @@ async def _run_qual_report_generation(
             out_path=out_path,
             cta=cta,
         )
-        await cache.store_report_cache(exploration_id, cache_key, pdf_path, "qual")
+        content = _read_file(pdf_path)
+        await _store_file_report_cache(
+            exploration_id=exploration_id,
+            cta_type=cache_key,
+            path=pdf_path,
+            report_type="qual",
+            content=content,
+            media_type="application/pdf",
+            filename=f"{prefix}_{exploration_id}.pdf",
+        )
     except asyncio.CancelledError:
         # CancelledError is a BaseException, not Exception — it is raised when the worker
         # is killed (server restart, proxy timeout). Without this block the DB status stays
@@ -267,19 +578,44 @@ async def share_qual_report(
     if not config:
         raise HTTPException(status_code=404, detail="Unsupported report type")
 
-    cached = await cache.get_cached_report(exploration_id, config["cache_key"])
-    if not cached or not cached.pdf_path or not os.path.exists(cached.pdf_path):
+    if report_slug == "transcripts":
+        cached = await _ensure_qual_transcripts_cached(exploration_id)
+    else:
+        cached = await cache.get_cached_report(exploration_id, config["cache_key"])
+        if not _cached_file_ready(cached) and report_slug == "decision-intelligence":
+            cached = await _ensure_legacy_qual_pdf_cached(
+                exploration_id=exploration_id,
+                cache_key=QUAL_DI_CACHE_KEY,
+                legacy_cache_keys=QUAL_DI_LEGACY_CACHE_KEYS,
+                prefix="qual_di",
+                filename=_qual_pdf_filename("decision_intelligence", exploration_id),
+            )
+        elif not _cached_file_ready(cached) and report_slug == "behavior-archaeology":
+            cached = await _ensure_legacy_qual_pdf_cached(
+                exploration_id=exploration_id,
+                cache_key=QUAL_BA_CACHE_KEY,
+                legacy_cache_keys=QUAL_BA_LEGACY_CACHE_KEYS,
+                prefix="qual_ba",
+                filename=_qual_pdf_filename("behavior_archaeology", exploration_id),
+            )
+
+    if not _cached_file_ready(cached):
         raise HTTPException(
             status_code=404,
             detail="Report is not ready yet. Please generate it first.",
         )
 
+    file_path, cleanup_dir = _materialize_cached_file(
+        cached,
+        fallback_filename=f"{report_slug}_{exploration_id}",
+    )
     background_tasks.add_task(
-        send_share_report_email,
+        _send_share_report_email_with_cleanup,
         recipient_email=str(body.recipient_email),
         report_type=config["label"],
-        file_path=cached.pdf_path,
+        file_path=file_path,
         shared_by_email=current_user.email,
+        cleanup_dir=cleanup_dir,
     )
     return {"message": "Report shared successfully"}
 
@@ -291,22 +627,13 @@ async def qual_transcripts(
     current_user: User = Depends(get_current_active_user),
 ):
     """Verbatim interview Q&A DOCX in discussion-guide transcript format."""
-    cached = await cache.get_cached_report(exploration_id, QUAL_TRANSCRIPTS_CACHE_KEY)
-    if cached and cached.pdf_path and os.path.exists(cached.pdf_path):
-        content = _read_file(cached.pdf_path)
-    else:
-        out_path = generate_docx_path(prefix="qual_transcripts")
-        docx_path = await generate_qual_transcripts_docx(
-            objective_id=exploration_id,
-            out_path=out_path,
-        )
-        content = _read_file(docx_path)
-        await cache.store_report_cache(exploration_id, QUAL_TRANSCRIPTS_CACHE_KEY, docx_path, "qual")
+    cached = await _ensure_qual_transcripts_cached(exploration_id)
+    content = _read_cached_file(cached)
 
     return Response(
         content=content,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={"Content-Disposition": f'attachment; filename="transcripts_{exploration_id}.docx"'},
+        headers={"Content-Disposition": f'attachment; filename="{_qual_transcripts_filename(exploration_id)}"'},
     )
 
 
@@ -317,13 +644,19 @@ async def qual_decision_intelligence(
     current_user: User = Depends(get_current_active_user),
 ):
     """Decision Intelligence PDF for qualitative interviews."""
-    cached = await cache.get_cached_report(exploration_id, QUAL_DI_CACHE_KEY)
+    cached = await _ensure_legacy_qual_pdf_cached(
+        exploration_id=exploration_id,
+        cache_key=QUAL_DI_CACHE_KEY,
+        legacy_cache_keys=QUAL_DI_LEGACY_CACHE_KEYS,
+        prefix="qual_di",
+        filename=_qual_pdf_filename("decision_intelligence", exploration_id),
+    )
     if not _cached_file_ready(cached):
         raise HTTPException(
             status_code=404,
             detail="Report not ready. Please generate it first using the /prepare endpoint.",
         )
-    content = _read_file(cached.pdf_path)
+    content = _read_cached_file(cached)
     return Response(
         content=content,
         media_type="application/pdf",
@@ -338,13 +671,19 @@ async def qual_behavior_archaeology(
     current_user: User = Depends(get_current_active_user),
 ):
     """Behavior Archaeology PDF for qualitative interviews."""
-    cached = await cache.get_cached_report(exploration_id, QUAL_BA_CACHE_KEY)
+    cached = await _ensure_legacy_qual_pdf_cached(
+        exploration_id=exploration_id,
+        cache_key=QUAL_BA_CACHE_KEY,
+        legacy_cache_keys=QUAL_BA_LEGACY_CACHE_KEYS,
+        prefix="qual_ba",
+        filename=_qual_pdf_filename("behavior_archaeology", exploration_id),
+    )
     if not _cached_file_ready(cached):
         raise HTTPException(
             status_code=404,
             detail="Report not ready. Please generate it first using the /prepare endpoint.",
         )
-    content = _read_file(cached.pdf_path)
+    content = _read_cached_file(cached)
     return Response(
         content=content,
         media_type="application/pdf",
@@ -368,7 +707,7 @@ async def qual_all_combined(
             status_code=404,
             detail="Report not ready. Please generate it first using the /prepare endpoint.",
         )
-    content = _read_file(cached.pdf_path)
+    content = _read_cached_file(cached)
     return Response(
         content=content,
         media_type="application/pdf",
@@ -399,7 +738,7 @@ async def quant_transcripts(
 
     cached = await cache.get_cached_report(exploration_id, QUANT_TRANSCRIPTS_CACHE_KEY, resolved_simulation_id)
     if _cached_file_ready(cached):
-        content = _read_file(cached.pdf_path)
+        content = _read_cached_file(cached)
     else:
         population_sim_id = survey_sim.simulation_source_id
         if not population_sim_id:
@@ -438,7 +777,16 @@ async def quant_transcripts(
 
         path = generate_pdf_path(prefix="quant_transcripts").replace(".pdf", ".zip")
         _write_file(path, content)
-        await cache.store_report_cache(exploration_id, QUANT_TRANSCRIPTS_CACHE_KEY, path, "quant", resolved_simulation_id)
+        await _store_file_report_cache(
+            exploration_id=exploration_id,
+            cta_type=QUANT_TRANSCRIPTS_CACHE_KEY,
+            path=path,
+            report_type="quant",
+            content=content,
+            media_type="application/zip",
+            filename=f"survey_transcripts_{resolved_simulation_id}.zip",
+            simulation_id=resolved_simulation_id,
+        )
 
     return Response(
         content=content,
@@ -460,13 +808,22 @@ async def quant_decision_intelligence(
 
     cached = await cache.get_cached_report(exploration_id, QUANT_DI_CACHE_KEY, resolved_simulation_id)
     if _cached_file_ready(cached):
-        content = _read_file(cached.pdf_path)
+        content = _read_cached_file(cached)
     else:
         personas = await _personas_for_simulation(survey_sim)
         pdf_bytes = await generate_md_report(exploration_id, resolved_simulation_id, personas, cta="DECISION_INTELLIGENCE")
         path = generate_pdf_path(prefix="quant_di")
         _write_file(path, pdf_bytes)
-        await cache.store_report_cache(exploration_id, QUANT_DI_CACHE_KEY, path, "quant", resolved_simulation_id)
+        await _store_file_report_cache(
+            exploration_id=exploration_id,
+            cta_type=QUANT_DI_CACHE_KEY,
+            path=path,
+            report_type="quant",
+            content=pdf_bytes,
+            media_type="application/pdf",
+            filename=f"decision_intelligence_{resolved_simulation_id}.pdf",
+            simulation_id=resolved_simulation_id,
+        )
         content = pdf_bytes
 
     return Response(
@@ -489,13 +846,22 @@ async def quant_behavior_archaeology(
 
     cached = await cache.get_cached_report(exploration_id, QUANT_BA_CACHE_KEY, resolved_simulation_id)
     if _cached_file_ready(cached):
-        content = _read_file(cached.pdf_path)
+        content = _read_cached_file(cached)
     else:
         personas = await _personas_for_simulation(survey_sim)
         pdf_bytes = await generate_md_report(exploration_id, resolved_simulation_id, personas, cta="BEHAVIORAL_ARCHAEOLOGY")
         path = generate_pdf_path(prefix="quant_ba")
         _write_file(path, pdf_bytes)
-        await cache.store_report_cache(exploration_id, QUANT_BA_CACHE_KEY, path, "quant", resolved_simulation_id)
+        await _store_file_report_cache(
+            exploration_id=exploration_id,
+            cta_type=QUANT_BA_CACHE_KEY,
+            path=path,
+            report_type="quant",
+            content=pdf_bytes,
+            media_type="application/pdf",
+            filename=f"behavior_archaeology_{resolved_simulation_id}.pdf",
+            simulation_id=resolved_simulation_id,
+        )
         content = pdf_bytes
 
     return Response(
@@ -519,10 +885,10 @@ async def report_status(
     current_user: User = Depends(get_current_active_user),
 ):
     """Check which reports are cached and ready — no generation triggered."""
-    qual_ctas = {
-        "TRANSCRIPTS": QUAL_TRANSCRIPTS_CACHE_KEY,
-        "DECISION_INTELLIGENCE": QUAL_DI_CACHE_KEY,
-        "BEHAVIORAL_ARCHAEOLOGY": QUAL_BA_CACHE_KEY,
+    qual_ctas: dict[str, tuple[str, ...]] = {
+        "TRANSCRIPTS": (QUAL_TRANSCRIPTS_CACHE_KEY, *QUAL_TRANSCRIPTS_LEGACY_CACHE_KEYS),
+        "DECISION_INTELLIGENCE": (QUAL_DI_CACHE_KEY, *QUAL_DI_LEGACY_CACHE_KEYS),
+        "BEHAVIORAL_ARCHAEOLOGY": (QUAL_BA_CACHE_KEY, *QUAL_BA_LEGACY_CACHE_KEYS),
     }
     quant_ctas = {
         "CSV_DATA": QUANT_TRANSCRIPTS_CACHE_KEY,
@@ -531,28 +897,30 @@ async def report_status(
     }
 
     result = {"qual": {}, "quant": {}}
-    for public_cta, cache_cta in qual_ctas.items():
-        cached = await cache.get_cached_report(exploration_id, cache_cta)
-        latest = await cache.get_latest_report(exploration_id, cache_cta)
-        available = _cached_file_ready(cached)
+    for public_cta, cache_ctas in qual_ctas.items():
+        cached = await _first_ready_cached_report(exploration_id, cache_ctas)
+        if not cached:
+            cached = await _first_legacy_ready_report(exploration_id, cache_ctas)
+        latest, latest_cta = await _latest_report_for_keys(exploration_id, cache_ctas)
+        available = _legacy_report_ready(cached)
         status = "done" if available else "idle"
         error_message = None
         if not available and latest:
             if _is_stale_pending_report(latest):
                 error_message = "Report generation timed out. Please retry."
-                task = _qual_report_tasks.get(_qual_task_key(exploration_id, cache_cta))
+                task = _qual_report_tasks.get(_qual_task_key(exploration_id, latest_cta))
                 if task and not task.done():
                     task.cancel()
                 latest = await cache.set_report_status(
                     exploration_id=exploration_id,
-                    cta_type=cache_cta,
+                    cta_type=latest_cta,
                     report_type="qual",
                     status="failed",
                     error_message=error_message,
                 )
                 status = latest.status
-            elif latest.status in {"pending", "failed"}:
-                status = latest.status
+            elif latest.status in {"pending", "generating", "failed"}:
+                status = "pending" if latest.status == "generating" else latest.status
                 error_message = latest.error_message
         result["qual"][public_cta] = {
             "available": available,

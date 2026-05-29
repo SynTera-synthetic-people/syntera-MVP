@@ -362,11 +362,14 @@ export const useDownloadQualTranscripts = (
   workspaceId?: string,
   explorationId?: string
 ) => {
+  const queryClient = useQueryClient();
   return useMutation<Blob, Error, void>({
     mutationFn: () =>
       interviewService.downloadQualTranscripts(workspaceId, explorationId),
-    onSuccess: (blob) =>
-      _triggerBlobDownload(blob, `transcripts_${explorationId}.docx`),
+    onSuccess: (blob) => {
+      _triggerBlobDownload(blob, `transcripts_${explorationId}.docx`);
+      queryClient.invalidateQueries({ queryKey: interviewKeys.reportStatus(workspaceId, explorationId) });
+    },
     onError: () =>
       toast.error('Failed to download transcripts. Please try again.'),
   });
@@ -381,8 +384,10 @@ export const useDownloadQualDecisionIntelligence = (
   return useMutation<Blob, Error, void>({
     mutationFn: () =>
       interviewService.downloadQualDecisionIntelligence(workspaceId, explorationId),
-    onSuccess: (blob) =>
-      _triggerBlobDownload(blob, `decision_intelligence_${explorationId}.pdf`),
+    onSuccess: (blob) => {
+      _triggerBlobDownload(blob, `decision_intelligence_${explorationId}.pdf`);
+      queryClient.invalidateQueries({ queryKey: interviewKeys.reportStatus(workspaceId, explorationId) });
+    },
     onError: _makeQualDownloadErrorHandler('Report not ready. Please regenerate Decision Intelligence.', queryClient, workspaceId, explorationId),
   });
 };
@@ -396,8 +401,10 @@ export const useDownloadQualBehaviorArchaeology = (
   return useMutation<Blob, Error, void>({
     mutationFn: () =>
       interviewService.downloadQualBehaviorArchaeology(workspaceId, explorationId),
-    onSuccess: (blob) =>
-      _triggerBlobDownload(blob, `behavior_archaeology_${explorationId}.pdf`),
+    onSuccess: (blob) => {
+      _triggerBlobDownload(blob, `behavior_archaeology_${explorationId}.pdf`);
+      queryClient.invalidateQueries({ queryKey: interviewKeys.reportStatus(workspaceId, explorationId) });
+    },
     onError: _makeQualDownloadErrorHandler('Report not ready. Please regenerate Behaviour Archaeology.', queryClient, workspaceId, explorationId),
   });
 };
@@ -439,7 +446,7 @@ export const useShareQualReport = (workspaceId?: string, explorationId?: string)
       interviewService.shareQualReport(workspaceId, explorationId, reportSlug, recipientEmail),
     onSuccess: () => toast.success('Report shared! The recipient will receive it by email shortly.'),
     onError: (err: any) => {
-      const detail = err?.response?.data?.detail;
+      const detail = err?.response?.data?.detail || err?.response?.data?.message;
       if (detail && typeof detail === 'string' && detail.includes('not ready')) {
         toast.error('Report is not ready yet. Please generate it first.');
       } else {
