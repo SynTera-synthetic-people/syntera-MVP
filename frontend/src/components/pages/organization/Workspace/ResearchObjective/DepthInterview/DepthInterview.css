@@ -818,6 +818,14 @@
   background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 255, 255, 0.28);
 }
+.di-download-guide-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.di-download-guide-btn:hover:disabled {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.18);
+}
 
 .di-start-interview-btn {
   display: inline-flex;

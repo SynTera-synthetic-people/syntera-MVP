@@ -1,4 +1,6 @@
 import json
+import asyncio
+import io
 import re
 from typing import List, Optional, Dict, Any
 from datetime import datetime
@@ -162,6 +164,67 @@ async def get_full_interview_guide(workspace_id: str, exploration_id: str) -> Li
         })
     
     return result
+
+
+def _build_discussion_guide_docx(
+    *,
+    research_objective: str,
+    sections: List[Dict],
+) -> bytes:
+    """Build a discussion guide DOCX in memory."""
+    from docx import Document
+    from docx.shared import Pt, RGBColor
+
+    document = Document()
+    title = document.add_paragraph()
+    title_run = title.add_run("Discussion Guide")
+    title_run.bold = True
+    title_run.font.size = Pt(18)
+    title_run.font.color.rgb = RGBColor(0x11, 0x11, 0x11)
+
+    if research_objective:
+        objective_heading = document.add_paragraph()
+        objective_heading.add_run("Research Exploration").bold = True
+        objective = document.add_paragraph(str(research_objective).strip())
+        objective.paragraph_format.space_after = Pt(12)
+
+    for section_index, section in enumerate(sections, start=1):
+        heading = document.add_paragraph()
+        heading.paragraph_format.space_before = Pt(10)
+        heading_run = heading.add_run(f"{section_index}. {section.get('title') or 'Untitled Section'}")
+        heading_run.bold = True
+        heading_run.font.size = Pt(13)
+
+        questions = section.get("questions") or []
+        if not questions:
+            empty = document.add_paragraph("No questions in this section.")
+            empty.paragraph_format.left_indent = Pt(16)
+            continue
+
+        for question_index, question in enumerate(questions, start=1):
+            paragraph = document.add_paragraph()
+            paragraph.paragraph_format.left_indent = Pt(16)
+            label = paragraph.add_run(f"Q{question_index}. ")
+            label.bold = True
+            paragraph.add_run(str(question.get("text") or "").strip())
+
+    buffer = io.BytesIO()
+    document.save(buffer)
+    return buffer.getvalue()
+
+
+async def generate_discussion_guide_docx_bytes(workspace_id: str, exploration_id: str) -> bytes:
+    """Export the current discussion guide as a DOCX without relying on local disk."""
+    sections = await get_full_interview_guide(workspace_id, exploration_id)
+    if not sections:
+        raise ValueError("No discussion guide found. Generate or upload a guide first.")
+
+    research_objective = await get_description(exploration_id) or ""
+    return await asyncio.to_thread(
+        _build_discussion_guide_docx,
+        research_objective=research_objective,
+        sections=sections,
+    )
 
 
 async def clear_qualitative_outputs(workspace_id: str, exploration_id: str) -> None:
