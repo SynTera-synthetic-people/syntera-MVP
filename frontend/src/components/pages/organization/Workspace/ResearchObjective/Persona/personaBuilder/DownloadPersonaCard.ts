@@ -1,97 +1,16 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
+import jsPDF from 'jspdf';
 import type { PersonaCardData } from './PersonaCardRenderer';
 import PersonaCardRenderer from './PersonaCardRenderer';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface DownloadOptions {
-  /** Card width in px (default 900). Height is auto-calculated at 0.6 ratio. */
   cardWidth?: number;
-  /**
-   * Device pixel ratio for export (default 2 → 1800×1080 export).
-   * Use 3 for ultra-sharp print-quality exports.
-   */
   scale?: number;
-  /** File prefix for downloads (default 'persona-card') */
   filePrefix?: string;
-  /**
-   * Called on progress: (completed, total) → void
-   * Useful for updating a progress bar in your modal.
-   */
   onProgress?: (completed: number, total: number) => void;
-}
-
-// ── Core renderer ─────────────────────────────────────────────────────────────
-
-/**
- * Mount a PersonaCardRenderer in a hidden off-screen div,
- * capture it with html2canvas, and return the canvas.
- *
- * The temporary container is appended to document.body (required by
- * html2canvas), absolutely positioned off-screen, and removed afterwards.
- */
-async function renderPersonaToCanvas(
-  persona: PersonaCardData,
-  cardWidth: number,
-  scale: number
-): Promise<HTMLCanvasElement> {
-  // Dynamically import html2canvas to keep initial bundle lean
-  const html2canvas = (await import('html2canvas')).default;
-
-  const cardHeight = Math.round(cardWidth * 0.60);
-
-  // ── 1. Create off-screen mount container ─────────────────────────────────
-  const container = document.createElement('div');
-  container.style.cssText = [
-    'position:fixed',
-    `top:${-cardHeight - 20}px`,   // above the visible viewport
-    'left:0',
-    `width:${cardWidth}px`,
-    `height:${cardHeight}px`,
-    'pointer-events:none',
-    'z-index:-9999',
-    'overflow:hidden',
-  ].join(';');
-  document.body.appendChild(container);
-
-  // ── 2. Render the React card into the container ───────────────────────────
-  await new Promise<void>(resolve => {
-    const root = createRoot(container);
-    root.render(
-      React.createElement(PersonaCardRenderer, { persona, width: cardWidth })
-    );
-    // Give React a tick to finish layout + SVG rasterisation
-    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-  });
-
-  // ── 3. Capture with html2canvas ───────────────────────────────────────────
-  const canvas = await html2canvas(container.firstElementChild as HTMLElement, {
-    scale,
-    useCORS: true,
-    allowTaint: false,
-    backgroundColor: null,     // card has its own background
-    logging: false,
-    // Ignore elements that html2canvas can't handle (backdrop-filter etc.)
-    ignoreElements: el => el.hasAttribute('data-html2canvas-ignore'),
-  });
-
-  // ── 4. Clean up ───────────────────────────────────────────────────────────
-  document.body.removeChild(container);
-
-  return canvas;
-}
-
-// ── PNG blob helper ───────────────────────────────────────────────────────────
-
-function canvasToBlob(canvas: HTMLCanvasElement, quality = 0.95): Promise<Blob> {
-  return new Promise((resolve, reject) => {
-    canvas.toBlob(
-      blob => (blob ? resolve(blob) : reject(new Error('Canvas toBlob returned null'))),
-      'image/png',
-      quality
-    );
-  });
 }
 
 // ── Safe filename ─────────────────────────────────────────────────────────────
@@ -104,34 +23,107 @@ function safeFilename(name: string): string {
     .toLowerCase();
 }
 
-// ── Download a Blob directly ──────────────────────────────────────────────────
+// ── Core renderer ─────────────────────────────────────────────────────────────
 
-function triggerDownload(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+/**
+ * Renders a PersonaCardRenderer to a canvas via html2canvas.
+ *
+ * KEY FIXES vs the blank-PDF version:
+ *  1. Container uses `position:absolute` (not fixed) inside a real scrollable
+ *     wrapper so the browser actually paints it.
+ *  2. `opacity:0.01` (not `visibility:hidden`) — invisible to the user but
+ *     still painted, so html2canvas can read the pixels.
+ *  3. We capture the card element directly (not the wrapper) and pass
+ *     explicit `width` + `height` from the element's bounding rect.
+ *  4. A 300 ms settle time (not just rAF) gives web fonts time to load.
+ *  5. `backgroundColor` is set to the card's actual bg (#050505) so the
+ *     canvas is never transparent / empty.
+ */
+async function renderPersonaToCanvas(
+  persona: PersonaCardData,
+  cardWidth: number,
+  scale: number,
+): Promise<HTMLCanvasElement> {
+  const html2canvas = (await import('html2canvas')).default;
+
+  // ── 1. Outer scroll-host (hides the card from the user) ──────────────────
+  const scrollHost = document.createElement('div');
+  scrollHost.style.cssText = [
+    'position:fixed',
+    'top:0',
+    'left:0',
+    `width:${cardWidth}px`,
+    'height:1px',          // only 1 px tall — card overflows below visible area
+    'overflow:hidden',
+    'opacity:0.01',        // nearly invisible but still painted
+    'pointer-events:none',
+    'z-index:-1',
+  ].join(';');
+  document.body.appendChild(scrollHost);
+
+  // ── 2. Inner mount point — full height, scrolled out of view ─────────────
+  const mount = document.createElement('div');
+  mount.style.cssText = [
+    'position:absolute',
+    'top:0',
+    'left:0',
+    `width:${cardWidth}px`,
+  ].join(';');
+  scrollHost.appendChild(mount);
+
+  // ── 3. Render React card ──────────────────────────────────────────────────
+  const root = createRoot(mount);
+  root.render(
+    React.createElement(PersonaCardRenderer, { persona, width: cardWidth }),
+  );
+
+  // Wait for React commit + layout + web-font load
+  await new Promise<void>(resolve => setTimeout(resolve, 300));
+
+  // ── 4. Measure actual rendered height ────────────────────────────────────
+  const cardEl = mount.firstElementChild as HTMLElement;
+  const { width: elW, height: elH } = cardEl.getBoundingClientRect();
+
+  // Expand scrollHost to full card height for the capture frame
+  scrollHost.style.height = `${elH}px`;
+
+  // One more frame for the browser to repaint at the new height
+  await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+
+  // ── 5. Capture ────────────────────────────────────────────────────────────
+  const canvas = await html2canvas(cardEl, {
+    scale,
+    useCORS: true,
+    allowTaint: false,
+    backgroundColor: '#050505',
+    logging: false,
+    width: Math.round(elW) || cardWidth,
+    height: Math.round(elH) || Math.round(cardWidth * 1.4),
+    scrollX: 0,
+    scrollY: 0,
+    ignoreElements: el => el.hasAttribute('data-html2canvas-ignore'),
+  });
+
+  // ── 6. Clean up ───────────────────────────────────────────────────────────
+  root.unmount();
+  document.body.removeChild(scrollHost);
+
+  return canvas;
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /**
- * Main entry point. Pass the selected persona IDs and the full personas array.
+ * Renders selected persona cards and saves them as a single PDF,
+ * one card per page.
  *
- * @example
- * await downloadPersonaCards(['id-1', 'id-2'], savedPersonasFromAPI, {
- *   scale: 2,
- *   onProgress: (done, total) => setProgress(Math.round((done / total) * 100)),
- * });
+ * Single  → `persona-card_<name>.pdf`
+ * Multiple → `persona_cards_N.pdf`
  */
 export async function downloadPersonaCards(
   selectedIds: string[],
   allPersonas: PersonaCardData[],
-  options: DownloadOptions = {}
+  options: DownloadOptions = {},
 ): Promise<void> {
   const {
     cardWidth = 900,
@@ -140,60 +132,68 @@ export async function downloadPersonaCards(
     onProgress,
   } = options;
 
-  const personas = allPersonas.filter(p => selectedIds.includes(p.id));
+  // Preserve selection order
+  const personas = selectedIds
+    .map(id => allPersonas.find(p => p.id === id))
+    .filter((p): p is PersonaCardData => !!p);
+
   if (personas.length === 0) return;
 
   onProgress?.(0, personas.length);
 
-  // ── Single persona → download PNG directly ────────────────────────────────
-  if (personas.length === 1) {
-    const p = personas[0]!;
-    const canvas = await renderPersonaToCanvas(p, cardWidth, scale);
-    const blob = await canvasToBlob(canvas);
-    const filename = `${filePrefix}_${safeFilename(p.name ?? 'persona')}.png`;
-    triggerDownload(blob, filename);
-    onProgress?.(1, 1);
-    return;
-  }
-
-  // ── Multiple personas → bundle into ZIP ───────────────────────────────────
-  const JSZip = (await import('jszip')).default;
-  const zip = new JSZip();
-  const folder = zip.folder('persona-cards')!;
-
+  // Render sequentially to keep memory under control
+  const canvases: HTMLCanvasElement[] = [];
   for (let i = 0; i < personas.length; i++) {
-    const p = personas[i]!;
-    const canvas = await renderPersonaToCanvas(p, cardWidth, scale);
-    const blob = await canvasToBlob(canvas);
-    const filename = `${safeFilename(p.name ?? `persona_${i + 1}`)}.png`;
-    folder.file(filename, blob);
+    const canvas = await renderPersonaToCanvas(personas[i]!, cardWidth, scale);
+    canvases.push(canvas);
     onProgress?.(i + 1, personas.length);
   }
 
-  const zipBlob = await zip.generateAsync({ type: 'blob' });
-  triggerDownload(zipBlob, `${filePrefix}s_${Date.now()}.zip`);
+  // ── Build PDF ─────────────────────────────────────────────────────────────
+  let pdf: jsPDF | null = null;
+
+  for (let i = 0; i < canvases.length; i++) {
+    const canvas = canvases[i]!;
+    const pageW = canvas.width;
+    const pageH = canvas.height;
+    const orientation = pageW >= pageH ? 'landscape' : 'portrait';
+
+    if (i === 0) {
+      pdf = new jsPDF({
+        orientation,
+        unit: 'px',
+        format: [pageW, pageH],
+        compress: true,
+      });
+    } else {
+      pdf!.addPage([pageW, pageH], orientation);
+    }
+
+    pdf!.addImage(
+      canvas.toDataURL('image/jpeg', 0.92),
+      'JPEG',
+      0, 0,
+      pageW,
+      pageH,
+    );
+  }
+
+  if (!pdf) return;
+
+  const filename =
+    personas.length === 1
+      ? `${filePrefix}_${safeFilename(personas[0]!.name ?? 'persona')}.pdf`
+      : `persona_cards_${personas.length}.pdf`;
+
+  pdf.save(filename);
 }
 
-// ── Drop-in replacement for personaService.downloadPersonaCards ───────────────
+// ── Drop-in alias (keeps PersonaBuilder.tsx import unchanged) ─────────────────
 
-/**
- * If you want to keep the existing `handleDownloadPersonaCards` function
- * in PersonaBuilder.tsx unchanged (it currently calls personaService), you
- * can swap the service call with this wrapper instead.
- *
- * In PersonaBuilder.tsx, change:
- *
- *   const blob = await personaService.downloadPersonaCards(workspaceId, objectiveId, selectedIds);
- *
- * to:
- *
- *   await downloadPersonaCardsFrontend(selectedIds, savedPersonasFromAPI);
- *   return;  // skip the old blob/zip logic below
- */
 export async function downloadPersonaCardsFrontend(
   selectedIds: string[],
   allPersonas: PersonaCardData[],
-  onProgress?: (done: number, total: number) => void
+  onProgress?: (done: number, total: number) => void,
 ): Promise<void> {
   return downloadPersonaCards(selectedIds, allPersonas, {
     cardWidth: 900,
