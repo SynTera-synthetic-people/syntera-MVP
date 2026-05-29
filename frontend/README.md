@@ -48,6 +48,7 @@ Synthetic People is a cutting-edge platform designed for advanced market researc
    # or
    pnpm install
    npm install html2canvas jszip
+   npm install jspdf
    ```
 
 3. Set up environment variables:
