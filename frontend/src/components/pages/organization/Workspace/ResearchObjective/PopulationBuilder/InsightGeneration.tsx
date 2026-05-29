@@ -37,6 +37,7 @@ interface InsightCard {
   description: string;
   actionLabel: 'Generate' | 'Start';
   hasViewer?: boolean;
+  comingSoon?: boolean;
 }
 
 // ── Viewer Modal ──────────────────────────────────────────────────────────────
@@ -162,6 +163,7 @@ const INSIGHT_CARDS: InsightCard[] = [
     description: 'Slice, filter, and explore your data dynamically to test hypotheses and uncover patterns',
     actionLabel: 'Start',
     hasViewer: false,
+    comingSoon: true,
   },
 ];
 
@@ -395,8 +397,8 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
     ensureSurveySimulationMutation.isPending
       ? true
       : viewingCard === 'decision'
-      ? downloadDecisionMutation.isPending
-      : downloadBehaviourMutation.isPending;
+        ? downloadDecisionMutation.isPending
+        : downloadBehaviourMutation.isPending;
 
   return (
     <motion.div
@@ -439,16 +441,20 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
               <p className="ig-card__desc">{card.description}</p>
 
               <button
-                className={`ig-card__btn ${isDone && card.hasViewer
-                    ? 'ig-card__btn--view'
-                    : isDone
-                      ? 'ig-card__btn--done'
-                      : ''
+                className={`ig-card__btn ${card.comingSoon
+                    ? 'ig-card__btn--coming-soon'
+                    : isDone && card.hasViewer
+                      ? 'ig-card__btn--view'
+                      : isDone
+                        ? 'ig-card__btn--done'
+                        : ''
                   }`}
-                onClick={() => handleAction(card)}
-                disabled={isGenerating || (isDone && !card.hasViewer && card.id !== 'playground')}
+                onClick={() => !card.comingSoon && handleAction(card)}
+                disabled={isGenerating || card.comingSoon || (isDone && !card.hasViewer && card.id !== 'playground')}
               >
-                {isGenerating ? (
+                {card.comingSoon ? (
+                  'Coming Soon'
+                ) : isGenerating ? (
                   <><TbLoader className="ig-card__btn-spinner" size={14} />Generating…</>
                 ) : isDone && card.hasViewer ? (
                   'View'

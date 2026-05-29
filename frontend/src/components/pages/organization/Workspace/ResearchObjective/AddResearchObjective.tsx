@@ -539,9 +539,9 @@ const AddResearchObjective: React.FC = () => {
       return (
         <div className="space-y-1">
           {beforeRaw ? formatText(beforeRaw) : null}
-          <p className="font-bold text-white mt-2">
+          {/* <p className="font-bold text-white mt-2">
             I'll carry this forward into personas.
-          </p>
+          </p> */}
           {afterRaw ? formatText(afterRaw) : null}
         </div>
       );
