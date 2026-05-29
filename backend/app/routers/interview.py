@@ -1,7 +1,7 @@
 import os
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, BackgroundTasks
 from typing import Optional, List
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from app.schemas.response import SuccessResponse, ErrorResponse, DeleteResponse
 from app.schemas.interview import (
     InterviewCreate, MessageIn,
@@ -43,6 +43,31 @@ async def generate_guide(workspace_id: str, exploration_id: str, background_task
 
     guide = await interview_service.generate_discussion_guide_with_llm(workspace_id, exploration_id, current_user.id, session)
     return SuccessResponse(message="Guide generated", data=guide)
+
+
+@router.get("/guides/download")
+async def download_discussion_guide(
+    workspace_id: str,
+    exploration_id: str,
+    current_user: User = Depends(get_current_active_user),
+):
+    """Download the current discussion guide as a DOCX generated from DB state."""
+    members = await ws_service.list_workspace_members(workspace_id)
+    if not any(m.get("user_id") == current_user.id for m in members):
+        raise HTTPException(status_code=403, detail=ErrorResponse(status="error", message="Not a member").dict())
+
+    try:
+        content = await interview_service.generate_discussion_guide_docx_bytes(workspace_id, exploration_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition": f'attachment; filename="discussion_guide_{exploration_id}.docx"'
+        },
+    )
 
 
 @router.post("/sections", response_model=SuccessResponse)

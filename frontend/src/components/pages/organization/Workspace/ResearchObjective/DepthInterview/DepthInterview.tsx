@@ -14,8 +14,10 @@ import {
   useCreateQuestion,
   useUpdateQuestion,
   useDeleteQuestion,
+  useDownloadDiscussionGuide,
 } from '../../../../../../hooks/useDiscussionGuide';
 import { useOmniWorkflow } from '../../../../../../hooks/useOmiWorkflow';
+import { getAxiosErrorMessage } from '../../../../../../utils/axiosBlobError';
 import DiscussionGuideLoader from './DiscussionGuideLoader';
 import './DepthInterview.css';
 
@@ -233,6 +235,7 @@ const DepthInterview: React.FC = () => {
   const createQuestionMutation = useCreateQuestion(workspaceId!, objectiveId!);
   const updateQuestionMutation = useUpdateQuestion(workspaceId!, objectiveId!);
   const deleteQuestionMutation = useDeleteQuestion(workspaceId!, objectiveId!);
+  const downloadGuideMutation = useDownloadDiscussionGuide(workspaceId, objectiveId);
 
   const { trigger } = useOmniWorkflow();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -452,6 +455,16 @@ const DepthInterview: React.FC = () => {
   const handleStartInterview = () => {
     if (objectiveId) localStorage.setItem(`qualitative_sub1_${objectiveId}`, '1');
     navigate(`/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/chatview`, { state: { viewOnly: isViewOnly } });
+  };
+
+  const handleDownloadGuide = async () => {
+    if (!workspaceId || !objectiveId) return;
+    try {
+      await downloadGuideMutation.mutateAsync();
+    } catch (err) {
+      const detail = await getAxiosErrorMessage(err, 'Could not download the discussion guide.');
+      window.alert(detail);
+    }
   };
 
   // ── Upload error banner ───────────────────────────────────────────────────
@@ -734,9 +747,15 @@ const DepthInterview: React.FC = () => {
           </div>
 
           <div className="di-start-interview-bar">
-            <button className="di-download-guide-btn" onClick={() => {/* TODO: wire download handler */ }}>
-              Download Discussion Guide
-              <SpIcon name="sp-File-File_Download" size={24} />
+            <button
+              className="di-download-guide-btn"
+              onClick={handleDownloadGuide}
+              disabled={downloadGuideMutation.isPending}
+            >
+              {downloadGuideMutation.isPending ? 'Downloading…' : 'Download Discussion Guide'}
+              {downloadGuideMutation.isPending
+                ? <TbLoader className="di-spin" size={20} />
+                : <SpIcon name="sp-File-File_Download" size={24} />}
             </button>
             <button className="di-start-interview-btn" onClick={handleStartInterview}>
               Start Interview
