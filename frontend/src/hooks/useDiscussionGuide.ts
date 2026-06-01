@@ -51,6 +51,19 @@ type DeleteQuestionPayload = {
   };
 };
 
+function triggerBlobDownload(blob: Blob, filename: string): void {
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  }, 150);
+}
+
 /* ── Query Keys ─────────────────────────────────────────────────────── */
 
 export const discussionGuideKeys = {
@@ -90,6 +103,19 @@ export const useGenerateDiscussionGuide = (
     mutationFn: () =>
       discussionGuideService.generateGuide(workspaceId!, explorationId!),
     ...options,
+  });
+};
+
+export const useDownloadDiscussionGuide = (
+  workspaceId?: string,
+  explorationId?: string
+) => {
+  return useMutation<Blob, Error, void>({
+    mutationFn: () =>
+      discussionGuideService.downloadGuide(workspaceId!, explorationId!),
+    onSuccess: (blob) => {
+      triggerBlobDownload(blob, `discussion_guide_${explorationId}.docx`);
+    },
   });
 };
 

@@ -26,6 +26,14 @@ export const discussionGuideService = {
     return response.data;
   },
 
+  downloadGuide: async (workspaceId, explorationId) => {
+    const response = await axiosInstance.get(
+      `/workspaces/${workspaceId}/explorations/${explorationId}/in-depth/guides/download`,
+      { responseType: 'blob' }
+    );
+    return response.data;
+  },
+
   // Create a new section
   createSection: async (workspaceId, explorationId, data) => {
     const response = await axiosInstance.post(
