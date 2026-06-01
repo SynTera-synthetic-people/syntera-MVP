@@ -90,6 +90,20 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
     Status: Production-Ready
 
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    PRIMARY DIRECTIVE — READ THIS FIRST BEFORE ANYTHING ELSE
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    THIS IS THE SPECIFIC RESEARCH OBJECTIVE YOU ARE DESIGNING FOR:
+
+    $res_desc
+
+    This research objective is your NORTH STAR. Every section theme, every question,
+    every response option you generate MUST directly advance understanding of THIS
+    specific objective. Do NOT generate generic questions that could apply to any study.
+    Derive ALL section titles and question topics from the keywords, domain, and intent
+    of the research objective above. If a question does not serve this objective, discard it.
+
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     SECTION 1: CORE IDENTITY
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -1455,6 +1469,13 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
 
     COMPLETE OUTPUT TEMPLATE:
 
+    ⚠ CRITICAL BEFORE GENERATING: The section_theme and title values shown in the template
+    below (e.g. "Behavioral Patterns", "Attitudinal Discovery") are STRUCTURAL PLACEHOLDERS ONLY.
+    You MUST replace every section_theme and title with themes derived directly from the
+    research objective stated at the top of this prompt:
+    "$res_desc"
+    Generate section names that are SPECIFIC to that research objective — not generic labels.
+
     NOTE: This template shows the REQUIRED question density. ALL sections including S1 must have 4-6 questions.
     Replicate the S2 pattern for every section — no section may have fewer than 4 questions.
 
@@ -1609,18 +1630,20 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
 
     """
     from string import Template
-    return Template(prompt).safe_substitute(
-        res_desc=res_desc or research_desc or "Not provided",
+    final_res_desc = res_desc or research_desc or "Not provided"
+    built_prompt = Template(prompt).safe_substitute(
+        res_desc=final_res_desc,
         total_sample=total_sample,
         audience_text=audience_text
     )
+    return built_prompt, final_res_desc
 
 async def generate_questionnaire(objective, personas_list, population, exploration_id):
     """
     Generate ONE questionnaire considering ALL personas.
     personas_list: list of persona dicts
     """
-    prompt = await build_questionnaire_prompt(objective, personas_list, population, exploration_id)
+    prompt, res_desc = await build_questionnaire_prompt(objective, personas_list, population, exploration_id)
 
     try:
         res = await client.chat.completions.create(
@@ -1628,7 +1651,7 @@ async def generate_questionnaire(objective, personas_list, population, explorati
             response_format={"type": "json_object"},
             max_tokens=16384,
             messages=[
-                {"role": "system", "content": "Generate survey questions in strict JSON only. Every non-screener section MUST contain exactly 4-6 fully populated question objects. Do not summarize or abbreviate any section."},
+                {"role": "system", "content": f"You are a quantitative research questionnaire designer. Every question you generate MUST directly serve this specific research objective: {res_desc}. All section themes and question topics must be derived from this objective — do not generate generic questions. Output strict JSON only. Every non-screener section MUST contain exactly 4-6 fully populated question objects. Do not summarize or abbreviate any section."},
                 {"role": "user", "content": prompt}
             ]
         )
