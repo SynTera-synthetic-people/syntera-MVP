@@ -183,7 +183,7 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
     • Minimum: 4 questions per section (mandatory) 
     • Target: 4-6 questions per section (recommended) 
     • Maximum: 8 questions per section (avoid survey fatigue) 
-    • No exceptions — all sections including S1 Screeners must have minimum 4 questions
+    • No exceptions — all sections including S1 Population Characteristics must have minimum 4 questions
     TOTAL QUESTIONS BY COMPLEXITY: 
     • Simple objectives (3-5 sections): 12-30 questions total 
     • Moderate objectives (5-8 sections): 20-48 questions total 
@@ -1105,7 +1105,7 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
 
     Apply this gold-standard funnel (sections may be reordered based on flow logic, but generally follow safe-to-vulnerable, concrete-to-abstract progression):
 
-    S1: Screeners
+    S1: Population Characteristics
         Qualify respondents. Confirm eligibility.
         Primarily S questions. Tagged for demographic and behavioral qualification.
 
@@ -1267,7 +1267,7 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
     • Complex objectives (6-8 themes) → 7-10 sections
 
     MANDATORY SECTIONS (always include):
-    • S1: Screeners (Theme: Contextual Framing) 
+    • S1: Population Characteristics (Theme: Contextual Framing)
     • S_DEMO: Demographics &amp; Classification (final section)
 
     THEMATIC SECTIONS (create one section per relevant theme from Step 3):
@@ -1288,7 +1288,7 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
     • Target 4-6 questions per section for optimal coverage
 
     MANDATORY QUESTION ALLOCATION: 
-    • S1 Screeners: 4-6 questions (qualification + context setting)
+    • S1 Population Characteristics: 4-6 questions (qualification + context setting)
     • S_DEMO
 
     Demographics: 4-6 questions (standard demographics) 
@@ -1379,10 +1379,10 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
         - Complex objectives (6-8 themes): 7-10 sections generated
     □ Each relevant theme from Step 3 has a dedicated section
     □ No more than 2 sections share the same section_theme value
-    □ Minimum section count: at least 3 sections (Screeners, Core, Demographics)
+    □ Minimum section count: at least 3 sections (Population Characteristics, Core, Demographics)
     
     QUESTION COUNT PER SECTION (MANDATORY)
-    □ Every section has MINIMUM 4 questions — NO exceptions, including S1 Screeners
+    □ Every section has MINIMUM 4 questions — NO exceptions, including S1 Population Characteristics
     □ Every thematic section has at least 3 S/M questions 
         - Ensures statistical validity - Prevents OE-only sections
     □ No section exceeds 8 questions - Prevents respondent overload in single theme
@@ -1484,7 +1484,7 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
     {
       "section_id": "S1",
       "section_theme": "Contextual Framing",
-      "title": "Screeners",
+      "title": "Population Characteristics",
       "questions": [
         {
           "question_id": "Q1",
@@ -1673,6 +1673,9 @@ async def generate_questionnaire(objective, personas_list, population, explorati
 
     try:
         data = json.loads(raw)
+        sections = data.get("sections", [])
+        if sections:
+            sections[0]["title"] = "Population Characteristics"
         return data, None
     except:
         return None, "Invalid JSON from LLM"
