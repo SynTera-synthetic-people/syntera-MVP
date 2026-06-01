@@ -27,6 +27,8 @@ interface SurveyStepData {
   outcome: string;
 }
 
+// ── Step definitions — exact sequence from spec ───────────────────────────────
+
 const SURVEY_STEPS: SurveyStepData[] = [
   {
     label: 'Context Setup',
@@ -60,69 +62,96 @@ const SURVEY_STEPS: SurveyStepData[] = [
   },
 ];
 
-const TICK_MS = 2_800;
-
+const TICK_MS     = 2_800;
 const RING_RADIUS = 43;
-const RING_CIRC = 2 * Math.PI * RING_RADIUS;
+const RING_CIRC   = 2 * Math.PI * RING_RADIUS;
+
+// ── Component ─────────────────────────────────────────────────────────────────
 
 const SurveyInMotion: React.FC<SurveyInMotionProps> = ({ onSurveyComplete }) => {
-  const [currentStep, setCurrentStep] = useState(0);
-  const [checkedItems, setCheckedItems] = useState<number[]>([]);
+  // globalCheckedCount is the single source of truth — one counter that
+  // increments every TICK_MS, same pattern as PersonaGenerationLoader.
+  const [globalCheckedCount, setGlobalCheckedCount] = useState<number>(0);
+  const [isComplete, setIsComplete] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const onSurveyCompleteRef = useRef(onSurveyComplete);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     onSurveyCompleteRef.current = onSurveyComplete;
   }, [onSurveyComplete]);
 
-  // ── Auto-tick through items ──────────────────────────────────────────────
-  useEffect(() => {
-    let stepIndex = 0;
-    let itemIndex = 0;
-    let completeTimeout: ReturnType<typeof setTimeout> | undefined;
+  // ── Derived totals ────────────────────────────────────────────────────────
+  const totalItems = SURVEY_STEPS.reduce((acc, s) => acc + s.items.length, 0);
 
-    const interval = setInterval(() => {
-      const stepData = SURVEY_STEPS[stepIndex];
-      if (!stepData) { clearInterval(interval); return; }
+  // Which step are we currently in?
+  const currentStep = (() => {
+    let acc = 0;
+    for (let i = 0; i < SURVEY_STEPS.length; i++) {
+      acc += SURVEY_STEPS[i]!.items.length;
+      if (globalCheckedCount < acc) return i;
+    }
+    return SURVEY_STEPS.length - 1;
+  })();
 
-      const globalOffset = SURVEY_STEPS.slice(0, stepIndex).reduce((acc, s) => acc + s.items.length, 0);
-      setCheckedItems((prev) => [...prev, globalOffset + itemIndex]);
-      itemIndex++;
-
-      if (itemIndex >= stepData.items.length) {
-        stepIndex++;
-        itemIndex = 0;
-        if (stepIndex < SURVEY_STEPS.length) {
-          setCurrentStep(stepIndex);
-        } else {
-          clearInterval(interval);
-          completeTimeout = setTimeout(() => {
-            void onSurveyCompleteRef.current();
-          }, 1000);
-        }
-      }
-    }, TICK_MS);
-
-    return () => {
-      clearInterval(interval);
-      if (completeTimeout) clearTimeout(completeTimeout);
-    };
-  }, []);
-
-  // ── Derived values ────────────────────────────────────────────────────────
   const activeStep = SURVEY_STEPS[currentStep]!;
 
   const itemsBeforeCurrentStep = SURVEY_STEPS
     .slice(0, currentStep)
     .reduce((acc, s) => acc + s.items.length, 0);
 
-  const currentStepItemsDone = checkedItems.filter(
-    (i) => i >= itemsBeforeCurrentStep && i < itemsBeforeCurrentStep + activeStep.items.length
-  ).length;
+  // How many items are done within the current step
+  const currentStepItemsDone = globalCheckedCount - itemsBeforeCurrentStep;
 
-  const ringProgress = (currentStepItemsDone / activeStep.items.length) * 100;
+  // The index of the currently-active item within this step
+  // (the item that just appeared — not yet ticked)
+  const activeItemIdx = Math.min(currentStepItemsDone, activeStep.items.length - 1);
+
+  // Ring progress = ratio of done items within current step
+  const ringProgress = Math.min(
+    (currentStepItemsDone / activeStep.items.length) * 100,
+    100
+  );
 
   const offset = RING_CIRC * (1 - ringProgress / 100);
+
+  // ── Auto-tick ─────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    if (isComplete) return;
+
+    intervalRef.current = setInterval(() => {
+      setGlobalCheckedCount((prev) => {
+        const next = prev + 1;
+        if (next >= totalItems) {
+          if (intervalRef.current) clearInterval(intervalRef.current);
+          setTimeout(() => setIsComplete(true), 1_000);
+          return totalItems;
+        }
+        return next;
+      });
+    }, TICK_MS);
+
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [totalItems]);
+
+  // ── Navigate when complete ────────────────────────────────────────────────
+  useEffect(() => {
+    if (!isComplete) return;
+    void onSurveyCompleteRef.current();
+  }, [isComplete]);
+
+  // ── The single item to display (current active item in the step) ──────────
+  // Once an item is "done" (globalCheckedCount moved past it) we show the
+  // next one. Only ONE item is shown at a time, with a tick if it's done.
+  const displayItemIdx  = Math.min(currentStepItemsDone, activeStep.items.length - 1);
+  const displayItem     = activeStep.items[displayItemIdx] ?? '';
+  // Item is done once the counter has moved past this item's global index
+  const globalDisplayIdx = itemsBeforeCurrentStep + displayItemIdx;
+  const displayItemDone  = globalCheckedCount > globalDisplayIdx;
 
   return (
     <motion.div
@@ -133,7 +162,9 @@ const SurveyInMotion: React.FC<SurveyInMotionProps> = ({ onSurveyComplete }) => 
       {/* Header */}
       <div className="sim-header">
         <h1 className="sim-title">Survey In Motion</h1>
-        <p className="sim-subtitle">Your study is running across a calibrated population — capturing how decisions form</p>
+        <p className="sim-subtitle">
+          Your study is running across a calibrated population — capturing how decisions form
+        </p>
       </div>
 
       {/* Globe */}
@@ -149,7 +180,12 @@ const SurveyInMotion: React.FC<SurveyInMotionProps> = ({ onSurveyComplete }) => 
           <div className="sim-card-left">
             <div className="sim-ring-wrap">
               <svg className="sim-ring-svg" viewBox="0 0 96 96">
-                <circle cx="48" cy="48" r={RING_RADIUS} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="3.5" />
+                <circle
+                  cx="48" cy="48" r={RING_RADIUS}
+                  fill="none"
+                  stroke="rgba(255,255,255,0.08)"
+                  strokeWidth="3.5"
+                />
                 <circle
                   cx="48" cy="48" r={RING_RADIUS}
                   fill="none"
@@ -171,63 +207,63 @@ const SurveyInMotion: React.FC<SurveyInMotionProps> = ({ onSurveyComplete }) => 
                 />
               </div>
             </div>
-            <span className="sim-step-label">Step {currentStep + 1}/{SURVEY_STEPS.length}</span>
+            <span className="sim-step-label">
+              Step {currentStep + 1}/{SURVEY_STEPS.length}
+            </span>
           </div>
 
-          {/* Right: step title + checklist */}
+          {/* Right: step title + single-item display */}
           <div className="sim-card-right">
+            {/* Step title animates when step changes */}
             <AnimatePresence mode="wait">
               <motion.div
-                key={currentStep}
-                initial={{ opacity: 0, y: 10 }}
+                key={`step-title-${currentStep}`}
+                initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.3 }}
-                className="sim-step-content"
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.25 }}
+                className="sim-step-title"
               >
-                <div className="sim-step-title">{activeStep.label}</div>
-
-                <ul className="sim-checklist">
-                  {activeStep.items.map((item, itemIdx) => {
-                    const globalIndex = itemsBeforeCurrentStep + itemIdx;
-                    const isDone = checkedItems.includes(globalIndex);
-                    const isVisible = itemIdx <= currentStepItemsDone;
-                    const isActive = itemIdx === currentStepItemsDone;
-
-                    if (!isVisible) return null;
-
-                    return (
-                      <li
-                        key={globalIndex}
-                        className={[
-                          'sim-check-item',
-                          isDone ? 'sim-check-item--done' : '',
-                          isActive ? 'sim-check-item--active' : '',
-                        ].join(' ')}
-                      >
-                        <div className="sim-check-icon">
-                          <SpIcon
-                            name={isDone ? 'sp-Warning-Circle_Check' : 'sp-Interface-Radio_Unchecked'}
-                            className={isDone ? 'sim-icon-done' : 'sim-icon-default'}
-                          />
-                        </div>
-                        <span className="sim-check-text">{item}</span>
-                      </li>
-                    );
-                  })}
-                </ul>
-
-                {currentStepItemsDone === activeStep.items.length && (
-                  <motion.p
-                    className="sim-outcome"
-                    initial={{ opacity: 0, y: 6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.3 }}
-                  >
-                    {activeStep.outcome}
-                  </motion.p>
-                )}
+                {activeStep.label}
               </motion.div>
+            </AnimatePresence>
+
+            {/* Single item — animates out/in as each item changes */}
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={`item-${currentStep}-${displayItemIdx}`}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.25 }}
+                className={[
+                  'sim-check-item',
+                  displayItemDone ? 'sim-check-item--done' : 'sim-check-item--active',
+                ].join(' ')}
+              >
+                <div className="sim-check-icon">
+                  <SpIcon
+                    name={displayItemDone ? 'sp-Warning-Circle_Check' : 'sp-Interface-Radio_Unchecked'}
+                    className={displayItemDone ? 'sim-icon-done' : 'sim-icon-default'}
+                  />
+                </div>
+                <span className="sim-check-text">{displayItem}</span>
+              </motion.div>
+            </AnimatePresence>
+
+            {/* Outcome appears once all items in this step are done */}
+            <AnimatePresence>
+              {currentStepItemsDone >= activeStep.items.length && (
+                <motion.p
+                  className="sim-outcome"
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  {activeStep.outcome}
+                </motion.p>
+              )}
             </AnimatePresence>
           </div>
 

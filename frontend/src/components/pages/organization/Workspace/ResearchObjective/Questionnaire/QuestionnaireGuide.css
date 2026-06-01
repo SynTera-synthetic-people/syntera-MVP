@@ -1090,7 +1090,9 @@
 
 /* ── Text / open_end preview ─────────────────────────────────────────────── */
 .qdg-preview--text {
-    width: 100%;
+    width: calc(100% - 28px);  /* subtract the margin-left: 28px */
+    max-width: 100%;
+    overflow: hidden;
 }
 
 .qdg-text-input-mock {
@@ -1104,22 +1106,25 @@
     color: rgba(255, 255, 255, 0.38);
     font-family: Inter;
     line-height: 1.45;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
-
 /* ── Date picker preview ─────────────────────────────────────────────────── */
 .qdg-preview--datepicker {
-    /* just the badge */
-}
-
-.qdg-datepicker-badge {
     display: inline-flex;
     align-items: center;
-    padding: 4px 12px;
+    gap: 7px;
+    padding: 7px 12px;
     background: var(--T-Base-B4, #1E2126);
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 7px;
+    width: fit-content;   /* ← key fix: don't stretch full width */
+}
+
+.qdg-datepicker-badge {
     font-size: 0.8125rem;
-    color: rgba(255, 255, 255, 0.5);
+    color: rgba(255, 255, 255, 0.45);
     font-family: Inter;
 }
 

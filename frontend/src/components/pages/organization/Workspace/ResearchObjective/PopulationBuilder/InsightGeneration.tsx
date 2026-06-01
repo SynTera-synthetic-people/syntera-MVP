@@ -39,15 +39,22 @@ interface InsightCard {
   title: string;
   description: string;
   actionLabel: 'Generate' | 'Start';
-  /** When true, Generate → done marks the card; View opens the modal.
-   *  Download only happens inside the modal's "Download PDF" button. */
   hasViewer?: boolean;
   comingSoon?: boolean;
 }
 
+// ── localStorage helpers ──────────────────────────────────────────────────────
+
+const lsKey = (cardId: string, explorationId: string) =>
+  `quant_insight_${cardId}_ready_${explorationId}`;
+
+const isLsReady = (cardId: string, explorationId: string): boolean =>
+  localStorage.getItem(lsKey(cardId, explorationId)) === '1';
+
+const markLsReady = (cardId: string, explorationId: string) =>
+  localStorage.setItem(lsKey(cardId, explorationId), '1');
+
 // ── Card definitions ──────────────────────────────────────────────────────────
-// All three report cards have hasViewer: true.
-// Generate marks them ready; the actual file download lives in the modal.
 
 const INSIGHT_CARDS: InsightCard[] = [
   {
@@ -57,7 +64,8 @@ const INSIGHT_CARDS: InsightCard[] = [
     title: 'Raw Data Shell',
     description: 'Structured response data, ready for analysis, export, and validation',
     actionLabel: 'Generate',
-    hasViewer: true,   // ← was false; now goes through View → Modal → Download
+    hasViewer: true,
+    comingSoon: false,
   },
   {
     id: 'decision',
@@ -107,13 +115,21 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
   const populationSimulationId: string = simulationResult?.id ?? '';
 
   const ensureSurveySimulationMutation = useEnsureSurveySimulation();
-  const downloadTranscriptsMutation = useDownloadQuantTranscripts();
-  const downloadDecisionMutation = useDownloadQuantDecisionIntelligence();
-  const downloadBehaviourMutation = useDownloadQuantBehaviorArchaeology();
+  const downloadTranscriptsMutation    = useDownloadQuantTranscripts();
+  const downloadDecisionMutation       = useDownloadQuantDecisionIntelligence();
+  const downloadBehaviourMutation      = useDownloadQuantBehaviorArchaeology();
 
-  const [cardStates, setCardStates] = useState<Record<string, CardState>>({});
-  const [viewingCard, setViewingCard] = useState<ViewableCardId | null>(null);
-  const [showImpactModal, setShowImpactModal] = useState(false);
+  // ── Card states — initialised from localStorage so they survive logout ────
+  const [cardStates, setCardStates] = useState<Record<string, CardState>>(() => {
+    if (!explorationId) return {};
+    return INSIGHT_CARDS.reduce<Record<string, CardState>>((acc, card) => {
+      acc[card.id] = isLsReady(card.id, explorationId) ? 'done' : 'idle';
+      return acc;
+    }, {});
+  });
+
+  const [viewingCard, setViewingCard]               = useState<ViewableCardId | null>(null);
+  const [showImpactModal, setShowImpactModal]        = useState(false);
   const [showConversationStudio, setShowConversationStudio] = useState(false);
   const [surveySimulationId, setSurveySimulationId] = useState(initialSurveySimulationId ?? '');
   const ensureSurveyPromiseRef = useRef<Promise<string> | null>(null);
@@ -212,16 +228,11 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
   };
 
   // ── Card action ───────────────────────────────────────────────────────────
-  //
-  // GENERATE phase: ensure the survey sim exists (so the report can be
-  // produced server-side), then mark the card 'done'.  No file download here.
-  //
-  // VIEW phase: open the modal.  The download lives inside the modal.
 
   const handleAction = async (card: InsightCard) => {
     const state = cardStates[card.id] ?? 'idle';
 
-    // Done + has viewer → open modal (download deferred to modal button)
+    // Done + has viewer → open modal
     if (state === 'done' && card.hasViewer) {
       setViewingCard(card.id as ViewableCardId);
       return;
@@ -230,16 +241,19 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
     // Playground — no API, mark done instantly
     if (card.id === 'playground') {
       setCardStates((prev) => ({ ...prev, [card.id]: 'generating' }));
-      setTimeout(() => setCardStates((prev) => ({ ...prev, [card.id]: 'done' })), 800);
+      setTimeout(() => {
+        setCardStates((prev) => ({ ...prev, [card.id]: 'done' }));
+        markLsReady(card.id, explorationId);
+      }, 800);
       return;
     }
 
-    // Generate: resolve the survey sim so the backend can prepare the report,
-    // but do NOT trigger the file download — that happens in the modal.
+    // Generate: resolve the survey sim so the backend can prepare the report
     setCardStates((prev) => ({ ...prev, [card.id]: 'generating' }));
     try {
-      await ensureSurveySimulationId();   // ensures report data is ready
+      await ensureSurveySimulationId();
       setCardStates((prev) => ({ ...prev, [card.id]: 'done' }));
+      markLsReady(card.id, explorationId);  // ← persist so login/logout survives
     } catch (err) {
       console.error(`Failed to prepare ${card.id}:`, err);
       const detail = await getAxiosErrorMessage(err, 'Could not prepare this report.');
@@ -248,7 +262,7 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
     }
   };
 
-  // ── Modal download — triggers the actual file download ────────────────────
+  // ── Modal download ────────────────────────────────────────────────────────
 
   const handleModalDownload = async () => {
     if (!viewingCard) return;
@@ -334,9 +348,9 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
         animate="visible"
       >
         {INSIGHT_CARDS.map((card) => {
-          const state = cardStates[card.id] ?? 'idle';
+          const state        = cardStates[card.id] ?? 'idle';
           const isGenerating = state === 'generating';
-          const isDone = state === 'done';
+          const isDone       = state === 'done';
 
           return (
             <motion.div key={card.id} className="ig-card" variants={cardVariants}>
@@ -396,6 +410,7 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
             </button>
           )}
         </div>
+
         {isViewOnly ? (
           <button
             className="ig-footer__btn ig-footer__btn--end"
