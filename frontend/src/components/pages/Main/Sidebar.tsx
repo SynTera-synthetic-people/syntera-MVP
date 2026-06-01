@@ -52,19 +52,19 @@ interface Tooltip {
 /* ── helpers ── */
 const getPlanLabel = (user: User | null): string => {
   switch (user?.account_tier) {
-    case "tier1":      return "Explorer";
+    case "tier1": return "Explorer";
     case "enterprise": return "Enterprise";
     case "free":
-    default:           return "Free Trial";
+    default: return "Free Trial";
   }
 };
 
 const getPlanClass = (user: User | null): string => {
   switch (user?.account_tier) {
-    case "tier1":      return "plan-pill--explorer";
+    case "tier1": return "plan-pill--explorer";
     case "enterprise": return "plan-pill--enterprise";
     case "free":
-    default:           return "plan-pill--free";
+    default: return "plan-pill--free";
   }
 };
 
@@ -145,21 +145,21 @@ const Sidebar: React.FC = () => {
     setIsCollapsed(false);
   };
 
-// AFTER
-const handleSidebarMouseLeave = (e: React.MouseEvent<HTMLDivElement>) => {
-  isMouseInSidebarRef.current = false;
-  const relatedTarget = e.relatedTarget as Node | null;
-  const movingToProfile = relatedTarget ? profileMenuRef.current?.contains(relatedTarget) : false;
-  if (!movingToProfile) {
-    collapseTimeoutRef.current = setTimeout(() => {
-      if (!isMouseInSidebarRef.current && !isMouseInProfilePopupRef.current) {
-        setIsCollapsed(true);
-        setShowWorkspaceDropdown(false);
-        setShowProfileMenu(false);   // ← add this
-      }
-    }, 300);
-  }
-};
+  // AFTER
+  const handleSidebarMouseLeave = (e: React.MouseEvent<HTMLDivElement>) => {
+    isMouseInSidebarRef.current = false;
+    const relatedTarget = e.relatedTarget as Node | null;
+    const movingToProfile = relatedTarget ? profileMenuRef.current?.contains(relatedTarget) : false;
+    if (!movingToProfile) {
+      collapseTimeoutRef.current = setTimeout(() => {
+        if (!isMouseInSidebarRef.current && !isMouseInProfilePopupRef.current) {
+          setIsCollapsed(true);
+          setShowWorkspaceDropdown(false);
+          setShowProfileMenu(false);   // ← add this
+        }
+      }, 300);
+    }
+  };
 
   useEffect(() => {
     const handleProfilePopupEnter = () => {
@@ -297,6 +297,7 @@ const handleSidebarMouseLeave = (e: React.MouseEvent<HTMLDivElement>) => {
             <div className="sidebar-logo-container">
               <div className={`sidebar-logo ${isCollapsed ? "logo-collapsed" : "logo-expanded"}`} onMouseLeave={hideTooltip}>
                 <img src={getLogo()} alt="Logo" className={`logo-image ${isCollapsed ? "logo-small" : "logo-large"}`} />
+                <span className="sidebar-beta-badge">Beta</span>
               </div>
             </div>
 

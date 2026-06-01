@@ -34,7 +34,7 @@
   padding: 40px;
   display: flex;
   flex-direction: column;
-  gap: 32px;
+  gap: 24px;
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.7);
   animation: apm-modal-in 0.18s ease;
 }
@@ -168,7 +168,7 @@
 .apm-divider {
   height: 1px;
   width: 90%;
-  margin: 8px auto;
+  margin: 0 auto;
   background: rgba(255, 255, 255, 0.08);
 }
 
@@ -181,6 +181,88 @@
 .apm-total-label { font-size: 15px; font-weight: 700; color: #f3f4f6; }
 .apm-total-price { font-size: 15px; font-weight: 700; color: #f3f4f6; }
 
+/* ── Warning banner ── */
+.apm-warning-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px 16px;
+  background: rgba(180, 100, 0, 0.18);
+  border: 1px solid rgba(251, 146, 60, 0.35);
+  border-radius: 12px;
+}
+
+.apm-warning-icon {
+  color: #f97316;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.apm-warning-text {
+  font-size: 13px;
+  color: #fb923c;
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* ── Consent checkbox ── */
+.apm-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.apm-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  background: #000000;
+  border: 1px solid var(--T-GreyScale-Grey-700, #4F535F);
+  border-radius: 4px;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+
+.apm-checkbox:hover {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.apm-checkbox:checked {
+  background: #2563eb;
+  border-color: #2563eb;
+}
+
+.apm-checkbox:checked::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 2px;
+  width: 5px;
+  height: 9px;
+  border: 2px solid #ffffff;
+  border-top: none;
+  border-left: none;
+  transform: rotate(45deg);
+}
+
+.apm-checkbox-label {
+  font-size: 14px;
+  color: #d1d5db;
+  line-height: 1.4;
+  user-select: none;
+}
+.apm-checkbox-label {
+  font-size: 14px;
+  color: #d1d5db;
+  line-height: 1.4;
+  user-select: none;
+}
+
 /* ── CTA button ── */
 .apm-cta-btn {
   width: 100%;
@@ -192,8 +274,11 @@
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.15s, opacity 0.15s;
   letter-spacing: 0.1px;
 }
 .apm-cta-btn:hover:not(:disabled) { background: #1d4ed8; }
-.apm-cta-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.apm-cta-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

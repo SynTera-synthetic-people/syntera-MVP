@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { TbX, TbPlus, TbMinus, TbInfoCircle } from 'react-icons/tb';
+import { TbX, TbPlus, TbMinus, TbInfoCircle, TbAlertCircle } from 'react-icons/tb';
 import { toast } from 'react-toastify';
 import { personaService } from '../../../../../../../services/personaService';
 import './AddPersonaModalStyles.css';
@@ -30,11 +30,15 @@ const AddPersonaModal: React.FC<AddPersonaModalProps> = ({
   objectiveId,
 }) => {
   const [count, setCount]   = useState<number>(MIN_COUNT);
+  const [agreed, setAgreed] = useState(false);
   const [adding, setAdding] = useState(false);
 
-  // Reset count every time the modal opens
+  // Reset count and agreement every time the modal opens
   useEffect(() => {
-    if (isOpen) setCount(MIN_COUNT);
+    if (isOpen) {
+      setCount(MIN_COUNT);
+      setAgreed(false);
+    }
   }, [isOpen]);
 
   // Close on Escape
@@ -59,7 +63,7 @@ const AddPersonaModal: React.FC<AddPersonaModalProps> = ({
   };
 
   const handleAdd = async () => {
-    if (!workspaceId || !objectiveId) return;
+    if (!workspaceId || !objectiveId || !agreed) return;
 
     setAdding(true);
     try {
@@ -122,7 +126,7 @@ const AddPersonaModal: React.FC<AddPersonaModalProps> = ({
         {/* Price breakdown */}
         <div className="apm-breakdown">
           <div className="apm-breakdown-row">
-            <span className="apm-breakdown-label">Persona × {count}</span>
+            <span className="apm-breakdown-label">Additional Personas x {count}</span>
             <span className="apm-breakdown-price">${PRICE_PER_UNIT} each</span>
           </div>
           <div className="apm-divider" />
@@ -132,8 +136,28 @@ const AddPersonaModal: React.FC<AddPersonaModalProps> = ({
           </div>
         </div>
 
+        {/* Warning banner */}
+        <div className="apm-warning-banner">
+          <TbAlertCircle size={16} className="apm-warning-icon" />
+          <p className="apm-warning-text">
+            Additional personas will be added to this exploration. The corresponding
+            cost will be included in your next billing cycle.
+          </p>
+        </div>
+
+        {/* Consent checkbox */}
+        <label className="apm-checkbox-row">
+          <input
+            type="checkbox"
+            className="apm-checkbox"
+            checked={agreed}
+            onChange={(e) => setAgreed(e.target.checked)}
+          />
+          <span className="apm-checkbox-label">I understand and agree to the additional cost.</span>
+        </label>
+
         {/* CTA */}
-        <button className="apm-cta-btn" onClick={handleAdd} disabled={adding}>
+        <button className="apm-cta-btn" onClick={handleAdd} disabled={adding || !agreed}>
           {adding ? 'Processing…' : 'Add Persona and Continue'}
         </button>
 

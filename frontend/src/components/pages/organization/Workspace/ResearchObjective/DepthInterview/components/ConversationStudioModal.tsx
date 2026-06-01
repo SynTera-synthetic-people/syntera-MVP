@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { TbX, TbSend, TbMicrophone, TbLoader, TbChevronDown, TbMessageCircle, TbPaperclip, TbFileText } from 'react-icons/tb';
+import {
+  TbX, TbSend, TbMicrophone, TbLoader, TbChevronDown,
+  TbMessageCircle, TbPaperclip, TbFileText, TbClock,
+  TbPlus, TbTrash,
+} from 'react-icons/tb';
 import SpIcon from '../../../../../../SPIcon';
 import { usePersonaBuilder } from '../../../../../../../hooks/usePersonaBuilder';
 import {
@@ -17,11 +21,6 @@ interface ConversationStudioModalProps {
   objectiveId: string;
   onClose: () => void;
 }
-interface Interview {
-  id: string;
-  messages?: any[];
-  // add more fields if needed
-}
 
 interface Persona {
   id: string;
@@ -37,6 +36,43 @@ interface ChatMessage {
   timestamp: string;
   isThinking?: boolean;
 }
+
+interface ConversationThread {
+  id: string;
+  personaId: string;
+  personaName: string;
+  title: string;
+  preview: string;
+  startedAt: string;
+  messages: ChatMessage[];
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+const groupThreadsByDate = (threads: ConversationThread[]) => {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const weekAgo = new Date(today);
+  weekAgo.setDate(weekAgo.getDate() - 7);
+
+  const todayGroup: { label: string; threads: ConversationThread[] } = { label: 'Today', threads: [] };
+  const yesterdayGroup: { label: string; threads: ConversationThread[] } = { label: 'Yesterday', threads: [] };
+  const weekGroup: { label: string; threads: ConversationThread[] } = { label: 'Previous 7 Days', threads: [] };
+  const olderGroup: { label: string; threads: ConversationThread[] } = { label: 'Older', threads: [] };
+
+  threads.forEach((t) => {
+    const d = new Date(t.startedAt);
+    const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    if (day >= today) todayGroup.threads.push(t);
+    else if (day >= yesterday) yesterdayGroup.threads.push(t);
+    else if (day >= weekAgo) weekGroup.threads.push(t);
+    else olderGroup.threads.push(t);
+  });
+
+  return [todayGroup, yesterdayGroup, weekGroup, olderGroup].filter((g) => g.threads.length > 0);
+};
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -60,6 +96,11 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
   const [inputValue, setInputValue] = useState<string>('');
   const [interviewId, setInterviewId] = useState<string | null>(null);
 
+  // History sidebar
+  const [threads, setThreads] = useState<ConversationThread[]>([]);
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
+
   const chatEndRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -68,7 +109,6 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
   const startInterviewMutation = useStartInterview(workspaceId, objectiveId);
   const sendMessageMutation = useSendMessage(workspaceId, objectiveId, interviewId ?? '');
 
-  // Poll for new persona replies while the chat is active.
   const { data: interviewData, isLoading: isInterviewLoading } = useInterview(
     workspaceId,
     objectiveId,
@@ -81,14 +121,12 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
 
   // ── Effects ───────────────────────────────────────────────────────────────
 
-  // Sync messages from polling. System-role entries are internal markers and are
-  // never shown; the persona greeting lives in local state only.
   useEffect(() => {
     const apiMessages = (interviewData as any)?.data?.messages;
     if (!apiMessages) return;
 
     const visible = apiMessages.filter((msg: any) => msg.role !== 'system');
-    if (visible.length === 0) return; // nothing displayable yet — keep greeting
+    if (visible.length === 0) return;
 
     const formatted: ChatMessage[] = visible.map((msg: any) => ({
       sender: msg.role === 'user' ? 'user' : 'bot',
@@ -96,14 +134,26 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
       timestamp: msg.ts,
     }));
     setMessages(formatted);
+
+    if (activeThreadId) {
+      setThreads((prev) =>
+        prev.map((t) =>
+          t.id === activeThreadId
+            ? {
+              ...t,
+              messages: formatted,
+              preview: formatted[formatted.length - 1]?.text?.slice(0, 60) ?? t.preview,
+            }
+            : t
+        )
+      );
+    }
   }, [interviewData]);
 
-  // Scroll to bottom on new message
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Close dropdown on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
@@ -120,19 +170,16 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
     setSelectedPersona(id);
     setSelectedPersonaName(name);
     setIsDropdownOpen(false);
-    // Reset chat state so the restore / start logic runs fresh for this persona
     setIsChatActive(false);
     setMessages([]);
     setInputValue('');
     setInterviewId(null);
+    setActiveThreadId(null);
   };
 
   const handleStartConversation = async () => {
     if (!selectedPersona) return;
 
-    // Always start a brand-new interview session. Passing forceNew=true tells
-    // the backend to bypass the idempotency guard so old messages are never
-    // loaded into this fresh Conversation Studio session.
     try {
       const result = await startInterviewMutation.mutateAsync({
         personaId: selectedPersona,
@@ -142,20 +189,55 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
       const id = (result as any)?.data?.id;
 
       if (id) {
-        // Show greeting immediately from local state; DB session starts empty.
-        setMessages([
-          {
-            sender: 'bot',
-            text: `Hey, I’m ,${selectedPersonaName}.I’m here and ready for all your what-ifs, curiosities, and tough questions`,
-            timestamp: new Date().toISOString(),
-          }
-        ]);
+        const greeting: ChatMessage = {
+          sender: 'bot',
+          text: `Hey, I'm ${selectedPersonaName}. I'm here and ready for all your what-ifs, curiosities, and tough questions.`,
+          timestamp: new Date().toISOString(),
+        };
+
+        const newThread: ConversationThread = {
+          id,
+          personaId: selectedPersona,
+          personaName: selectedPersonaName,
+          title: `Chat with ${selectedPersonaName}`,
+          preview: greeting.text.slice(0, 60),
+          startedAt: new Date().toISOString(),
+          messages: [greeting],
+        };
+
+        setThreads((prev) => [newThread, ...prev]);
+        setActiveThreadId(id);
+        setMessages([greeting]);
         setInterviewId(id);
         setIsChatActive(true);
       }
     } catch (err) {
       console.error('Failed to start interview:', err);
     }
+  };
+
+  const handleLoadThread = (thread: ConversationThread) => {
+    setSelectedPersona(thread.personaId);
+    setSelectedPersonaName(thread.personaName);
+    setActiveThreadId(thread.id);
+    setInterviewId(thread.id);
+    setMessages(thread.messages);
+    setIsChatActive(true);
+    setIsDropdownOpen(false);
+  };
+
+  const handleNewChat = () => {
+    setIsChatActive(false);
+    setMessages([]);
+    setInputValue('');
+    setInterviewId(null);
+    setActiveThreadId(null);
+  };
+
+  const handleDeleteThread = (e: React.MouseEvent, threadId: string) => {
+    e.stopPropagation();
+    setThreads((prev) => prev.filter((t) => t.id !== threadId));
+    if (activeThreadId === threadId) handleNewChat();
   };
 
   const handleSendMessage = async () => {
@@ -169,6 +251,14 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
     };
     setMessages((prev) => [...prev, userMsg]);
     setInputValue('');
+
+    setThreads((prev) =>
+      prev.map((t) =>
+        t.id === activeThreadId
+          ? { ...t, preview: text.slice(0, 60), messages: [...t.messages, userMsg] }
+          : t
+      )
+    );
 
     try {
       await sendMessageMutation.mutateAsync({ role: 'user', content: text });
@@ -209,23 +299,30 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
     URL.revokeObjectURL(url);
   };
 
-  const handleEndExploration = () => {
-    onClose();
-  };
-
   // ── Derived ───────────────────────────────────────────────────────────────
 
   const activePersona = personas.find((p) => p.id === selectedPersona);
   const hasSelection = !!selectedPersona;
-
   const isStarting = startInterviewMutation.isPending;
 
-  // ── Format timestamp ──────────────────────────────────────────────────────
+  const sidebarThreads = selectedPersona
+    ? threads.filter((t) => t.personaId === selectedPersona)
+    : threads;
+
+  const groupedThreads = groupThreadsByDate(sidebarThreads);
 
   const formatTime = (ts: string) => {
     try {
       const d = new Date(ts);
       return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+    } catch {
+      return '';
+    }
+  };
+
+  const formatThreadDate = (ts: string) => {
+    try {
+      return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
     } catch {
       return '';
     }
@@ -259,7 +356,6 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
             </p>
           </div>
           <div className="cs-panel-header__actions">
-            {/* Persona switcher in header — only when a persona is selected */}
             {hasSelection && (
               <div className="cs-dropdown-wrap cs-dropdown-wrap--header" ref={dropdownRef}>
                 <button
@@ -307,206 +403,294 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
           </div>
         </div>
 
-        {/* ── Body ── */}
+        {/* ── Body (sidebar + main) ── */}
         <div className="cs-body">
 
-          {/* ── Persona picker state (no persona selected) ── */}
-          {!hasSelection ? (
-            <>
-              <div className="cs-picker-state">
-                <div className="cs-picker-card">
-                  <SpIcon name="sp-User-Users" size={40} className="cs-picker-card__icon" />
-                  <h3 className="cs-picker-card__title">
-                    Pick a persona to begin your conversation
-                  </h3>
-                  <div className="cs-dropdown-wrap" ref={dropdownRef}>
-                    <button
-                      className="cs-dropdown-trigger"
-                      onClick={() => setIsDropdownOpen((v) => !v)}
-                    >
-                      <span>Select Persona</span>
-                      <TbChevronDown
-                        size={16}
-                        className={`cs-dropdown-trigger__chevron ${isDropdownOpen ? 'cs-dropdown-trigger__chevron--open' : ''}`}
-                      />
+          {/* ── Floating history toggle — only visible when sidebar is closed ── */}
+          {!isSidebarOpen && (
+            <button
+              className="cs-history-fab"
+              onClick={() => setIsSidebarOpen(true)}
+              aria-label="Open history"
+              title="Open conversation history"
+            >
+              <SpIcon name="sp-Menu-Hamburger_MD" size={16} />
+            </button>
+          )}
+
+          {/* ── Left sidebar — collapsible ── */}
+          <aside className={`cs-sidebar ${isSidebarOpen ? 'cs-sidebar--open' : ''}`}>
+
+            {/* Sidebar header */}
+            <div className="cs-sidebar__header">
+              <div className="cs-sidebar__header-top">
+                <span className="cs-sidebar__title">
+                  <TbClock size={14} />
+                  History
+                </span>
+                <div className="cs-sidebar__header-actions">
+                  {isChatActive && (
+                    <button className="cs-sidebar__new-btn" onClick={handleNewChat} title="New conversation">
+                      <TbPlus size={15} />
                     </button>
-                    <AnimatePresence>
-                      {isDropdownOpen && (
-                        <motion.div
-                          className="cs-dropdown-menu"
-                          initial={{ opacity: 0, y: -6, scale: 0.97 }}
-                          animate={{ opacity: 1, y: 0, scale: 1 }}
-                          exit={{ opacity: 0, y: -6, scale: 0.97 }}
-                          transition={{ duration: 0.15 }}
-                        >
-                          {personas.length > 0 ? (
-                            personas.map((p) => (
-                              <button
-                                key={p.id}
-                                className="cs-dropdown-item"
-                                onClick={() => handlePersonaSelect(p.id, p.name ?? 'Persona')}
-                              >
-                                <div className="cs-dropdown-item__avatar">
-                                  {(p.name ?? 'P').charAt(0).toUpperCase()}
-                                </div>
-                                <div className="cs-dropdown-item__text">
-                                  <span className="cs-dropdown-item__name">{p.name ?? 'Persona'}</span>
-                                  <span className="cs-dropdown-item__role">{p.occupation ?? ''}</span>
-                                </div>
-                              </button>
-                            ))
-                          ) : (
-                            <div className="cs-dropdown-empty">No personas found</div>
-                          )}
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
+                  )}
+                  <button
+                    className="cs-sidebar__close-btn"
+                    onClick={() => setIsSidebarOpen(false)}
+                    title="Close history"
+                  >
+                    <TbX size={14} />
+                  </button>
                 </div>
               </div>
 
-              {/* ── Footer (picker state) ── */}
-              <div className="cs-footer cs-footer--picker" />
-            </>
+              {selectedPersona && (
+                <p className="cs-sidebar__filter-label">
+                  Showing threads for <strong>{selectedPersonaName}</strong>
+                </p>
+              )}
+            </div>
 
-          ) : (
-            /* ── Chat state ── */
-            <div className="cs-chat">
-
-              {/* Messages */}
-              <div className="cs-messages">
-                {!isChatActive ? (
-                  /* Ready to start — show spinner if still checking for existing interview */
-                  <div className="cs-messages__empty">
-                    <TbMessageCircle size={40} className="cs-messages__empty-icon" />
-                    <h4 className="cs-messages__empty-title">Ready to deep dive?</h4>
-                    <p className="cs-messages__empty-sub">
-                      You're talking to <strong>{selectedPersonaName}</strong>.
-                    </p>
-                    <button
-                      className="cs-start-btn"
-                      onClick={handleStartConversation}
-                      disabled={isStarting}
-                    >
-                      {isStarting ? (
-                        <>
-                          <TbLoader className="cs-start-btn__spinner" size={15} />
-                          Starting…
-                        </>
-                      ) : (
-                        'Start Interview'
-                      )}
-                    </button>
-                  </div>
-                ) : messages.length === 0 && isInterviewLoading ? (
-                  <div className="cs-messages__loading">
-                    <TbLoader size={28} className="cs-messages__loading-spinner" />
-                    <span>Setting up the interview…</span>
-                  </div>
-                ) : (
-                  <>
-                    {messages.map((msg, i) => (
-                      <div
-                        key={i}
-                        className={`cs-bubble-row ${msg.sender === 'user' ? 'cs-bubble-row--user' : ''}`}
+            {/* Thread list */}
+            <div className="cs-sidebar__threads">
+              {sidebarThreads.length === 0 ? (
+                <div className="cs-sidebar__empty">
+                  <TbMessageCircle size={22} />
+                  <span>No conversations yet</span>
+                </div>
+              ) : (
+                groupedThreads.map((group) => (
+                  <div key={group.label} className="cs-sidebar__group">
+                    <p className="cs-sidebar__group-label">{group.label}</p>
+                    {group.threads.map((thread) => (
+                      <button
+                        key={thread.id}
+                        className={`cs-thread-item ${activeThreadId === thread.id ? 'cs-thread-item--active' : ''}`}
+                        onClick={() => handleLoadThread(thread)}
                       >
-                        {msg.sender === 'bot' && (
-                          <div className="cs-bubble-avatar">
-                            {activePersona?.image ? (
-                              <img src={activePersona.image} alt={selectedPersonaName} className="cs-bubble-avatar__img" />
-                            ) : (
-                              selectedPersonaName.charAt(0).toUpperCase()
-                            )}
+                        <div className="cs-thread-item__avatar">
+                          {thread.personaName.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="cs-thread-item__content">
+                          <div className="cs-thread-item__top">
+                            <span className="cs-thread-item__name">{thread.personaName}</span>
+                            <span className="cs-thread-item__date">{formatThreadDate(thread.startedAt)}</span>
                           </div>
+                          <p className="cs-thread-item__preview">{thread.preview}…</p>
+                        </div>
+                        <button
+                          className="cs-thread-item__delete"
+                          onClick={(e) => handleDeleteThread(e, thread.id)}
+                          title="Delete thread"
+                        >
+                          <TbTrash size={13} />
+                        </button>
+                      </button>
+                    ))}
+                  </div>
+                ))
+              )}
+            </div>
+          </aside>
+
+          {/* ── Main content ── */}
+          <div className="cs-main">
+
+            {!hasSelection ? (
+              /* ── Persona picker state ── */
+              <>
+                <div className="cs-picker-state">
+                  <div className="cs-picker-card">
+                    <SpIcon name="sp-User-Users" size={40} className="cs-picker-card__icon" />
+                    <h3 className="cs-picker-card__title">
+                      Pick a persona to begin your conversation
+                    </h3>
+                    <div className="cs-dropdown-wrap" ref={dropdownRef}>
+                      <button
+                        className="cs-dropdown-trigger"
+                        onClick={() => setIsDropdownOpen((v) => !v)}
+                      >
+                        <span>Select Persona</span>
+                        <TbChevronDown
+                          size={16}
+                          className={`cs-dropdown-trigger__chevron ${isDropdownOpen ? 'cs-dropdown-trigger__chevron--open' : ''}`}
+                        />
+                      </button>
+                      <AnimatePresence>
+                        {isDropdownOpen && (
+                          <motion.div
+                            className="cs-dropdown-menu"
+                            initial={{ opacity: 0, y: -6, scale: 0.97 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: -6, scale: 0.97 }}
+                            transition={{ duration: 0.15 }}
+                          >
+                            {personas.length > 0 ? (
+                              personas.map((p) => (
+                                <button
+                                  key={p.id}
+                                  className="cs-dropdown-item"
+                                  onClick={() => handlePersonaSelect(p.id, p.name ?? 'Persona')}
+                                >
+                                  <div className="cs-dropdown-item__avatar">
+                                    {(p.name ?? 'P').charAt(0).toUpperCase()}
+                                  </div>
+                                  <div className="cs-dropdown-item__text">
+                                    <span className="cs-dropdown-item__name">{p.name ?? 'Persona'}</span>
+                                    <span className="cs-dropdown-item__role">{p.occupation ?? ''}</span>
+                                  </div>
+                                </button>
+                              ))
+                            ) : (
+                              <div className="cs-dropdown-empty">No personas found</div>
+                            )}
+                          </motion.div>
                         )}
-                        <div className="cs-bubble-col">
-                          <div className={`cs-bubble ${msg.sender === 'user' ? 'cs-bubble--user' : 'cs-bubble--bot'} ${msg.isThinking ? 'cs-bubble--thinking' : ''}`}>
-                            {msg.isThinking ? (
+                      </AnimatePresence>
+                    </div>
+                  </div>
+                </div>
+                <div className="cs-footer cs-footer--picker" />
+              </>
+
+            ) : (
+              /* ── Chat state ── */
+              <div className="cs-chat">
+
+                {/* Messages */}
+                <div className="cs-messages">
+                  {!isChatActive ? (
+                    <div className="cs-messages__empty">
+                      <TbMessageCircle size={40} className="cs-messages__empty-icon" />
+                      <h4 className="cs-messages__empty-title">Ready to deep dive?</h4>
+                      <p className="cs-messages__empty-sub">
+                        You're talking to <strong>{selectedPersonaName}</strong>.
+                      </p>
+                      <button
+                        className="cs-start-btn"
+                        onClick={handleStartConversation}
+                        disabled={isStarting}
+                      >
+                        {isStarting ? (
+                          <>
+                            <TbLoader className="cs-start-btn__spinner" size={15} />
+                            Starting…
+                          </>
+                        ) : (
+                          'Start Interview'
+                        )}
+                      </button>
+                    </div>
+                  ) : messages.length === 0 && isInterviewLoading ? (
+                    <div className="cs-messages__loading">
+                      <TbLoader size={28} className="cs-messages__loading-spinner" />
+                      <span>Setting up the interview…</span>
+                    </div>
+                  ) : (
+                    <>
+                      {messages.map((msg, i) => (
+                        <div
+                          key={i}
+                          className={`cs-bubble-row ${msg.sender === 'user' ? 'cs-bubble-row--user' : ''}`}
+                        >
+                          {msg.sender === 'bot' && (
+                            <div className="cs-bubble-avatar">
+                              {activePersona?.image ? (
+                                <img src={activePersona.image} alt={selectedPersonaName} className="cs-bubble-avatar__img" />
+                              ) : (
+                                selectedPersonaName.charAt(0).toUpperCase()
+                              )}
+                            </div>
+                          )}
+                          <div className="cs-bubble-col">
+                            <div className={`cs-bubble ${msg.sender === 'user' ? 'cs-bubble--user' : 'cs-bubble--bot'} ${msg.isThinking ? 'cs-bubble--thinking' : ''}`}>
+                              {msg.isThinking ? (
+                                <div className="cs-bubble__thinking">
+                                  <TbLoader size={14} className="cs-bubble__thinking-spinner" />
+                                  <span>{msg.text}</span>
+                                </div>
+                              ) : (
+                                msg.text
+                              )}
+                            </div>
+                            <div className={`cs-bubble-meta ${msg.sender === 'user' ? 'cs-bubble-meta--user' : ''}`}>
+                              {msg.sender === 'bot' ? selectedPersonaName : 'You'} • {formatTime(msg.timestamp)}
+                            </div>
+                          </div>
+                          {msg.sender === 'user' && (
+                            <div className="cs-bubble-avatar cs-bubble-avatar--user" />
+                          )}
+                        </div>
+                      ))}
+                      {sendMessageMutation.isPending && (
+                        <div className="cs-bubble-row">
+                          <div className="cs-bubble-avatar">
+                            {selectedPersonaName.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="cs-bubble-col">
+                            <div className="cs-bubble cs-bubble--bot cs-bubble--thinking">
                               <div className="cs-bubble__thinking">
                                 <TbLoader size={14} className="cs-bubble__thinking-spinner" />
-                                <span>{msg.text}</span>
+                                <span>Thinking…</span>
                               </div>
-                            ) : (
-                              msg.text
-                            )}
-                          </div>
-                          <div className={`cs-bubble-meta ${msg.sender === 'user' ? 'cs-bubble-meta--user' : ''}`}>
-                            {msg.sender === 'bot' ? selectedPersonaName : 'You'} • {formatTime(msg.timestamp)}
-                          </div>
-                        </div>
-                        {msg.sender === 'user' && (
-                          <div className="cs-bubble-avatar cs-bubble-avatar--user" />
-                        )}
-                      </div>
-                    ))}
-                    {sendMessageMutation.isPending && (
-                      <div className="cs-bubble-row">
-                        <div className="cs-bubble-avatar">
-                          {selectedPersonaName.charAt(0).toUpperCase()}
-                        </div>
-                        <div className="cs-bubble-col">
-                          <div className="cs-bubble cs-bubble--bot cs-bubble--thinking">
-                            <div className="cs-bubble__thinking">
-                              <TbLoader size={14} className="cs-bubble__thinking-spinner" />
-                              <span>Thinking…</span>
                             </div>
                           </div>
                         </div>
-                      </div>
-                    )}
-                    <div ref={chatEndRef} />
-                  </>
-                )}
-              </div>
-
-              {/* Input */}
-              {isChatActive && interviewId && (
-                <div className="cs-input-area">
-                  <div className="cs-input-row">
-                    <button className="cs-input-attach" title="Attach file">
-                      <TbPaperclip size={18} />
-                    </button>
-                    <div className="cs-input-wrap">
-                      <textarea
-                        className="cs-input"
-                        placeholder="Typing..."
-                        value={inputValue}
-                        onChange={(e) => setInputValue(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                        rows={1}
-                        autoFocus
-                      />
-                    </div>
-                    <button className="cs-input-voice" title="Voice input" onClick={() => { }}>
-                      <TbMicrophone size={18} />
-                    </button>
-                    <button
-                      className="cs-send-btn"
-                      onClick={handleSendMessage}
-                      disabled={!inputValue.trim() || sendMessageMutation.isPending}
-                    >
-                      {sendMessageMutation.isPending
-                        ? <TbLoader size={18} className="cs-send-btn__spinner" />
-                        : <TbSend size={18} />
-                      }
-                    </button>
-                  </div>
+                      )}
+                      <div ref={chatEndRef} />
+                    </>
+                  )}
                 </div>
-              )}
 
-              {/* ── Footer (chat state) ── */}
-              <div className="cs-footer">
-                <button className="cs-footer__download" onClick={handleDownloadConversation}>
-                  <TbFileText size={16} />
-                  Download this Conversation
-                </button>
-                <button className="cs-footer__end" onClick={handleEndExploration}>
-                  End Exploration
-                </button>
+                {/* Input */}
+                {isChatActive && interviewId && (
+                  <div className="cs-input-area">
+                    <div className="cs-input-row">
+                      <button className="cs-input-attach" title="Attach file">
+                        <TbPaperclip size={18} />
+                      </button>
+                      <div className="cs-input-wrap">
+                        <textarea
+                          className="cs-input"
+                          placeholder="Typing..."
+                          value={inputValue}
+                          onChange={(e) => setInputValue(e.target.value)}
+                          onKeyDown={handleKeyDown}
+                          rows={1}
+                          autoFocus
+                        />
+                      </div>
+                      <button className="cs-input-voice" title="Voice input">
+                        <TbMicrophone size={18} />
+                      </button>
+                      <button
+                        className="cs-send-btn"
+                        onClick={handleSendMessage}
+                        disabled={!inputValue.trim() || sendMessageMutation.isPending}
+                      >
+                        {sendMessageMutation.isPending
+                          ? <TbLoader size={18} className="cs-send-btn__spinner" />
+                          : <TbSend size={18} />
+                        }
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Footer */}
+                <div className="cs-footer">
+                  <button className="cs-footer__download" onClick={handleDownloadConversation}>
+                    <TbFileText size={16} />
+                    Download this Conversation
+                  </button>
+                  <button className="cs-footer__end" onClick={onClose}>
+                    End Exploration
+                  </button>
+                </div>
+
               </div>
-
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
       </motion.div>

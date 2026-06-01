@@ -39,7 +39,7 @@ interface CardStates {
   behaviour: InsightCardState;
 }
 
-// ── Card definitions (matches Figma image 3 exactly) ─────────────────────────
+// ── Card definitions ──────────────────────────────────────────────────────────
 
 const INSIGHT_CARDS: InsightCard[] = [
   {
@@ -67,7 +67,16 @@ const INSIGHT_CARDS: InsightCard[] = [
   },
 ];
 
+// ── localStorage helpers ──────────────────────────────────────────────────────
 
+const lsKey = (cardId: InsightCardId, objectiveId: string | undefined) =>
+  `qual_${cardId}_ready_${objectiveId ?? ''}`;
+
+const isLsReady = (cardId: InsightCardId, objectiveId: string | undefined): boolean =>
+  localStorage.getItem(lsKey(cardId, objectiveId)) === '1';
+
+const markLsReady = (cardId: InsightCardId, objectiveId: string | undefined) =>
+  localStorage.setItem(lsKey(cardId, objectiveId), '1');
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -85,13 +94,12 @@ const InsightGeneration: React.FC = () => {
   // Tracks previous DI/BA statuses so we only toast on actual transitions
   const prevStatusRef = useRef<{ DI?: string; BA?: string }>({});
 
-  // ── Card generate/ready state per card ───────────────────────────────────
-
-  const [cardStates, setCardStates] = useState<CardStates>({
-    verbatim: 'idle',
-    decision: 'idle',
-    behaviour: 'idle',
-  });
+  // ── Card states — initialised from localStorage so they survive logout ────
+  const [cardStates, setCardStates] = useState<CardStates>(() => ({
+    verbatim:  isLsReady('verbatim',  objectiveId) ? 'ready' : 'idle',
+    decision:  isLsReady('decision',  objectiveId) ? 'ready' : 'idle',
+    behaviour: isLsReady('behaviour', objectiveId) ? 'ready' : 'idle',
+  }));
 
   // When true, useQualReportStatus polls every 5 s for DI/BA completion.
   const [pollingEnabled, setPollingEnabled] = useState(false);
@@ -101,58 +109,58 @@ const InsightGeneration: React.FC = () => {
   const [viewingCard, setViewingCard] = useState<InsightCardId | null>(null);
   const [showImpactModal, setShowImpactModal] = useState<boolean>(false);
   const [showConversationStudio, setShowConversationStudio] = useState<boolean>(false);
-  // Conversation Studio only rendered once at least one insight has been generated
+
   const hasAnyInsightReady = Object.values(cardStates).some((s) => s === 'ready');
 
   // ── Hooks ─────────────────────────────────────────────────────────────────
 
-  // Download mutations — used only in the viewer modal (cache hit, fast).
   const downloadTranscriptsMutation = useDownloadQualTranscripts(workspaceId, objectiveId);
-  const downloadDecisionMutation = useDownloadQualDecisionIntelligence(workspaceId, objectiveId);
-  const downloadBehaviourMutation = useDownloadQualBehaviorArchaeology(workspaceId, objectiveId);
+  const downloadDecisionMutation    = useDownloadQualDecisionIntelligence(workspaceId, objectiveId);
+  const downloadBehaviourMutation   = useDownloadQualBehaviorArchaeology(workspaceId, objectiveId);
+  const prepareMutation             = usePrepareQualReport(workspaceId, objectiveId);
 
-  // Prepare mutation — fires background LLM generation on the server and returns
-  // immediately so the browser never blocks waiting for a 2-3 min LLM call.
-  const prepareMutation = usePrepareQualReport(workspaceId, objectiveId);
-
-  // Poll report status every 5 s while DI/BA are generating; also restores
-  // card states when the user navigates back to this page.
   const { data: reportStatusData } = useQualReportStatus(workspaceId, objectiveId, {
     enabled: !!(workspaceId && objectiveId),
     refetchInterval: pollingEnabled ? 5_000 : false,
     staleTime: 0,
   });
 
-  // Sync card states from server report status.
+  // ── Sync card states from server — never regress a 'ready' card ──────────
   useEffect(() => {
     const qual = (reportStatusData as any)?.qual;
     if (!qual) return;
 
-    const diStatus = qual.DECISION_INTELLIGENCE;
-    const baStatus = qual.BEHAVIORAL_ARCHAEOLOGY;
-    const trStatus = qual.TRANSCRIPTS;
+    const diStatus  = qual.DECISION_INTELLIGENCE;
+    const baStatus  = qual.BEHAVIORAL_ARCHAEOLOGY;
+    const trStatus  = qual.TRANSCRIPTS;
+
     const DI = diStatus?.status as string | undefined;
     const BA = baStatus?.status as string | undefined;
     const TR = trStatus?.status as string | undefined;
-    const diReady = Boolean(diStatus?.available) || DI === 'done';
-    const baReady = Boolean(baStatus?.available) || BA === 'done';
-    const trReady = Boolean(trStatus?.available) || TR === 'done';
+
+    const diReady   = Boolean(diStatus?.available) || DI === 'done';
+    const baReady   = Boolean(baStatus?.available) || BA === 'done';
+    const trReady   = Boolean(trStatus?.available) || TR === 'done';
     const diPending = DI === 'pending' || DI === 'generating';
     const baPending = BA === 'pending' || BA === 'generating';
     const trPending = TR === 'pending' || TR === 'generating';
 
-    // Toast only on actual pending → failed transitions, not stale page load
+    // Toast only on actual pending → failed transitions
     if (DI === 'failed' && prevStatusRef.current.DI === 'pending') {
-      const msg = qual.DECISION_INTELLIGENCE?.error_message as string | undefined;
+      const msg = diStatus?.error_message as string | undefined;
       toast.error(
-        msg ? `Decision Intelligence failed: ${msg.slice(0, 100)}` : 'Decision Intelligence generation failed — please try again.',
+        msg
+          ? `Decision Intelligence failed: ${msg.slice(0, 100)}`
+          : 'Decision Intelligence generation failed — please try again.',
         { toastId: 'DI-failed' }
       );
     }
     if (BA === 'failed' && prevStatusRef.current.BA === 'pending') {
-      const msg = qual.BEHAVIORAL_ARCHAEOLOGY?.error_message as string | undefined;
+      const msg = baStatus?.error_message as string | undefined;
       toast.error(
-        msg ? `Behaviour Archaeology failed: ${msg.slice(0, 100)}` : 'Behaviour Archaeology generation failed — please try again.',
+        msg
+          ? `Behaviour Archaeology failed: ${msg.slice(0, 100)}`
+          : 'Behaviour Archaeology generation failed — please try again.',
         { toastId: 'BA-failed' }
       );
     }
@@ -164,31 +172,47 @@ const InsightGeneration: React.FC = () => {
     setCardStates((prev) => {
       const next = { ...prev };
 
-      // DI — always reflect server truth, done always wins
-      if (diReady) next.decision = 'ready';
-      else if (diPending) next.decision = 'generating';
-      else if (diStatus) next.decision = 'idle';
+      // ── Decision Intelligence ──
+      if (diReady) {
+        next.decision = 'ready';
+        markLsReady('decision', objectiveId);
+      } else if (diPending) {
+        next.decision = 'generating';
+      } else if (diStatus && next.decision !== 'ready') {
+        // Only reset to idle if not already ready (prevents regression)
+        next.decision = 'idle';
+      }
 
-      // BA — always reflect server truth, done always wins
-      if (baReady) next.behaviour = 'ready';
-      else if (baPending) next.behaviour = 'generating';
-      else if (baStatus) next.behaviour = 'idle';
+      // ── Behaviour Archaeology ──
+      if (baReady) {
+        next.behaviour = 'ready';
+        markLsReady('behaviour', objectiveId);
+      } else if (baPending) {
+        next.behaviour = 'generating';
+      } else if (baStatus && next.behaviour !== 'ready') {
+        next.behaviour = 'idle';
+      }
 
-      // Verbatim — always restore if done, never block on prev state
-      if (trReady) next.verbatim = 'ready';
-      else if (trPending) next.verbatim = 'generating';
-      else if (trStatus) next.verbatim = 'idle';
+      // ── Verbatim / Transcripts ──
+      if (trReady) {
+        next.verbatim = 'ready';
+        markLsReady('verbatim', objectiveId);
+      } else if (trPending) {
+        next.verbatim = 'generating';
+      } else if (trStatus && next.verbatim !== 'ready') {
+        next.verbatim = 'idle';
+      }
 
       return next;
     });
 
-    // Re-enable polling when tasks are in flight (handles re-navigation case)
+    // Re-enable polling when tasks are still in flight
     if (diPending || baPending || trPending) {
       setPollingEnabled(true);
     } else {
       setPollingEnabled(false);
     }
-  }, [reportStatusData]);
+  }, [reportStatusData, objectiveId]);
 
   // Pre-fetch verbatim preview data so it's ready when user clicks "View"
   const {
@@ -201,9 +225,9 @@ const InsightGeneration: React.FC = () => {
   const { data: explorationData } = useExploration(objectiveId);
   const updateExplorationMutation = useUpdateExplorationMethod();
 
-  const _apiData = (explorationData as any)?.data ?? (explorationData as any) ?? {};
-  const _isQual = !!_apiData?.is_qualitative;
-  const _isQuant = !!_apiData?.is_quantitative;
+  const _apiData         = (explorationData as any)?.data ?? (explorationData as any) ?? {};
+  const _isQual          = !!_apiData?.is_qualitative;
+  const _isQuant         = !!_apiData?.is_quantitative;
   const _derivedFromFlags = _isQual && _isQuant ? 'both' : _isQual ? 'qualitative' : _isQuant ? 'quantitative' : '';
   const researchApproach = (
     _apiData?.research_approach ||
@@ -217,12 +241,13 @@ const InsightGeneration: React.FC = () => {
     setCardStates((prev) => ({ ...prev, [cardId]: 'generating' }));
     try {
       if (cardId === 'verbatim') {
-        // Transcripts: synchronous DOCX generation — no LLM, completes in seconds.
+        // Synchronous DOCX generation — no LLM, completes in seconds
         await downloadTranscriptsMutation.mutateAsync();
         setCardStates((prev) => ({ ...prev, [cardId]: 'ready' }));
+        markLsReady('verbatim', objectiveId);
       } else {
         // DI / BA: fire background LLM task on server, return immediately.
-        // useQualReportStatus polls every 5 s and flips the card to 'ready'
+        // useQualReportStatus polls every 5s and flips the card to 'ready'
         // once the server reports the PDF is done.
         const slug = cardId === 'decision' ? 'decision-intelligence' : 'behavior-archaeology';
         await prepareMutation.mutateAsync(slug);
@@ -243,11 +268,9 @@ const InsightGeneration: React.FC = () => {
   const handleImpactSubmit = async () => {
     setShowImpactModal(false);
     try {
-      // Set sub3 (Insights Generation) as done
       if (objectiveId) {
         localStorage.setItem(`qualitative_sub3_${objectiveId}`, '1');
       }
-      // Mark exploration as complete — same pattern used by PersonaBuilder
       type EndFn = (args: { id: string | undefined; data: { is_end: boolean } }) => Promise<unknown>;
       await (updateExplorationMutation.mutateAsync as unknown as EndFn)({
         id: objectiveId,
@@ -257,7 +280,6 @@ const InsightGeneration: React.FC = () => {
       navigate(`/main/organization/workspace/explorations/${workspaceId}`);
     } catch (err) {
       console.error('Failed to end exploration:', err);
-      // Navigate anyway so user isn't stuck
       navigate(`/main/organization/workspace/explorations/${workspaceId}`);
     }
   };
@@ -294,9 +316,9 @@ const InsightGeneration: React.FC = () => {
       {/* ── 3-card grid ── */}
       <div className="ig-cards">
         {INSIGHT_CARDS.map((card, i) => {
-          const state = cardStates[card.id];
+          const state       = cardStates[card.id];
           const isGenerating = state === 'generating';
-          const isReady = state === 'ready';
+          const isReady      = state === 'ready';
 
           return (
             <motion.div

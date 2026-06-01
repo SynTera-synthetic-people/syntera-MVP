@@ -71,7 +71,7 @@ const ImpactHighFiveModal: React.FC<ImpactHighFiveModalProps> = ({ onSubmit, onC
           <div className="ihf-options">
             {[
               { value: 'direct',  label: 'Yes - It directly shaped a decision' },
-              { value: 'partial', label: 'Partly - It was one of serval inputs' },
+              { value: 'partial', label: 'Partly - It was one of several inputs' },
               { value: 'pending', label: 'Not yet - Decision pending' },
             ].map((opt) => (
               <button

@@ -773,7 +773,7 @@ const PersonaPreview: React.FC = () => {
             letterSpacing: '0.02em',
             margin: 0,
           }}>
-            Loading persona...
+            Loading persona Preview...
           </p>
         </div>
       </div>

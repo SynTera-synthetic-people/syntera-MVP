@@ -25,7 +25,7 @@ interface ChatViewParams {
 
 const ChatView: React.FC = () => {
   const location = useLocation();
-  const { objectiveId } = useParams<ChatViewParams>();
+  const { objectiveId } = useParams<{ objectiveId?: string }>();
   const state = location.state as ChatViewLocationState | null;
 
   // Check localStorage so that resuming via "Continue" (no location.state) also
