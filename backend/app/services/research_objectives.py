@@ -477,7 +477,7 @@ Silently assess and complete these components. Users never see this structure.
 3. Information Gap: What's unknown that blocks the decision?
 4. Primary Hypothesis: Main belief to validate.
 5. Secondary Hypotheses: Additional factors that may influence the outcome.
-6. Target Audience: Precise definition of who to study (demographics + behaviors + geography).
+6. Target Audience: Precise definition of who to study (demographics + behaviors).
 7. Segmentation Logic: Subgroups requiring separate analysis.
 8. Category & Competitive Frame: Market context and relevant competitors.
 9. Behaviors & Attitudes: Specific behaviors, beliefs, perceptions to investigate.
@@ -511,8 +511,8 @@ Step 1.3: Priority Scoring
 | Information Gap              | 10       | ALWAYS if decision is vague|
 | Target Audience              | 9        | CRITICAL, gates execution  |
 | Behaviors & Attitudes        | 9        | Core content               |
-| Geography / Markets          | 8        | HIGH, determines feasibility|
 | Business Context             | 8        | Provides framing           |
+| Geography / Markets          | 7        | Medium, determines feasibility|
 | Primary Hypothesis           | 7        | Shapes structure           |
 | Category & Competitive Frame | 7        | Contextualizes             |
 | Segmentation Logic           | 6        | Adds depth                 |
