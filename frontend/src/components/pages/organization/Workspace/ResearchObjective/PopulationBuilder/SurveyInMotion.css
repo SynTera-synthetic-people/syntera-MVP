@@ -228,9 +228,7 @@
 }
 
 .sim-check-item--done .sim-check-text {
-    color: rgba(255, 255, 255, 0.45);
-    text-decoration: line-through;
-    text-decoration-color: rgba(255, 255, 255, 0.2);
+    color: #06A17B;
 }
 
 /* Outcome text */

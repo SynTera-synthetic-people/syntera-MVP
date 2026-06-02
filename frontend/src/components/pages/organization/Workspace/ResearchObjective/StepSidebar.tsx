@@ -26,7 +26,14 @@ interface StepSidebarProps {
   isStepUnlocked: (step: number) => boolean;
   completedSubSteps?: number[];
   completedQuantSubSteps?: number[];
-  isViewOnly?: boolean; // ← new prop
+  isViewOnly?: boolean;
+  /**
+   * Pass `true` from any parent page that is currently showing an overlay
+   * loader (DiscussionGuideLoader, QuestionnaireLoader, SurveyInMotion).
+   * Route-based loaders (persona-generating, RunningInterviews) are detected
+   * automatically from the URL so you don't need to pass this for those.
+   */
+  hideBack?: boolean;
 }
 
 // ── Step definitions ──────────────────────────────────────────────────────────
@@ -126,7 +133,8 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
   isStepUnlocked,
   completedSubSteps = [],
   completedQuantSubSteps = [],
-  isViewOnly = false, // ← destructure with default
+  isViewOnly = false,
+  hideBack = false,
 }) => {
   const navigate = useNavigate();
   const { pathname } = useLocation();
@@ -192,12 +200,35 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
 
   isBackEnabled = isStepCompleted(activeStep);
 
+  // ── Detect route-based loader screens ────────────────────────────────────
+  // These are screens where an expensive process is running and navigating
+  // away would break it and waste compute. Back is hidden automatically.
+  //
+  //  1. persona-generating  — PersonaGenerationLoader (separate route)
+  //  2. chatview with interviews still running — RunningInterviews is shown
+  //     when qualitative_sub2 is NOT yet set in localStorage
+  //
+  // Overlay-based loaders (DiscussionGuideLoader, QuestionnaireLoader,
+  // SurveyInMotion) are controlled by the `hideBack` prop passed from the
+  // parent page component.
+
+  const interviewsStillRunning =
+    pathname.includes("chatview") &&
+    !!currentId &&
+    !localStorage.getItem(`qualitative_sub2_${currentId}`);
+
+  const isRouteLoader =
+    pathname.includes("persona-generating") ||
+    interviewsStillRunning;
+
+  const shouldHideBack = hideBack || isRouteLoader;
+
   // ── Navigation — always carry viewOnly in state ─────────────────────────────
 
   const go = (path: string) =>
     navigate(
       `/main/organization/workspace/research-objectives/${workspaceId}/${currentId}/${path}`,
-      { state: { viewOnly: isViewOnly } } // ← always forward viewOnly
+      { state: { viewOnly: isViewOnly } }
     );
 
   const handleStepClick = (step: StepItem) => {
@@ -238,6 +269,7 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
     if (workspaceId) navigate(`/main/organization/workspace/explorations/${workspaceId}`);
     else navigate(-1);
   };
+
   const { data: explorationsData } = useExplorations(workspaceId);
 
   const explorationTitle = React.useMemo(() => {
@@ -251,14 +283,18 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
 
   return (
     <aside className="step-sidebar">
-      <button
-        className="step-sidebar__back"
-        onClick={handleBack}
-        title={!isBackEnabled ? "Complete the current step to go back" : undefined}
-      >
-        <SpIcon name="sp-Arrow-Arrow_Left_SM" />
-        <span>Back</span>
-      </button>
+
+      {/* Back button — hidden during any active loader/process screen */}
+      {!shouldHideBack && (
+        <button
+          className="step-sidebar__back"
+          onClick={handleBack}
+          title={!isBackEnabled ? "Complete the current step to go back" : undefined}
+        >
+          <SpIcon name="sp-Arrow-Arrow_Left_SM" />
+          <span>Back</span>
+        </button>
+      )}
 
       <h2 className="step-sidebar__title">
         Research Exploration :
