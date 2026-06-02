@@ -194,7 +194,6 @@ async def _resolve_domain_and_subject_key(
 
 
 async def _fetch_ml_context(
-    workspace_id: str,
     description: str,
 ) -> tuple[str | None, str | None, str | None]:
     """
@@ -206,7 +205,7 @@ async def _fetch_ml_context(
         from app.ml.feature_fetch import get_user_features
         from app.ml.predictor import predict_from_features
 
-        domain, subject_key = await _resolve_domain_and_subject_key(workspace_id, description)
+        domain, subject_key = await _resolve_domain_and_subject_key(description)
         if not domain or not subject_key:
             return None, None, None
 
@@ -626,7 +625,7 @@ async def ai_generate_persona(
     # ============================================================================
     # ML CONTEXT — fetch once, reuse across all parallel persona calls
     # ============================================================================
-    ml_domain, ml_subject_key, ml_context = await _fetch_ml_context(workspace_id, description or "")
+    ml_domain, ml_subject_key, ml_context = await _fetch_ml_context(description or "")
 
     # ============================================================================
     # PARALLEL PERSONA GENERATION

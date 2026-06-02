@@ -159,7 +159,10 @@ def _compute_features(df: pd.DataFrame, subject_key: str, domain: str) -> dict:
     inter_order_time = float(inter_times.median()) if len(inter_times) > 1 else 0.0
 
     # RFM features
-    recency_days = (pd.Timestamp.now() - df["transaction_date"].max()).days
+    last_tx = df["transaction_date"].max()
+    if hasattr(last_tx, "tzinfo") and last_tx.tzinfo is not None:
+        last_tx = last_tx.tz_localize(None)
+    recency_days = (pd.Timestamp.now() - last_tx).days
     recency_score = float(1 / (1 + recency_days / 30))
     frequency_score = float(len(df) / days_span)
     monetary_score = float(df["transaction_amount"].mean())
