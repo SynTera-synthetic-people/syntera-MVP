@@ -1,3 +1,41 @@
+# ============================================================================
+# LEGACY FILE — NO LONGER CALLED IN PRODUCTION
+# ============================================================================
+#
+# WHAT THIS WAS (Old System):
+#   A single-shot persona generator using GPT-5 + web search tools.
+#   Called by POST /personas/ endpoint.
+#   Flow: User fills form → payload sent directly to GPT-5 → LLM searched
+#         Reddit/Quora/LinkedIn/Medium → returned a fully enriched persona in one API call.
+#   Confidence scoring was evidence-volume based (conversations counted).
+#   Output: flat consumer_personas[0] dict, saved directly to DB.
+#
+# WHY IT WAS REPLACED:
+#   - GPT-5 + web search = high latency (30-90s) and high cost per persona
+#   - Evidence snapshot was often fabricated (no real evidence crawled)
+#   - No user control over which traits were inferred vs provided
+#   - Single phase meant no ability to review before committing AI output
+#
+# WHAT REPLACED IT (New System):
+#   Two-phase flow, both in app/services/persona.py:
+#
+#   Phase 1 → POST /personas/manual
+#     persona_service.create_manual_persona_draft()
+#     Saves user-provided traits as a "draft" — NO AI call, instant, zero cost.
+#
+#   Phase 2 → POST /personas/{id}/calibrate
+#     persona_service.calibrate_manual_persona()
+#     Calls gpt-4o with MANUAL_PERSONA_BUILDER_PROMPT (8-step Expert Persona Architect).
+#     - Auto-fills missing traits via RO-alignment + cross-trait inference
+#     - Generates OCEAN profile with per-dimension rationale
+#     - Produces auto_fill_report (which traits were user vs AI)
+#     - RO-alignment confidence scoring (4 components, honest, no fake evidence)
+#     - No web search — faster, cheaper, more transparent
+#
+# The endpoint that called this file (POST /personas/) now returns 410 GONE.
+# This file is kept for historical reference. Safe to delete in a future cleanup.
+# ============================================================================
+
 from app.services.auto_generated_persona import get_description
 
 import json

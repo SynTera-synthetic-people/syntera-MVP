@@ -49,8 +49,8 @@ const BASE_TABS = [
     key: 'demographics',
     label: 'Demographics',
     fields: [
-      'Age', 'Gender', 'Income Level', 'Education Level',
-      'Occupation / Employment Type', 'Family Structure', 'Geography',
+      'Age', 'Gender', 'Income Level', 'Education Level', 'Occupation Level',
+      'Occupation / Employment Type', 'Industry', 'Family Structure', 'Geography',
       'Marital Status',
     ],
   },
@@ -63,10 +63,11 @@ const BASE_TABS = [
     key: 'behavioral',
     label: 'Behavioural Traits',
     fields: [
-      'Decision Making Style', 'Purchase Frequency', 'Purchase Channel',
-      'Price Sensitivity', 'Brand Sensitivity', 'Price Sensitivity Profile',
-      'Loyalty / Switching Behavior', 'Purchase Triggers & Occasions',
-      'Purchase Barriers', 'Decision-Making Style', 'Media Consumption Patterns',
+      'Decision Making Style', 'Consumption Frequency', 'Purchase Frequency',
+      'Purchase Channel', 'Price Sensitivity', 'Brand Sensitivity',
+      'Switching Tendency', 'Loyalty / Switching Behavior',
+      'Category Awareness', 'Purchase Triggers & Occasions',
+      'Purchase Barriers', 'Media Consumption Patterns',
       'Digital Behavior', 'Digital Activity', 'Preferences', 'Professional Traits',
       'Hobbies & Interests', 'Mobility', 'Home Ownership', 'Daily Rhythm',
     ],
@@ -77,9 +78,10 @@ const BASE_TABS = [
 ] as const;
 
 const FORMATIVE_TAB = { key: 'formative', label: 'Formative Experience', fields: [] } as const;
+const AUTO_FILL_TAB = { key: 'autofill', label: 'AI Auto-Fill Report', fields: [] } as const;
 
 type BaseTabKey = typeof BASE_TABS[number]['key'];
-type TabKey = BaseTabKey | 'formative';
+type TabKey = BaseTabKey | 'formative' | 'autofill';
 
 // ── Calibration static data definitions ───────────────────────────────────────
 
@@ -187,8 +189,11 @@ const mapApiTraitsToUi = (
     Gender: c(['gender', 'Gender']),
     'Income Level': c(['income_range', 'income', 'Income Level']),
     'Education Level': c(['education_level', 'education', 'Education Level']),
+    // New Manual Build Mode fields
+    'Occupation Level': c(['occupation_level', 'Occupation Level']),
     'Occupation / Employment Type': c(['occupation', 'Occupation / Employment Type']),
-    'Family Structure': c(['family_size', 'family_structure', 'Family Structure']),
+    Industry: c(['industry', 'Industry']),
+    'Family Structure': c(['family_structure', 'family_size', 'Family Structure']),
     Geography: c(['geography', 'location_country', 'Geography']),
     Lifestyle: c(['lifestyle', 'lifestyle_type', 'Lifestyle']),
     Values: c(['values', 'Values']),
@@ -202,21 +207,26 @@ const mapApiTraitsToUi = (
     'Marital Status': c(['marital_status', 'Marital Status']),
     'Daily Rhythm': c(['daily_rhythm', 'Daily Rhythm']),
     'Hobbies & Interests': c(['hobbies', 'Hobbies & Interests']),
-    'Decision Making Style': c(['decision_making_style_1', 'Decision Making Style']),
+    // decision_making_style is the canonical new field name; legacy keys kept as fallback
+    'Decision Making Style': c(['decision_making_style', 'decision_making_style_1', 'Decision Making Style']),
+    'Consumption Frequency': c(['consumption_frequency', 'Consumption Frequency']),
     'Purchase Frequency': c(['purchase_frequency', 'Purchase Frequency']),
-    'Purchase Channel': c(['purchase_channel_detailed', 'purchase_channel', 'Purchase Channel']),
+    'Purchase Channel': c(['purchase_channel', 'purchase_channel_detailed', 'Purchase Channel']),
     'Price Sensitivity Profile': c(['price_sensitivity_profile', 'Price Sensitivity Profile']),
+    // switching_tendency is the new field; loyalty_behavior kept as fallback
+    'Switching Tendency': c(['switching_tendency', 'Switching Tendency']),
     'Loyalty / Switching Behavior': c(['loyalty_behavior', 'Loyalty / Switching Behavior']),
+    'Category Awareness': c(['category_awareness', 'Category Awareness']),
     'Purchase Triggers & Occasions': c(['purchase_triggers', 'Purchase Triggers & Occasions']),
     'Purchase Barriers': c(['purchase_barriers', 'Purchase Barriers']),
-    'Decision-Making Style': c(['decision_making_style_2', 'Decision-Making Style']),
-    'Media Consumption Patterns': c(['media_consumption', 'Media Consumption Patterns']),
-    'Digital Behavior': c(['digital_behavior_detailed', 'Digital Behavior']),
+    'Media Consumption Patterns': c(['media_consumption_patterns', 'media_consumption', 'Media Consumption Patterns']),
+    'Digital Behavior': c(['digital_behaviour', 'digital_behavior', 'digital_behavior_detailed', 'Digital Behavior']),
     'Digital Activity': c(['digital_activity', 'Digital Activity']),
     Preferences: c(['preferences', 'Preferences']),
     'Professional Traits': c(['professional_traits', 'Professional Traits']),
     backstory: coerce(
       traits.backstory ??
+      traits.formative_experience_description ??  // new prompt key
       traits.formative_experience ??
       traits.formativeExperience
     ),
@@ -229,19 +239,24 @@ const mapApiTraitsToUi = (
 
   const STANDARD_KEYS = new Set([
     'name', 'age_range', 'gender', 'income_range', 'education_level', 'occupation',
-    'family_size', 'location_country', 'location_state', 'geography', 'lifestyle',
+    'occupation_level', 'family_size', 'family_structure', 'industry',
+    'location_country', 'location_state', 'geography', 'lifestyle',
     'values', 'personality', 'personality_traits', 'interests', 'motivations',
-    'brand_sensitivity', 'price_sensitivity', 'decision_making_style', 'purchase_patterns',
-    'purchase_channel', 'mobility', 'accommodation', 'marital_status', 'daily_rhythm',
+    'brand_sensitivity', 'price_sensitivity', 'decision_making_style',
+    'consumption_frequency', 'purchase_channel', 'switching_tendency',
+    'category_awareness', 'purchase_patterns',
+    'mobility', 'accommodation', 'marital_status', 'daily_rhythm',
     'hobbies', 'professional_traits', 'digital_activity', 'preferences', 'backstory',
-    'formative_experience', 'formativeExperience',
+    'formative_experience', 'formativeExperience', 'formative_experience_description',
     'isAI', 'id', 'research_objective_id', 'exploration_id', 'sample_size',
     'auto_generated_persona', 'created_at', 'created_by', 'workspace_id',
     'persona_details', 'behaviors', 'attitudes_toward_category', 'barriers_pain_points',
     'triggers_opportunities', 'journey_stage_mapping', 'ocean_profile',
     'persona_generation_method', 'reference_sites_with_usage', 'confidence_scoring',
-    'researched_sites', 'evidence_snapshot',
-    'confidence_calculation_detail',
+    'researched_sites', 'evidence_snapshot', 'confidence_calculation_detail',
+    'auto_fill_report', 'calibration_confidence', 'calibration_status',
+    'calibration_breakdown', 'persona_source', 'parent_persona_id',
+    'created_by_name', 'subject_key', 'ml_domain',
   ]);
 
   const additionalKeys: string[] = [];
@@ -264,11 +279,27 @@ const mapApiTraitsToUi = (
 
 const flatten = (obj: unknown): string[] => {
   if (!obj) return [];
-  if (Array.isArray(obj)) return obj.filter((v): v is string => typeof v === 'string');
-  if (typeof obj === 'string') return [obj];
-  return Object.values(obj as Record<string, unknown>)
+  if (typeof obj === 'string') {
+    const text = obj.trim();
+    return text ? [text] : [];
+  }
+  if (Array.isArray(obj)) return obj.flatMap(flatten);
+  if (typeof obj === 'object') {
+    return Object.values(obj as Record<string, unknown>).flatMap(flatten);
+  }
+  return [];
+};
+
+const uniqueList = (...groups: string[][]): string[] => {
+  const seen = new Set<string>();
+  return groups
     .flat()
-    .filter((v): v is string => typeof v === 'string' && v !== '');
+    .map(item => item.trim())
+    .filter(item => {
+      if (!item || seen.has(item)) return false;
+      seen.add(item);
+      return true;
+    });
 };
 
 const confColor = (score: number) =>
@@ -467,6 +498,20 @@ const PersonaPreview: React.FC = () => {
   const rawData = (previewData as Record<string, unknown>)?.data as Record<string, unknown> | undefined;
   const rawTraits = (rawData?.traits ?? rawData ?? {}) as Record<string, unknown>;
   const personaDetails = (rawData?.persona_details ?? rawTraits?.persona_details ?? {}) as Record<string, unknown>;
+  const rawPromptTraits = (
+    personaDetails?.raw_traits ??
+    rawTraits?.raw_traits ??
+    rawData?.raw_traits ??
+    {}
+  ) as Record<string, unknown>;
+  const rawPromptBehavioural = (rawPromptTraits?.behavioural ?? {}) as Record<string, unknown>;
+  const rawFormPayload = (
+    personaDetails?.raw_form_payload ??
+    rawTraits?.raw_form_payload ??
+    rawData?.raw_form_payload ??
+    {}
+  ) as Record<string, unknown>;
+  const rawFormBehavioural = (rawFormPayload?.behavioural ?? {}) as Record<string, unknown>;
 
   const mergedTraits = smartMerge(
     personaDetails,
@@ -475,6 +520,20 @@ const PersonaPreview: React.FC = () => {
     rawData ?? {},
     manualPersona ?? {},
   );
+  const calibrationStatus = String(
+    mergedTraits.calibration_status ??
+    rawData?.calibration_status ??
+    manualPersona?.calibration_status ??
+    ''
+  );
+
+  useEffect(() => {
+    if (calibrationStatus !== 'draft' || !workspaceId || !objectiveId || !personaId) return;
+    navigate(
+      `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-generating`,
+      { state: { flow: 'manual', personaId } }
+    );
+  }, [calibrationStatus, workspaceId, objectiveId, personaId, navigate]);
 
   const uiTraits = mapApiTraitsToUi(mergedTraits, personaId);
 
@@ -482,56 +541,85 @@ const PersonaPreview: React.FC = () => {
 
   const evidenceSnapshot = (
     rawData?.evidence_snapshot ??
-    (rawData as Record<string, unknown>)?.evidence_snapshot ??
     mergedTraits?.evidence_snapshot ??
     {}
   ) as Record<string, unknown>;
 
-  const confidence = (mergedTraits.confidence_scoring ?? rawData?.confidence ?? {}) as Record<string, unknown>;
+  // confidence_scoring: new Manual Build Mode format takes priority
+  const confidence = (
+    rawData?.confidence_scoring ??
+    mergedTraits.confidence_scoring ??
+    personaDetails?.confidence_scoring ??
+    rawData?.confidence ??
+    {}
+  ) as Record<string, unknown>;
 
+  // Legacy evidence-based confidence detail (Omi-generated personas)
   const confidenceDetail = (
     (evidenceSnapshot as Record<string, unknown>)?.confidence_calculation_detail ??
     (evidenceSnapshot as Record<string, unknown>)?.confidence_breakdown ??
     rawData?.confidence_calculation_detail ??
-    (rawData?.traits
-      ? (rawData.traits as Record<string, unknown>)?.confidence_calculation_detail
-      : undefined) ??
     mergedTraits?.confidence_calculation_detail ??
-    confidence?.confidence_calculation_detail ??
-    (mergedTraits?.confidence_scoring as Record<string, unknown>)?.confidence_calculation_detail ??
-    rawTraits?.confidence_calculation_detail ??
     personaDetails?.confidence_calculation_detail
   ) as Record<string, unknown> | undefined;
 
-  const weightedTotal =
+  // Score resolution: new format (weighted_score 0-1) > legacy (weighted_total 0-1) > score string
+  const newFormatWeightedScore =
+    typeof confidence.weighted_score === 'number' ? confidence.weighted_score : null;
+  const legacyWeightedTotal =
     confidenceDetail?.weighted_total !== undefined
-      ? Math.round(parseFloat(String(confidenceDetail.weighted_total)) * 100)
+      ? parseFloat(String(confidenceDetail.weighted_total))
       : null;
+
+  const rawWeightedScore = newFormatWeightedScore ?? legacyWeightedTotal;
+  const weightedTotal = rawWeightedScore !== null ? Math.round(rawWeightedScore * 100) : null;
 
   const finalScore =
     weightedTotal ??
     parseInt(String(confidence.score ?? mergedTraits.confidence_score ?? 0), 10);
 
-  const breakdownComponents = confidenceDetail?.components as Record<string, number> | undefined;
+  // Confidence mode & note (new format only)
+  const confidenceMode = (confidence.mode ?? '') as string;
+  const confidenceNote = (confidence.note ?? '') as string;
+  const confidenceLevel = (confidence.confidence_level ?? '') as string;
+
+  // Breakdown: new format uses confidence.components; legacy uses confidenceDetail.components
+  const breakdownComponents = (
+    (confidence.components as Record<string, number> | undefined) ??
+    (confidenceDetail?.components as Record<string, number> | undefined)
+  );
+
+  const formatBreakdownLabel = (key: string): string =>
+    key
+      .replace(/_score$/, '')
+      .split('_')
+      .map(w => (w === 'ro' ? 'RO' : w.charAt(0).toUpperCase() + w.slice(1)))
+      .join(' ');
+
   const breakdownEntries: Array<{ label: string; score: number }> = breakdownComponents
     ? Object.entries(breakdownComponents).map(([key, score]) => ({
-      label: key
-        .replace(/_score$/, '')
-        .split('_')
-        .map(w => w.charAt(0).toUpperCase() + w.slice(1))
-        .join(' '),
-      score,
-    }))
+        label: formatBreakdownLabel(key),
+        score,
+      }))
     : Object.entries(confidenceDetail ?? {})
-      .filter(([k, v]) => k.endsWith('_score') && typeof v === 'number')
-      .map(([k, v]) => ({
-        label: k
-          .replace(/_score$/, '')
-          .split('_')
-          .map(w => w.charAt(0).toUpperCase() + w.slice(1))
-          .join(' '),
-        score: v as number,
-      }));
+        .filter(([k, v]) => k.endsWith('_score') && typeof v === 'number')
+        .map(([k, v]) => ({
+          label: formatBreakdownLabel(k),
+          score: v as number,
+        }));
+
+  // ── Auto-fill report (Manual Build Mode only) ──────────────────────────────
+
+  const autoFillReport = (
+    rawData?.auto_fill_report ??
+    mergedTraits?.auto_fill_report ??
+    personaDetails?.auto_fill_report
+  ) as {
+    total_sub_traits?: number;
+    user_provided_count?: number;
+    auto_filled_count?: number;
+    auto_filled_traits?: string[];
+  } | undefined;
 
   // ── Evidence sites ─────────────────────────────────────────────────────────
 
@@ -607,6 +695,7 @@ const PersonaPreview: React.FC = () => {
   ) as Record<string, unknown>;
 
   const oceanScores = (oceanProfile?.scores ?? {}) as Record<string, number>;
+  const oceanLabels = (oceanProfile?.labels ?? {}) as Record<string, string>;
 
   const oceanTraits = (oceanProfile?.traits ?? []) as Array<{
     name: string;
@@ -622,24 +711,29 @@ const PersonaPreview: React.FC = () => {
       : Object.fromEntries(oceanTraits.map(t => [t.name.toLowerCase(), t.score]));
 
   const oceanSummary = (oceanProfile?.summary ?? oceanProfile?.description ?? '') as string;
+  const oceanRationale = (oceanProfile?.rationale ?? {}) as Record<string, string>;
+
   const oceanItems = oceanTraits.length > 0
     ? oceanTraits.map(t => ({
       trait: t.name.toLowerCase(),
       label: t.name.charAt(0).toUpperCase() + t.name.slice(1).toLowerCase(),
       score: t.score,
       pct: Math.round(t.score * 100),
-      level: t.level,
+      level: oceanLabels[t.name.toLowerCase()] ?? t.level,
       description: t.description ?? t.interpretation,
+      rationale: oceanRationale[t.name.toLowerCase()] ?? '',
     }))
     : Object.entries(resolvedOceanScores).map(([trait, score]) => {
       const meta = OCEAN_DESCRIPTIONS[trait.toLowerCase()];
+      const level = oceanLabels[trait.toLowerCase()] ?? (meta ? meta.getLevel(score) : undefined);
       return {
         trait,
         label: trait.charAt(0).toUpperCase() + trait.slice(1),
         score,
         pct: Math.round(score * 100),
-        level: meta ? meta.getLevel(score) : undefined,
+        level,
         description: meta?.description,
+        rationale: oceanRationale[trait.toLowerCase()] ?? '',
       };
     });
 
@@ -653,18 +747,30 @@ const PersonaPreview: React.FC = () => {
 
   // ── Psychometric ───────────────────────────────────────────────────────────
 
-  const barriersList = flatten(
-    mergedTraits.barriers_pain_points ??
-    rawData?.barriers_pain_points ??
-    rawTraits?.barriers_pain_points ??
-    personaDetails?.barriers_pain_points
+  const barriersList = uniqueList(
+    flatten(mergedTraits.barriers_pain_points),
+    flatten(rawData?.barriers_pain_points),
+    flatten(rawTraits?.barriers_pain_points),
+    flatten(personaDetails?.barriers_pain_points),
+    flatten(mergedTraits.purchase_barriers),
+    flatten(rawTraits?.purchase_barriers),
+    flatten(personaDetails?.purchase_barriers),
+    flatten(rawPromptBehavioural?.purchase_barriers),
+    flatten(rawFormBehavioural?.purchase_barriers),
+    flatten(uiTraits['Purchase Barriers'])
   );
 
-  const triggersList = flatten(
-    mergedTraits.triggers_opportunities ??
-    rawData?.triggers_opportunities ??
-    rawTraits?.triggers_opportunities ??
-    personaDetails?.triggers_opportunities
+  const triggersList = uniqueList(
+    flatten(mergedTraits.triggers_opportunities),
+    flatten(rawData?.triggers_opportunities),
+    flatten(rawTraits?.triggers_opportunities),
+    flatten(personaDetails?.triggers_opportunities),
+    flatten(mergedTraits.purchase_triggers),
+    flatten(rawTraits?.purchase_triggers),
+    flatten(personaDetails?.purchase_triggers),
+    flatten(rawPromptBehavioural?.purchase_triggers),
+    flatten(rawFormBehavioural?.purchase_triggers),
+    flatten(uiTraits['Purchase Triggers & Occasions'])
   );
 
   // ── Persona meta ───────────────────────────────────────────────────────────
@@ -685,7 +791,8 @@ const PersonaPreview: React.FC = () => {
     ? BASE_TABS
     : [
       ...BASE_TABS.slice(0, 3),  // demographics, psychographic, behavioral
-      FORMATIVE_TAB,             // ← inserted here, after behavioral
+      FORMATIVE_TAB,             // formative experience (manual only)
+      AUTO_FILL_TAB,             // AI auto-fill report (manual only)
       ...BASE_TABS.slice(3),     // ocean, psychometric, calibration
     ];
 
@@ -726,7 +833,34 @@ const PersonaPreview: React.FC = () => {
     }
   };
 
+  // ── Calibration breakdown (dynamic — backend populates per persona type) ──
+  const calibrationBreakdown = (
+    rawData?.calibration_breakdown ??
+    mergedTraits?.calibration_breakdown ??
+    personaDetails?.calibration_breakdown
+  ) as Record<string, Record<string, unknown>> | undefined;
+
+  const isManualMode = !!(calibrationBreakdown?.is_manual_mode);
+
+  const CB_KEY_MAP: Record<string, string> = {
+    real:      'real_actions_signal',
+    emotional: 'emotional_neural_layers',
+    validated: 'validated_studies',
+    multi:     'multi_platform_conversations',
+  };
+
   const getCalibCount = (key: string): string => {
+    // Priority 1: Use calibration_breakdown from backend (dynamic per-persona)
+    const section = calibrationBreakdown?.[CB_KEY_MAP[key]];
+    if (section) {
+      const count = section.count as number | undefined;
+      if (count !== undefined && count !== null) {
+        // Manual mode: show actual number; 0 means "no data" → show dash
+        if (count === 0 && isManualMode) return '—';
+        if (count > 0) return count.toLocaleString('en-IN');
+      }
+    }
+    // Priority 2: Fallback to confidence component breakdown (percentage-based)
     const entry = breakdownEntries.find(e =>
       e.label.toLowerCase().includes(key.toLowerCase())
     );
@@ -735,8 +869,25 @@ const PersonaPreview: React.FC = () => {
         ? entry.score.toLocaleString('en-IN')
         : `${Math.round(entry.score * 100)}%`;
     }
-    return '1,23,456';
+    return '—';
   };
+
+  const getCalibLabel = (key: string, fallback: string): string => {
+    const label = calibrationBreakdown?.[CB_KEY_MAP[key]]?.count_label as string | undefined;
+    return label || fallback;
+  };
+
+  // For manual mode: build dynamic items from component_scores in multi_platform section
+  const multiPlatformComponentItems: Array<{ icon: React.ReactNode; label: string }> = (() => {
+    if (!isManualMode) return [];
+    const compScores = calibrationBreakdown?.multi_platform_conversations?.component_scores as
+      Record<string, number> | undefined;
+    if (!compScores) return [];
+    return Object.entries(compScores).map(([label, score]) => ({
+      icon: <SpIcon name="sp-System-Wifi_High" size={14} />,
+      label: `${label}: ${score}%`,
+    }));
+  })();
 
   if (isLoading && !previewData) {
     return (
@@ -855,6 +1006,23 @@ const PersonaPreview: React.FC = () => {
               style={{ background: confColor(finalScore) }}
             />
           </div>
+          {confidenceMode && (
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginBottom: 6 }}>
+              {confidenceMode}
+              {confidenceLevel && (
+                <span style={{
+                  marginLeft: 6,
+                  padding: '1px 6px',
+                  borderRadius: 4,
+                  background: confidenceLevel === 'High' ? 'rgba(34,197,94,0.15)' : confidenceLevel === 'Medium' ? 'rgba(245,158,11,0.15)' : 'rgba(239,68,68,0.15)',
+                  color: confidenceLevel === 'High' ? '#22c55e' : confidenceLevel === 'Medium' ? '#f59e0b' : '#ef4444',
+                  fontWeight: 600,
+                }}>
+                  {confidenceLevel}
+                </span>
+              )}
+            </div>
+          )}
           {breakdownEntries.length > 0 && (
             <div className="pp-breakdown-rows">
               {breakdownEntries.map(({ label, score }) => (
@@ -868,6 +1036,11 @@ const PersonaPreview: React.FC = () => {
                 </div>
               ))}
             </div>
+          )}
+          {confidenceNote && (
+            <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginTop: 8, lineHeight: 1.4 }}>
+              {confidenceNote}
+            </p>
           )}
           <button className="pp-calib-link" onClick={() => setActiveTab('calibration')}>
             Calibration Breakdown <SpIcon name="sp-Arrow-Arrow_Right_SM" />
@@ -954,6 +1127,81 @@ const PersonaPreview: React.FC = () => {
               </div>
             )}
 
+            {/* ── AI Auto-Fill Report (manual personas only) ── */}
+            {activeTab === 'autofill' && (
+              <div className="pp-psychometric">
+                {autoFillReport ? (
+                  <>
+                    {/* Summary stats row */}
+                    <div style={{ display: 'flex', gap: 16, marginBottom: 24, flexWrap: 'wrap' }}>
+                      {[
+                        { num: autoFillReport.user_provided_count ?? 0, label: 'Traits Provided by You', color: '#22c55e' },
+                        { num: autoFillReport.auto_filled_count ?? 0, label: 'Traits Auto-Filled by AI', color: '#f59e0b' },
+                        { num: autoFillReport.total_sub_traits ?? 0, label: 'Total Traits', color: 'rgba(255,255,255,0.7)' },
+                      ].map(({ num, label, color }) => (
+                        <div key={label} style={{
+                          flex: '1 1 140px',
+                          background: 'rgba(255,255,255,0.04)',
+                          border: '1px solid rgba(255,255,255,0.08)',
+                          borderRadius: 12,
+                          padding: '18px 20px',
+                          textAlign: 'center',
+                        }}>
+                          <div style={{ fontSize: 32, fontWeight: 700, color }}>{num}</div>
+                          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', marginTop: 4 }}>{label}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Completeness bar */}
+                    {(autoFillReport.total_sub_traits ?? 0) > 0 && (
+                      <div style={{ marginBottom: 24 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'rgba(255,255,255,0.5)', marginBottom: 6 }}>
+                          <span>Trait Completeness (User-Provided)</span>
+                          <span>{Math.round(((autoFillReport.user_provided_count ?? 0) / (autoFillReport.total_sub_traits ?? 1)) * 100)}%</span>
+                        </div>
+                        <div style={{ background: 'rgba(255,255,255,0.08)', borderRadius: 4, height: 6, overflow: 'hidden' }}>
+                          <div style={{
+                            height: '100%',
+                            borderRadius: 4,
+                            background: '#22c55e',
+                            width: `${Math.round(((autoFillReport.user_provided_count ?? 0) / (autoFillReport.total_sub_traits ?? 1)) * 100)}%`,
+                            transition: 'width 0.8s ease',
+                          }} />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Auto-filled traits list */}
+                    {(autoFillReport.auto_filled_traits ?? []).length > 0 && (
+                      <div className="pp-list-card">
+                        <h4 className="pp-list-card-title">
+                          AI Auto-Filled Traits ({autoFillReport.auto_filled_count ?? 0})
+                        </h4>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+                          {(autoFillReport.auto_filled_traits ?? []).map((t, i) => (
+                            <span key={i} style={{
+                              padding: '4px 10px',
+                              background: 'rgba(245,158,11,0.12)',
+                              border: '1px solid rgba(245,158,11,0.25)',
+                              borderRadius: 20,
+                              fontSize: 12,
+                              color: '#f59e0b',
+                              fontWeight: 500,
+                            }}>
+                              {t.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <p className="pp-empty">Auto-fill report not available for this persona. Calibrate the persona to generate it.</p>
+                )}
+              </div>
+            )}
+
             {/* ── Ocean Personality Profile ── */}
             {activeTab === 'ocean' && (
               <div className="pp-ocean">
@@ -1002,7 +1250,7 @@ const PersonaPreview: React.FC = () => {
                     <div className="pp-ocean-interp-side">
                       <h4 className="pp-ocean-interp-title">Score Interpretation</h4>
                       <div className="pp-ocean-interp-grid">
-                        {oceanItems.map(({ trait, label, pct, level, description }) => (
+                        {oceanItems.map(({ trait, label, pct, level, description, rationale }) => (
                           <div key={trait} className="pp-ocean-interp-card">
                             <div className="pp-ocean-interp-header">
                               <span className="pp-ocean-interp-name">
@@ -1016,6 +1264,17 @@ const PersonaPreview: React.FC = () => {
                             </div>
                             {description && (
                               <p className="pp-ocean-interp-desc">{description}</p>
+                            )}
+                            {rationale && (
+                              <p style={{
+                                fontSize: 11,
+                                color: 'rgba(255,255,255,0.45)',
+                                fontStyle: 'italic',
+                                marginTop: 4,
+                                lineHeight: 1.4,
+                              }}>
+                                {rationale}
+                              </p>
                             )}
                           </div>
                         ))}
@@ -1079,9 +1338,13 @@ const PersonaPreview: React.FC = () => {
                 <div className="pp-calib-col">
                   <CalibCard
                     title="Real Actions Signal"
-                    subtitle="Anchored in real people's action patterns, not self-reported opinions."
+                    subtitle={
+                      isManualMode
+                        ? 'Traits the researcher directly provided in the persona form.'
+                        : 'Anchored in real people\'s action patterns, not self-reported opinions.'
+                    }
                     count={getCalibCount('real')}
-                    countLabel="People analysed"
+                    countLabel={getCalibLabel('real', 'People analysed')}
                     sections={[
                       { heading: 'Parameter Integrated', items: REAL_ACTIONS_PARAMS },
                       { heading: 'Technique Used', items: REAL_ACTIONS_TECHNIQUES },
@@ -1089,9 +1352,13 @@ const PersonaPreview: React.FC = () => {
                   />
                   <CalibCard
                     title="Validated Studies"
-                    subtitle="Calibrated against credible consumer and behavioural studies."
+                    subtitle={
+                      isManualMode
+                        ? 'Total sub-traits across all categories evaluated during calibration.'
+                        : 'Calibrated against credible consumer and behavioural studies.'
+                    }
                     count={getCalibCount('validated')}
-                    countLabel="Total studies inferred"
+                    countLabel={getCalibLabel('validated', 'Total studies inferred')}
                     sections={[
                       { heading: 'Technology Used', items: VALIDATED_TECH },
                     ]}
@@ -1100,33 +1367,45 @@ const PersonaPreview: React.FC = () => {
                 <div className="pp-calib-col">
                   <CalibCard
                     title="Emotional & Neural Layers"
-                    subtitle="Models emotional responses that shape decisions before rationalization appears."
+                    subtitle={
+                      isManualMode
+                        ? 'Traits intelligently auto-filled by AI using Research Objective context and cross-trait inference.'
+                        : 'Models emotional responses that shape decisions before rationalization appears.'
+                    }
                     count={getCalibCount('emotional')}
-                    countLabel="Total Emotional & Neural Parameters Analysed:"
+                    countLabel={getCalibLabel('emotional', 'Total Emotional & Neural Parameters Analysed')}
                     sections={[
                       { heading: 'Parameter Integrated', items: EMOTIONAL_PARAMS },
                       { heading: 'Technology Used', items: EMOTIONAL_TECH },
                     ]}
                   />
                   <CalibCard
-                    title="Multiple-platform Conversation"
-                    subtitle="Calibrated against credible consumer and behavioural studies."
+                    title={isManualMode ? 'RO Alignment Score' : 'Multiple-platform Conversation'}
+                    subtitle={
+                      isManualMode
+                        ? 'Research Objective alignment scored across 4 dimensions: demographics, psychographics, behaviour, and trait completeness.'
+                        : 'Calibrated against credible consumer and behavioural studies.'
+                    }
                     count={getCalibCount('multi')}
-                    countLabel="Total conversations inferred"
-                    sections={[
-                      { heading: 'Key Attributes', items: MULTIPLATFORM_ATTRS, variant: 'key-attr' },
-                    ]}
+                    countLabel={getCalibLabel('multi', 'Total conversations inferred')}
+                    sections={
+                      isManualMode && multiPlatformComponentItems.length > 0
+                        ? [{ heading: 'Confidence Components', items: multiPlatformComponentItems }]
+                        : [{ heading: 'Key Attributes', items: MULTIPLATFORM_ATTRS, variant: 'key-attr' as const }]
+                    }
                     extraFooter={
-                      <div className="pp-calib-section">
-                        <h4 className="pp-calib-section-heading">Platforms Covered</h4>
-                        <div className="pp-calib-platforms">
-                          {PLATFORM_ICONS.map(p => (
-                            <span key={p.key} className="pp-calib-platform-icon">
-                              {p.icon}
-                            </span>
-                          ))}
+                      isManualMode ? undefined : (
+                        <div className="pp-calib-section">
+                          <h4 className="pp-calib-section-heading">Platforms Covered</h4>
+                          <div className="pp-calib-platforms">
+                            {PLATFORM_ICONS.map(p => (
+                              <span key={p.key} className="pp-calib-platform-icon">
+                                {p.icon}
+                              </span>
+                            ))}
+                          </div>
                         </div>
-                      </div>
+                      )
                     }
                   />
                 </div>

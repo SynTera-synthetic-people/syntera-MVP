@@ -174,15 +174,73 @@ _CONFIDENCE_LABEL_MAP = {
 def _build_calibration_breakdown(persona_details: Optional[dict]) -> dict:
     """
     Assembles calibration_breakdown for the detail page.
-    multi_platform_conversations is populated from evidence_snapshot (per-persona).
-    The other 3 sections are platform methodology constants with optional AI overrides.
-    Always returns a full dict — never None.
 
-    Defensive: LLMs occasionally return evidence_snapshot as a JSON string instead
-    of a nested object (especially with reasoning models + web_search tools).
-    We parse it gracefully so the endpoint never 500s on malformed DB data.
+    Two modes:
+    - Manual Build Mode (new system): uses auto_fill_report + confidence_scoring.components
+      for real per-persona counts and RO-alignment component scores.
+    - Omi / Evidence-Based (legacy): uses evidence_snapshot total_conversations and sources.
+
+    Always returns a full dict — never None.
     """
     details = persona_details or {}
+
+    # ── Manual Build Mode (new prompt system) ────────────────────────────────
+    conf_scoring = details.get("confidence_scoring") or {}
+    fill_report = details.get("auto_fill_report") or {}
+    is_manual_mode = isinstance(conf_scoring, dict) and conf_scoring.get("mode") == "Manual Build Mode"
+
+    if is_manual_mode:
+        components: dict = conf_scoring.get("components") or {}
+        weighted_score: float = float(conf_scoring.get("weighted_score") or 0)
+        user_count: int = int(fill_report.get("user_provided_count") or 0)
+        auto_count: int = int(fill_report.get("auto_filled_count") or 0)
+        total_count: int = int(fill_report.get("total_sub_traits") or 0)
+
+        # Build human-readable component score labels, e.g. "Demographic RO Fit: 85%"
+        _COMP_LABEL_MAP = {
+            "demographic_ro_fit":  "Demographic RO Fit",
+            "psychographic_ro_fit": "Psychographic RO Fit",
+            "behavioural_ro_fit":  "Behavioural RO Fit",
+            "trait_completeness":  "Trait Completeness",
+        }
+        component_scores = {
+            _COMP_LABEL_MAP.get(k, k.replace("_", " ").title()): round(v * 100)
+            for k, v in components.items()
+            if isinstance(v, (int, float))
+        }
+        component_key_labels = [
+            f"{label}: {score}%"
+            for label, score in component_scores.items()
+        ]
+
+        return {
+            "is_manual_mode": True,
+            "real_actions_signal": {
+                **_CALIBRATION_BREAKDOWN_DEFAULTS["real_actions_signal"],
+                "count": user_count,
+                "count_label": "Traits Provided by You",
+            },
+            "emotional_neural_layers": {
+                **_CALIBRATION_BREAKDOWN_DEFAULTS["emotional_neural_layers"],
+                "count": auto_count,
+                "count_label": "Traits Auto-Filled by AI",
+            },
+            "validated_studies": {
+                **_CALIBRATION_BREAKDOWN_DEFAULTS["validated_studies"],
+                "count": total_count,
+                "count_label": "Total Traits Analyzed",
+            },
+            "multi_platform_conversations": {
+                "description": "RO-alignment scored across 4 dimensions using Research Objective context.",
+                "count": round(weighted_score * 100),
+                "count_label": "RO Alignment Score (%)",
+                "key_attributes": component_key_labels,
+                "platforms_covered": [],
+                "component_scores": component_scores,
+            },
+        }
+
+    # ── Legacy Omi / Evidence-Based flow ─────────────────────────────────────
     raw_evidence = details.get("evidence_snapshot") or {}
 
     # Defensive: parse if the LLM stored evidence_snapshot as a JSON string
@@ -192,13 +250,10 @@ def _build_calibration_breakdown(persona_details: Optional[dict]) -> dict:
         except (json.JSONDecodeError, TypeError, ValueError):
             raw_evidence = {}
 
-    # Final guard — ensure it's a dict before calling .get()
     evidence: dict = raw_evidence if isinstance(raw_evidence, dict) else {}
 
-    # multi_platform_conversations — derive from web research evidence_snapshot
     total_convs = evidence.get("total_conversations", 0)
     raw_sources = evidence.get("sources") or []
-    # Defensive: sources must be a list of dicts; skip any non-dict entries
     sources = [s for s in raw_sources if isinstance(s, dict)]
     platforms = [s.get("platform") for s in sources if s.get("platform")]
 
@@ -208,28 +263,32 @@ def _build_calibration_breakdown(persona_details: Optional[dict]) -> dict:
         or ["Volume", "Recency", "RO Alignment", "Source Diversity", "Signal Clarity", "Platforms Covered"]
     )
 
-    # If the AI already produced a calibration_breakdown (future-proof), respect it
     existing = details.get("calibration_breakdown") or {}
 
     return {
+        "is_manual_mode": False,
         "real_actions_signal": existing.get("real_actions_signal") or {
             **_CALIBRATION_BREAKDOWN_DEFAULTS["real_actions_signal"],
-            # people_analysed is an optional AI-generated field; 0 means unavailable
             "count": details.get("people_analysed") or 0,
+            "count_label": "People analysed",
         },
         "emotional_neural_layers": existing.get("emotional_neural_layers") or {
             **_CALIBRATION_BREAKDOWN_DEFAULTS["emotional_neural_layers"],
             "count": 0,
+            "count_label": "Total Emotional & Neural Parameters Analysed",
         },
         "validated_studies": existing.get("validated_studies") or {
             **_CALIBRATION_BREAKDOWN_DEFAULTS["validated_studies"],
             "count": 0,
+            "count_label": "Total studies inferred",
         },
         "multi_platform_conversations": existing.get("multi_platform_conversations") or {
             "description": "Calibrated against credible consumer and behavioural studies.",
             "count": total_convs,
+            "count_label": "Total conversations inferred",
             "key_attributes": key_attributes,
             "platforms_covered": platforms,
+            "component_scores": {},
         },
     }
 
@@ -246,6 +305,88 @@ def persona_to_dict(p: Persona, creator_full_name: Optional[str] = None) -> dict
     ocean_profile = p.ocean_profile
     if not ocean_profile and isinstance(persona_details, dict):
         ocean_profile = persona_details.get("ocean_profile")
+
+    raw_traits_detail = (
+        persona_details.get("raw_traits")
+        if isinstance(persona_details.get("raw_traits"), dict)
+        else {}
+    )
+    raw_form_payload = (
+        persona_details.get("raw_form_payload")
+        if isinstance(persona_details.get("raw_form_payload"), dict)
+        else {}
+    )
+    raw_prompt_behavioural = (
+        raw_traits_detail.get("behavioural")
+        if isinstance(raw_traits_detail.get("behavioural"), dict)
+        else {}
+    )
+    raw_form_behavioural = (
+        raw_form_payload.get("behavioural")
+        if isinstance(raw_form_payload.get("behavioural"), dict)
+        else {}
+    )
+
+    purchase_triggers = (
+        persona_details.get("purchase_triggers")
+        or raw_prompt_behavioural.get("purchase_triggers")
+        or raw_form_behavioural.get("purchase_triggers")
+    )
+    purchase_barriers = (
+        persona_details.get("purchase_barriers")
+        or raw_prompt_behavioural.get("purchase_barriers")
+        or raw_form_behavioural.get("purchase_barriers")
+    )
+    media_consumption_patterns = (
+        persona_details.get("media_consumption_patterns")
+        or raw_prompt_behavioural.get("media_consumption_patterns")
+        or raw_form_behavioural.get("media_consumption_patterns")
+    )
+    digital_behaviour = (
+        persona_details.get("digital_behaviour")
+        or raw_prompt_behavioural.get("digital_behaviour")
+        or raw_form_behavioural.get("digital_behaviour")
+    )
+
+    barriers_pain_points = persona_details.get("barriers_pain_points")
+    triggers_opportunities = persona_details.get("triggers_opportunities")
+    if not p.auto_generated_persona and _is_blank_manual_trait(barriers_pain_points):
+        purchase_barrier_values = _manual_trait_values(purchase_barriers)
+        barriers_pain_points = {
+            "structural": [
+                "Needs clearer access, pricing, or feature detail before committing",
+                "May delay action if the process feels high effort",
+            ],
+            "psychological": purchase_barrier_values[:2] or [
+                "Needs stronger proof before committing",
+                "May hesitate if the value or fit is unclear",
+            ],
+            "emotional": [
+                "Concern about making the wrong decision",
+                "Hesitation if the benefit feels uncertain",
+            ],
+            "category_specific": [
+                "Requires clearer fit with the research objective before engaging"
+            ],
+        }
+    if not p.auto_generated_persona and _is_blank_manual_trait(triggers_opportunities):
+        purchase_trigger_values = _manual_trait_values(purchase_triggers)
+        triggers_opportunities = {
+            "functional_triggers": purchase_trigger_values[:2] or [
+                "Clear practical benefit tied to the research objective",
+                "Simple path to compare, trial, or act",
+            ],
+            "emotional_triggers": [
+                "Confidence that the choice reduces risk",
+                "Sense that the solution matches personal goals",
+            ],
+            "situational_triggers": [
+                "A relevant life or usage moment activates consideration"
+            ],
+            "promotional_triggers": [
+                "Transparent proof points and low-friction trial"
+            ],
+        }
 
     return {
         "id": p.id,
@@ -302,6 +443,24 @@ def persona_to_dict(p: Persona, creator_full_name: Optional[str] = None) -> dict
         # Action-data linkage for ML ground-truth
         "subject_key": getattr(p, "subject_key", None),
         "ml_domain": getattr(p, "ml_domain", None),
+        # ── New fields from Manual Build Mode prompt ────────────────────────────
+        # Stored in persona_details JSON; no new DB columns required.
+        "auto_fill_report": persona_details.get("auto_fill_report"),
+        "confidence_scoring": persona_details.get("confidence_scoring"),
+        "barriers_pain_points": barriers_pain_points,
+        "triggers_opportunities": triggers_opportunities,
+        "decision_making_style": persona_details.get("decision_making_style"),
+        "consumption_frequency": persona_details.get("consumption_frequency"),
+        "purchase_channel": persona_details.get("purchase_channel"),
+        "purchase_triggers": purchase_triggers,
+        "purchase_barriers": purchase_barriers,
+        "media_consumption_patterns": media_consumption_patterns,
+        "digital_behaviour": digital_behaviour,
+        "switching_tendency": persona_details.get("switching_tendency"),
+        "category_awareness": persona_details.get("category_awareness"),
+        "industry": persona_details.get("industry"),
+        "family_structure": persona_details.get("family_structure"),
+        "occupation_level": persona_details.get("occupation_level"),
     }
 
 async def get_persona(persona_id: str) -> Optional[dict]:
@@ -897,33 +1056,596 @@ async def update_persona_backstory(
 
     return persona
 
-_CALIBRATION_PROMPT = """
-You are a consumer insights expert enriching a persona from structured researcher-provided traits.
+MANUAL_PERSONA_BUILDER_PROMPT = """
 
-RESEARCH OBJECTIVE:
+You are an Expert Persona Architect operating in MANUAL BUILD MODE within the Synthetic People research platform.
+
+In this mode, the user has defined their own persona traits through a structured form. Your job is:
+1. Accept and validate the user-provided traits
+2. Auto-fill any missing traits using the Research Objective and the traits already provided
+3. Score the completed persona against the Research Objective
+4. Return a fully populated, research-ready persona in strict JSON format
+
+---
+
+**INPUTS YOU WILL RECEIVE**
+
+You will receive:
+- research_objective: The confirmed Research Objective (RO) for this study
+- user_provided_traits: A structured object containing all traits the user has filled in (see schema below)
+
+Trait categories and their sub-traits are:
+
+DEMOGRAPHICS (Mandatory - user must fill all):
+  - age_range
+  - gender
+  - income_range
+  - education_level
+  - occupation_level
+  - marital_status
+  - family_structure
+  - geography
+
+PSYCHOLOGICAL (Optional - user may fill some, all, or none):
+  - lifestyle
+  - values
+  - personality
+  - interests
+  - motivations
+
+BEHAVIOURAL (Optional - user may fill some, all, or none):
+  - decision_making_style
+  - consumption_frequency
+  - purchase_channel
+  - price_sensitivity
+  - brand_sensitivity
+  - switching_tendency
+  - purchase_triggers
+  - purchase_barriers
+  - media_consumption_patterns
+  - digital_behaviour
+
+ADDITIONAL INFORMATION (Optional - user may fill some, all, or none):
+  - occupation
+  - industry
+  - category_awareness
+
+FORMATIVE EXPERIENCE (Optional - free text up to 1000 characters):
+  - formative_experience_description
+
+---
+
+**STEP 1: INPUT VALIDATION**
+
+Before doing anything else, validate the demographics block.
+
+Rule: All 8 demographic sub-traits MUST be present and non-empty.
+  - age_range
+  - gender
+  - income_range
+  - education_level
+  - occupation_level
+  - marital_status
+  - family_structure
+  - geography
+
+The backend has already validated and normalized the demographics block before
+this prompt is sent. You may see legacy alias values or "Not specified"
+placeholders from older drafts. Treat these as provided values and continue.
+Do NOT return a validation_error response.
+
+IF all demographics are present: proceed to Step 2.
+
+---
+
+**STEP 2: TRAIT AUDIT**
+
+Scan every sub-trait across all five categories.
+Classify each sub-trait as one of:
+  - USER_PROVIDED: The user has filled this in
+  - MISSING: The user has left this blank or it is absent
+
+Build an internal audit map. Do not output this map. Use it to drive Step 3.
+
+---
+
+**STEP 3: AUTO-FILL MISSING TRAITS**
+
+For every sub-trait classified as MISSING, you must intelligently infer and fill it.
+
+Auto-fill Logic (apply in this priority order):
+
+Priority 1 - RO Alignment:
+  Read the research_objective carefully.
+  Extract all explicit and implicit signals:
+  - Category signals (product type, service type, industry context)
+  - Behavioral signals (usage, frequency, switching, loyalty)
+  - Psychological signals (motivations, fears, aspirations)
+  - Journey signals (awareness, consideration, lapsed, loyal)
+  Use these signals as the primary source for filling missing traits.
+
+Priority 2 - Cross-Trait Inference:
+  Use the traits the user HAS filled to infer missing ones.
+  Examples of cross-trait inference:
+  - age_range=26-34 + income=8-15 LPA + education=Post Graduate
+    → lifestyle: likely Career-Driven, Tech-Savvy
+    → decision_making_style: likely Analytical or Peer-Influenced
+    → switching_tendency: likely Medium (open to trying new options)
+  - age_range=45-54 + marital_status=Married + family_structure=Nuclear with children
+    → values: Family, Stability, Security
+    → motivations: Financial security, Children's future
+    → brand_sensitivity: likely High (trusts established brands)
+  - occupation=Entrepreneur + income=25L+ + geography=Metro
+    → personality: Ambitious, Risk-tolerant
+    → consumption_frequency: High
+    → purchase_channel: Online-first with occasional offline
+
+Priority 3 - Category Archetype Baseline:
+  If RO signals and cross-trait inference are still insufficient for a trait,
+  apply the standard behavioral archetype for the category described in the RO.
+  Always make this inference coherent with demographics and all other filled traits.
+
+Auto-fill Rules:
+  - NEVER contradict a user-provided trait. Auto-filled traits must be consistent with all user inputs.
+  - NEVER leave a trait vague. Each auto-filled value must be as specific as a user-provided value.
+  - For list-type traits (lifestyle, values, interests), generate 2-4 specific items.
+  - For scale-type traits (price_sensitivity, brand_sensitivity, switching_tendency), return a label: Low / Medium / High.
+  - For formative_experience_description: if missing, generate 3-4 behaviorally meaningful sentences consistent with the RO and all traits.
+
+---
+
+**STEP 4: PERSONA NAME GENERATION**
+
+Generate a persona name in the format: [Archetype Label] [Descriptor]
+Examples: "Cautious Value Seeker", "Ambitious Digital Native", "Loyal Brand Advocate"
+
+The name must reflect the dominant behavioral pattern visible across the completed trait set.
+
+---
+
+**STEP 5: OCEAN PROFILE GENERATION**
+
+Using the completed trait set (user-provided + auto-filled) and the RO, generate an OCEAN profile.
+
+For each dimension, produce:
+  - score: a float between 0.0 and 1.0
+  - label: one of Low / Medium / High
+  - rationale: one sentence explaining why this score fits this persona
+
+OCEAN Dimensions:
+  - openness: Curiosity, creativity, willingness to try new things
+  - conscientiousness: Organization, reliability, thoroughness
+  - extraversion: Sociability, expressiveness, energy from others
+  - agreeableness: Cooperation, empathy, trust in others
+  - neuroticism: Anxiety, emotional sensitivity, stress response
+
+Cross-check: OCEAN scores must be coherent with personality, lifestyle, decision_making_style, and motivations.
+
+---
+
+**STEP 6: BARRIERS, PAIN POINTS, AND TRIGGERS**
+
+Using the completed trait set and the RO, generate:
+
+barriers_pain_points:
+  - structural: 2 functional or access-related barriers
+  - psychological: 2 mindset or belief-based barriers
+  - emotional: 2 feeling-based barriers
+  - category_specific: 1-2 barriers specific to the product/service category in the RO
+
+triggers_opportunities:
+  - functional_triggers: 2 practical triggers that would drive action
+  - emotional_triggers: 2 feeling-based triggers
+  - situational_triggers: 1-2 life moments or contexts that activate purchase or engagement
+  - promotional_triggers: 1-2 offer or messaging formats that would work
+
+---
+
+**STEP 7: CONFIDENCE SCORING**
+
+Score the completed persona against the Research Objective across FOUR dimensions.
+Note: This is RO-alignment scoring, not evidence volume scoring (since this is Manual Build Mode).
+
+DIMENSION 1: DEMOGRAPHIC-RO FIT (0.0 to 1.0)
+  How well do the demographic traits match the target audience described or implied in the RO?
+  - Perfect match (age, income, geography all align): 1.00
+  - Strong match (2 of 3 core demographics align): 0.80
+  - Moderate match (1 of 3 core demographics aligns): 0.60
+  - Weak match (demographics feel misaligned with RO): 0.30
+
+DIMENSION 2: PSYCHOGRAPHIC-RO FIT (0.0 to 1.0)
+  How well do lifestyle, values, personality, motivations, and interests match the behavioral or psychological context of the RO?
+  - All psychographic traits strongly support RO context: 1.00
+  - Most traits support RO context: 0.80
+  - Some traits support RO context: 0.60
+  - Traits feel generic or misaligned: 0.30
+
+DIMENSION 3: BEHAVIOURAL-RO FIT (0.0 to 1.0)
+  How well do decision style, consumption, channel, sensitivity, and switching match the category behavior described in the RO?
+  - Strong category-behavior alignment: 1.00
+  - Moderate alignment: 0.70
+  - Weak alignment: 0.40
+
+DIMENSION 4: TRAIT COMPLETENESS (0.0 to 1.0)
+  What proportion of all sub-traits (across all 5 categories) were USER_PROVIDED vs AUTO_FILLED?
+  - 80-100% user provided: 1.00
+  - 60-79% user provided: 0.80
+  - 40-59% user provided: 0.60
+  - 20-39% user provided: 0.40
+  - Less than 20% user provided (only demographics filled): 0.25
+
+CONFIDENCE SCORE FORMULA:
+  Manual_Confidence_Score =
+    (Demographic_RO_Fit x 0.30) +
+    (Psychographic_RO_Fit x 0.25) +
+    (Behavioural_RO_Fit x 0.25) +
+    (Trait_Completeness x 0.20)
+
+CONFIDENCE TIERS:
+  - HIGH:   0.75 to 1.00
+  - MEDIUM: 0.55 to 0.74
+  - LOW:    below 0.55
+
+AUTO-FILL FLAG:
+  In the confidence output, include a count and list of auto-filled traits so the user knows what was inferred.
+
+---
+
+**STEP 8: OUTPUT**
+
+Return STRICT JSON ONLY. No text outside the JSON. No markdown. No explanations.
+
+Output schema:
+
+{
+  "status": "success",
+  "persona": {
+    "name": "string",
+    "age_range": "string",
+    "gender": "string",
+    "location_country": "string",
+    "location_state": "string",
+    "education_level": "string",
+    "occupation": "string",
+    "occupation_level": "string",
+    "industry": "string",
+    "income_range": "string",
+    "family_size": "string",
+    "family_structure": "string",
+    "geography": "string",
+    "marital_status": "string",
+    "lifestyle": ["string"],
+    "values": ["string"],
+    "personality": "string",
+    "interests": ["string"],
+    "motivations": ["string"],
+    "decision_making_style": "string",
+    "consumption_frequency": "string",
+    "purchase_channel": ["string"],
+    "price_sensitivity": "Low | Medium | High",
+    "brand_sensitivity": "Low | Medium | High",
+    "switching_tendency": "Low | Medium | High",
+    "category_awareness": "string",
+    "formative_experience_description": "string",
+    "ocean_profile": {
+      "scores": {
+        "openness": 0.00,
+        "conscientiousness": 0.00,
+        "extraversion": 0.00,
+        "agreeableness": 0.00,
+        "neuroticism": 0.00
+      },
+      "labels": {
+        "openness": "Low | Medium | High",
+        "conscientiousness": "Low | Medium | High",
+        "extraversion": "Low | Medium | High",
+        "agreeableness": "Low | Medium | High",
+        "neuroticism": "Low | Medium | High"
+      },
+      "rationale": {
+        "openness": "string",
+        "conscientiousness": "string",
+        "extraversion": "string",
+        "agreeableness": "string",
+        "neuroticism": "string"
+      }
+    },
+    "barriers_pain_points": {
+      "structural": ["string", "string"],
+      "psychological": ["string", "string"],
+      "emotional": ["string", "string"],
+      "category_specific": ["string"]
+    },
+    "triggers_opportunities": {
+      "functional_triggers": ["string", "string"],
+      "emotional_triggers": ["string", "string"],
+      "situational_triggers": ["string"],
+      "promotional_triggers": ["string"]
+    }
+  },
+  "auto_fill_report": {
+    "total_sub_traits": 0,
+    "user_provided_count": 0,
+    "auto_filled_count": 0,
+    "auto_filled_traits": ["list of trait names that were auto-filled"]
+  },
+  "confidence_scoring": {
+    "mode": "Manual Build Mode",
+    "components": {
+      "demographic_ro_fit": 0.00,
+      "psychographic_ro_fit": 0.00,
+      "behavioural_ro_fit": 0.00,
+      "trait_completeness": 0.00
+    },
+    "weighted_score": 0.00,
+    "confidence_level": "High | Medium | Low",
+    "note": "Confidence reflects RO alignment and trait completeness. This persona has not been validated against real web evidence. Consider running Evidence-Based validation for higher confidence."
+  }
+}
+
+---
+
+**CRITICAL RULES (apply throughout)**
+
+1. Demographics are sacred: Never modify, override, or contradict any user-provided demographic value.
+2. All auto-fills must be internally consistent: Every inferred trait must be coherent with every other trait, both user-provided and auto-filled.
+3. RO is the north star: Every auto-fill decision must serve the research objective. A trait that is technically valid but irrelevant to the RO is a poor auto-fill.
+4. No generic fillers: "Active lifestyle", "values family" type vague outputs are not acceptable. Be specific: "Health-Focused (Fitness, Wellness), Career-Driven (Growth, Ambition)" is acceptable.
+5. No hallucinated demographics: Do not infer or change age, income, location, or gender. These come from the user only.
+6. Confidence is honest: If the user only filled demographics and nothing else, Trait Completeness will be low (0.25) and the score will reflect that. Do not inflate confidence.
+7. Output is always JSON: No preamble, no explanation, no markdown fences. Raw JSON only.
+
+"""
+
+
+# ============================================================================
+# DYNAMIC PART - Research objective and user-provided traits (changes per call)
+# ============================================================================
+
+MANUAL_BUILD_USER_INPUT_PROMPT = """
+
+**RESEARCH OBJECTIVE**
 {research_objective}
 
-PERSONA TRAITS (structured input from researcher):
-{raw_traits_json}
+**USER PROVIDED TRAITS**
+{user_provided_traits}
 
-YOUR TASK:
-1. Preserve ALL provided traits — never change or remove them.
-2. Infer and fill any missing demographic/psychographic fields using the traits as context.
-3. Add behavioral depth: barriers_pain_points, triggers_opportunities.
-4. Generate an ocean_profile (openness, conscientiousness, extraversion, agreeableness, neuroticism, each 0.0-1.0).
-5. Generate an evidence_snapshot with confidence_calculation_detail.value (float 0.0-1.0) and weighted_total.
-6. Write a backstory (2-3 sentences) if not already provided.
+Based on the research objective above and the traits the user has provided, follow ALL steps in the system prompt and return the completed persona JSON.
 
-Return a single valid JSON object with these exact keys:
-name, age_range, gender, location_country, location_state, education_level,
-occupation, income_range, family_size, geography, lifestyle, values, personality,
-interests, motivations, brand_sensitivity, price_sensitivity, mobility,
-accommodation, marital_status, daily_rhythm, hobbies, professional_traits,
-digital_activity, preferences, backstory, ocean_profile,
-barriers_pain_points, triggers_opportunities, evidence_snapshot
+"""
 
-Return ONLY the JSON — no markdown, no explanation.
-""".strip()
+
+MANDATORY_MANUAL_DEMOGRAPHIC_FIELDS = (
+    "age_range",
+    "gender",
+    "income_range",
+    "education_level",
+    "occupation_level",
+    "marital_status",
+    "family_structure",
+    "geography",
+)
+
+MANUAL_DEMOGRAPHIC_ALIASES = {
+    "age_range": ("age", "ageRange"),
+    "income_range": ("income", "income_level", "incomeLevel"),
+    "education_level": ("education", "educationLevel"),
+    "occupation_level": ("occupationLevel", "occupation"),
+    "marital_status": ("maritalStatus",),
+    "family_structure": ("familyStructure", "family_size", "familySize"),
+    "geography": ("location_country", "locationCountry", "location_state", "locationState"),
+}
+
+
+def _is_blank_manual_trait(value) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return value.strip() == ""
+    if isinstance(value, (list, tuple, set, dict)):
+        return len(value) == 0
+    return False
+
+
+def _pick_manual_trait(raw: dict, section: dict, field: str):
+    """Read a manual trait from canonical or legacy/frontend alias keys."""
+    candidate_keys = (field, *MANUAL_DEMOGRAPHIC_ALIASES.get(field, ()))
+    for key in candidate_keys:
+        if isinstance(section, dict):
+            value = section.get(key)
+            if not _is_blank_manual_trait(value):
+                return value
+        if isinstance(raw, dict):
+            value = raw.get(key)
+            if not _is_blank_manual_trait(value):
+                return value
+    return None
+
+
+def _manual_trait_values(value) -> list[str]:
+    if _is_blank_manual_trait(value):
+        return []
+    if isinstance(value, str):
+        return [value.strip()]
+    if isinstance(value, (list, tuple, set)):
+        items: list[str] = []
+        for item in value:
+            items.extend(_manual_trait_values(item))
+        return items
+    if isinstance(value, dict):
+        items: list[str] = []
+        for item in value.values():
+            items.extend(_manual_trait_values(item))
+        return items
+    return [str(value)]
+
+
+def _normalise_manual_demographics(raw: dict, demographics: dict) -> dict:
+    return {
+        field: _pick_manual_trait(raw, demographics, field)
+        for field in MANDATORY_MANUAL_DEMOGRAPHIC_FIELDS
+    }
+
+
+def missing_manual_demographic_fields(payload) -> list[str]:
+    if hasattr(payload, "model_dump"):
+        payload = payload.model_dump()
+    elif hasattr(payload, "dict"):
+        payload = payload.dict()
+
+    demographics = {}
+    if isinstance(payload, dict):
+        demographics = payload.get("demographics") or {}
+
+    normalised = _normalise_manual_demographics(payload, demographics)
+    missing: list[str] = []
+    for field in MANDATORY_MANUAL_DEMOGRAPHIC_FIELDS:
+        value = normalised.get(field)
+        if _is_blank_manual_trait(value):
+            missing.append(field)
+    return missing
+
+
+def manual_demographic_validation_error(missing_fields: list[str]) -> dict:
+    return {
+        "status": "validation_error",
+        "message": (
+            "Demographics are mandatory. The following fields are missing or empty: "
+            f"{', '.join(missing_fields)}."
+        ),
+        "missing_fields": missing_fields,
+    }
+
+
+def _manual_payload_dict(payload) -> dict:
+    if hasattr(payload, "model_dump"):
+        return payload.model_dump()
+    if hasattr(payload, "dict"):
+        return payload.dict()
+    return payload if isinstance(payload, dict) else {}
+
+
+def manual_prompt_traits(payload) -> dict:
+    """Return only the trait categories/fields listed in MANUAL_PERSONA_BUILDER_PROMPT."""
+    raw = _manual_payload_dict(payload)
+
+    demographics = raw.get("demographics") if isinstance(raw.get("demographics"), dict) else {}
+    psychological = raw.get("psychological") if isinstance(raw.get("psychological"), dict) else {}
+    behavioural = raw.get("behavioural") if isinstance(raw.get("behavioural"), dict) else {}
+    formative = raw.get("formative_experience") if isinstance(raw.get("formative_experience"), dict) else {}
+    additional = (
+        raw.get("additional_information")
+        if isinstance(raw.get("additional_information"), dict)
+        else raw.get("additional_info")
+        if isinstance(raw.get("additional_info"), dict)
+        else {}
+    )
+
+    raw_formative_value = raw.get("formative_experience")
+
+    return {
+        "demographics": _normalise_manual_demographics(raw, demographics),
+        "psychological": {
+            "lifestyle": psychological.get("lifestyle") or raw.get("lifestyle"),
+            "values": psychological.get("values") or raw.get("values"),
+            "personality": psychological.get("personality") or raw.get("personality"),
+            "interests": psychological.get("interests") or raw.get("interests"),
+            "motivations": psychological.get("motivations") or raw.get("motivations"),
+        },
+        "behavioural": {
+            "decision_making_style": behavioural.get("decision_making_style") or raw.get("decision_making_style"),
+            "consumption_frequency": behavioural.get("consumption_frequency") or raw.get("consumption_frequency"),
+            "purchase_channel": behavioural.get("purchase_channel") or raw.get("purchase_channel"),
+            "price_sensitivity": behavioural.get("price_sensitivity") or raw.get("price_sensitivity"),
+            "brand_sensitivity": behavioural.get("brand_sensitivity") or raw.get("brand_sensitivity"),
+            "switching_tendency": (
+                behavioural.get("switching_tendency")
+                or behavioural.get("switching_behaviour")
+                or raw.get("switching_tendency")
+                or raw.get("switching_behaviour")
+            ),
+            "purchase_triggers": behavioural.get("purchase_triggers") or raw.get("purchase_triggers"),
+            "purchase_barriers": behavioural.get("purchase_barriers") or raw.get("purchase_barriers"),
+            "media_consumption_patterns": (
+                behavioural.get("media_consumption_patterns")
+                or raw.get("media_consumption_patterns")
+                or raw.get("media_consumption")
+            ),
+            "digital_behaviour": (
+                behavioural.get("digital_behaviour")
+                or behavioural.get("digital_behavior")
+                or raw.get("digital_behaviour")
+                or raw.get("digital_behavior")
+                or raw.get("digital_activity")
+            ),
+        },
+        "additional_information": {
+            "occupation": additional.get("occupation") or demographics.get("occupation") or raw.get("occupation"),
+            "industry": additional.get("industry") or raw.get("industry"),
+            "category_awareness": additional.get("category_awareness") or raw.get("category_awareness"),
+        },
+        "formative_experience": {
+            "formative_experience_description": (
+                formative.get("formative_experience_description")
+                or raw.get("formative_experience_description")
+                or (raw_formative_value if isinstance(raw_formative_value, str) else None)
+                or raw.get("backstory")
+            ),
+        },
+    }
+
+
+def _backfill_manual_traits_from_saved_persona(raw_traits: dict, source: dict) -> dict:
+    """
+    Repair legacy draft traits before calibration.
+    Older drafts may have saved family_size/occupation/location columns without
+    the newer prompt's family_structure/occupation_level keys.
+    """
+    if not isinstance(raw_traits, dict):
+        raw_traits = {}
+    demographics = raw_traits.setdefault("demographics", {})
+    if not isinstance(demographics, dict):
+        demographics = {}
+        raw_traits["demographics"] = demographics
+
+    details = source.get("persona_details") if isinstance(source, dict) else {}
+    if not isinstance(details, dict):
+        details = {}
+
+    fallbacks = {
+        "age_range": source.get("age_range"),
+        "gender": source.get("gender"),
+        "income_range": source.get("income_range"),
+        "education_level": source.get("education_level"),
+        "occupation_level": (
+            details.get("occupation_level")
+            or source.get("occupation_level")
+            or source.get("occupation")
+        ),
+        "marital_status": source.get("marital_status"),
+        "family_structure": (
+            details.get("family_structure")
+            or source.get("family_structure")
+            or source.get("family_size")
+        ),
+        "geography": (
+            source.get("geography")
+            or source.get("location_country")
+            or source.get("location_state")
+        ),
+    }
+
+    for field, fallback in fallbacks.items():
+        if _is_blank_manual_trait(demographics.get(field)) and not _is_blank_manual_trait(fallback):
+            demographics[field] = fallback
+
+    # Last-resort placeholders prevent old partial drafts from getting stuck in
+    # an endless loader loop. Fresh draft creation still validates the real form.
+    for field in MANDATORY_MANUAL_DEMOGRAPHIC_FIELDS:
+        if _is_blank_manual_trait(demographics.get(field)):
+            demographics[field] = "Not specified"
+
+    return raw_traits
 
 
 async def create_manual_persona_draft(
@@ -939,6 +1661,10 @@ async def create_manual_persona_draft(
     validation_warnings (from plausibility engine) are stored in persona_details
     so they remain accessible after the draft is created.
     """
+    missing = missing_manual_demographic_fields(payload)
+    if missing:
+        raise ValueError(manual_demographic_validation_error(missing)["message"])
+
     d = payload.demographics
     psych = payload.psychological
     beh = payload.behavioural
@@ -948,10 +1674,29 @@ async def create_manual_persona_draft(
         return ", ".join(str(v) for v in lst if v) if lst else None
 
     occupation = (add.occupation if add and add.occupation else None) or d.occupation or ""
+    industry = (add.industry if add else None) or ""
+    category_awareness = (add.category_awareness if add else None) or ""
 
     # Store raw traits + any plausibility warnings so the calibrate step can
     # reference them and the detail view can surface them to the frontend.
-    persona_details_init: dict = {"raw_traits": payload.dict()}
+    # Also pre-populate new optional fields so they survive into persona_details
+    # even before calibration.
+    raw_traits_snapshot = manual_prompt_traits(payload)
+    persona_details_init: dict = {
+        "raw_traits": raw_traits_snapshot,
+        "raw_form_payload": payload.dict(),
+        "occupation_level": d.occupation_level or "",
+        "family_structure": d.family_structure or "",
+        "industry": industry,
+        "category_awareness": category_awareness,
+    }
+    if beh:
+        persona_details_init.update({
+            "purchase_triggers": beh.purchase_triggers or [],
+            "purchase_barriers": beh.purchase_barriers or [],
+            "media_consumption_patterns": beh.media_consumption_patterns or [],
+            "digital_behaviour": beh.digital_behaviour or "",
+        })
     if validation_warnings:
         persona_details_init["validation_warnings"] = validation_warnings
 
@@ -980,6 +1725,8 @@ async def create_manual_persona_draft(
             price_sensitivity=beh.price_sensitivity if beh else None,
             digital_activity=beh.digital_behaviour if beh else None,
             backstory=payload.formative_experience,
+            # new behavioural fields pre-stored so calibration can access them
+            # (stored only in persona_details until a DB migration adds flat columns)
             created_by=user_id,
             auto_generated_persona=False,
             calibration_status="draft",
@@ -996,7 +1743,7 @@ async def create_manual_persona_draft(
 async def calibrate_manual_persona(persona_id: str, exploration_id: str) -> dict:
     """
     AI-enriches a draft persona in-place using the stored raw_traits.
-    Uses gpt-4o (no web search) — traits are already provided, just needs depth.
+    Uses MANUAL_PERSONA_BUILDER_PROMPT (gpt-4o, no web search).
     Sets calibration_status="calibrated" and updates calibration_confidence.
     """
     from app.services.auto_generated_persona import get_description, _extract_calibration_confidence
@@ -1011,22 +1758,118 @@ async def calibrate_manual_persona(persona_id: str, exploration_id: str) -> dict
 
     # Raw traits stored at draft creation; fallback to flat persona dict
     details = source.get("persona_details") or {}
-    raw_traits = details.get("raw_traits") or source
+    raw_traits = details.get("raw_traits") or details.get("raw_form_payload") or source
+    raw_traits = manual_prompt_traits(raw_traits)
+    raw_traits = _backfill_manual_traits_from_saved_persona(raw_traits, source)
+    missing = missing_manual_demographic_fields(raw_traits)
+    if missing:
+        raise ValueError(manual_demographic_validation_error(missing)["message"])
 
     research_objective = await get_description(exploration_id) or ""
 
-    prompt = _CALIBRATION_PROMPT.format(
+    user_prompt = MANUAL_BUILD_USER_INPUT_PROMPT.format(
         research_objective=research_objective,
-        raw_traits_json=json.dumps(raw_traits, ensure_ascii=False, default=str),
+        user_provided_traits=json.dumps(raw_traits, ensure_ascii=False, default=str),
     )
 
-    response = await client.chat.completions.create(
-        model="gpt-4o",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.4,
-        response_format={"type": "json_object"},
-    )
-    enriched: dict = json.loads(response.choices[0].message.content)
+    async def _run_manual_calibration(prompt: str) -> dict:
+        response = await client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": MANUAL_PERSONA_BUILDER_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.4,
+            response_format={"type": "json_object"},
+        )
+        return json.loads(response.choices[0].message.content)
+
+    result: dict = await _run_manual_calibration(user_prompt)
+
+    # LLM signals a hard validation error (Step 1) — should only fire for old/incomplete drafts.
+    if result.get("status") == "validation_error":
+        retry_prompt = user_prompt + """
+
+IMPORTANT OVERRIDE:
+The backend has already repaired and normalized the demographics block for this
+draft. Do not return validation_error. Treat any "Not specified" demographic
+values as provided legacy placeholders and return the full success JSON.
+"""
+        result = await _run_manual_calibration(retry_prompt)
+        if result.get("status") == "validation_error":
+            missing = result.get("missing_fields") or []
+            raise ValueError(
+                "Persona calibration failed: demographics are mandatory. "
+                f"Missing: {', '.join(missing)}"
+            )
+
+    # Unwrap the nested structure from the new prompt format
+    enriched: dict = result.get("persona") or {}
+    auto_fill_report: dict = result.get("auto_fill_report") or {}
+    confidence_scoring: dict = result.get("confidence_scoring") or {}
+
+    raw_demographics = raw_traits.get("demographics") if isinstance(raw_traits, dict) else {}
+    if isinstance(raw_demographics, dict):
+        for field in MANDATORY_MANUAL_DEMOGRAPHIC_FIELDS:
+            value = raw_demographics.get(field)
+            if not _is_blank_manual_trait(value):
+                enriched[field] = value
+        family_size = raw_demographics.get("family_size")
+        if not _is_blank_manual_trait(family_size):
+            enriched["family_size"] = family_size
+
+    raw_behavioural = raw_traits.get("behavioural") if isinstance(raw_traits, dict) else {}
+    if not isinstance(raw_behavioural, dict):
+        raw_behavioural = {}
+
+    purchase_triggers = _manual_trait_values(raw_behavioural.get("purchase_triggers"))
+    purchase_barriers = _manual_trait_values(raw_behavioural.get("purchase_barriers"))
+
+    if purchase_triggers and _is_blank_manual_trait(enriched.get("purchase_triggers")):
+        enriched["purchase_triggers"] = purchase_triggers
+    if purchase_barriers and _is_blank_manual_trait(enriched.get("purchase_barriers")):
+        enriched["purchase_barriers"] = purchase_barriers
+    if not _is_blank_manual_trait(raw_behavioural.get("media_consumption_patterns")):
+        enriched["media_consumption_patterns"] = raw_behavioural.get("media_consumption_patterns")
+    if not _is_blank_manual_trait(raw_behavioural.get("digital_behaviour")):
+        enriched["digital_behaviour"] = raw_behavioural.get("digital_behaviour")
+
+    if _is_blank_manual_trait(enriched.get("barriers_pain_points")):
+        enriched["barriers_pain_points"] = {
+            "structural": [
+                "Needs clearer access, pricing, or feature detail before committing",
+                "May delay action if the process feels high effort",
+            ],
+            "psychological": purchase_barriers[:2] or [
+                "Needs stronger proof before committing",
+                "Worries about choosing an option that does not fit the need",
+            ],
+            "emotional": [
+                "Concern about making the wrong decision",
+                "Hesitation if the benefit feels uncertain",
+            ],
+            "category_specific": [
+                "Requires clearer fit with the research objective before engaging"
+            ],
+        }
+
+    if _is_blank_manual_trait(enriched.get("triggers_opportunities")):
+        enriched["triggers_opportunities"] = {
+            "functional_triggers": purchase_triggers[:2] or [
+                "Clear practical benefit tied to the research objective",
+                "Simple path to compare, trial, or act",
+            ],
+            "emotional_triggers": [
+                "Confidence that the choice reduces risk",
+                "Sense that the solution matches personal goals",
+            ],
+            "situational_triggers": [
+                "A relevant life or usage moment activates consideration"
+            ],
+            "promotional_triggers": [
+                "Transparent proof points and low-friction trial"
+            ],
+        }
 
     async with AsyncSession(async_engine) as session:
         res = await session.execute(select(Persona).where(Persona.id == persona_id))
@@ -1034,14 +1877,14 @@ async def calibrate_manual_persona(persona_id: str, exploration_id: str) -> dict
         if not p:
             raise ValueError("Persona not found")
 
-        # Update flat model columns — only overwrite if AI returned a non-empty value
+        # Flat string columns — LLM always generates the archetype name (Step 4 of prompt)
         _str_fields = (
             "name", "age_range", "gender", "location_country", "location_state",
             "education_level", "occupation", "income_range", "family_size",
             "geography", "lifestyle", "values", "personality", "motivations",
             "brand_sensitivity", "price_sensitivity", "mobility", "accommodation",
             "marital_status", "daily_rhythm", "hobbies", "professional_traits",
-            "digital_activity", "preferences", "backstory",
+            "digital_activity", "preferences",
         )
         for field in _str_fields:
             val = enriched.get(field)
@@ -1049,17 +1892,29 @@ async def calibrate_manual_persona(persona_id: str, exploration_id: str) -> dict
                 setattr(p, field, val if not isinstance(val, list)
                         else ", ".join(str(v) for v in val))
 
+        # backstory: new prompt uses formative_experience_description; also check legacy key
+        backstory_val = (
+            enriched.get("formative_experience_description") or
+            enriched.get("backstory")
+        )
+        if backstory_val:
+            p.backstory = backstory_val
+
         if enriched.get("interests"):
             raw_int = enriched["interests"]
             p.interests = raw_int if isinstance(raw_int, list) else [raw_int]
 
         p.ocean_profile = enriched.get("ocean_profile") or p.ocean_profile
-        p.calibration_confidence = _extract_calibration_confidence(enriched)
+
+        # Pass full result dict so _extract_calibration_confidence finds weighted_score
+        p.calibration_confidence = _extract_calibration_confidence(result)
         p.calibration_status = "calibrated"
 
-        # Merge enriched fields into persona_details (preserves raw_traits)
+        # Merge: preserve raw_traits + store enriched data + new top-level report fields
         merged = dict(p.persona_details or {})
         merged.update(enriched)
+        merged["auto_fill_report"] = auto_fill_report
+        merged["confidence_scoring"] = confidence_scoring
         p.persona_details = merged
 
         session.add(p)

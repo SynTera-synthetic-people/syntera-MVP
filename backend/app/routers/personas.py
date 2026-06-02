@@ -8,7 +8,13 @@ from app.schemas.persona import (
 )
 from app.schemas.response import SuccessResponse, ErrorResponse, DeleteResponse
 from app.services import persona as persona_service
-from app.services import auto_generated_persona, manual_generated_persona
+from app.services import auto_generated_persona
+# manual_generated_persona import removed — the old one-shot GPT-5 + web-search flow
+# (manual_generated_persona.manual_persona) has been replaced by a two-phase system:
+#   Phase 1 → POST /personas/manual     → persona_service.create_manual_persona_draft()
+#   Phase 2 → POST /personas/{id}/calibrate → persona_service.calibrate_manual_persona()
+# The new calibration uses MANUAL_PERSONA_BUILDER_PROMPT (no web search, RO-alignment
+# confidence scoring, auto-fill report) defined in app/services/persona.py.
 from app.services import persona_loader_context
 from app.services import interview as interview_service
 from app.services import report_orchestrator as report_cache
@@ -290,7 +296,10 @@ async def auto_generate_personas(
 #     return SuccessResponse(message="Persona template fetched successfully", data=tpl)
 
 
-@router.post("/", response_model=SuccessResponse, status_code=status.HTTP_201_CREATED)
+# Legacy one-shot GPT-5 + web-search endpoint — disabled in favour of the
+# two-phase draft/calibrate flow (POST /manual + POST /{id}/calibrate).
+# Kept for reference; do not delete until confirmed unreachable in all envs.
+@router.post("/", response_model=SuccessResponse, status_code=status.HTTP_410_GONE, include_in_schema=False)
 async def create_persona(
     workspace_id: str,
     exploration_id: str,
@@ -298,6 +307,13 @@ async def create_persona(
     current_user: User = Depends(get_current_active_user),
     session: AsyncSession = Depends(get_session),
 ):
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail=ErrorResponse(
+            status="error",
+            message="This endpoint has been replaced. Use POST /manual to create a draft, then POST /{persona_id}/calibrate to enrich it.",
+        ).dict(),
+    )
     if not await ws_service.is_workspace_admin(workspace_id, current_user.id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -571,6 +587,13 @@ async def create_manual_persona_draft(
             detail=ErrorResponse(status="error", message=e.message).dict()
         )
 
+    missing_demographics = persona_service.missing_manual_demographic_fields(payload)
+    if missing_demographics:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content=persona_service.manual_demographic_validation_error(missing_demographics),
+        )
+
     # Run plausibility checks before saving — zero DB cost, never blocks
     warnings = evaluate_from_schema(payload)
 
@@ -836,9 +859,20 @@ async def preview_persona(
             detail=ErrorResponse(status="error", message="Persona not found for this research objective").dict()
         )
 
-    full_persona_info = p.get("persona_details") or {}
+    # Build full_persona_info:
+    # - flat columns from persona_to_dict (p) provide base demographic/psychographic data
+    # - persona_details (enriched LLM output) overlay on top so calibrated fields win
+    # This ensures BOTH draft personas (flat columns only) AND calibrated personas
+    # (persona_details enriched) display correctly in the preview.
+    persona_details = p.get("persona_details") or {}
+    flat_fields = {
+        k: v for k, v in p.items()
+        if k not in ("persona_details", "calibration_breakdown")
+        and v is not None and v != "" and v != [] and v != {}
+    }
+    full_persona_info = {**flat_fields, **persona_details}
 
-    confidence = full_persona_info.get("confidence_scoring","")
+    confidence = full_persona_info.get("confidence_scoring", "") or p.get("confidence_scoring", "")
     if not confidence:
         confidence = await persona_service.generate_persona_confidence(p)
 

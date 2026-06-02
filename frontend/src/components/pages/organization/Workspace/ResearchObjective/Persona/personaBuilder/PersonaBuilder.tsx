@@ -1434,6 +1434,13 @@ const PersonaBuilder: React.FC = () => {
 
   const handleGridPersonaClick = useCallback((persona: SavedPersona) => {
     if (persona.id) {
+      if (persona.calibration_status === 'draft') {
+        navigate(
+          `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-generating`,
+          { state: { flow: 'manual', personaId: persona.id } }
+        );
+        return;
+      }
       navigate(
         `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-preview/${persona.id}`,
         { state: { personaId: persona.id, personaName: persona.name, fromGrid: true } }
