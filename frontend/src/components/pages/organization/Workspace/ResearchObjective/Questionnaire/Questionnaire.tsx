@@ -18,6 +18,7 @@ import {
   getAllQuestionnairesForExploration,
 } from '../../../../../../services/quantitativeServices';
 import './Questionnaire.css';
+import { useLoaderActive } from '../../../../../../context/LoaderActiveContext';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -105,6 +106,12 @@ const Questionnaire: React.FC = () => {
   const [hasQuestionnaire, setHasQuestionnaire] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [showLoader, setShowLoader] = useState(false);
+
+  // Sync loader visibility with the layout so StepSidebar hides Back button
+  // while the questionnaire is being generated or uploaded.
+  const { setLoaderActive } = useLoaderActive();
+  useEffect(() => { setLoaderActive(showLoader); }, [showLoader, setLoaderActive]);
+  useEffect(() => () => setLoaderActive(false), [setLoaderActive]);
   const [loaderMode, setLoaderMode] = useState<'generate' | 'upload'>('generate');
   const [loaderReady, setLoaderReady] = useState(false);
   const [showReadyToast, setShowReadyToast] = useState(false);

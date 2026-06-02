@@ -2,16 +2,22 @@ import React, { useEffect } from 'react';
 import { Outlet, useParams, useLocation } from 'react-router-dom';
 import StepSidebar from './StepSidebar';
 import { useStepProgress } from '../../../../../hooks/useStepProgress';
+import { LoaderActiveProvider, useLoaderActive } from '../../../../../context/LoaderActiveContext';
 import './ResearchObjectiveLayoutStyle.css';
 import './StepSidebarStyle.css';
 
-const ResearchObjectiveLayout: React.FC = () => {
+// ── Inner layout — reads loaderActive from context ────────────────────────────
+
+const ResearchObjectiveLayoutInner: React.FC = () => {
   const { workspaceId, objectiveId } = useParams<{
     workspaceId: string;
     objectiveId: string;
   }>();
-    const location = useLocation(); // ← add this
+  const location = useLocation();
   const isViewOnly = Boolean((location.state as any)?.viewOnly);
+
+  // Read whether any child page is currently showing a blocking loader overlay
+  const { loaderActive } = useLoaderActive();
 
   const { completedSteps: rawCompletedSteps, isStepUnlocked } = useStepProgress(
     workspaceId,
@@ -79,7 +85,8 @@ const ResearchObjectiveLayout: React.FC = () => {
         isStepUnlocked={isStepUnlocked}
         completedSubSteps={completedSubSteps}
         completedQuantSubSteps={completedQuantSubSteps}
-        isViewOnly={isViewOnly} 
+        isViewOnly={isViewOnly}
+        hideBack={loaderActive}
       />
 
       <div className="rol-content">
@@ -89,5 +96,13 @@ const ResearchObjectiveLayout: React.FC = () => {
     </div>
   );
 };
+
+// ── Outer layout — provides the context so children can write to it ───────────
+
+const ResearchObjectiveLayout: React.FC = () => (
+  <LoaderActiveProvider>
+    <ResearchObjectiveLayoutInner />
+  </LoaderActiveProvider>
+);
 
 export default ResearchObjectiveLayout;
