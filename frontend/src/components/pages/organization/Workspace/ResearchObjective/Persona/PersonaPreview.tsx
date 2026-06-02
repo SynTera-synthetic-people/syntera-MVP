@@ -842,14 +842,16 @@ const PersonaPreview: React.FC = () => {
 
   const isManualMode = !!(calibrationBreakdown?.is_manual_mode);
 
-  const CB_KEY_MAP: Record<string, string> = {
-    real:      'real_actions_signal',
-    emotional: 'emotional_neural_layers',
-    validated: 'validated_studies',
-    multi:     'multi_platform_conversations',
-  };
+type CalibKey = 'real' | 'emotional' | 'validated' | 'multi';
 
-  const getCalibCount = (key: string): string => {
+const CB_KEY_MAP: Record<CalibKey, string> = {
+  real: 'real_actions_signal',
+  emotional: 'emotional_neural_layers',
+  validated: 'validated_studies',
+  multi: 'multi_platform_conversations',
+};
+
+  const getCalibCount = (key: CalibKey): string => {
     // Priority 1: Use calibration_breakdown from backend (dynamic per-persona)
     const section = calibrationBreakdown?.[CB_KEY_MAP[key]];
     if (section) {
@@ -872,7 +874,7 @@ const PersonaPreview: React.FC = () => {
     return '—';
   };
 
-  const getCalibLabel = (key: string, fallback: string): string => {
+  const getCalibLabel = (key: CalibKey, fallback: string): string => {
     const label = calibrationBreakdown?.[CB_KEY_MAP[key]]?.count_label as string | undefined;
     return label || fallback;
   };
