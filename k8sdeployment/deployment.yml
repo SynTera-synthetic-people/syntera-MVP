@@ -7,7 +7,7 @@ metadata:
     app: synth-backend
 spec:
   replicas: 4
-  progressDeadlineSeconds: 1800  
+  progressDeadlineSeconds: 1800
   selector:
     matchLabels:
       app: synth-backend
@@ -17,14 +17,25 @@ spec:
         app: synth-backend
     spec:
       serviceAccountName: ssm-reader
+
+      # Run migrations before app starts
+      initContainers:
+        - name: migrate
+          image: 175337843263.dkr.ecr.ap-south-1.amazonaws.com/synth-backend
+          command: ["alembic", "upgrade", "head"]
+          env:
+            - name: AWS_REGION
+              value: ap-south-1
+            - name: SSM_PATH
+              value: "/app/staging/"
+          # DATABASE_URL is fetched inside the container from AWS SSM using these env vars
+
       containers:
         - name: backend
           image: 175337843263.dkr.ecr.ap-south-1.amazonaws.com/synth-backend
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
-
-          # IMPORTANT: make FastAPI respect ALB https headers
           args:
             - uvicorn
             - app.main:app
@@ -34,7 +45,6 @@ spec:
             - "8000"
             - --proxy-headers
             - --forwarded-allow-ips=*
-
           env:
             - name: AWS_REGION
               value: ap-south-1
@@ -42,29 +52,26 @@ spec:
               value: "/app/staging/"
             - name: CORS_ORIGINS
               value: "https://staging-ui.synthetic-people.ai"
-
           resources:
             requests:
               cpu: 250m
               memory: 512Mi
             limits:
               cpu: 500m
-              memory: 3Gi   
-
+              memory: 3Gi
           readinessProbe:
             httpGet:
               path: /health
               port: 8000
-            initialDelaySeconds: 300   
-            periodSeconds: 20
+            initialDelaySeconds: 30
+            periodSeconds: 10
             timeoutSeconds: 5
-            failureThreshold: 10
-
+            failureThreshold: 5
           livenessProbe:
             httpGet:
               path: /health
               port: 8000
-            initialDelaySeconds: 360  
-            periodSeconds: 30
+            initialDelaySeconds: 60
+            periodSeconds: 20
             timeoutSeconds: 5
-            failureThreshold: 5
+            failureThreshold: 3

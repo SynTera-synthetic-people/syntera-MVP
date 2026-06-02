@@ -13,12 +13,40 @@ export interface SavedPersona {
   geography?: string;
   location_country?: string;
   location_state?: string;
+  // New Manual Build Mode confidence format
   confidence_scoring?: {
+    // New format (Manual Build Mode)
+    weighted_score?: number;
+    confidence_level?: string;
+    mode?: string;
+    note?: string;
+    components?: {
+      demographic_ro_fit?: number;
+      psychographic_ro_fit?: number;
+      behavioural_ro_fit?: number;
+      trait_completeness?: number;
+    };
+    // Legacy format (Omi / evidence-based)
     confidence_calculation_detail?: { weighted_total?: number };
     score?: number;
   };
   confidence_score?: number;
   calibration_confidence?: number;
+  // New fields surfaced by persona_to_dict()
+  auto_fill_report?: {
+    total_sub_traits?: number;
+    user_provided_count?: number;
+    auto_filled_count?: number;
+    auto_filled_traits?: string[];
+  };
+  occupation_level?: string;
+  family_structure?: string;
+  industry?: string;
+  decision_making_style?: string;
+  consumption_frequency?: string;
+  purchase_channel?: string | string[];
+  switching_tendency?: string;
+  category_awareness?: string;
   persona_details?: Record<string, unknown>;
   [key: string]: unknown;
 }

@@ -224,16 +224,15 @@ def questionnaire_sections_to_csv_bytes(
 
     aligned = _align_blocks_to_questions(counts_map, flat)
 
-    header = ["Q No.", "Question Description", "Options", "Count"]
+    header = ["Q No.", "Question Description", "Options"]
     buffer = io.StringIO()
     writer = csv.writer(buffer)
     writer.writerow(header)
 
     for q_no, ((q_text, opts), block) in enumerate(zip(flat, aligned), start=1):
         if opts:
-            counts = _counts_for_options(block, opts)
-            for opt, cnt in zip(opts, counts):
-                writer.writerow([q_no, q_text, opt if opt is not None else "", cnt])
+            for opt in opts:
+                writer.writerow([q_no, q_text, opt if opt is not None else ""])
         elif block and isinstance(block, list):
             for item in block:
                 if isinstance(item, dict):
@@ -242,11 +241,10 @@ def questionnaire_sections_to_csv_bytes(
                             q_no,
                             q_text,
                             str(item.get("option", "")),
-                            int(item.get("count", 0) or 0),
                         ]
                     )
         else:
-            writer.writerow([q_no, q_text, "", 0])
+            writer.writerow([q_no, q_text, ""])
 
     return ("\ufeff" + buffer.getvalue()).encode("utf-8")
 

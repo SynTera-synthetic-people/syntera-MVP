@@ -90,6 +90,20 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
     Status: Production-Ready
 
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    PRIMARY DIRECTIVE — READ THIS FIRST BEFORE ANYTHING ELSE
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    THIS IS THE SPECIFIC RESEARCH OBJECTIVE YOU ARE DESIGNING FOR:
+
+    $res_desc
+
+    This research objective is your NORTH STAR. Every section theme, every question,
+    every response option you generate MUST directly advance understanding of THIS
+    specific objective. Do NOT generate generic questions that could apply to any study.
+    Derive ALL section titles and question topics from the keywords, domain, and intent
+    of the research objective above. If a question does not serve this objective, discard it.
+
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     SECTION 1: CORE IDENTITY
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -169,7 +183,7 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
     • Minimum: 4 questions per section (mandatory) 
     • Target: 4-6 questions per section (recommended) 
     • Maximum: 8 questions per section (avoid survey fatigue) 
-    • No exceptions — all sections including S1 Screeners must have minimum 4 questions
+    • No exceptions — all sections including S1 Population Characteristics must have minimum 4 questions
     TOTAL QUESTIONS BY COMPLEXITY: 
     • Simple objectives (3-5 sections): 12-30 questions total 
     • Moderate objectives (5-8 sections): 20-48 questions total 
@@ -1091,7 +1105,7 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
 
     Apply this gold-standard funnel (sections may be reordered based on flow logic, but generally follow safe-to-vulnerable, concrete-to-abstract progression):
 
-    S1: Screeners
+    S1: Population Characteristics
         Qualify respondents. Confirm eligibility.
         Primarily S questions. Tagged for demographic and behavioral qualification.
 
@@ -1253,7 +1267,7 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
     • Complex objectives (6-8 themes) → 7-10 sections
 
     MANDATORY SECTIONS (always include):
-    • S1: Screeners (Theme: Contextual Framing) 
+    • S1: Population Characteristics (Theme: Contextual Framing)
     • S_DEMO: Demographics &amp; Classification (final section)
 
     THEMATIC SECTIONS (create one section per relevant theme from Step 3):
@@ -1274,7 +1288,7 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
     • Target 4-6 questions per section for optimal coverage
 
     MANDATORY QUESTION ALLOCATION: 
-    • S1 Screeners: 4-6 questions (qualification + context setting)
+    • S1 Population Characteristics: 4-6 questions (qualification + context setting)
     • S_DEMO
 
     Demographics: 4-6 questions (standard demographics) 
@@ -1365,10 +1379,10 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
         - Complex objectives (6-8 themes): 7-10 sections generated
     □ Each relevant theme from Step 3 has a dedicated section
     □ No more than 2 sections share the same section_theme value
-    □ Minimum section count: at least 3 sections (Screeners, Core, Demographics)
+    □ Minimum section count: at least 3 sections (Population Characteristics, Core, Demographics)
     
     QUESTION COUNT PER SECTION (MANDATORY)
-    □ Every section has MINIMUM 4 questions — NO exceptions, including S1 Screeners
+    □ Every section has MINIMUM 4 questions — NO exceptions, including S1 Population Characteristics
     □ Every thematic section has at least 3 S/M questions 
         - Ensures statistical validity - Prevents OE-only sections
     □ No section exceeds 8 questions - Prevents respondent overload in single theme
@@ -1455,6 +1469,13 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
 
     COMPLETE OUTPUT TEMPLATE:
 
+    ⚠ CRITICAL BEFORE GENERATING: The section_theme and title values shown in the template
+    below (e.g. "Behavioral Patterns", "Attitudinal Discovery") are STRUCTURAL PLACEHOLDERS ONLY.
+    You MUST replace every section_theme and title with themes derived directly from the
+    research objective stated at the top of this prompt:
+    "$res_desc"
+    Generate section names that are SPECIFIC to that research objective — not generic labels.
+
     NOTE: This template shows the REQUIRED question density. ALL sections including S1 must have 4-6 questions.
     Replicate the S2 pattern for every section — no section may have fewer than 4 questions.
 
@@ -1463,7 +1484,7 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
     {
       "section_id": "S1",
       "section_theme": "Contextual Framing",
-      "title": "Screeners",
+      "title": "Population Characteristics",
       "questions": [
         {
           "question_id": "Q1",
@@ -1609,18 +1630,20 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
 
     """
     from string import Template
-    return Template(prompt).safe_substitute(
-        res_desc=res_desc or research_desc or "Not provided",
+    final_res_desc = res_desc or research_desc or "Not provided"
+    built_prompt = Template(prompt).safe_substitute(
+        res_desc=final_res_desc,
         total_sample=total_sample,
         audience_text=audience_text
     )
+    return built_prompt, final_res_desc
 
 async def generate_questionnaire(objective, personas_list, population, exploration_id):
     """
     Generate ONE questionnaire considering ALL personas.
     personas_list: list of persona dicts
     """
-    prompt = await build_questionnaire_prompt(objective, personas_list, population, exploration_id)
+    prompt, res_desc = await build_questionnaire_prompt(objective, personas_list, population, exploration_id)
 
     try:
         res = await client.chat.completions.create(
@@ -1628,7 +1651,7 @@ async def generate_questionnaire(objective, personas_list, population, explorati
             response_format={"type": "json_object"},
             max_tokens=16384,
             messages=[
-                {"role": "system", "content": "Generate survey questions in strict JSON only. Every non-screener section MUST contain exactly 4-6 fully populated question objects. Do not summarize or abbreviate any section."},
+                {"role": "system", "content": f"You are a quantitative research questionnaire designer. Every question you generate MUST directly serve this specific research objective: {res_desc}. All section themes and question topics must be derived from this objective — do not generate generic questions. Output strict JSON only. Every non-screener section MUST contain exactly 4-6 fully populated question objects. Do not summarize or abbreviate any section."},
                 {"role": "user", "content": prompt}
             ]
         )
@@ -1650,6 +1673,9 @@ async def generate_questionnaire(objective, personas_list, population, explorati
 
     try:
         data = json.loads(raw)
+        sections = data.get("sections", [])
+        if sections:
+            sections[0]["title"] = "Population Characteristics"
         return data, None
     except:
         return None, "Invalid JSON from LLM"

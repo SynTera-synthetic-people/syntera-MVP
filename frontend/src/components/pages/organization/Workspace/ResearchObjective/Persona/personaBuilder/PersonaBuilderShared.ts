@@ -7,7 +7,15 @@ import type { SavedPersona, PersonaData, CategoryProgress, PersonaFormData } fro
 // ── Confidence Score Utilities ────────────────────────────────────────────────
 
 export const getConfidenceScore = (persona: SavedPersona): number | null => {
-  const raw =
+  // Priority 1: New Manual Build Mode format — weighted_score is float 0-1
+  const newFormat = persona.confidence_scoring?.weighted_score;
+  if (newFormat !== undefined && newFormat !== null) {
+    const num = Number(newFormat);
+    if (!isNaN(num)) return Math.round(num <= 1 ? num * 100 : num);
+  }
+
+  // Priority 2: Legacy evidence-based format — confidence_calculation_detail.weighted_total
+  const legacy =
     persona.confidence_scoring?.confidence_calculation_detail?.weighted_total ??
     persona.confidence_scoring?.score ??
     persona.confidence_score ??
@@ -15,11 +23,9 @@ export const getConfidenceScore = (persona: SavedPersona): number | null => {
     (persona as any).confidence ??
     null;
 
-  if (raw === null || raw === undefined) return null;
-
-  const num = Number(raw);
+  if (legacy === null || legacy === undefined) return null;
+  const num = Number(legacy);
   if (isNaN(num)) return null;
-
   return Math.round(num <= 1 ? num * 100 : num);
 };
 
@@ -40,35 +46,46 @@ export const getConfidenceTextColor = (score: number): string => {
 export const formatPersonaData = (persona: SavedPersona): PersonaData => {
   const details: Record<string, unknown> = (persona.persona_details ?? {}) as Record<string, unknown>;
   
+  const p = persona as Record<string, unknown>;
+  const coerceStr = (v: unknown): string => {
+    if (!v) return '';
+    if (Array.isArray(v)) return v.join(', ');
+    return String(v);
+  };
+
   return {
-    name: (persona.name ?? (details.name as string) ?? 'Unnamed Persona'),
-    'Age': (persona.age_range ?? details.age_range ?? '') as string,
-    'Gender': (persona.gender ?? details.gender ?? '') as string,
-    'Geography': (persona.geography ?? persona.location_country ?? persona.location_state ?? details.geography ?? details.location_country ?? '') as string,
-    'Education Level': ((persona as Record<string, unknown>).education_level ?? details.education_level ?? '') as string,
-    'Occupation / Employment Type': ((persona as Record<string, unknown>).occupation ?? details.occupation ?? '') as string,
-    'Income Level': ((persona as Record<string, unknown>).income_range ?? details.income_range ?? '') as string,
-    'backstory': ((persona as Record<string, unknown>).backstory ?? details.backstory ?? '') as string,
+    'name': (persona.name ?? (details.name as string) ?? 'Unnamed Persona'),
     'id': persona.id,
-    'Family Structure': ((persona as Record<string, unknown>).family_size ?? details.family_size ?? '') as string,
-    'Lifestyle': ((persona as Record<string, unknown>).lifestyle ?? details.lifestyle ?? '') as string,
-    'Hobbies': ((persona as Record<string, unknown>).hobbies ?? details.hobbies ?? '') as string,
-    'Marital Status': ((persona as Record<string, unknown>).marital_status ?? details.marital_status ?? '') as string,
-    'Daily Rhythm': ((persona as Record<string, unknown>).daily_rhythm ?? details.daily_rhythm ?? '') as string,
-    'Values': ((persona as Record<string, unknown>).values ?? details.values ?? '') as string,
-    'Personality': ((persona as Record<string, unknown>).personality ?? details.personality ?? '') as string,
-    'Interests': ((persona as Record<string, unknown>).interests ?? details.interests ?? '') as string,
-    'Motivations': ((persona as Record<string, unknown>).motivations ?? details.motivations ?? '') as string,
-    'Brand Sensitivity': ((persona as Record<string, unknown>).brand_sensitivity ?? (persona as Record<string, unknown>).brand_sensitivity_detailed ?? details.brand_sensitivity ?? '') as string,
-    'Price Sensitivity': ((persona as Record<string, unknown>).price_sensitivity ?? (persona as Record<string, unknown>).price_sensitivity_general ?? details.price_sensitivity ?? '') as string,
-    'Preferences': ((persona as Record<string, unknown>).preferences ?? details.preferences ?? '') as string,
-    'Digital Activity': ((persona as Record<string, unknown>).digital_activity ?? details.digital_activity ?? '') as string,
-    'Professional Traits': ((persona as Record<string, unknown>).professional_traits ?? details.professional_traits ?? '') as string,
-    'Mobility': ((persona as Record<string, unknown>).mobility ?? details.mobility ?? '') as string,
-    'Home Ownership': ((persona as Record<string, unknown>).accommodation ?? details.accommodation ?? '') as string,
-    'Decision Making Style': ((persona as Record<string, unknown>).decision_making_style ?? (persona as Record<string, unknown>).decision_making_style_1 ?? details.decision_making_style ?? '') as string,
-    'Purchase Frequency': ((persona as Record<string, unknown>).purchase_frequency ?? details.purchase_frequency ?? '') as string,
-    'Purchase Channel': ((persona as Record<string, unknown>).purchase_channel ?? (persona as Record<string, unknown>).purchase_channel_detailed ?? details.purchase_channel ?? '') as string,
+    'Age': coerceStr(persona.age_range ?? details.age_range),
+    'Gender': coerceStr(persona.gender ?? details.gender),
+    'Geography': coerceStr(persona.geography ?? persona.location_country ?? persona.location_state ?? details.geography ?? details.location_country),
+    'Education Level': coerceStr(p.education_level ?? details.education_level),
+    'Occupation Level': coerceStr(persona.occupation_level ?? details.occupation_level),
+    'Occupation / Employment Type': coerceStr(p.occupation ?? details.occupation),
+    'Industry': coerceStr(persona.industry ?? details.industry),
+    'Income Level': coerceStr(p.income_range ?? details.income_range),
+    'Family Structure': coerceStr(persona.family_structure ?? p.family_size ?? details.family_structure ?? details.family_size),
+    'Marital Status': coerceStr(p.marital_status ?? details.marital_status),
+    'Lifestyle': coerceStr(p.lifestyle ?? details.lifestyle),
+    'Values': coerceStr(p.values ?? details.values),
+    'Personality': coerceStr(p.personality ?? details.personality),
+    'Interests': coerceStr(p.interests ?? details.interests),
+    'Motivations': coerceStr(p.motivations ?? details.motivations),
+    'Brand Sensitivity': coerceStr(p.brand_sensitivity ?? details.brand_sensitivity),
+    'Price Sensitivity': coerceStr(p.price_sensitivity ?? details.price_sensitivity),
+    'Decision Making Style': coerceStr(persona.decision_making_style ?? details.decision_making_style),
+    'Consumption Frequency': coerceStr(persona.consumption_frequency ?? details.consumption_frequency),
+    'Purchase Channel': coerceStr(persona.purchase_channel ?? details.purchase_channel),
+    'Switching Tendency': coerceStr(persona.switching_tendency ?? details.switching_tendency),
+    'Category Awareness': coerceStr(persona.category_awareness ?? details.category_awareness),
+    'Preferences': coerceStr(p.preferences ?? details.preferences),
+    'Digital Activity': coerceStr(p.digital_activity ?? details.digital_activity),
+    'Professional Traits': coerceStr(p.professional_traits ?? details.professional_traits),
+    'Hobbies': coerceStr(p.hobbies ?? details.hobbies),
+    'Mobility': coerceStr(p.mobility ?? details.mobility),
+    'Home Ownership': coerceStr(p.accommodation ?? details.accommodation),
+    'Daily Rhythm': coerceStr(p.daily_rhythm ?? details.daily_rhythm),
+    'backstory': coerceStr(p.backstory ?? details.backstory ?? details.formative_experience_description),
     'isAI': (persona.auto_generated_persona ?? false),
     'isAIGenerated': (persona.auto_generated_persona ?? false),
     'isSaved': true,
@@ -116,18 +133,23 @@ export const validatePersonaData = (formData: PersonaFormData): {
   isValid: boolean;
   missingFields: string[];
 } => {
-  const requiredFields: (keyof PersonaFormData)[] = [
-    'age',
-    'gender',
-    'geography',
+  const requiredFields: Array<[keyof PersonaFormData, string]> = [
+    ['age', 'Age'],
+    ['gender', 'Gender'],
+    ['income', 'Income'],
+    ['educationLevel', 'Education Level'],
+    ['occupationLevel', 'Occupation Level'],
+    ['maritalStatus', 'Marital Status'],
+    ['familyStructure', 'Family Structure'],
+    ['geography', 'Geography'],
   ];
   
   const missingFields: string[] = [];
   
-  requiredFields.forEach(field => {
+  requiredFields.forEach(([field, label]) => {
     const value = formData[field];
     if (!value || (typeof value === 'string' && value.trim() === '')) {
-      missingFields.push(field);
+      missingFields.push(label);
     }
   });
   
@@ -203,8 +225,10 @@ export const buildManualPersonaPayload = (
       income_range: formData.income ?? null,
       education_level: formData.educationLevel ?? null,
       occupation: formData.occupation ?? null,
+      occupation_level: formData.occupationLevel ?? null,
       marital_status: formData.maritalStatus ?? null,
       family_size: formData.familyStructure ?? null,
+      family_structure: formData.familyStructure ?? null,
       location_country: formData.geography ?? null,
       location_state: null,
       geography: formData.geography ?? null,
@@ -219,10 +243,11 @@ export const buildManualPersonaPayload = (
     behavioural: {
       decision_making_style: formData.decisionMakingStyle ?? null,
       consumption_frequency: formData.consumptionFrequency ?? null,
-      purchase_channel: formData.purchaseChannel ?? null,
+      purchase_channel: formData.purchaseChannel ? [formData.purchaseChannel] : null,
       price_sensitivity: formData.priceSensitivity ?? null,
       brand_sensitivity: formData.brandSensitivity ?? null,
-      switching_behaviour: formData.switchingBehaviour ?? null,
+      switching_tendency: formData.switchingBehaviour ?? null,  // new canonical field name
+      switching_behaviour: formData.switchingBehaviour ?? null, // legacy alias kept
       purchase_triggers: toArray(formData.purchaseTriggers),
       purchase_barriers: toArray(formData.purchaseBarriers),
       media_consumption_patterns: toArray(formData.mediaConsumption),
