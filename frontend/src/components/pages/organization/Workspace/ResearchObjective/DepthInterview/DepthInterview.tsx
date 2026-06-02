@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useObjectives } from '../../../../../../context/ObjectiveContext';
+import { useLoaderActive } from '../../../../../../context/LoaderActiveContext';
 import ChatView from './ChatView';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TbLoader, TbX, TbPlus, TbAlertCircle } from 'react-icons/tb';
@@ -219,6 +220,7 @@ const DeleteModal: React.FC<DeleteModalProps> = ({ target, isPending, onConfirm,
 
 const DepthInterview: React.FC = () => {
   const { objectives } = useObjectives();
+  const { setLoaderActive } = useLoaderActive();
   const { workspaceId, objectiveId } = useParams<{ workspaceId: string; objectiveId: string }>();
   const navigate = useNavigate();
   const location = useLocation();
@@ -244,6 +246,11 @@ const DepthInterview: React.FC = () => {
 
   const [showChat, setShowChat] = useState(false);
   const [showLoader, setShowLoader] = useState(false);
+
+  // Sync loader visibility with the layout so StepSidebar hides Back button
+  // while the discussion guide is being generated or uploaded.
+  useEffect(() => { setLoaderActive(showLoader); }, [showLoader, setLoaderActive]);
+  useEffect(() => () => setLoaderActive(false), [setLoaderActive]);
   const [showReadyToast, setShowReadyToast] = useState(false);
   const [openKebabId, setOpenKebabId] = useState<string | null>(null);
   const [loaderMode, setLoaderMode] = useState<'generate' | 'upload'>('generate');

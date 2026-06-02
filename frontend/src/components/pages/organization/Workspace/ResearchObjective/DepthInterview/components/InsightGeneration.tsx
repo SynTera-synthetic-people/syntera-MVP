@@ -235,6 +235,11 @@ const InsightGeneration: React.FC = () => {
     _derivedFromFlags
   ).toLowerCase().trim();
 
+  // True when the user has already ended this exploration (is_end flag from API).
+  // Used to hide "Begin Quant" and treat the page as view-only even when
+  // isViewOnly is false (e.g. user ended after Qual in a "both" exploration).
+  const isExplorationEnded = !!_apiData?.is_end;
+
   // ── Generate handlers ─────────────────────────────────────────────────────
 
   const handleGenerate = async (cardId: InsightCardId) => {
@@ -296,7 +301,8 @@ const InsightGeneration: React.FC = () => {
       payload: {},
     });
     navigate(
-      `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/questionnaire`
+      `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/questionnaire`,
+      { state: { viewOnly: isViewOnly } }
     );
   };
 
@@ -383,8 +389,8 @@ const InsightGeneration: React.FC = () => {
             </button>
           )}
 
-          {/* Begin Quant Exploration — hidden in view-only mode */}
-          {researchApproach === 'both' && !isViewOnly && (
+          {/* Begin Quant Exploration — hidden in view-only mode OR when exploration already ended */}
+          {researchApproach === 'both' && !isViewOnly && !isExplorationEnded && (
             <button
               className="ig-footer__btn ig-footer__btn--white"
               onClick={handleBeginQuant}
@@ -395,8 +401,8 @@ const InsightGeneration: React.FC = () => {
           )}
         </div>
 
-        {/* End Journey (view-only) / End Exploration (normal) */}
-        {isViewOnly ? (
+        {/* End Journey (view-only or already-ended) / End Exploration (normal) */}
+        {(isViewOnly || isExplorationEnded) ? (
           <button
             className="ig-footer__btn ig-footer__btn--end"
             onClick={() => navigate(`/main/organization/workspace/explorations/${workspaceId}`)}

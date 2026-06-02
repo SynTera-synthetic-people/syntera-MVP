@@ -17,6 +17,7 @@ import InsightsGeneration from './InsightGeneration';
 import LoadingSpinner from './LoadingSpinner';
 import { useOmniWorkflow } from '../../../../../../hooks/useOmiWorkflow';
 import './PopulationBuilder.css';
+import { useLoaderActive } from '../../../../../../context/LoaderActiveContext';
 
 export type PopulationPhase = 'setup' | 'survey' | 'insights';
 
@@ -40,6 +41,12 @@ const PopulationBuilder: React.FC = () => {
   const [selectedPersonas, setSelectedPersonas] = useState<SelectedPersona[]>([]);
   const [sampleSizes, setSampleSizes] = useState<SampleSizes>({});
   const [phase, setPhase] = useState<PopulationPhase>('setup');
+
+  // Sync survey-in-motion phase with the layout so StepSidebar hides Back
+  // button while the survey simulation is running.
+  const { setLoaderActive } = useLoaderActive();
+  useEffect(() => { setLoaderActive(phase === 'survey'); }, [phase, setLoaderActive]);
+  useEffect(() => () => setLoaderActive(false), [setLoaderActive]);
   const [simulationResult, setSimulationResult] = useState<any>(null);
   const [questionnaireData, setQuestionnaireData] = useState<any[]>([]);
   const [simulationId, setSimulationId] = useState<string | null>(null);

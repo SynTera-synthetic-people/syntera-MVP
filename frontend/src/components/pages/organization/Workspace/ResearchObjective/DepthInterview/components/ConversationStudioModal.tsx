@@ -652,7 +652,6 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
                       <div className="cs-input-wrap">
                         <textarea
                           className="cs-input"
-                          placeholder="Typing..."
                           value={inputValue}
                           onChange={(e) => setInputValue(e.target.value)}
                           onKeyDown={handleKeyDown}
