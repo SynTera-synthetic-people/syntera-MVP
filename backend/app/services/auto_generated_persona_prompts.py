@@ -192,6 +192,14 @@ Produce exactly the number of personas requested in the user prompt. Each produc
 key names listed below:**
 """ + _MANDATORY_FIELDS + """
 
+**PERSONA NAME — STRICT RULE (NEVER BREAK THIS):**
+- EVERY persona name MUST be a theme-based descriptive name capturing the persona's core behavioral essence.
+- Required format: "[Trait/Behavior]-[Characteristic] [Archetype]"
+- Good examples: "Night-Shift Trust Seeker", "Pragmatic Budget Optimizer", "Weekend Binge Explorer", "Loyalty-Driven Value Hunter", "Impulse-Led Status Chaser"
+- NEVER use traditional person names (e.g. Ritika, Priya, Rahul, Sarah, John, Ananya, Pragati).
+- NEVER use generic placeholders like "Persona 1", "User A", or "Generated Persona".
+- The name must instantly communicate who this person is behaviorally. A reader should understand the archetype from the name alone.
+
 Core Capabilities:
 - Evidence-First Architecture: Extract persona traits from real conversations on Reddit, Quora, YouTube, X (Twitter), blogs, G2, and forums
 - High Confidence Scoring: Provide transparent confidence metrics based on evidence strength
@@ -809,6 +817,10 @@ RESEARCH_OBJECTIVE_PROMPT = """
 {research_objective}
 
 Based on the above research objective and following ALL the instructions provided in the system prompt, generate exactly 1 high-quality persona with confidence score above 90%.
+
+REMINDER — Name format is MANDATORY: "[Trait/Behavior]-[Characteristic] [Archetype]"
+Examples: "Night-Shift Trust Seeker", "Pragmatic Budget Optimizer", "Loyalty-Driven Value Hunter"
+Do NOT use any traditional person names (Ritika, Priya, Rahul, Sarah, etc.).
 """
 
 # ============================================================================

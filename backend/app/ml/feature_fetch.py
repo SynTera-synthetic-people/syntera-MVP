@@ -158,22 +158,59 @@ def _compute_features(df: pd.DataFrame, subject_key: str, domain: str) -> dict:
     inter_times = df3.sort_values("transaction_date")["transaction_date"].diff().dt.total_seconds() / 3600
     inter_order_time = float(inter_times.median()) if len(inter_times) > 1 else 0.0
 
+    # RFM features
+    recency_days = (pd.Timestamp.now() - df["transaction_date"].max()).days
+    recency_score = float(1 / (1 + recency_days / 30))
+    frequency_score = float(len(df) / days_span)
+    monetary_score = float(df["transaction_amount"].mean())
+    rfm_score = float((recency_score + frequency_score + monetary_score) / 3)
+
+    # Time pattern features
+    hour_std = float(df3["hour"].std()) if len(df3) > 1 else 0.0
+    time_consistency = float(1 / (1 + hour_std))
+    rush_hours = {7, 8, 9, 12, 13, 14, 19, 20, 21, 22}
+    rush_hour_ratio = float(df3["hour"].isin(rush_hours).mean())
+    weekday_preference = float(df3["dow"].mode()[0]) if len(df3) > 0 else 0.0
+
+    # Loyalty features
+    tenure_days = float(max(days_span, 1))
+    activity_density = float(len(df) / tenure_days)
+    weeks_with_orders = df.groupby(df["transaction_date"].dt.isocalendar().week).ngroups
+    total_weeks = max(tenure_days / 7, 1)
+    retention_rate = float(weeks_with_orders / total_weeks)
+
     return {
-        "orders_per_week":           orders_per_week,
-        "growth_rate":               growth_rate,
+        # Frequency (note: orders_per_week kept for context builder but NOT fed to model)
+        "orders_per_week":            orders_per_week,
+        "growth_rate":                growth_rate,
         "recency_weighted_frequency": recency_weighted,
-        "volatility":                volatility,
-        "trend_slope":               trend_slope,
-        "avg_order_value":           avg_order_value,
-        "spending_trend":            spending_trend,
-        "price_sensitivity":         price_sensitivity,
-        "basket_size":               basket_size,
-        "discount_usage_rate":       discount_usage_rate,
-        "night_order_ratio":         night_order_ratio,
-        "weekend_ratio":             weekend_ratio,
-        "peak_hour_preference":      peak_hour,
-        "seasonality_index":         seasonality_index,
-        "inter_order_time":          inter_order_time,
+        "volatility":                 volatility,
+        "trend_slope":                trend_slope,
+        # Monetary
+        "avg_order_value":            avg_order_value,
+        "spending_trend":             spending_trend,
+        "price_sensitivity":          price_sensitivity,
+        "basket_size":                basket_size,
+        "discount_usage_rate":        discount_usage_rate,
+        # Temporal
+        "night_order_ratio":          night_order_ratio,
+        "weekend_ratio":              weekend_ratio,
+        "peak_hour_preference":       peak_hour,
+        "seasonality_index":          seasonality_index,
+        "inter_order_time":           inter_order_time,
+        # RFM
+        "recency_score":              recency_score,
+        "frequency_score":            frequency_score,
+        "monetary_score":             monetary_score,
+        "rfm_score":                  rfm_score,
+        # Time patterns
+        "time_consistency":           time_consistency,
+        "rush_hour_ratio":            rush_hour_ratio,
+        "weekday_preference":         weekday_preference,
+        # Loyalty
+        "tenure_days":                tenure_days,
+        "activity_density":           activity_density,
+        "retention_rate":             retention_rate,
     }
 
 
@@ -196,43 +233,14 @@ async def get_user_features(subject_key: str, domain: str) -> dict:
     return await asyncio.to_thread(_get_features_sync, subject_key, domain)
 
 
-def _find_subject_key_sync(workspace_id: str, domain: str, min_tx: int = 1) -> str | None:
+def _find_subject_key_sync(domain: str, min_tx: int = 1) -> str | None:
     """
-    Return the subject_key with the most qualifying transactions for this
-    workspace + domain combo.  Returns None if no key meets min_tx threshold.
-    Matches by EITHER source_name (platform) OR source_category (category).
+    Return the subject_key with the most qualifying transactions for the given domain.
+    Searches across all workspaces.
     """
     domain_filter, _ = _domain_filter_sql(domain)
 
     query = text(f"""
-        SELECT subject_key, COUNT(*) AS tx_count
-        FROM sync_action.record
-        WHERE workspace_id = :workspace_id
-          AND subject_key IS NOT NULL
-          AND {domain_filter}
-          AND (
-              data->'payload'->>'order_time'        IS NOT NULL OR
-              data->'payload'->>'pickupTime'        IS NOT NULL OR
-              data->'payload'->>'receivedDate'      IS NOT NULL OR
-              data->'payload'->>'transaction_date'  IS NOT NULL
-          )
-        GROUP BY subject_key
-        HAVING COUNT(*) >= :min_tx
-        ORDER BY tx_count DESC
-        LIMIT 1
-    """)
-
-    print(f"[ML:find_subject_key] workspace={workspace_id!r} domain={domain!r} min_tx={min_tx}")
-    with _get_engine().connect() as conn:
-        row = conn.execute(query, {"workspace_id": workspace_id, "min_tx": min_tx}).fetchone()
-
-    if row:
-        print(f"[ML:find_subject_key] ✓ found subject_key={row[0]!r} tx_count={row[1]}")
-        return row[0]
-
-    # Workspace has no matching data — fallback: search across ALL workspaces
-    print(f"[ML:find_subject_key] ✗ no data in workspace={workspace_id!r}, trying global fallback")
-    fallback_q = text(f"""
         SELECT subject_key, COUNT(*) AS tx_count
         FROM sync_action.record
         WHERE subject_key IS NOT NULL
@@ -248,17 +256,19 @@ def _find_subject_key_sync(workspace_id: str, domain: str, min_tx: int = 1) -> s
         ORDER BY tx_count DESC
         LIMIT 1
     """)
-    with _get_engine().connect() as conn2:
-        fallback_row = conn2.execute(fallback_q, {"min_tx": min_tx}).fetchone()
 
-    if fallback_row:
-        print(f"[ML:find_subject_key] ✓ global fallback found subject_key={fallback_row[0]!r} tx_count={fallback_row[1]}")
-        return fallback_row[0]
+    print(f"[ML:find_subject_key] domain={domain!r} min_tx={min_tx}")
+    with _get_engine().connect() as conn:
+        row = conn.execute(query, {"min_tx": min_tx}).fetchone()
 
-    print(f"[ML:find_subject_key] ✗ no data in any workspace for domain={domain!r}")
+    if row:
+        print(f"[ML:find_subject_key] ✓ found subject_key={row[0]!r} tx_count={row[1]}")
+        return row[0]
+
+    print(f"[ML:find_subject_key] ✗ no data found for domain={domain!r}")
     return None
 
 
-async def find_subject_key(workspace_id: str, domain: str, min_tx: int = 1) -> str | None:
-    """Async wrapper — find best subject_key for workspace+domain."""
-    return await asyncio.to_thread(_find_subject_key_sync, workspace_id, domain, min_tx)
+async def find_subject_key(domain: str, min_tx: int = 1) -> str | None:
+    """Async wrapper — find best subject_key for a domain across all workspaces."""
+    return await asyncio.to_thread(_find_subject_key_sync, domain, min_tx)

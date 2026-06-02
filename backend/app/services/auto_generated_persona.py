@@ -41,6 +41,190 @@ load_dotenv()
 client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
+# ---------------------------------------------------------------------------
+# Domain detection — keyword-based, no extra LLM call
+# ---------------------------------------------------------------------------
+_DOMAIN_KEYWORDS: dict[str, list[str]] = {
+    "ecom": [
+        "ecommerce", "e-commerce", "online shopping", "shopping", "retail",
+        "amazon", "flipkart", "ajio", "myntra", "nykaa", "bigbasket",
+        "online store", "cart", "checkout", "marketplace", "buy online",
+    ],
+    "food": [
+        "food delivery", "food", "restaurant", "meal", "dining", "swiggy",
+        "zomato", "order food", "cuisine", "takeaway", "cloud kitchen",
+    ],
+    "mobility": [
+        "ride", "cab", "taxi", "commute", "uber", "ola", "transport",
+        "mobility", "ridesharing", "ride-sharing", "auto", "bike ride",
+    ],
+    "finance": [
+        "payment", "banking", "finance", "financial", "transaction", "upi",
+        "phonepe", "paytm", "hdfc", "icici", "credit", "debit", "loan",
+        "insurance", "investment", "wallet", "fintech",
+    ],
+}
+
+_DOMAIN_DISPLAY = {
+    "ecom": "E-Commerce",
+    "food": "Food Delivery",
+    "mobility": "Mobility / Ride-Sharing",
+    "finance": "Finance / Payments",
+}
+
+_ALL_DOMAINS = list(_DOMAIN_KEYWORDS.keys())
+
+
+def _detect_domain_from_ro(description: str) -> str | None:
+    """
+    Score each domain by keyword hits in the RO text.
+    Returns the best-matching domain or None if no hits found.
+    """
+    text = description.lower()
+    scores: dict[str, int] = {}
+    for domain, keywords in _DOMAIN_KEYWORDS.items():
+        score = sum(1 for kw in keywords if kw in text)
+        if score:
+            scores[domain] = score
+    if not scores:
+        return None
+    return max(scores, key=lambda d: scores[d])
+
+
+# ---------------------------------------------------------------------------
+# ML context helpers
+# ---------------------------------------------------------------------------
+
+def _build_ml_context_string(domain: str, features: dict, prediction: dict) -> str:
+    """Convert ML features + prediction into a natural-language context block for the LLM."""
+    pred_val = prediction.get("prediction", 0.0)
+    conf_pct = prediction.get("confidence", 0.0) * 100
+    conf_label = prediction.get("confidence_label", "MODERATE")
+
+    opw = features.get("orders_per_week", 0.0)
+    aov = features.get("avg_order_value", 0.0)
+    spending_trend = features.get("spending_trend", 0.0)
+    price_sens = features.get("price_sensitivity", 0.0)
+    discount_rate = features.get("discount_usage_rate", 0.0)
+    weekend_ratio = features.get("weekend_ratio", 0.0)
+    night_ratio = features.get("night_order_ratio", 0.0)
+    peak_hour = int(features.get("peak_hour_preference", 12))
+    inter_order = features.get("inter_order_time", 0.0)
+    growth_rate = features.get("growth_rate", 0.0)
+
+    time_label = (
+        f"{peak_hour} AM" if peak_hour < 12 else
+        "12 PM (noon)" if peak_hour == 12 else
+        f"{peak_hour - 12} PM"
+    )
+
+    if pred_val >= 3:
+        segment = "HIGH-VALUE / POWER USER"
+    elif pred_val >= 1:
+        segment = "REGULAR / FREQUENT"
+    else:
+        segment = "OCCASIONAL / LOW-FREQUENCY"
+
+    trend_desc = "Increasing" if spending_trend > 0 else ("Decreasing" if spending_trend < 0 else "Stable")
+    price_label = "High" if price_sens > 0.6 else ("Medium" if price_sens > 0.3 else "Low")
+    weekend_label = "strong" if weekend_ratio > 0.5 else ("moderate" if weekend_ratio > 0.3 else "low")
+
+    lines = [
+        "=== REAL BEHAVIORAL DATA — Ground ALL personas in these signals ===",
+        f"Domain        : {_DOMAIN_DISPLAY.get(domain, domain.upper())}",
+        f"ML Confidence : {conf_pct:.0f}% ({conf_label})",
+        "",
+        "PURCHASE PATTERNS:",
+        f"  • Observed purchase frequency  : {opw:.1f} orders/week",
+        f"  • ML-predicted frequency       : {pred_val:.1f} orders/week",
+        f"  • Average order value          : ₹{aov:,.0f}",
+        f"  • Spending trend               : {trend_desc} (₹{abs(spending_trend):.0f}/month delta)",
+        f"  • Price sensitivity            : {price_label} ({price_sens:.2f}/1.0)",
+        f"  • Discount usage               : {discount_rate * 100:.0f}% of orders use discounts",
+        "",
+        "TIMING BEHAVIOUR:",
+        f"  • Weekend orders               : {weekend_ratio * 100:.0f}% ({weekend_label} weekend preference)",
+        f"  • Late-night orders (10 PM–6 AM): {night_ratio * 100:.0f}%",
+        f"  • Peak purchase hour           : {time_label}",
+        f"  • Avg time between orders      : {inter_order:.0f} hours",
+        "",
+        "GROWTH SIGNAL:",
+        f"  • Purchase frequency growth    : {'▲ +' if growth_rate > 0 else '▼ '}{growth_rate * 100:.0f}%",
+        "",
+        f"ML CUSTOMER SEGMENT : {segment}",
+        "",
+        "INSTRUCTION: Use these behavioral signals to ground EVERY persona's spending",
+        "habits, timing patterns, price sensitivity, motivations, and pain points.",
+        "These are REAL data points — do not invent contradicting behaviors.",
+        "=================================================================",
+    ]
+    return "\n".join(lines)
+
+
+async def _resolve_domain_and_subject_key(
+    description: str,
+) -> tuple[str | None, str | None]:
+    """
+    Step 1: Try to match domain from the RO text (keyword scoring).
+    Step 2: If no domain match, scan all 4 domains in parallel and pick the first with data.
+    Returns (domain, subject_key) or (None, None) if no transaction data found anywhere.
+    """
+    from app.ml.feature_fetch import find_subject_key
+
+    detected = _detect_domain_from_ro(description or "")
+    if detected:
+        sk = await find_subject_key(detected)
+        if sk:
+            print(f"[ML] RO-matched domain={detected!r} subject_key={sk!r}")
+            return detected, sk
+        print(f"[ML] RO matched domain={detected!r} but no data — scanning all domains")
+
+    # RO didn't match any domain OR matched domain had no data → scan all in parallel
+    results = await asyncio.gather(
+        *(find_subject_key(d) for d in _ALL_DOMAINS),
+        return_exceptions=True,
+    )
+    for domain, result in zip(_ALL_DOMAINS, results):
+        if isinstance(result, str) and result:
+            print(f"[ML] Fallback scan found data: domain={domain!r} subject_key={result!r}")
+            return domain, result
+
+    print(f"[ML] No transaction data found in any domain")
+    return None, None
+
+
+async def _fetch_ml_context(
+    workspace_id: str,
+    description: str,
+) -> tuple[str | None, str | None, str | None]:
+    """
+    Resolve domain → fetch features → run ML prediction → build context string.
+    Returns (domain, subject_key, ml_context_string).
+    Returns (None, None, None) on any failure — generation always falls back gracefully.
+    """
+    try:
+        from app.ml.feature_fetch import get_user_features
+        from app.ml.predictor import predict_from_features
+
+        domain, subject_key = await _resolve_domain_and_subject_key(workspace_id, description)
+        if not domain or not subject_key:
+            return None, None, None
+
+        features = await get_user_features(subject_key, domain)
+        prediction = await asyncio.to_thread(predict_from_features, domain, features)
+
+        context = _build_ml_context_string(domain, features, prediction)
+        print(
+            f"[ML] Context ready — domain={domain!r} pred={prediction['prediction']:.2f} "
+            f"conf={prediction['confidence_label']}"
+        )
+        return domain, subject_key, context
+
+    except Exception as exc:
+        print(f"[ML] Context fetch failed ({type(exc).__name__}: {exc}) — using LLM-only fallback")
+        return None, None, None
+
+
 TEXT_PERSONA_FIELDS = (
     "name",
     "age_range",
@@ -440,17 +624,24 @@ async def ai_generate_persona(
     )
 
     # ============================================================================
+    # ML CONTEXT — fetch once, reuse across all parallel persona calls
+    # ============================================================================
+    ml_domain, ml_subject_key, ml_context = await _fetch_ml_context(workspace_id, description or "")
+
+    # ============================================================================
     # PARALLEL PERSONA GENERATION
     # ============================================================================
-    
+
     async def generate_single_persona(persona_number: int):
         """
         Generate a single persona via API call.
         """
+        ml_section = f"\n\n{ml_context}\n" if ml_context else ""
+
         # Format dynamic prompt - specify this persona's position in the full plan limit
         dynamic_prompt = f"""
 {RESEARCH_OBJECTIVE_PROMPT.format(research_objective=description)}
-
+{ml_section}
 Generate exactly 1 high-quality persona (Persona #{persona_number} of {total_persona_goal} total).
 Return exactly one item inside consumer_personas.
 Ensure this persona represents a distinct behavioral segment from other personas.
@@ -587,6 +778,8 @@ Ensure this persona represents a distinct behavioral segment from other personas
                         persona_details=db_persona["persona_details"],
                         auto_generated_persona=True,
                         calibration_confidence=_extract_calibration_confidence(persona),
+                        subject_key=ml_subject_key,
+                        ml_domain=ml_domain,
                     )
 
                     session.add(p)
