@@ -654,6 +654,7 @@ async def add_user_message_and_get_persona_reply(
 
     prompt = LIVE_REPLY_PROMPT.format(
         persona_json=persona_json,
+        research_context=research_context or "Not specified",
         conversation_history=conversation_history,
         user_text=user_text
     )

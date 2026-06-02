@@ -1067,6 +1067,9 @@ LIVE_REPLY_PROMPT = _SIMULATION_ENGINE_RULES + """
 **PERSONA:**
 {persona_json}
 
+**RESEARCH CONTEXT:**
+{research_context}
+
 **CONVERSATION HISTORY:**
 {conversation_history}
 
