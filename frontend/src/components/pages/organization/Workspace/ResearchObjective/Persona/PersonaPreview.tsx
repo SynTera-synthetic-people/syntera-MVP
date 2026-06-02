@@ -855,12 +855,11 @@ const PersonaPreview: React.FC = () => {
     if (section) {
       const count = section.count as number | undefined;
       if (count !== undefined && count !== null) {
-        // Manual mode: show actual number; 0 means "no data" → show dash
-        if (count === 0 && isManualMode) return '—';
-        if (count > 0) return count.toLocaleString('en-IN');
+        if (count === 0) return '—';                              // 0 = no data → honest dash
+        return count.toLocaleString('en-IN');                    // real number
       }
     }
-    // Priority 2: Fallback to confidence component breakdown (percentage-based)
+    // Priority 2: Fallback to confidence component breakdown entries (percentage-based)
     const entry = breakdownEntries.find(e =>
       e.label.toLowerCase().includes(key.toLowerCase())
     );
@@ -877,16 +876,27 @@ const PersonaPreview: React.FC = () => {
     return label || fallback;
   };
 
-  // For manual mode: build dynamic items from component_scores in multi_platform section
+  // Build dynamic items for multi-platform card:
+  // Manual mode → confidence components (Demographic RO Fit: 85%, etc.)
+  // Omi mode    → platform-level conversation counts (Reddit: 214, Quora: 89, etc.)
   const multiPlatformComponentItems: Array<{ icon: React.ReactNode; label: string }> = (() => {
-    if (!isManualMode) return [];
     const compScores = calibrationBreakdown?.multi_platform_conversations?.component_scores as
       Record<string, number> | undefined;
-    if (!compScores) return [];
-    return Object.entries(compScores).map(([label, score]) => ({
-      icon: <SpIcon name="sp-System-Wifi_High" size={14} />,
-      label: `${label}: ${score}%`,
-    }));
+    if (!compScores || Object.keys(compScores).length === 0) return [];
+
+    if (isManualMode) {
+      // Confidence components — shown as "Label: Score%"
+      return Object.entries(compScores).map(([label, score]) => ({
+        icon: <SpIcon name="sp-System-Wifi_High" size={14} />,
+        label: `${label}: ${score}%`,
+      }));
+    } else {
+      // Platform conversation counts — shown as "Platform: N conversations"
+      return Object.entries(compScores).map(([platform, count]) => ({
+        icon: <SpIcon name="sp-Navigation-Globe" size={14} />,
+        label: `${platform}: ${Number(count).toLocaleString('en-IN')} conversations`,
+      }));
+    }
   })();
 
   if (isLoading && !previewData) {
@@ -1389,8 +1399,11 @@ const PersonaPreview: React.FC = () => {
                     count={getCalibCount('multi')}
                     countLabel={getCalibLabel('multi', 'Total conversations inferred')}
                     sections={
-                      isManualMode && multiPlatformComponentItems.length > 0
-                        ? [{ heading: 'Confidence Components', items: multiPlatformComponentItems }]
+                      multiPlatformComponentItems.length > 0
+                        ? [{
+                            heading: isManualMode ? 'Confidence Components' : 'Conversations by Platform',
+                            items: multiPlatformComponentItems,
+                          }]
                         : [{ heading: 'Key Attributes', items: MULTIPLATFORM_ATTRS, variant: 'key-attr' as const }]
                     }
                     extraFooter={

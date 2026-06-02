@@ -252,43 +252,75 @@ def _build_calibration_breakdown(persona_details: Optional[dict]) -> dict:
 
     evidence: dict = raw_evidence if isinstance(raw_evidence, dict) else {}
 
-    total_convs = evidence.get("total_conversations", 0)
+    total_convs: int = int(evidence.get("total_conversations") or 0)
     raw_sources = evidence.get("sources") or []
     sources = [s for s in raw_sources if isinstance(s, dict)]
     platforms = [s.get("platform") for s in sources if s.get("platform")]
+    platforms_count: int = len(platforms)
 
+    # confidence_calculation_detail holds per-component scores for Omi personas
+    conf_detail = evidence.get("confidence_calculation_detail") or {}
+    raw_components = conf_detail.get("components") or {}
+
+    _OMI_COMP_LABEL = {
+        "volume_score":           "Volume",
+        "source_diversity_score": "Source Diversity",
+        "recency_score":          "Recency",
+        "signal_clarity_score":   "Signal Clarity",
+        "ro_alignment_score":     "RO Alignment",
+    }
+
+    # Build per-component scores as "Label: 91%" strings for key attributes
     conf_breakdown = evidence.get("confidence_breakdown") or {}
-    key_attributes = (
-        [_CONFIDENCE_LABEL_MAP.get(k, k.replace("_", " ").title()) for k in conf_breakdown]
-        or ["Volume", "Recency", "RO Alignment", "Source Diversity", "Signal Clarity", "Platforms Covered"]
-    )
+    if raw_components:
+        key_attributes = [
+            f"{_OMI_COMP_LABEL.get(k, k.replace('_', ' ').title())}: {round(float(v) * 100)}%"
+            for k, v in raw_components.items()
+            if isinstance(v, (int, float))
+        ]
+    else:
+        key_attributes = (
+            [_CONFIDENCE_LABEL_MAP.get(k, k.replace("_", " ").title()) for k in conf_breakdown]
+            or ["Volume", "Recency", "RO Alignment", "Source Diversity", "Signal Clarity"]
+        )
+
+    # Platform-level conversation breakdown (used as component_scores in multi-platform card)
+    platform_scores = {
+        s["platform"]: int(s.get("threads_or_posts") or 0)
+        for s in sources
+        if s.get("platform")
+    }
 
     existing = details.get("calibration_breakdown") or {}
 
     return {
         "is_manual_mode": False,
+        # Card 1: use total web conversations as proxy for behavioral data analyzed
         "real_actions_signal": existing.get("real_actions_signal") or {
             **_CALIBRATION_BREAKDOWN_DEFAULTS["real_actions_signal"],
-            "count": details.get("people_analysed") or 0,
-            "count_label": "People analysed",
+            "count": details.get("people_analysed") or total_convs,
+            "count_label": "Conversations analyzed" if not details.get("people_analysed") else "People analysed",
         },
+        # Card 2: neural/emotional layer — no per-persona neural data, show 0
         "emotional_neural_layers": existing.get("emotional_neural_layers") or {
             **_CALIBRATION_BREAKDOWN_DEFAULTS["emotional_neural_layers"],
             "count": 0,
-            "count_label": "Total Emotional & Neural Parameters Analysed",
+            "count_label": "Neural parameters integrated",
         },
+        # Card 3: number of distinct source platforms analyzed
         "validated_studies": existing.get("validated_studies") or {
             **_CALIBRATION_BREAKDOWN_DEFAULTS["validated_studies"],
-            "count": 0,
-            "count_label": "Total studies inferred",
+            "count": platforms_count,
+            "count_label": "Platforms analyzed",
         },
+        # Card 4: total conversations with per-platform breakdown
         "multi_platform_conversations": existing.get("multi_platform_conversations") or {
-            "description": "Calibrated against credible consumer and behavioural studies.",
+            "description": "Calibrated against real consumer conversations across platforms.",
             "count": total_convs,
             "count_label": "Total conversations inferred",
             "key_attributes": key_attributes,
             "platforms_covered": platforms,
-            "component_scores": {},
+            "component_scores": platform_scores,
         },
     }
 
