@@ -3,15 +3,6 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import OmiKeyboard from '../../../../../assets/Omi Animations/OmiKeyboard.mp4';
 import axiosInstance from "../../../../../utils/axiosConfig";
 
-import avatar1 from '../../../../../assets/Avatar/Avatar1.png';
-import avatar2 from '../../../../../assets/Avatar/Avatar2.png';
-import avatar3 from '../../../../../assets/Avatar/Avatar3.png';
-import avatar4 from '../../../../../assets/Avatar/Avatar4.png';
-import avatar5 from '../../../../../assets/Avatar/Avatar5.png';
-import avatar6 from '../../../../../assets/Avatar/Avatar6.png';
-import avatar7 from '../../../../../assets/Avatar/Avatar7.png';
-import avatar8 from '../../../../../assets/Avatar/Avatar8.png';
-import avatar9 from '../../../../../assets/Avatar/Avatar9.png';
 import SpIcon from '../../../../SPIcon';
 
 import "./PersonaGenerationLoader.css";
@@ -49,8 +40,15 @@ const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 
 // ── Avatar frames array (index 0 = most blurry, index 8 = clear) ─────────────
 const AVATAR_FRAMES = [
-    avatar1, avatar2, avatar3, avatar4, avatar5,
-    avatar6, avatar7, avatar8, avatar9,
+    new URL('../../../../../assets/Avatar/Avatar1.png', import.meta.url).href,
+    new URL('../../../../../assets/Avatar/Avatar2.png', import.meta.url).href,
+    new URL('../../../../../assets/Avatar/Avatar3.png', import.meta.url).href,
+    new URL('../../../../../assets/Avatar/Avatar4.png', import.meta.url).href,
+    new URL('../../../../../assets/Avatar/Avatar5.png', import.meta.url).href,
+    new URL('../../../../../assets/Avatar/Avatar6.png', import.meta.url).href,
+    new URL('../../../../../assets/Avatar/Avatar7.png', import.meta.url).href,
+    new URL('../../../../../assets/Avatar/Avatar8.png', import.meta.url).href,
+    new URL('../../../../../assets/Avatar/Avatar9.png', import.meta.url).href,
 ];
 
 const TOTAL_AVATAR_FRAMES = AVATAR_FRAMES.length; // 9
@@ -99,11 +97,13 @@ const ProgressiveAvatar: React.FC<ProgressiveAvatarProps> = ({ frameIndex }) => 
         return () => clearTimeout(t);
     }, []);
 
+    const frameSrc = AVATAR_FRAMES[displayedFrame] || AVATAR_FRAMES[0];
+
     return (
         <div className="pgl-character pgl-character--avatar">
             <img
                 key={displayedFrame}
-                src={AVATAR_FRAMES[displayedFrame]}
+                src={frameSrc}
                 alt={`Persona generating — frame ${displayedFrame + 1}`}
                 className={`pgl-avatar-img ${fadingIn ? 'pgl-avatar-img--visible' : ''}`}
             />
@@ -128,13 +128,16 @@ const PersonaGenerationLoader: React.FC<Props> = ({
     }>();
 
     const flow: FlowType = propFlow || (location.state as any)?.flow || "omi";
+    // personaId is passed from PersonaBuilderManual after draft creation (manual flow only)
+    const draftPersonaId: string | undefined = (location.state as any)?.personaId;
 
     // ── State ─────────────────────────────────────────────────────────────────
-    // globalCheckedCount tracks how many items have been marked done overall.
-    // This is the single source of truth — we derive everything else from it.
     const [globalCheckedCount, setGlobalCheckedCount] = useState<number>(0);
     const [isComplete, setIsComplete] = useState<boolean>(false);
     const [backendDynamicValues, setBackendDynamicValues] = useState<DynamicValues | null>(null);
+    // Calibration tracking (manual flow only)
+    const [calibrationDone, setCalibrationDone] = useState<boolean>(false);
+    const [calibratedPersonaId, setCalibratedPersonaId] = useState<string | null>(null);
 
     // Keep a ref to the interval so we can clear it reliably
     const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -161,6 +164,42 @@ const PersonaGenerationLoader: React.FC<Props> = ({
         loadLoaderContext();
         return () => { cancelled = true; };
     }, [workspaceId, objectiveId]);
+
+    // ── Phase 2 Calibration (manual flow only) ────────────────────────────────
+    // Triggered immediately on mount. The animation plays while the API call runs.
+    // When calibration finishes, animation fast-forwards to completion.
+    useEffect(() => {
+        if (flow !== 'manual' || !draftPersonaId || !workspaceId || !objectiveId) return;
+
+        const runCalibration = async () => {
+            try {
+                await axiosInstance.post(
+                    `/workspaces/${workspaceId}/explorations/${objectiveId}/personas/${draftPersonaId}/calibrate`
+                );
+                setCalibratedPersonaId(draftPersonaId);
+            } catch (error) {
+                console.error('Persona calibration failed:', error);
+                // Calibration failed — we'll navigate back to persona-builder so user can retry
+            } finally {
+                setCalibrationDone(true);
+            }
+        };
+
+        runCalibration();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [flow, draftPersonaId, workspaceId, objectiveId]);
+
+    // ── Fast-forward animation when calibration finishes ─────────────────────
+    useEffect(() => {
+        if (!calibrationDone || isComplete) return;
+        // Jump animation to end so the completion screen shows promptly
+        if (intervalRef.current) clearInterval(intervalRef.current);
+        setGlobalCheckedCount((prev) => {
+            // Only fast-forward if we haven't already reached the end naturally
+            return prev;
+        });
+        setTimeout(() => setIsComplete(true), 800);
+    }, [calibrationDone, isComplete]);
 
     // ── Resolve dynamic copy values ───────────────────────────────────────────
     const resolvedDynamicValues = {
@@ -325,14 +364,24 @@ const PersonaGenerationLoader: React.FC<Props> = ({
 
         const timer = setTimeout(() => {
             localStorage.setItem(`step2_done_${objectiveId}`, '1');
-            navigate(
-                `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-builder`,
-                { state: { fromLoader: true, flow } }
-            );
+
+            if (flow === 'manual' && calibratedPersonaId) {
+                // Calibration succeeded → go straight to persona preview
+                navigate(
+                    `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-preview/${calibratedPersonaId}`,
+                    { state: { fromLoader: true, flow } }
+                );
+            } else {
+                // Omi flow OR manual calibration failed → go back to persona-builder list
+                navigate(
+                    `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-builder`,
+                    { state: { fromLoader: true, flow } }
+                );
+            }
         }, 2500);
 
         return () => clearTimeout(timer);
-    }, [isComplete, workspaceId, objectiveId, navigate, flow]);
+    }, [isComplete, workspaceId, objectiveId, navigate, flow, calibratedPersonaId]);
 
     // ── Render ─────────────────────────────────────────────────────────────────
 

@@ -377,10 +377,21 @@ def _parse_confidence(raw) -> int:
 
 def _extract_calibration_confidence(persona: dict) -> int:
     """
-    Primary path: evidence_snapshot.confidence_calculation_detail.value (0-1).
-    This is the field the generation prompt always produces.
-    Fallback: top-level confidence_scoring (legacy / manual generation).
+    Extracts calibration confidence (0-100) from persona dict.
+
+    Priority order:
+    1. New Manual Build Mode: confidence_scoring.weighted_score (float 0-1)
+    2. Legacy: evidence_snapshot.confidence_calculation_detail.value (float 0-1)
+    3. Legacy fallback: top-level confidence_scoring as percentage string
     """
+    try:
+        cs = persona.get("confidence_scoring") or {}
+        if isinstance(cs, dict):
+            ws = cs.get("weighted_score")
+            if ws is not None:
+                return _parse_confidence(ws)
+    except Exception:
+        pass
     try:
         evidence = persona.get("evidence_snapshot") or {}
         detail = evidence.get("confidence_calculation_detail") or {}

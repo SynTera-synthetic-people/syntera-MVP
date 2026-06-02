@@ -74,6 +74,7 @@ const PersonaBuilderManual: React.FC = () => {
     // Submit-time modal warnings
     const [plausibilityWarnings, setPlausibilityWarnings] = useState<PlausibilityWarning[]>([]);
     const [showPlausibilityModal, setShowPlausibilityModal] = useState(false);
+    const [pendingDraftPersonaId, setPendingDraftPersonaId] = useState<string | undefined>();
 
     // Real-time inline strip
     const [realtimeWarnings, setRealtimeWarnings] = useState<PlausibilityWarning[]>([]);
@@ -85,7 +86,7 @@ const PersonaBuilderManual: React.FC = () => {
     const [highlightedSubTab, setHighlightedSubTab] = useState<string | null>(null);
     const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const demographicItems = getCategoryItems('Demographics');
-    const hasMinimumData = demographicItems.some((item) => completedSubTabs.has(item));
+    const hasMinimumData = demographicItems.every((item) => completedSubTabs.has(item));
 
     // ── Init ───────────────────────────────────────────────────────────────────
 
@@ -241,10 +242,10 @@ const PersonaBuilderManual: React.FC = () => {
 
     // ── Submit ─────────────────────────────────────────────────────────────────
 
-    const navigateAfterSubmit = () => {
+    const navigateAfterSubmit = (personaId?: string) => {
         navigate(
             `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-generating`,
-            { state: { flow: 'manual' } }
+            { state: { flow: 'manual', personaId } }
         );
     };
 
@@ -259,11 +260,19 @@ const PersonaBuilderManual: React.FC = () => {
 
         const payload = buildManualPersonaPayload(formData, personaName, formativeExperience);
 
+        let draftPersonaId: string | undefined;
+
         try {
             type SubmitFn = (p: Record<string, unknown>) => Promise<{
-                data?: { has_plausibility_warnings?: boolean; validation_warnings?: PlausibilityWarning[] };
+                data?: {
+                    id?: string;
+                    has_plausibility_warnings?: boolean;
+                    validation_warnings?: PlausibilityWarning[];
+                };
             }>;
             const result = await (submitCompletePersona as unknown as SubmitFn)(payload);
+            draftPersonaId = result?.data?.id;
+            setPendingDraftPersonaId(draftPersonaId);
             const warnings = result?.data?.validation_warnings ?? [];
             if (result?.data?.has_plausibility_warnings && warnings.length > 0) {
                 setPlausibilityWarnings(warnings);
@@ -272,9 +281,11 @@ const PersonaBuilderManual: React.FC = () => {
             }
         } catch (error) {
             console.error('Failed to create persona draft:', error);
+            return;
         }
 
-        navigateAfterSubmit();
+        // Navigate to loader — it will trigger Phase 2 calibration using the draft ID
+        navigateAfterSubmit(draftPersonaId);
     };
 
     // ── Navigation ────────────────────────────────────────────────────────────
@@ -539,7 +550,7 @@ const PersonaBuilderManual: React.FC = () => {
                 warnings={plausibilityWarnings as Parameters<typeof PlausibilityCheckModal>[0]['warnings']}
                 onContinue={() => {
                     setShowPlausibilityModal(false);
-                    navigateAfterSubmit();
+                    navigateAfterSubmit(pendingDraftPersonaId);
                 }}
             />
         </div>

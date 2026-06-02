@@ -6,14 +6,16 @@ from datetime import datetime
 # ── Structured input sub-models for manual persona flow ──────────────────────
 
 class DemographicsInput(BaseModel):
-    """Required section — age + gender mandatory per design."""
-    age_range: str               # e.g. "18-25", "26-34"
-    gender: str
+    """Required section — all 8 fields are validated by the manual persona route."""
+    age_range: Optional[str] = None               # e.g. "18-25", "26-34"
+    gender: Optional[str] = None
     income_range: Optional[str] = None
     education_level: Optional[str] = None
     occupation: Optional[str] = None
+    occupation_level: Optional[str] = None   # e.g. "Entry-Level", "Mid-Level", "Senior", "C-Suite"
     marital_status: Optional[str] = None
     family_size: Optional[str] = None
+    family_structure: Optional[str] = None   # e.g. "Nuclear with children", "Single", "Joint family"
     location_country: Optional[str] = None
     location_state: Optional[str] = None
     geography: Optional[str] = None
@@ -30,10 +32,11 @@ class PsychologicalInput(BaseModel):
 class BehaviouralInput(BaseModel):
     decision_making_style: Optional[str] = None
     consumption_frequency: Optional[str] = None
-    purchase_channel: Optional[str] = None
-    price_sensitivity: Optional[str] = None
-    brand_sensitivity: Optional[str] = None
-    switching_behaviour: Optional[str] = None
+    purchase_channel: Optional[List[str]] = None  # list e.g. ["Online", "In-store"]
+    price_sensitivity: Optional[str] = None       # "Low" | "Medium" | "High"
+    brand_sensitivity: Optional[str] = None       # "Low" | "Medium" | "High"
+    switching_tendency: Optional[str] = None      # "Low" | "Medium" | "High"
+    switching_behaviour: Optional[str] = None     # legacy alias kept for compatibility
     purchase_triggers: Optional[List[str]] = None
     purchase_barriers: Optional[List[str]] = None
     media_consumption_patterns: Optional[List[str]] = None
@@ -41,15 +44,15 @@ class BehaviouralInput(BaseModel):
 
 
 class AdditionalInfoInput(BaseModel):
-    occupation: Optional[str] = None      # overrides demographics.occupation if set
+    occupation: Optional[str] = None       # overrides demographics.occupation if set
     industry: Optional[str] = None
-    category_awareness: Optional[str] = None
+    category_awareness: Optional[str] = None  # e.g. "Aware", "Considering", "Lapsed User"
 
 
 class ManualPersonaCreate(BaseModel):
     """Structured input for the manual persona builder form."""
     name: Optional[str] = Field(None, max_length=100)
-    demographics: DemographicsInput
+    demographics: Optional[DemographicsInput] = None
     psychological: Optional[PsychologicalInput] = None
     behavioural: Optional[BehaviouralInput] = None
     additional_info: Optional[AdditionalInfoInput] = None

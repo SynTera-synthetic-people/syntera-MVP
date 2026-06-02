@@ -1148,6 +1148,27 @@ async def build_llm_payload(
                 f"Interview '{interview_id}' not found under exploration '{objective_id}'"
             )
 
+    # Deduplicate by persona_id: keep the interview with the most Q&A items per persona.
+    # Multiple rows per persona accumulate via force_new=True (Conversation Studio re-sessions
+    # and interview regenerations both bypass the idempotency guard in the interview router).
+    _best_by_persona: Dict[str, Dict] = {}
+    for _iv in interview_results:
+        _pid = _iv.get("persona_id")
+        if not _pid:
+            continue
+        _qa_count = sum(
+            1 for m in (_iv.get("messages") or []) if m.get("role") == "persona"
+        )
+        existing_best = _best_by_persona.get(_pid)
+        if existing_best is None:
+            _best_by_persona[_pid] = {"interview": _iv, "qa_count": _qa_count}
+        elif _qa_count > existing_best["qa_count"]:
+            _best_by_persona[_pid] = {"interview": _iv, "qa_count": _qa_count}
+
+    raw_total = len(interview_results)
+    interview_results = [v["interview"] for v in _best_by_persona.values()]
+    print(f"[Dedup] raw interview rows={raw_total} → unique personas={len(interview_results)}")
+
     personas_payload = []
 
     for interview in interview_results:
@@ -1204,16 +1225,13 @@ async def build_llm_payload(
         personas_payload.append(
             {
                 "persona_id": persona_id,
-                "interview_id": interview.get("id"),
+                "interview_id": interview.get("interview_id"),
                 "persona_details": persona_details,
                 "interview": {"questions_and_answers": qa_data},
                 "ground_truth": ground_truth,
             }
         )
     print("Total Length of Persona: ", len(personas_payload))
-    if len(personas_payload) > 3:
-        print("Reducing the persona payload...")
-        personas_payload = personas_payload[:3]
 
     if not personas_payload:
         raise ValueError("No valid interview data found to generate report")
