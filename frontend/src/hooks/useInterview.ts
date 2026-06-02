@@ -13,7 +13,7 @@ export interface Interview {
 }
 
 export interface MessagePayload {
-  content: string;
+  text: string;
   role?: string;
 }
 
