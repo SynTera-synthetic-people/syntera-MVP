@@ -1085,6 +1085,8 @@ Do both steps internally in one pass:
 
 **OUTPUT FORMAT JSON:**
 {{
-  "response": "Final persona reply. Length variable per Varied Response Lengths rule from the simulation engine. Use Conversational Texture markers and Voice Differentiation parameters assigned to this persona."
+  "response": "Final persona reply. Length variable per Varied Response Lengths rule from the simulation engine. Use Conversational Texture markers and Voice Differentiation parameters assigned to this persona.",
+  "quality_score": 0.87,
+  "independence_score": 0.82
 }}
 """

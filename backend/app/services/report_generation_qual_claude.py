@@ -249,7 +249,7 @@ Tone: confident, specific, in plain language. No framework name-dropping for its
 Length: 3 to 5 sentences. Not a paragraph that runs to 200 words.
 
 Block 3, VERBATIM Q AND A (per question)
-For each question in [QUESTIONNAIRE], render this exact 4-part structure. Do not collapse parts. Do not reorder.
+For each question in [QUESTIONNAIRE], render this exact 3-part structure. Do not collapse parts. Do not reorder.
 
 Part 3a, Question:
 Q[N]: [Question text, exactly as posed in the questionnaire]
@@ -262,10 +262,7 @@ Reproduce EXACTLY as generated. Do NOT summarize, paraphrase, soften, or editori
 Preserve all conversational texture: hesitation markers, code-switching, contradictions, tangents, emotional brackets ([laughs], [pauses]), awareness ceiling, and within-persona variability. The CONVERSATIONAL TEXTURE LAYER and VOICE DIFFERENTIATION LAYER (defined below) govern how the response itself reads.
 Short answers are valid. "It is fine." is data.
 
-Part 3c, Scores:
-Quality: [Score] | Independence: [Score]
-
-Part 3d, WHY THIS RESPONSE (NEW, MANDATORY):
+Part 3c, WHY THIS RESPONSE (NEW, MANDATORY):
 This is the polished layer that turns a raw transcript into a readable transcript. Write 3 to 5 sentences in three tight components, in this exact order. Use these sub-labels in the output.
 
 EVIDENCE PATTERN: Name the specific signal in the persona's profile that drove this response. Be specific. Cite ONE OR MORE of: a named OCEAN trait with score, a Schwartz value, a Hofstede dimension, an action data category from [METADATA] Ground Truth, a lifestyle anchor or shopping behavior from the persona profile, a stated preference snapshot, a journey pain point, a desire fulfillment rating, or a demographic context that meaningfully shapes the answer. If the response is driven by Question framing rather than profile traits, say so. Never invent a trait that isn't in the persona profile.
@@ -348,8 +345,6 @@ Riya is 27, works as a brand manager at an FMCG firm, lives in a 1BHK in Andheri
 Q3: Walk me through your last handbag purchase.
 
 A: So like, I had been seeing this Westside one on Instagram for like three weeks. Three weeks, ya. And I told myself, okay if I still want it after a month, then I'll buy it. [pauses] But basically, by week three, I was already on the website. I told my flatmate it's a quality decision, you know, leather and all, but honestly… honestly the colour just looked good on the feed. I mean, I rationalized it after.
-
-Quality: 0.91  |  Independence: 0.88
 
 WHY THIS RESPONSE (illustrative):
 EVIDENCE PATTERN: Riya's High Openness (0.78), Schwartz Self-Direction value, and the action data signal of premium-aesthetic-driven cart history together drive this response. The "rationalize after the fact" pattern is also flagged in her preference snapshot under aesthetic-led purchase.
@@ -946,6 +941,7 @@ def extract_interview_qa(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]
     for msg in messages:
         if msg.get("role") != "persona":
             continue
+        msg_meta = msg.get("meta") if isinstance(msg.get("meta"), dict) else {}
 
         # 🔹 CASE 1: Structured persona output
         if isinstance(msg.get("all_info"), dict):
@@ -954,33 +950,87 @@ def extract_interview_qa(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]
 
             for idx, ans in enumerate(answers):
                 raw = raw_answers[idx] if idx < len(raw_answers) else {}
+                metadata = {
+                    k: v
+                    for k, v in raw.items()
+                    if k not in ("question", "persona_answer")
+                }
+                metadata.update(msg_meta)
                 results.append(
                     {
                         "question": ans.get("question"),
                         "answer": ans.get("revised_persona_answer"),
-                        "metadata": {
-                            k: v
-                            for k, v in raw.items()
-                            if k not in ("question", "persona_answer")
-                        },
+                        "metadata": metadata,
                     }
                 )
 
         # 🔹 CASE 2: Plain interview logs
-        elif msg.get("meta", {}).get("question"):
+        elif msg_meta.get("question"):
             answer_text = msg.get("text", "").strip()
             if not answer_text:
                 continue
 
             results.append(
                 {
-                    "question": msg["meta"]["question"],
+                    "question": msg_meta["question"],
                     "answer": answer_text,
-                    "metadata": {"section": msg["meta"].get("section")},
+                    "metadata": dict(msg_meta),
                 }
             )
 
     return results
+
+
+def _interview_created_at(value: Any) -> datetime:
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00")).replace(tzinfo=None)
+        except ValueError:
+            return datetime.min
+    return datetime.min
+
+
+def _dedupe_latest_valid_interviews_by_persona(
+    interviews: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """
+    Keep one transcript source per persona.
+
+    Re-running interviews or creating force-new sessions can leave multiple
+    interview rows for the same persona. Reports should represent current
+    personas, not raw interview rows, so choose the best row per persona:
+    highest Q&A count first, latest created_at as the tie-breaker.
+    """
+    best_by_persona: Dict[str, Dict[str, Any]] = {}
+
+    for interview in interviews:
+        persona_id = interview.get("persona_id")
+        if not persona_id:
+            continue
+
+        qa_count = len(extract_interview_qa(interview.get("messages", [])))
+        if qa_count <= 0:
+            continue
+
+        created_at = _interview_created_at(interview.get("created_at"))
+        existing = best_by_persona.get(persona_id)
+        if (
+            existing is None
+            or qa_count > existing["qa_count"]
+            or (qa_count == existing["qa_count"] and created_at > existing["created_at"])
+        ):
+            best_by_persona[persona_id] = {
+                "interview": interview,
+                "qa_count": qa_count,
+                "created_at": created_at,
+            }
+
+    selected = list(best_by_persona.values())
+    selected.sort(key=lambda item: (item["created_at"], str(item["interview"].get("interview_id") or "")))
+    return [item["interview"] for item in selected]
+
 
 async def call_anthropic(
     payload: dict,
@@ -1162,12 +1212,18 @@ async def build_llm_payload(
         existing_best = _best_by_persona.get(_pid)
         if existing_best is None:
             _best_by_persona[_pid] = {"interview": _iv, "qa_count": _qa_count}
-        elif _qa_count > existing_best["qa_count"]:
+        elif _qa_count >= existing_best["qa_count"]:
             _best_by_persona[_pid] = {"interview": _iv, "qa_count": _qa_count}
 
     raw_total = len(interview_results)
     interview_results = [v["interview"] for v in _best_by_persona.values()]
     print(f"[Dedup] raw interview rows={raw_total} → unique personas={len(interview_results)}")
+
+    if not interview_id:
+        interview_results = _dedupe_latest_valid_interviews_by_persona(
+            await get_interviews_by_exploration_id(objective_id)
+        )
+        print(f"[Dedup] valid transcript interviews={len(interview_results)}")
 
     personas_payload = []
 
@@ -1431,14 +1487,8 @@ def _persona_summary_line(persona: Dict[str, Any]) -> str:
     return " | ".join(parts)
 
 
-def _format_metric(value: Any) -> str:
-    if value in (None, ""):
-        return "NA"
-    return str(value).strip() or "NA"
-
-
-def _extract_follow_up_pairs(messages: List[Dict[str, Any]]) -> List[Dict[str, str]]:
-    followups: List[Dict[str, str]] = []
+def _extract_follow_up_pairs(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    followups: List[Dict[str, Any]] = []
     pending_question: Optional[str] = None
 
     for msg in messages:
@@ -1455,7 +1505,7 @@ def _extract_follow_up_pairs(messages: List[Dict[str, Any]]) -> List[Dict[str, s
         if role == "user":
             pending_question = text
         elif role == "persona" and pending_question:
-            followups.append({"question": pending_question, "answer": text})
+            followups.append({"question": pending_question, "answer": text, "metadata": dict(meta)})
             pending_question = None
 
     return followups
@@ -1486,12 +1536,45 @@ def _apply_run_style(run, *, bold: bool = False, size: int = 11, color: Optional
         run.font.highlight_color = highlight
 
 
-def _add_metric_paragraph(document: Document, quality: Any, independence: Any) -> None:
+def _coerce_report_score(value: Any) -> Optional[float]:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        if not text or text.lower() in {"na", "n/a", "none", "null"}:
+            return None
+        is_percent = text.endswith("%")
+        text = text.rstrip("%").strip()
+    else:
+        text = value
+        is_percent = False
+
+    try:
+        score = float(text)
+    except (TypeError, ValueError):
+        return None
+
+    if score != score:
+        return None
+    if is_percent or score > 10:
+        score = score / 100
+    return max(0.0, min(1.0, score))
+
+
+def _add_score_paragraph(document: Document, metadata: Dict[str, Any]) -> None:
+    quality_score = _coerce_report_score(metadata.get("quality_score"))
+    independence_score = _coerce_report_score(metadata.get("independence_score"))
+    parts: List[str] = []
+    if quality_score is not None:
+        parts.append(f"Quality: {quality_score:.2f}")
+    if independence_score is not None:
+        parts.append(f"Independence: {independence_score:.2f}")
+    if not parts:
+        return
+
     paragraph = document.add_paragraph()
     paragraph.paragraph_format.space_after = Pt(8)
-    run = paragraph.add_run(
-        f"Quality: {_format_metric(quality)} | Independence: {_format_metric(independence)}"
-    )
+    run = paragraph.add_run(" | ".join(parts))
     _apply_run_style(run, size=9)
     run.italic = True
 
@@ -1551,8 +1634,6 @@ def _build_qual_transcripts_docx(
 
         persona = interview.get("_persona") or {}
         persona_name = persona.get("name") or "Unknown Persona"
-        generated_answers = interview.get("generated_answers") or {}
-
         persona_heading = document.add_paragraph()
         persona_heading.paragraph_format.space_after = Pt(3)
         persona_run = persona_heading.add_run(f"Persona {idx}: {persona_name}")
@@ -1569,7 +1650,6 @@ def _build_qual_transcripts_docx(
             answer = _transcript_plain_text(qa.get("answer"))
             metadata = qa.get("metadata") or {}
             section_name = metadata.get("section") or "Discussion Guide"
-            answer_meta = generated_answers.get(qa.get("question"), {}) if isinstance(generated_answers, dict) else {}
 
             if current_section != section_name:
                 current_section = section_name
@@ -1588,12 +1668,7 @@ def _build_qual_transcripts_docx(
             answer_para.paragraph_format.space_after = Pt(2)
             answer_run = answer_para.add_run(f"Respondent: {answer}")
             _apply_run_style(answer_run, bold=True, size=10, highlight=WD_COLOR_INDEX.YELLOW)
-
-            _add_metric_paragraph(
-                document,
-                answer_meta.get("quality_score"),
-                answer_meta.get("independence_score"),
-            )
+            _add_score_paragraph(document, metadata)
 
         followups = _extract_follow_up_pairs(interview.get("messages", []))
         if followups:
@@ -1617,6 +1692,7 @@ def _build_qual_transcripts_docx(
                     f"Respondent: {_transcript_plain_text(followup.get('answer'))}"
                 )
                 _apply_run_style(response_run, bold=True, size=10, highlight=WD_COLOR_INDEX.YELLOW)
+                _add_score_paragraph(document, followup.get("metadata") or {})
 
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     document.save(out_path)
@@ -1635,6 +1711,8 @@ async def generate_qual_transcripts_docx(
             row for row in interviews
             if row.get("interview_id") == interview_id or row.get("id") == interview_id
         ]
+    else:
+        interviews = _dedupe_latest_valid_interviews_by_persona(interviews)
 
     if not interviews:
         raise ValueError("No interviews found for transcript export")
@@ -1646,7 +1724,9 @@ async def generate_qual_transcripts_docx(
         if not qa_data:
             continue
 
-        persona = await get_persona(interview.get("persona_id")) or {}
+        persona = await get_persona(interview.get("persona_id"))
+        if not persona or persona.get("calibration_status") == "draft":
+            continue
         prepared = dict(interview)
         prepared["_persona"] = persona
         prepared_interviews.append(prepared)
@@ -1669,7 +1749,9 @@ async def generate_qual_transcripts_csv(objective_id: str) -> bytes:
     No LLM call — pure data extraction.
     Columns: Persona, Question, Answer, Quality Score, Independence Score
     """
-    interviews = await get_interviews_by_exploration_id(objective_id)
+    interviews = _dedupe_latest_valid_interviews_by_persona(
+        await get_interviews_by_exploration_id(objective_id)
+    )
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(["Persona", "Question", "Answer", "Quality Score", "Independence Score"])

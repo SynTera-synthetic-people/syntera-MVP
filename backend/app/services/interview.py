@@ -52,6 +52,43 @@ def _safe_json(obj: Any) -> str:
     return json.dumps(obj, indent=2, default=_default)
 
 
+def _coerce_score(value: Any) -> Optional[float]:
+    """Normalize model-provided score values to a 0-1 float."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        if not text or text.lower() in {"na", "n/a", "none", "null"}:
+            return None
+        is_percent = text.endswith("%")
+        text = text.rstrip("%").strip()
+    else:
+        text = value
+        is_percent = False
+
+    try:
+        score = float(text)
+    except (TypeError, ValueError):
+        return None
+
+    if score != score:
+        return None
+    if is_percent or score > 10:
+        score = score / 100
+    return max(0.0, min(1.0, score))
+
+
+def _score_meta(source: Dict[str, Any]) -> Dict[str, float]:
+    meta: Dict[str, float] = {}
+    quality_score = _coerce_score(source.get("quality_score"))
+    independence_score = _coerce_score(source.get("independence_score"))
+    if quality_score is not None:
+        meta["quality_score"] = quality_score
+    if independence_score is not None:
+        meta["independence_score"] = independence_score
+    return meta
+
+
 async def create_interview_section(
     workspace_id: str,
     exploration_id: str,
@@ -500,27 +537,39 @@ async def start_interview(
 
 
     gen_map = {}
-    for a in answers:
-        qtext = a.get("question", "")
-        gen_map[qtext] = {
+    answer_infos = []
+    for idx, a in enumerate(answers):
+        fallback_question = flat_questions[idx]["question"] if idx < len(flat_questions) else ""
+        qtext = a.get("question") or fallback_question
+        quality_score = _coerce_score(a.get("quality_score"))
+        independence_score = _coerce_score(a.get("independence_score"))
+        answer_info = {
             "persona_answer": a.get("revised_persona_answer", ""),
             "implications": a.get("implications", []),
             "persona_id": persona_id,
-            "quality_score": a.get("quality_score"),
-            "independence_score": a.get("independence_score"),
+            "quality_score": quality_score,
+            "independence_score": independence_score,
             "stance_indicators": a.get("stance_indicators", []),
             "behavioral_signals": a.get("behavioral_signals", {})
         }
+        gen_map[qtext] = answer_info
+        answer_infos.append(answer_info)
 
     messages = []
     messages.append({"role": "system", "text": "Interview started", "ts": datetime.utcnow().isoformat()})
-    for q in flat_questions:
+    for idx, q in enumerate(flat_questions):
         qtext = q["question"]
         messages.append({"role": "user", "text": qtext, "meta": {"section": q["section"]}, "ts": datetime.utcnow().isoformat()})
-        pa = gen_map.get(qtext, {}).get("persona_answer", "")
-        all_info = gen_map.get(qtext, {}).get("all_info", "")
-        all_info_raw = gen_map.get(qtext, {}).get("all_info_raw", "")
-        messages.append({"role": "persona", "text": pa, "meta": {"question": qtext, "section": q["section"]}, "ts": datetime.utcnow().isoformat(), "all_info": all_info, "all_info_raw": all_info_raw})
+        answer_info = gen_map.get(qtext) or (answer_infos[idx] if idx < len(answer_infos) else {})
+        pa = answer_info.get("persona_answer", "")
+        all_info = answer_info.get("all_info", "")
+        all_info_raw = answer_info.get("all_info_raw", "")
+        answer_meta = {
+            "question": qtext,
+            "section": q["section"],
+            **_score_meta(answer_info),
+        }
+        messages.append({"role": "persona", "text": pa, "meta": answer_meta, "ts": datetime.utcnow().isoformat(), "all_info": all_info, "all_info_raw": all_info_raw})
 
     async with AsyncSession(async_engine) as session:
         iv = Interview(
@@ -677,11 +726,15 @@ async def add_user_message_and_get_persona_reply(
 
     data = json.loads(res_ai.choices[0].message.content)
     persona_reply = data.get("response", "")
+    reply_meta = {
+        "reply_to": user_text,
+        **_score_meta(data),
+    }
                 
     persona_msg = {
         "role": "persona", 
         "text": persona_reply,
-        "meta": {"reply_to": user_text}, 
+        "meta": reply_meta, 
         "ts": datetime.utcnow().isoformat()
     }
     iv.messages.append(persona_msg)

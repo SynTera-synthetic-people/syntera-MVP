@@ -325,6 +325,40 @@ def _build_calibration_breakdown(persona_details: Optional[dict]) -> dict:
     }
 
 
+def _resolve_calibration_confidence(p: Persona, persona_details: dict) -> Optional[int]:
+    """Return calibration_confidence from DB, falling back to extraction from persona_details.
+
+    Covers personas that were created before the column was being populated.
+    """
+    if p.calibration_confidence is not None:
+        return p.calibration_confidence
+    if not isinstance(persona_details, dict):
+        return None
+    # Manual build mode path
+    cs = persona_details.get("confidence_scoring") or {}
+    if isinstance(cs, dict):
+        ws = cs.get("weighted_score")
+        if ws is not None:
+            try:
+                v = float(ws)
+                return int(round(v * 100)) if 0.0 <= v <= 1.0 else int(v) if 1 < v <= 100 else None
+            except (TypeError, ValueError):
+                pass
+    # Omi-generated path
+    evidence = persona_details.get("evidence_snapshot") or {}
+    if isinstance(evidence, dict):
+        detail = evidence.get("confidence_calculation_detail") or {}
+        if isinstance(detail, dict):
+            raw = detail.get("value") or detail.get("weighted_total")
+            if raw is not None:
+                try:
+                    v = float(raw)
+                    return int(round(v * 100)) if 0.0 <= v <= 1.0 else int(v) if 1 < v <= 100 else None
+                except (TypeError, ValueError):
+                    pass
+    return None
+
+
 def persona_to_dict(p: Persona, creator_full_name: Optional[str] = None) -> dict:
     if p.parent_persona_id:
         created_by_name = creator_full_name or "Unknown"
@@ -461,7 +495,7 @@ def persona_to_dict(p: Persona, creator_full_name: Optional[str] = None) -> dict
 
         "created_by": p.created_by,
         "created_by_name": created_by_name,
-        "calibration_confidence": p.calibration_confidence,
+        "calibration_confidence": _resolve_calibration_confidence(p, persona_details),
         "created_at": p.created_at,
         "auto_generated_persona": p.auto_generated_persona,
         "persona_source": _persona_source(p),
