@@ -1,4 +1,4 @@
-"""Build questionnaire CSV: Q No., Question Description, Options, Count (per option)."""
+"""Build questionnaire CSVs, with optional response counts for Raw Data Shell."""
 from __future__ import annotations
 
 import csv
@@ -206,9 +206,16 @@ def _counts_for_options(
 def questionnaire_sections_to_csv_bytes(
     sections: List[Dict[str, Any]],
     counts_map: Optional[Dict[str, Any]] = None,
+    include_count: bool = False,
 ) -> bytes:
     """
-    One row per question-option: Q No., Question Description, Options, Count.
+    One row per question-option.
+
+    Default output is the questionnaire design export:
+    Q No., Question Description, Options.
+
+    Raw Data Shell can opt in to response counts:
+    Q No., Question Description, Options, Count.
 
     counts_map: optional { question_text: [ {option, count}, ... ] } from SurveySimulation.results
     """
@@ -225,26 +232,36 @@ def questionnaire_sections_to_csv_bytes(
     aligned = _align_blocks_to_questions(counts_map, flat)
 
     header = ["Q No.", "Question Description", "Options"]
+    if include_count:
+        header.append("Count")
     buffer = io.StringIO()
     writer = csv.writer(buffer)
     writer.writerow(header)
 
     for q_no, ((q_text, opts), block) in enumerate(zip(flat, aligned), start=1):
         if opts:
-            for opt in opts:
-                writer.writerow([q_no, q_text, opt if opt is not None else ""])
+            counts = _counts_for_options(block, opts)
+            for opt, count in zip(opts, counts):
+                row = [q_no, q_text, opt if opt is not None else ""]
+                if include_count:
+                    row.append(count)
+                writer.writerow(row)
         elif block and isinstance(block, list):
             for item in block:
                 if isinstance(item, dict):
-                    writer.writerow(
-                        [
-                            q_no,
-                            q_text,
-                            str(item.get("option", "")),
-                        ]
-                    )
+                    try:
+                        count = int(item.get("count", 0) or 0)
+                    except (TypeError, ValueError):
+                        count = 0
+                    row = [q_no, q_text, str(item.get("option", ""))]
+                    if include_count:
+                        row.append(count)
+                    writer.writerow(row)
         else:
-            writer.writerow([q_no, q_text, ""])
+            row = [q_no, q_text, ""]
+            if include_count:
+                row.append(0)
+            writer.writerow(row)
 
     return ("\ufeff" + buffer.getvalue()).encode("utf-8")
 

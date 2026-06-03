@@ -32,7 +32,7 @@ export const downloadExplorationQuestionnaireCsv = async ({ workspaceId, explora
   URL.revokeObjectURL(url);
 };
 
-/** Download questionnaire CSV from server (Q No., Question, Options, Count; counts from latest or chosen survey run). */
+/** Download questionnaire CSV from server (Q No., Question, Options). */
 export const downloadQuestionnaireCsvExport = async ({
   workspaceId,
   explorationId,
