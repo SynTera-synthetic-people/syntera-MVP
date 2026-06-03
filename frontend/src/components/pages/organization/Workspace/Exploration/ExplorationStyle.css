@@ -546,16 +546,10 @@
   border: 1px solid #1E2028;
   border-radius: 1.25rem;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
-
   display: flex;
   flex-direction: column;
-
   overflow: visible;
-
-  /* IMPORTANT FIX */
   min-height: 0;
-
-  /* REMOVE viewport locking */
   max-height: none;
 }
 
