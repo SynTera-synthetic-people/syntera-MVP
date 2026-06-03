@@ -676,13 +676,17 @@ async def _run_core_backfills(conn: AsyncConnection) -> None:
                 THEN (persona_details -> 'evidence_snapshot' -> 'confidence_calculation_detail' ->> 'value')::float * 100
                 WHEN (persona_details -> 'evidence_snapshot' -> 'confidence_calculation_detail' ->> 'weighted_total') IS NOT NULL
                 THEN (persona_details -> 'evidence_snapshot' -> 'confidence_calculation_detail' ->> 'weighted_total')::float * 100
-                ELSE 75
             END
         )::integer
         WHERE calibration_confidence IS NULL
           AND auto_generated_persona = TRUE
           AND persona_details IS NOT NULL
           AND persona_details::text NOT IN ('{}', 'null', '')
+          AND (
+              (persona_details -> 'confidence_scoring' ->> 'weighted_score') IS NOT NULL
+              OR (persona_details -> 'evidence_snapshot' -> 'confidence_calculation_detail' ->> 'value') IS NOT NULL
+              OR (persona_details -> 'evidence_snapshot' -> 'confidence_calculation_detail' ->> 'weighted_total') IS NOT NULL
+          )
         """,
     )
 

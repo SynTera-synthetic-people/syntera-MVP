@@ -3,7 +3,7 @@ from app.db import async_engine
 from app.models.persona import Persona
 from app.schemas.persona import PersonaCreate, PersonaUpdate
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 from app.utils.id_generator import generate_id
 import json
@@ -325,37 +325,78 @@ def _build_calibration_breakdown(persona_details: Optional[dict]) -> dict:
     }
 
 
-def _resolve_calibration_confidence(p: Persona, persona_details: dict) -> Optional[int]:
-    """Return calibration_confidence from DB, falling back to extraction from persona_details.
-
-    Covers personas that were created before the column was being populated.
-    """
-    if p.calibration_confidence is not None:
-        return p.calibration_confidence
-    if not isinstance(persona_details, dict):
+def _coerce_confidence_percent(value: Any) -> Optional[int]:
+    if value is None or isinstance(value, bool):
         return None
-    # Manual build mode path
-    cs = persona_details.get("confidence_scoring") or {}
-    if isinstance(cs, dict):
-        ws = cs.get("weighted_score")
-        if ws is not None:
+    try:
+        if isinstance(value, str):
+            cleaned = value.strip()
+            if not cleaned or cleaned.lower() in {"na", "n/a", "none", "null", "-"}:
+                return None
+            cleaned = cleaned.replace("%", "").strip()
             try:
-                v = float(ws)
-                return int(round(v * 100)) if 0.0 <= v <= 1.0 else int(v) if 1 < v <= 100 else None
-            except (TypeError, ValueError):
-                pass
-    # Omi-generated path
-    evidence = persona_details.get("evidence_snapshot") or {}
-    if isinstance(evidence, dict):
-        detail = evidence.get("confidence_calculation_detail") or {}
-        if isinstance(detail, dict):
-            raw = detail.get("value") or detail.get("weighted_total")
-            if raw is not None:
-                try:
-                    v = float(raw)
-                    return int(round(v * 100)) if 0.0 <= v <= 1.0 else int(v) if 1 < v <= 100 else None
-                except (TypeError, ValueError):
-                    pass
+                value = float(cleaned)
+            except ValueError:
+                import re
+                match = re.search(r"-?\d+(?:\.\d+)?", cleaned)
+                if not match:
+                    return None
+                value = match.group(0)
+        score = float(value)
+    except (TypeError, ValueError):
+        return None
+
+    if score < 0:
+        return None
+    if score <= 1:
+        score *= 100
+    if score > 100:
+        return None
+    return int(round(score))
+
+
+def _nested_get(payload: Any, *path: str) -> Any:
+    current = payload
+    for key in path:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+    return current
+
+
+def _has_manual_trait_snapshot(persona_details: Any) -> bool:
+    if not isinstance(persona_details, dict):
+        return False
+    return bool(persona_details.get("raw_traits") or persona_details.get("raw_form_payload"))
+
+
+def _resolve_calibration_confidence(p: Persona, persona_details: dict) -> Optional[int]:
+    """Return confidence from the DB column or known legacy JSON locations."""
+    candidates = [
+        _nested_get(persona_details, "confidence_scoring", "weighted_score"),
+        _nested_get(persona_details, "confidence_scoring", "score"),
+        _nested_get(persona_details, "confidence_scoring", "confidence_calculation_detail", "value"),
+        _nested_get(persona_details, "confidence_scoring", "confidence_calculation_detail", "weighted_total"),
+        _nested_get(persona_details, "evidence_snapshot", "confidence_calculation_detail", "value"),
+        _nested_get(persona_details, "evidence_snapshot", "confidence_calculation_detail", "weighted_total"),
+        _nested_get(persona_details, "evidence_snapshot", "confidence_breakdown", "value"),
+        _nested_get(persona_details, "evidence_snapshot", "confidence_breakdown", "weighted_total"),
+        _nested_get(persona_details, "confidence_calculation_detail", "value"),
+        _nested_get(persona_details, "confidence_calculation_detail", "weighted_total"),
+        _nested_get(persona_details, "confidence_breakdown", "value"),
+        _nested_get(persona_details, "confidence_breakdown", "weighted_total"),
+        _nested_get(persona_details, "calibration_confidence"),
+        _nested_get(persona_details, "confidence_score"),
+        p.calibration_confidence,
+        _nested_get(persona_details, "confidence"),
+        _nested_get(persona_details, "confidence_scoring"),
+    ]
+    for candidate in candidates:
+        score = _coerce_confidence_percent(candidate)
+        if score is not None:
+            return score
+    if not p.auto_generated_persona and _has_manual_trait_snapshot(persona_details):
+        return 50
     return None
 
 
@@ -454,6 +495,8 @@ def persona_to_dict(p: Persona, creator_full_name: Optional[str] = None) -> dict
             ],
         }
 
+    resolved_confidence = _resolve_calibration_confidence(p, persona_details)
+
     return {
         "id": p.id,
         "exploration_id": p.exploration_id,
@@ -495,7 +538,8 @@ def persona_to_dict(p: Persona, creator_full_name: Optional[str] = None) -> dict
 
         "created_by": p.created_by,
         "created_by_name": created_by_name,
-        "calibration_confidence": _resolve_calibration_confidence(p, persona_details),
+        "calibration_confidence": resolved_confidence,
+        "confidence_score": resolved_confidence,
         "created_at": p.created_at,
         "auto_generated_persona": p.auto_generated_persona,
         "persona_source": _persona_source(p),
@@ -1796,7 +1840,7 @@ async def create_manual_persona_draft(
             created_by=user_id,
             auto_generated_persona=False,
             calibration_status="draft",
-            calibration_confidence=None,
+            calibration_confidence=50,
             persona_details=persona_details_init,
         )
         session.add(p)
