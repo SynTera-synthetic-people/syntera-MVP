@@ -366,11 +366,11 @@ async def export_questionnaire_csv(
     simulation_id: str,
     survey_simulation_id: Optional[str] = Query(
         None,
-        description="Optional survey run id; when set, counts come from that run. Otherwise uses latest survey for this population simulation.",
+        description="Optional survey run id; kept for compatibility. Questionnaire downloads do not include response counts.",
     ),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Download questionnaire as CSV: Q No., Question Description, Options, Count (from survey simulation if available)."""
+    """Download questionnaire as CSV: Q No., Question Description, Options."""
     await _ensure_workspace_member(workspace_id, current_user)
 
     questionnaires = await service.get_questionnaire_by_simulation(workspace_id, exploration_id, simulation_id)
