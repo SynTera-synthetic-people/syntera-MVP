@@ -12,6 +12,9 @@ import {
   TbSparkles,
   TbPencil,
   TbLock,
+  TbCheck,
+  TbX,
+  TbEdit,
 } from "react-icons/tb";
 import SpIcon from "../../../../SPIcon";
 import { useTheme } from "../../../../../context/ThemeContext";
@@ -24,11 +27,13 @@ import {
 import { useOmniWorkflow } from '../../../../../hooks/useOmiWorkflow';
 import { useAutoGeneratePersonas, usePersonas } from '../../../../../hooks/usePersonaBuilder';
 import UpgradeModal from "../../../Upgrade/UpgradeModal";
+import SummaryRefineBubble from "./SummaryRefineBubble";
 import OmiGreet from '../../../../../assets/Omi Animations/OmiIdle.mp4';
 import OmiPencil from '../../../../../assets/Omi Animations/OmiPencil.mp4';
 import OmiKeyboard from '../../../../../assets/Omi Animations/OmiKeyboard.mp4';
 import OmiCaution from '../../../../../assets/Omi Animations/OmiCaution.mp4';
 import "./AddResearchObjectiveStyle.css";
+import "./SummaryRefineBubble.css";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -108,19 +113,19 @@ const AddResearchObjective: React.FC = () => {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
   // ── Animation state ────────────────────────────────────────────────────────
-  // "greeting" = OmiIdle (default), "writing" = OmiPencil (user typing),
-  // "error" = OmiCaution. "typing" (LLM thinking) is now shown as a
-  // separate typing-indicator row — NOT inside any bubble.
   const [omiAnimation, setOmiAnimation] = useState<"greeting" | "writing" | "error">("greeting");
 
   const getOmiVideo = (forError = false) => {
     if (forError) return OmiCaution;
     switch (omiAnimation) {
       case "writing": return OmiPencil;
-      case "error":   return OmiCaution;
-      default:        return OmiGreet;
+      case "error": return OmiCaution;
+      default: return OmiGreet;
     }
   };
+
+  // ── Persona flow lock — true after user clicks Create with Omi or Build Manually ──
+  const [personaFlowStarted, setPersonaFlowStarted] = useState(false);
 
   // TanStack Query Hooks
   const {
@@ -197,14 +202,12 @@ const AddResearchObjective: React.FC = () => {
     }));
   }, []);
 
-  // ── Animation: revert to greeting when idle ────────────────────────────────
   useEffect(() => {
     if (!isSubmitting && !isSendingMessage && omiAnimation !== "error" && inputValue.trim().length === 0) {
       setOmiAnimation("greeting");
     }
   }, [isSubmitting, isSendingMessage, omiAnimation, inputValue]);
 
-  // ── Animation: writing while user types ───────────────────────────────────
   useEffect(() => {
     if (inputValue.trim().length > 0 && !isSubmitting) setOmiAnimation("writing");
   }, [inputValue, isSubmitting]);
@@ -268,7 +271,6 @@ const AddResearchObjective: React.FC = () => {
     }
   }, [messages, prevMessagesLength]);
 
-  // Auto-scroll when typing indicator appears/disappears
   useEffect(() => {
     if (messagesContainerRef.current && (isSendingMessage || isSubmitting)) {
       messagesContainerRef.current.scrollTo({ top: messagesContainerRef.current.scrollHeight, behavior: 'smooth' });
@@ -295,9 +297,124 @@ const AddResearchObjective: React.FC = () => {
     }
   }, [messages, objectiveId, workspaceId]);
 
+  // ── Summary refinement handler ────────────────────────────────────────────
+  /**
+   * In-place edit strategy (ChatGPT-style):
+   * The summary bubble text is updated directly — no new messages are appended
+   * to the thread. The floater's own UI handles the "sent ✓" feedback.
+   *
+   * 1. Client-side substitution (~80% of cases):
+   *    "change X to Y", "replace X with Y", "use Y instead", or a short
+   *    plain-word replacement — all resolved locally with no LLM call.
+   *
+   * 2. LLM fallback for semantic instructions (rephrase, expand, etc.):
+   *    Sends a tightly-constrained prompt; the response replaces the summary
+   *    bubble text in-place. Still no new thread messages.
+   */
+  const handleRefineRequest = async (
+    selectedText: string,
+    instruction: string
+  ): Promise<void> => {
+    if (!sessionId) throw new Error("No active session");
+
+    // ── Find the current summary message ────────────────────────────────────
+    const summaryMessage = [...messages].reverse().find(m =>
+      m.sender === 'omi' && m.text?.includes("carry this forward into personas")
+    );
+    const currentSummaryFull = summaryMessage?.text ?? "";
+
+    // ── Attempt client-side substitution first ───────────────────────────────
+    const trimmedInstruction = instruction.trim();
+
+    // Pattern: "change X to Y" or "replace X with Y"
+    const changeToPattern = /^(?:change|replace)\s+["']?(.+?)["']?\s+(?:to|with)\s+["']?(.+?)["']?$/i;
+    // Pattern: "use Y instead [of X]" or "use Y"
+    const useInsteadPattern = /^use\s+["']?(.+?)["']?(?:\s+instead(?:\s+of\s+["']?.+?["']?)?)?$/i;
+
+    let replacement: string | null = null;
+    const changeThisToPattern = /^i\s+(?:want\s+to\s+)?(?:change|update|replace)\s+(?:this|it)\s+(?:to|with)\s+(.+)$/i;
+    const changeMatch = trimmedInstruction.match(changeToPattern);
+    const useMatch = trimmedInstruction.match(useInsteadPattern);
+    const changeThisMatch = trimmedInstruction.match(changeThisToPattern);
+
+    if (changeMatch) {
+      replacement = changeMatch[2]!.trim();
+    } else if (useMatch) {
+      replacement = useMatch[1]!.trim();
+    } else if (changeThisMatch) {                    
+      replacement = changeThisMatch[1]!.trim();     
+    } else if (
+      !/\b(rephrase|rewrite|expand|...)\b/i.test(trimmedInstruction) &&
+      trimmedInstruction.split(/\s+/).length <= 6
+    ) {
+      replacement = trimmedInstruction;
+    }
+
+    if (replacement !== null && currentSummaryFull.includes(selectedText)) {
+      // ── Pure client-side swap — patch bubble in-place, no new messages ────
+      const updatedText = currentSummaryFull.replace(selectedText, replacement);
+
+      if (summaryMessage) {
+        setMessages(prev =>
+          prev.map(m => m.id === summaryMessage.id ? { ...m, text: updatedText } : m)
+        );
+      }
+
+      setOmiStatus("Summary updated");
+      return;
+    }
+
+    // ── LLM fallback for semantic/complex instructions ───────────────────────
+    // Constrained prompt: pass the full summary, ask the model to return the
+    // complete rewritten text (only the selected passage changed).
+    const prompt =
+      `Here is the current Research Objective Summary in full — do NOT change any part of it except the specific passage called out below:\n\n` +
+      `---\n${currentSummaryFull}\n---\n\n` +
+      `The user has selected only this passage:\n"${selectedText}"\n\n` +
+      `Apply ONLY this change to that passage: ${instruction}\n\n` +
+      `Rules:\n` +
+      `- Every sentence outside the selected passage must be returned word-for-word unchanged.\n` +
+      `- Only the selected passage may be reworded, and only as minimally as the instruction requires.\n` +
+      `- Output the complete updated summary text only — no preamble, no commentary, no sign-off.\n` +
+      `- Do NOT add new sentences, remove existing sentences, or change the overall length significantly.`;
+
+    setOmiStatus("Omi is applying the change…");
+
+    await new Promise<void>((resolve, reject) => {
+      sendMessage(prompt, {
+        onSuccess: (response: any) => {
+          if (response.status === "success") {
+            // ── Patch the summary bubble in-place — no new thread messages ──
+            const updatedText: string = response.data.message;
+            if (summaryMessage) {
+              setMessages(prev =>
+                prev.map(m =>
+                  m.id === summaryMessage.id
+                    ? { ...m, text: updatedText, omiState: response.data.omi_state }
+                    : m
+                )
+              );
+            }
+            setOmiStatus("Summary updated");
+            setTimeout(() => refetchHistory(), 500);
+            resolve();
+          } else {
+            reject(new Error("Refinement failed"));
+          }
+        },
+        onError: (err: any) => {
+          setOmiAnimation("error");
+          reject(err);
+        },
+      });
+    });
+  };
+
   // ── CTA Handlers ────────────────────────────────────────────────────────────
 
   const handleCreateWithOmi = async () => {
+    setPersonaFlowStarted(true);
+
     trigger({ stage: 'persona_builder', event: 'PERSONA_WORKFLOW_LOADED', payload: {} });
     if (objectiveId) localStorage.setItem(`step1_done_${objectiveId}`, '1');
 
@@ -341,6 +458,8 @@ const AddResearchObjective: React.FC = () => {
       return;
     }
 
+    setPersonaFlowStarted(true);
+
     trigger({ stage: 'persona_builder', event: 'PERSONA_WORKFLOW_LOADED', payload: {} });
     if (objectiveId) localStorage.setItem(`step1_done_${objectiveId}`, '1');
 
@@ -371,7 +490,6 @@ const AddResearchObjective: React.FC = () => {
     const messageToSend = inputValue;
     setInputValue("");
     setUploadedFile(null);
-    // Revert animation to greeting while waiting for LLM (typing indicator takes over)
     setOmiAnimation("greeting");
     setOmiStatus("Omi is thinking...");
 
@@ -408,7 +526,7 @@ const AddResearchObjective: React.FC = () => {
           switch (response.data.omi_state) {
             case 'thinking': setOmiStatus("Omi is processing your input..."); break;
             case 'greeting': setOmiStatus("Omi is ready for the next step"); break;
-            default:         setOmiStatus("Omi responded");
+            default: setOmiStatus("Omi responded");
           }
           setTimeout(() => { refetchHistory(); }, 500);
         } else {
@@ -452,12 +570,11 @@ const AddResearchObjective: React.FC = () => {
 
   useEffect(() => {
     if (sessionLoading) setOmiStatus("Initializing Omi session...");
-    if (sessionError)   setOmiStatus("Failed to initialize Omi session");
+    if (sessionError) setOmiStatus("Failed to initialize Omi session");
   }, [sessionLoading, sessionError]);
 
   const isLoading = sessionLoading || isLoadingHistory;
 
-  // ── Derived: index of the last Omi message ─────────────────────────────────
   const lastOmiMessageIndex = messages.reduce((lastIdx, msg, idx) =>
     msg.sender === 'omi' ? idx : lastIdx, -1
   );
@@ -533,15 +650,12 @@ const AddResearchObjective: React.FC = () => {
     if (message.sender === 'omi' && text.includes("carry this forward into personas")) {
       const markerMatch = text.match(/I['']ll carry this forward into personas\.?/);
       const splitIndex = markerMatch?.index ?? -1;
-      const markerLen  = markerMatch ? markerMatch[0].length : 0;
-      const beforeRaw  = splitIndex > -1 ? text.slice(0, splitIndex).trim() : text.trim();
-      const afterRaw   = splitIndex > -1 ? text.slice(splitIndex + markerLen).trim() : '';
+      const markerLen = markerMatch ? markerMatch[0].length : 0;
+      const beforeRaw = splitIndex > -1 ? text.slice(0, splitIndex).trim() : text.trim();
+      const afterRaw = splitIndex > -1 ? text.slice(splitIndex + markerLen).trim() : '';
       return (
         <div className="space-y-1">
           {beforeRaw ? formatText(beforeRaw) : null}
-          {/* <p className="font-bold text-white mt-2">
-            I'll carry this forward into personas.
-          </p> */}
           {afterRaw ? formatText(afterRaw) : null}
         </div>
       );
@@ -587,9 +701,8 @@ const AddResearchObjective: React.FC = () => {
             ) : (
               <>
                 {messages.map((message, index) => {
-                  // Only the latest Omi message gets the animated video;
-                  // all older Omi messages show the static greeting video (frozen/poster).
                   const isLatestOmi = message.sender === 'omi' && index === lastOmiMessageIndex;
+                  const isSummary = isSummaryMessage(message);
 
                   return (
                     <motion.div
@@ -599,44 +712,54 @@ const AddResearchObjective: React.FC = () => {
                       className={`aro-message-row ${message.sender === 'user' ? 'aro-message-row--user' : 'aro-message-row--omi'}`}
                     >
                       <div className={`aro-bubble-wrapper ${message.sender === 'user' ? 'aro-bubble-wrapper--user' : 'aro-bubble-wrapper--omi'}`}>
-                        <div className={`aro-bubble ${message.sender === 'omi'
+
+                        {/* ── Summary message: selection-triggered AI refinement ── */}
+                        {isSummary ? (
+                          <SummaryRefineBubble
+                            message={message}
+                            isLocked={personaFlowStarted || isViewOnly}
+                            isSending={isSendingMessage || isSubmitting}
+                            onRefine={handleRefineRequest}
+                            renderMessageContent={renderMessageWithPersonaButton}
+                          />
+                        ) : (
+                          /* ── All other messages ── */
+                          <div className={`aro-bubble ${message.sender === 'omi'
                             ? message.isError
                               ? 'aro-bubble--omi-error'
-                              : isSummaryMessage(message)
-                                ? 'aro-bubble--omi-summary'
-                                : 'aro-bubble--omi'
+                              : 'aro-bubble--omi'
                             : 'aro-bubble--user'
-                          }`}>
-                          {message.sender === 'omi' && !isSummaryMessage(message) && (
-                            <div className="aro-omi-avatar">
-                              {/* Static poster for old messages; animated only on latest */}
-                              {isLatestOmi ? (
-                                <video
-                                  key={message.isError ? "error" : omiAnimation}
-                                  className="aro-omi-video"
-                                  src={message.isError ? OmiCaution : getOmiVideo()}
-                                  autoPlay loop muted playsInline
-                                />
-                              ) : (
-                                /* Older messages: show the idle video but paused via CSS */
-                                <video
-                                  className="aro-omi-video aro-omi-video--static"
-                                  src={message.isError ? OmiCaution : OmiGreet}
-                                  muted playsInline
-                                />
-                              )}
-                            </div>
-                          )}
-                          <div className="aro-bubble-text">
-                            {renderMessageWithPersonaButton(message)}
-                            {message.file && (
-                              <div className="aro-bubble-file">
-                                <TbPaperclip size={16} />
-                                <span className="aro-bubble-file-name">{(message.file as File).name}</span>
+                            }`}>
+                            {message.sender === 'omi' && (
+                              <div className="aro-omi-avatar">
+                                {isLatestOmi ? (
+                                  <video
+                                    key={message.isError ? "error" : omiAnimation}
+                                    className="aro-omi-video"
+                                    src={message.isError ? OmiCaution : getOmiVideo()}
+                                    autoPlay loop muted playsInline
+                                  />
+                                ) : (
+                                  <video
+                                    className="aro-omi-video aro-omi-video--static"
+                                    src={message.isError ? OmiCaution : OmiGreet}
+                                    muted playsInline
+                                  />
+                                )}
                               </div>
                             )}
+                            <div className="aro-bubble-text">
+                              {renderMessageWithPersonaButton(message)}
+                              {message.file && (
+                                <div className="aro-bubble-file">
+                                  <TbPaperclip size={16} />
+                                  <span className="aro-bubble-file-name">{(message.file as File).name}</span>
+                                </div>
+                              )}
+                            </div>
                           </div>
-                        </div>
+                        )}
+
                         <span className="aro-timestamp">
                           {message.sender === 'omi' ? 'Omi' : 'You'} • {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </span>
@@ -645,7 +768,7 @@ const AddResearchObjective: React.FC = () => {
                   );
                 })}
 
-                {/* ── Typing indicator row (shown while LLM is responding) ── */}
+                {/* ── Typing indicator ── */}
                 <AnimatePresence>
                   {(isSendingMessage || isSubmitting) && (
                     <motion.div
@@ -658,15 +781,9 @@ const AddResearchObjective: React.FC = () => {
                     >
                       <div className="aro-bubble-wrapper aro-bubble-wrapper--omi">
                         <div className="aro-typing-indicator">
-                          {/* Omi animated avatar */}
                           <div className="aro-omi-avatar aro-omi-avatar--typing">
-                            <video
-                              className="aro-omi-video"
-                              src={OmiKeyboard}
-                              autoPlay loop muted playsInline
-                            />
+                            <video className="aro-omi-video" src={OmiKeyboard} autoPlay loop muted playsInline />
                           </div>
-                          {/* Cycling thinking text */}
                           <div className="aro-typing-text-wrap">
                             <AnimatePresence mode="wait">
                               <motion.span
@@ -680,7 +797,6 @@ const AddResearchObjective: React.FC = () => {
                                 {thinkingPhrases[thinkingPhraseIndex]}
                               </motion.span>
                             </AnimatePresence>
-                            {/* Animated dots */}
                             <span className="aro-typing-dots">
                               <span /><span /><span />
                             </span>
@@ -736,7 +852,6 @@ const AddResearchObjective: React.FC = () => {
             >
               <p className="aro-cta-heading">All set. Now let's bring the personas to life.</p>
               <div className="aro-cta-buttons">
-
                 <motion.button
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -763,18 +878,15 @@ const AddResearchObjective: React.FC = () => {
                     <span>Build Manually</span>
                   </button>
                 </motion.div>
-
               </div>
             </motion.div>
           ) : (
-            /* ── Input bar ── */
             <div className="aro-input-bar">
               <form onSubmit={handleSendMessage} className="aro-input-form">
                 <label className="aro-input-file-label">
                   <SpIcon name="sp-Edit-Paperclip_Attechment_Tilt" />
                   <input type="file" className="hidden" onChange={handleFileChange} disabled={isSubmitting || isLoading || !sessionData} />
                 </label>
-
                 <textarea
                   ref={textareaRef}
                   value={inputValue}
@@ -786,12 +898,9 @@ const AddResearchObjective: React.FC = () => {
                   rows={1}
                   disabled={isSubmitting || isLoading || !sessionData}
                 />
-
                 <button type="button" className="aro-input-icon-btn" disabled={isSubmitting || isLoading || !sessionData}>
                   <SpIcon name="sp-Other-Mic" />
                 </button>
-
-                {/* Send button — always shows the send icon, no spinner */}
                 <button
                   type="submit"
                   className="aro-send-btn"

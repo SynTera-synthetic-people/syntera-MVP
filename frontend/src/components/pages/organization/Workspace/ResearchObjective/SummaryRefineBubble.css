@@ -1,0 +1,308 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   SummaryRefineBubble
+   Flow: select text → pill appears → click pill → input panel expands
+   Portal is fixed-positioned on document.body
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Bubble ── */
+.srb-bubble {
+  display: flex;
+  flex-direction: column;
+  padding: 16px 20px 14px;
+  background: #16181C;
+  color: #F8F9F9;
+  border-radius: 8px 24px 24px 24px;
+  width: 680px;
+  max-width: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgba(59, 130, 246, 0.18);
+}
+
+/* Selectable text region */
+.srb-bubble-text {
+  flex: 1;
+  min-width: 0;
+  color: #F8F9F9;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+
+.srb-bubble-text ::selection {
+  background: rgba(59, 130, 246, 0.32);
+  color: #fff;
+}
+
+/* ── Hint ── */
+.srb-hint {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 12px;
+  color: rgba(107, 114, 128, 0.6);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Portal wrapper — fixed, floats above selection
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.srb-portal {
+  position: fixed;
+  transform: translateY(-100%);   /* floats above the anchor (top coord) */
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;            /* centre pill + arrow on the same axis */
+  user-select: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Step 1 — Pill button
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.srb-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px 5px 10px;
+  background: var(--T-Base-B1, #0E0F12);
+  border: 1px solid var(--T-GreyScale-Grey-700, #4F535F);
+  border-radius: 999px;           /* full pill */
+  color: white;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow:
+    0 4px 16px #0E0F12,
+    0 1px 4px #4F535F;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.1s, box-shadow 0.15s;
+}
+
+.srb-pill:hover {
+  background: var(--T-Base-B1, #0E0F12);
+  border: 1px solid var(--T-GreyScale-Grey-700, #4F535F);
+  color: #93c5fd;
+  transform: translateY(-1px);
+  box-shadow:
+    0 6px 20px rgba(0, 0, 0, 0.55),
+    0 2px 8px rgba(37, 99, 235, 0.3);
+}
+
+.srb-pill:active {
+  transform: translateY(0);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Step 2 — Input panel (replaces pill after click)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.srb-input-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 360px;
+  background: var(--T-Base-B1, #0E0F12);
+  border: 1px solid var(--T-GreyScale-Grey-700, #4F535F);
+  border-radius: 12px;
+  padding: 11px 13px 10px;
+  box-sizing: border-box;
+}
+
+/* ── Panel header ── */
+.srb-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.srb-panel-header-left {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: white;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.srb-panel-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: #6b7280;
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.15s, background 0.15s;
+}
+
+.srb-panel-close:hover {
+  color: #d1d5db;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* ── Selection preview ── */
+.srb-panel-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 9px;
+  background: rgba(255, 255, 255, 0.03);
+  border-left: 2px solid rgba(59, 130, 246, 0.35);
+  border-radius: 0 5px 5px 0;
+}
+
+.srb-panel-preview-label {
+  font-size: 0.5625rem;
+  font-weight: 700;
+  color: #4b5563;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.srb-panel-preview-text {
+  font-size: 0.6875rem;
+  color: #9ca3af;
+  line-height: 1.4;
+  font-style: italic;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ── Input row ── */
+.srb-panel-input-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: #16181C;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 4px 4px 4px 10px;
+  transition: border-color 0.2s;
+}
+
+.srb-panel-input-row:focus-within {
+  border-color: 1px solid var(--T-GreyScale-Grey-700, #4F535F);
+}
+
+.srb-panel-input-row--disabled {
+  opacity: 0.6;
+}
+
+.srb-panel-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 0.8125rem;
+  color: #F8F9F9;
+  font-family: inherit;
+  padding: 4px 0;
+  min-width: 0;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.srb-panel-input::placeholder {
+  color: #374151;
+  font-size: 0.75rem;
+}
+
+.srb-panel-input:disabled {
+  cursor: not-allowed;
+}
+
+/* ── Submit button ── */
+.srb-panel-submit {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 27px;
+  height: 27px;
+  background: #2563eb;
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.srb-panel-submit:hover:not(.srb-panel-submit--disabled) {
+  background: #1d4ed8;
+  transform: scale(1.06);
+}
+
+.srb-panel-submit:active:not(.srb-panel-submit--disabled) {
+  transform: scale(0.96);
+}
+
+.srb-panel-submit--disabled {
+  background: #1e2a40;
+  box-shadow: none;
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+/* ── Sent message ── */
+.srb-panel-sent {
+  font-size: 0.6875rem;
+  color: #34d399;
+  margin: 0;
+  text-align: center;
+  font-weight: 500;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Shared — down-pointing arrow (below pill or panel, pointing to selection)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.srb-arrow {
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 6px solid rgba(59, 130, 246, 0.45);
+  flex-shrink: 0;
+}
+
+.srb-arrow::after {
+  content: '';
+  position: absolute;
+  /* inner fill arrow — colour matches the element above it */
+  margin-top: -8px;
+  margin-left: -5px;
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 5px solid #0d1117;
+}
+
+/* ── Shared animations ── */
+.srb-spin {
+  animation: srb-spin-anim 0.8s linear infinite;
+}
+
+@keyframes srb-spin-anim {
+  to { transform: rotate(360deg); }
+}
+
+.srb-check {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #34d399;
+}
