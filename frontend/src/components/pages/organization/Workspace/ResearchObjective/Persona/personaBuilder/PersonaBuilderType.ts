@@ -27,7 +27,7 @@ export interface SavedPersona {
       trait_completeness?: number;
     };
     // Legacy format (Omi / evidence-based)
-    confidence_calculation_detail?: { weighted_total?: number };
+    confidence_calculation_detail?: { weighted_total?: number; value?: number };
     score?: number;
   };
   confidence_score?: number;

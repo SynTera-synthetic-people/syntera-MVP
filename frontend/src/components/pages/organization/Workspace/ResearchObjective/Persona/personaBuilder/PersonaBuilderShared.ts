@@ -4,29 +4,69 @@
 
 import type { SavedPersona, PersonaData, CategoryProgress, PersonaFormData } from './PersonaBuilderType';
 
+const getRecord = (value: unknown): Record<string, unknown> | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+};
+
+const getNested = (source: unknown, path: string[]): unknown => {
+  let current: unknown = source;
+  for (const key of path) {
+    const record = getRecord(current);
+    if (!record) return undefined;
+    current = record[key];
+  }
+  return current;
+};
+
+const coerceConfidenceScore = (raw: unknown): number | null => {
+  if (raw === null || raw === undefined || typeof raw === 'boolean') return null;
+  const cleaned = typeof raw === 'string' ? raw.trim().replace('%', '') : raw;
+  if (cleaned === '' || String(cleaned).toLowerCase() === 'na') return null;
+  const num = typeof cleaned === 'string'
+    ? Number(cleaned.match(/-?\d+(?:\.\d+)?/)?.[0] ?? cleaned)
+    : Number(cleaned);
+  if (isNaN(num) || num < 0 || num > 100) return null;
+  return Math.round(num <= 1 ? num * 100 : num);
+};
+
 // ── Confidence Score Utilities ────────────────────────────────────────────────
 
 export const getConfidenceScore = (persona: SavedPersona): number | null => {
-  // Priority 1: New Manual Build Mode format — weighted_score is float 0-1
-  const newFormat = persona.confidence_scoring?.weighted_score;
-  if (newFormat !== undefined && newFormat !== null) {
-    const num = Number(newFormat);
-    if (!isNaN(num)) return Math.round(num <= 1 ? num * 100 : num);
+  const details = getRecord(persona.persona_details);
+  const candidates = [
+    persona.confidence_scoring?.weighted_score,
+    persona.confidence_scoring?.score,
+    persona.confidence_scoring?.confidence_calculation_detail?.weighted_total,
+    getNested(details, ['confidence_scoring', 'weighted_score']),
+    getNested(details, ['confidence_scoring', 'score']),
+    getNested(details, ['confidence_scoring', 'confidence_calculation_detail', 'weighted_total']),
+    getNested(details, ['confidence_scoring', 'confidence_calculation_detail', 'value']),
+    getNested(details, ['evidence_snapshot', 'confidence_calculation_detail', 'weighted_total']),
+    getNested(details, ['evidence_snapshot', 'confidence_calculation_detail', 'value']),
+    getNested(details, ['evidence_snapshot', 'confidence_breakdown', 'weighted_total']),
+    getNested(details, ['evidence_snapshot', 'confidence_breakdown', 'value']),
+    getNested(details, ['confidence_calculation_detail', 'weighted_total']),
+    getNested(details, ['confidence_calculation_detail', 'value']),
+    getNested(details, ['confidence_breakdown', 'weighted_total']),
+    getNested(details, ['confidence_breakdown', 'value']),
+    persona.confidence_score,
+    persona.calibration_confidence,
+    (persona as any).confidence,
+  ];
+  for (const candidate of candidates) {
+    const score = coerceConfidenceScore(candidate);
+    if (score !== null) return score;
+  }
+  if (
+    persona.auto_generated_persona === false &&
+    (persona.calibration_status === 'draft' || details?.raw_traits || details?.raw_form_payload)
+  ) {
+    return 50;
   }
 
-  // Priority 2: Legacy evidence-based format — confidence_calculation_detail.weighted_total
-  const legacy =
-    persona.confidence_scoring?.confidence_calculation_detail?.weighted_total ??
-    persona.confidence_scoring?.score ??
-    persona.confidence_score ??
-    persona.calibration_confidence ??
-    (persona as any).confidence ??
-    null;
+  return null;
 
-  if (legacy === null || legacy === undefined) return null;
-  const num = Number(legacy);
-  if (isNaN(num)) return null;
-  return Math.round(num <= 1 ? num * 100 : num);
 };
 
 export const getConfidenceBarClass = (score: number): string => {

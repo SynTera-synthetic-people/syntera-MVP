@@ -32,6 +32,11 @@ import {
   multiSelectAttributes,
 } from './data';
 import { downloadPersonaCardsFrontend } from './DownloadPersonaCard';
+import {
+  getConfidenceBarClass,
+  getConfidenceScore,
+  getConfidenceTextColor,
+} from './PersonaBuilderShared';
 import type { PersonaCardData } from './PersonaCardRenderer';
 import AddPersonaModal from './AddPersonaModal';
 
@@ -54,6 +59,7 @@ interface SavedPersona {
   location_country?: string;
   location_state?: string;
   confidence_scoring?: {
+    weighted_score?: number;
     confidence_calculation_detail?: { weighted_total?: number };
     score?: number;
   };
@@ -259,32 +265,6 @@ const DownloadSuccessToast: React.FC<{ onClose: () => void }> = ({ onClose }) =>
     </motion.div>
   </AnimatePresence>
 );
-
-const getConfidenceScore = (persona: SavedPersona): number | null => {
-  const raw =
-    persona.confidence_scoring?.confidence_calculation_detail?.weighted_total ??
-    persona.confidence_scoring?.score ??
-    persona.confidence_score ??
-    persona.calibration_confidence ??
-    (persona as any).confidence ??
-    null;
-  if (raw === null || raw === undefined) return null;
-  const num = Number(raw);
-  if (isNaN(num)) return null;
-  return Math.round(num <= 1 ? num * 100 : num);
-};
-
-const getConfidenceBarClass = (score: number): string => {
-  if (score >= 80) return 'pb-confidence-bar--green';
-  if (score >= 60) return 'pb-confidence-bar--amber';
-  return 'pb-confidence-bar--red';
-};
-
-const getConfidenceTextColor = (score: number): string => {
-  if (score >= 80) return '#22c55e';
-  if (score >= 60) return '#f59e0b';
-  return '#ef4444';
-};
 
 // ── KebabMenu ────────────────────────────────────────────────────────────────
 
