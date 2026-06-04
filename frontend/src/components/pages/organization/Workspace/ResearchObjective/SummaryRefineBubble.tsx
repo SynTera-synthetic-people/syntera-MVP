@@ -3,8 +3,6 @@ import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { TbX, TbSparkles, TbLoader } from "react-icons/tb";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-
 interface Message {
   id: string;
   sender: "omi" | "user";
@@ -13,8 +11,10 @@ interface Message {
   [key: string]: any;
 }
 
-interface PillPos {
-  top: number;
+interface PillAnchor {
+  /** Distance from viewport bottom to the TOP of the selection. Floater bottom = this + gap. */
+  bottom: number;
+  /** Distance from viewport left, centred over selection. */
   left: number;
 }
 
@@ -26,9 +26,9 @@ interface SummaryRefineBubbleProps {
   renderMessageContent: (message: Message) => React.ReactNode;
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
-
-const PILL_WIDTH = 90; // approximate pill width in px
+const PILL_WIDTH   = 180;
+const PANEL_WIDTH  = 360;
+const GAP          = 10; // px gap between floater bottom and selection top
 
 const SummaryRefineBubble: React.FC<SummaryRefineBubbleProps> = ({
   message,
@@ -42,12 +42,12 @@ const SummaryRefineBubble: React.FC<SummaryRefineBubbleProps> = ({
   const inputRef    = useRef<HTMLInputElement>(null);
 
   const [selectedText, setSelectedText] = useState<string>("");
-  const [pillPos,      setPillPos]      = useState<PillPos | null>(null);
+  const [anchor,       setAnchor]       = useState<PillAnchor | null>(null);
   const [inputOpen,    setInputOpen]    = useState<boolean>(false);
   const [instruction,  setInstruction]  = useState<string>("");
   const [status,       setStatus]       = useState<"idle" | "sending" | "sent">("idle");
 
-  // ── Show pill on text selection ───────────────────────────────────────────
+  // ── Show pill on pointerup ────────────────────────────────────────────────
 
   const handlePointerUp = useCallback(() => {
     if (isLocked) return;
@@ -65,17 +65,21 @@ const SummaryRefineBubble: React.FC<SummaryRefineBubbleProps> = ({
       const rangeRect = range.getBoundingClientRect();
       if (!rangeRect.width && !rangeRect.height) return;
 
-      // Centre the pill above the selection
-      const vpWidth = window.innerWidth;
-      let left = rangeRect.left + rangeRect.width / 2 - PILL_WIDTH / 2;
-      left = Math.max(8, Math.min(left, vpWidth - PILL_WIDTH - 8));
+      const vpWidth  = window.innerWidth;
+      const vpHeight = window.innerHeight;
 
-      // Pill sits just above the selection
-      const top = rangeRect.top - 8;
+      // Centre pill over selection; clamp to viewport edges (use panel width
+      // for clamping so the wider panel doesn't clip when it opens)
+      let left = rangeRect.left + rangeRect.width / 2 - PILL_WIDTH / 2;
+      left = Math.max(8, Math.min(left, vpWidth - PANEL_WIDTH - 8));
+
+      // bottom = distance from viewport bottom to TOP of selection + gap
+      // → floater bottom edge sits exactly GAP px above the selection top
+      const bottom = vpHeight - rangeRect.top + GAP;
 
       setSelectedText(raw);
-      setPillPos({ top, left });
-      setInputOpen(false);   // reset — user needs to click pill to open input
+      setAnchor({ bottom, left });
+      setInputOpen(false);
       setInstruction("");
       setStatus("idle");
     });
@@ -84,28 +88,26 @@ const SummaryRefineBubble: React.FC<SummaryRefineBubbleProps> = ({
   // ── Dismiss on outside click ──────────────────────────────────────────────
 
   useEffect(() => {
-    if (!pillPos) return;
-
+    if (!anchor) return;
     const handlePointerDown = (e: PointerEvent) => {
       if (pillRef.current?.contains(e.target as Node)) return;
       if (textAreaRef.current?.contains(e.target as Node)) return;
       dismiss();
     };
-
     document.addEventListener("pointerdown", handlePointerDown, true);
     return () => document.removeEventListener("pointerdown", handlePointerDown, true);
-  }, [pillPos]);
+  }, [anchor]);
 
   // ── Escape key ────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    if (!pillPos) return;
+    if (!anchor) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") dismiss(); };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [pillPos]);
+  }, [anchor]);
 
-  // ── Auto-focus input when it opens ───────────────────────────────────────
+  // ── Auto-focus input when panel opens ────────────────────────────────────
 
   useEffect(() => {
     if (inputOpen) {
@@ -117,18 +119,12 @@ const SummaryRefineBubble: React.FC<SummaryRefineBubbleProps> = ({
   // ── Dismiss ───────────────────────────────────────────────────────────────
 
   const dismiss = () => {
-    setPillPos(null);
+    setAnchor(null);
     setSelectedText("");
     setInputOpen(false);
     setInstruction("");
     setStatus("idle");
     window.getSelection()?.removeAllRanges();
-  };
-
-  // ── Open input panel when pill is clicked ────────────────────────────────
-
-  const handlePillClick = () => {
-    setInputOpen(true);
   };
 
   // ── Submit ────────────────────────────────────────────────────────────────
@@ -152,46 +148,43 @@ const SummaryRefineBubble: React.FC<SummaryRefineBubbleProps> = ({
     }
   };
 
-  // ── Preview text ──────────────────────────────────────────────────────────
-
   const previewText =
     selectedText.length > 60 ? selectedText.slice(0, 57) + "…" : selectedText;
 
   // ── Portal ────────────────────────────────────────────────────────────────
 
-  const portal = pillPos
+  const portal = anchor
     ? createPortal(
         <AnimatePresence>
           <motion.div
             key="srb-portal"
             ref={pillRef}
             className="srb-portal"
-            style={{ top: pillPos.top, left: pillPos.left }}
-            initial={{ opacity: 0, y: 6, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 3, scale: 0.97 }}
+            style={{ bottom: anchor.bottom, left: anchor.left }}
+            initial={{ opacity: 0, y: -6, scale: 0.95 }}
+            animate={{ opacity: 1,  y:  0, scale: 1    }}
+            exit={{    opacity: 0,  y: -3, scale: 0.97  }}
             transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
           >
-            {/* ── Step 1: Pill button ── */}
+            {/* ── Step 1: Pill ── */}
             {!inputOpen ? (
               <>
                 <button
                   className="srb-pill"
-                  onClick={handlePillClick}
+                  onClick={() => setInputOpen(true)}
                   aria-label="Refine selected text with Omi"
                 >
                   <TbSparkles size={12} />
                   <span>Explore another angle</span>
                 </button>
-                {/* Down arrow */}
                 <div className="srb-arrow" />
               </>
             ) : (
-              /* ── Step 2: Input panel (expands from pill) ── */
+              /* ── Step 2: Input panel ── */
               <motion.div
                 className="srb-input-panel"
                 initial={{ opacity: 0, scale: 0.96, y: -4 }}
-                animate={{ opacity: 1, scale: 1,    y: 0   }}
+                animate={{ opacity: 1, scale: 1,    y:  0  }}
                 transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
               >
                 {/* Header */}
@@ -204,12 +197,6 @@ const SummaryRefineBubble: React.FC<SummaryRefineBubbleProps> = ({
                     <TbX size={12} />
                   </button>
                 </div>
-
-                {/* Selected text preview */}
-                {/* <div className="srb-panel-preview">
-                  <span className="srb-panel-preview-label">Selected</span>
-                  <span className="srb-panel-preview-text">"{previewText}"</span>
-                </div> */}
 
                 {/* Input row */}
                 <div className={`srb-panel-input-row${status !== "idle" ? " srb-panel-input-row--disabled" : ""}`}>
@@ -245,16 +232,17 @@ const SummaryRefineBubble: React.FC<SummaryRefineBubbleProps> = ({
                   {status === "sent" && (
                     <motion.p
                       className="srb-panel-sent"
-                      initial={{ opacity: 0, y: 2 }}
-                      animate={{ opacity: 1,  y: 0 }}
-                      exit={{ opacity: 0 }}
+                      initial={{ opacity: 0, height: 0      }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{    opacity: 0, height: 0      }}
+                      transition={{ duration: 0.18 }}
                     >
                       Done — updating summary…
                     </motion.p>
                   )}
                 </AnimatePresence>
 
-                {/* Down arrow */}
+                {/* Arrow — always last so it sits at the bottom */}
                 <div className="srb-arrow" />
               </motion.div>
             )}

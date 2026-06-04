@@ -1,7 +1,8 @@
 /* ═══════════════════════════════════════════════════════════════════════════
    SummaryRefineBubble
    Flow: select text → pill appears → click pill → input panel expands
-   Portal is fixed-positioned on document.body
+   Portal is fixed-positioned on document.body, anchored by `bottom` so
+   it always grows upward — never overlaps the selected text below it.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /* ── Bubble ── */
@@ -17,7 +18,6 @@
   box-sizing: border-box;
 }
 
-/* Selectable text region */
 .srb-bubble-text {
   flex: 1;
   min-width: 0;
@@ -47,16 +47,20 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   Portal wrapper — fixed, floats above selection
+   Portal wrapper
+   KEY: `bottom` is set inline from JS (viewport distance), NOT `top`.
+   This means the element's bottom edge is pinned above the selection and
+   any height growth (pill → panel expansion, sent message) grows UPWARD.
+   No translateY needed or wanted here.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 .srb-portal {
   position: fixed;
-  transform: translateY(-100%);   /* floats above the anchor (top coord) */
+  /* bottom + left injected inline */
   z-index: 9999;
   display: flex;
   flex-direction: column;
-  align-items: center;            /* centre pill + arrow on the same axis */
+  align-items: center;
   user-select: none;
 }
 
@@ -71,7 +75,7 @@
   padding: 5px 12px 5px 10px;
   background: var(--T-Base-B1, #0E0F12);
   border: 1px solid var(--T-GreyScale-Grey-700, #4F535F);
-  border-radius: 999px;           /* full pill */
+  border-radius: 999px;
   color: white;
   font-size: 0.75rem;
   font-weight: 600;
@@ -79,14 +83,13 @@
   cursor: pointer;
   white-space: nowrap;
   box-shadow:
-    0 4px 16px #0E0F12,
-    0 1px 4px #4F535F;
-  transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.1s, box-shadow 0.15s;
+    0 4px 16px rgba(14, 15, 18, 0.8),
+    0 1px 4px rgba(79, 83, 95, 0.4);
+  transition: background 0.15s, border-color 0.15s, color 0.15s,
+              transform 0.1s, box-shadow 0.15s;
 }
 
 .srb-pill:hover {
-  background: var(--T-Base-B1, #0E0F12);
-  border: 1px solid var(--T-GreyScale-Grey-700, #4F535F);
   color: #93c5fd;
   transform: translateY(-1px);
   box-shadow:
@@ -99,7 +102,7 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   Step 2 — Input panel (replaces pill after click)
+   Step 2 — Input panel
    ═══════════════════════════════════════════════════════════════════════════ */
 
 .srb-input-panel {
@@ -110,8 +113,11 @@
   background: var(--T-Base-B1, #0E0F12);
   border: 1px solid var(--T-GreyScale-Grey-700, #4F535F);
   border-radius: 12px;
-  padding: 11px 13px 10px;
+  padding: 11px 13px 8px; /* less bottom padding — arrow sits below */
   box-sizing: border-box;
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.65),
+    0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 /* ── Panel header ── */
@@ -151,36 +157,6 @@
   background: rgba(255, 255, 255, 0.06);
 }
 
-/* ── Selection preview ── */
-.srb-panel-preview {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 6px 9px;
-  background: rgba(255, 255, 255, 0.03);
-  border-left: 2px solid rgba(59, 130, 246, 0.35);
-  border-radius: 0 5px 5px 0;
-}
-
-.srb-panel-preview-label {
-  font-size: 0.5625rem;
-  font-weight: 700;
-  color: #4b5563;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.srb-panel-preview-text {
-  font-size: 0.6875rem;
-  color: #9ca3af;
-  line-height: 1.4;
-  font-style: italic;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
 /* ── Input row ── */
 .srb-panel-input-row {
   display: flex;
@@ -194,7 +170,7 @@
 }
 
 .srb-panel-input-row:focus-within {
-  border-color: 1px solid var(--T-GreyScale-Grey-700, #4F535F);
+  border-color: var(--T-GreyScale-Grey-700, #4F535F);
 }
 
 .srb-panel-input-row--disabled {
@@ -256,17 +232,20 @@
   opacity: 0.45;
 }
 
-/* ── Sent message ── */
+/* ── Sent confirmation ── */
 .srb-panel-sent {
   font-size: 0.6875rem;
   color: #34d399;
   margin: 0;
   text-align: center;
   font-weight: 500;
+  overflow: hidden; /* required for height animation */
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   Shared — down-pointing arrow (below pill or panel, pointing to selection)
+   Shared — down-pointing arrow (last child of pill wrapper or panel)
+   Always rendered as the last flex item so it sits at the bottom,
+   pointing down at the selected text.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 .srb-arrow {
@@ -274,21 +253,21 @@
   height: 0;
   border-left: 6px solid transparent;
   border-right: 6px solid transparent;
-  border-top: 6px solid rgba(59, 130, 246, 0.45);
+  border-top: 6px solid var(--T-GreyScale-Grey-700, #4F535F);
   flex-shrink: 0;
+  position: relative;
 }
 
 .srb-arrow::after {
   content: '';
   position: absolute;
-  /* inner fill arrow — colour matches the element above it */
-  margin-top: -8px;
-  margin-left: -5px;
+  top: -8px;
+  left: -5px;
   width: 0;
   height: 0;
   border-left: 5px solid transparent;
   border-right: 5px solid transparent;
-  border-top: 5px solid #0d1117;
+  border-top: 5px solid #0E0F12; /* matches pill/panel background */
 }
 
 /* ── Shared animations ── */
