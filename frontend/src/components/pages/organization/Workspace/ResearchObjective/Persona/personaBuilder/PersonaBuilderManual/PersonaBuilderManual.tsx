@@ -109,11 +109,21 @@ const PersonaBuilderManual: React.FC = () => {
     }, [activeCategory, getCurrentCategoryItems]);
 
     // ── Real-time plausibility (debounced) ────────────────────────────────────
-    // Fire POST /validate 500ms after the last field change, but only once
-    // age + gender are filled (the two required fields for the backend schema).
+    // Fire POST /validate 500ms after the last field change once the user has
+    // selected at least one trait. Individual rules decide whether enough
+    // context exists to warn.
 
     useEffect(() => {
-        if (!formData.age || !formData.gender) return;
+        const hasPlausibilityInput = Object.values(formData).some((value) => {
+            if (Array.isArray(value)) return value.length > 0;
+            if (typeof value === 'string') return value.trim() !== '';
+            return Boolean(value);
+        });
+
+        if (!hasPlausibilityInput) {
+            setRealtimeWarnings([]);
+            return;
+        }
 
         if (debounceRef.current) clearTimeout(debounceRef.current);
         debounceRef.current = setTimeout(async () => {
@@ -399,20 +409,57 @@ const PersonaBuilderManual: React.FC = () => {
     );
 
     // ── Resolve warning for the currently active sub-tab ─────────────────────
-    // Backend shape: { rule, severity, message, fields: string[] }
+    // Backend shape: { rule, message, fields: string[] }
     // e.g. fields: ["age_range", "income_range"]
+    const getWarningFieldsForSubTab = (subTabName: string): Set<string> => {
+        const fallbackField = subTabName.toLowerCase().replace(/\s+/g, '_');
+        const mappedField = traitNameMapping[subTabName] ?? fallbackField;
+        const fieldAliases: Record<string, string[]> = {
+            Age: ['age_range'],
+            Gender: ['gender'],
+            Income: ['income_range'],
+            'Education Level': ['education_level'],
+            'Occupation Level': ['occupation_level', 'job_level', 'occupation'],
+            'Marital Status': ['marital_status'],
+            'Family Structure': ['family_structure', 'family_size'],
+            Geography: ['geography'],
+            Occupation: ['occupation'],
+            Industry: ['industry'],
+            'Category Awareness': ['category_awareness'],
+            Lifestyle: ['lifestyle'],
+            Values: ['values'],
+            Personality: ['personality'],
+            Interest: ['interests'],
+            Motivation: ['motivations'],
+            'Decision Making Style': ['decision_making', 'decision_making_role', 'decision_making_style'],
+            'Consumption Frequency': ['consumption_frequency'],
+            'Purchase Channel': ['purchase_channel'],
+            'Price Sensitivity': ['price_sensitivity'],
+            'Brand Sensitivity': ['brand_sensitivity'],
+            'Switching Behaviour': ['switching_tendency', 'switching_behaviour'],
+            'Purchase Triggers': ['purchase_triggers'],
+            'Purchase Barriers': ['purchase_barriers'],
+            'Media Consumption Patterns': ['media_consumption_patterns'],
+            'Digital Behaviour': ['digital_adoption', 'digital_behaviour', 'digital_behavior'],
+        };
+        return new Set([
+            fallbackField,
+            mappedField,
+            ...(fieldAliases[subTabName] ?? []),
+        ].map((field) => field.toLowerCase()));
+    };
+
     const getActiveWarning = (): string | undefined => {
         if (!realtimeWarnings.length) return undefined;
 
-        const subTab = activeSubTab.toLowerCase().replace(/\s+/g, '_');
+        const activeFields = getWarningFieldsForSubTab(activeSubTab);
 
         const match = realtimeWarnings.find((w) => {
             const raw = w as unknown as Record<string, unknown>;
             const fields = raw.fields;
             if (Array.isArray(fields)) {
-                const keyword = subTab.split('_')[0] ?? subTab;
                 return fields.some((f: unknown) =>
-                    typeof f === 'string' && f.toLowerCase().includes(keyword)
+                    typeof f === 'string' && activeFields.has(f.toLowerCase())
                 );
             }
             return false;

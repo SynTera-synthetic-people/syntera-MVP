@@ -1,10 +1,9 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { TbAlertTriangle, TbInfoCircle, TbAlertCircle } from 'react-icons/tb';
+import { TbAlertTriangle } from 'react-icons/tb';
 
 interface PlausibilityWarning {
   rule: string;
-  severity: 'high' | 'medium' | 'soft';
   message: string;
   fields: string[];
 }
@@ -15,26 +14,7 @@ interface PlausibilityCheckModalProps {
   onContinue: () => void;
 }
 
-const SEVERITY_CONFIG = {
-  high: {
-    icon: TbAlertCircle,
-    badge: 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-400',
-    row: 'border-red-200 dark:border-red-500/20 bg-red-50 dark:bg-red-500/5',
-    label: 'Review',
-  },
-  medium: {
-    icon: TbAlertTriangle,
-    badge: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400',
-    row: 'border-amber-200 dark:border-amber-500/20 bg-amber-50 dark:bg-amber-500/5',
-    label: 'Check',
-  },
-  soft: {
-    icon: TbInfoCircle,
-    badge: 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-400',
-    row: 'border-blue-200 dark:border-blue-500/20 bg-blue-50 dark:bg-blue-500/5',
-    label: 'Note',
-  },
-} as const;
+const WARNING_ROW = 'border-amber-200 dark:border-amber-500/20 bg-amber-50 dark:bg-amber-500/5';
 
 const PlausibilityCheckModal: React.FC<PlausibilityCheckModalProps> = ({
   show,
@@ -66,24 +46,17 @@ const PlausibilityCheckModal: React.FC<PlausibilityCheckModalProps> = ({
           {/* Warning list */}
           <div className="mt-5 flex flex-col gap-2 max-h-72 overflow-y-auto pr-1">
             {warnings.map((w, i) => {
-              const cfg = SEVERITY_CONFIG[w.severity] ?? SEVERITY_CONFIG.soft;
-              const Icon = cfg.icon;
               return (
                 <div
                   key={i}
-                  className={`flex items-start gap-3 border rounded-xl px-4 py-3 ${cfg.row}`}
+                  className={`flex items-start gap-3 border rounded-xl px-4 py-3 ${WARNING_ROW}`}
                 >
-                  <Icon className="w-4 h-4 mt-0.5 shrink-0 text-inherit" />
+                  <TbAlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-amber-500 dark:text-amber-400" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-gray-800 dark:text-gray-200 leading-snug">
                       {w.message}
                     </p>
                   </div>
-                  <span
-                    className={`text-[10px] font-semibold uppercase tracking-wide rounded-full px-2 py-0.5 shrink-0 ${cfg.badge}`}
-                  >
-                    {cfg.label}
-                  </span>
                 </div>
               );
             })}

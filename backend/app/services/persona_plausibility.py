@@ -17,8 +17,8 @@ from typing import Optional
 
 # ── Warning factory ────────────────────────────────────────────────────────────
 
-def _warn(rule: str, severity: str, message: str, fields: list[str]) -> dict:
-    return {"rule": rule, "severity": severity, "message": message, "fields": fields}
+def _warn(rule: str, _severity: str, message: str, fields: list[str]) -> dict:
+    return {"rule": rule, "message": message, "fields": fields}
 
 
 # ── Text helpers ───────────────────────────────────────────────────────────────
@@ -38,11 +38,22 @@ def _lower_set(values) -> set[str]:
     return result
 
 
-def _parse_age_lower(age_range: Optional[str]) -> Optional[int]:
+def _parse_age_bounds(age_range: Optional[str]) -> tuple[Optional[int], Optional[int]]:
     if not age_range:
-        return None
-    nums = re.findall(r"\d+", age_range)
-    return int(nums[0]) if nums else None
+        return None, None
+    nums = [int(n) for n in re.findall(r"\d+", age_range)]
+    if not nums:
+        return None, None
+    if len(nums) == 1:
+        return nums[0], nums[0]
+    lower, upper = nums[0], nums[1]
+    if lower > upper:
+        lower, upper = upper, lower
+    return lower, upper
+
+
+def _parse_age_lower(age_range: Optional[str]) -> Optional[int]:
+    return _parse_age_bounds(age_range)[0]
 
 
 def _parse_income_value(income_range: Optional[str]) -> Optional[int]:
@@ -96,7 +107,12 @@ _STUDENT = {"student", "undergraduate", "college student", "grad student", "appr
 _EXECUTIVE = {"ceo", "cto", "cfo", "coo", "vp", "vice president", "director", "c-suite", "c-level", "chief", "managing director", "partner", "president", "head of", "svp", "evp"}
 _ENTRY_LEVEL = {"intern", "junior", "entry-level", "entry level", "associate", "assistant", "coordinator", "clerk", "trainee"}
 _SENIOR = {"senior", "lead", "manager", "principal", "staff engineer", "head", "director", "vp", "vice president", "chief", "ceo", "president"}
-_HIGH_EDUCATION = {"phd", "doctorate", "post-doctoral", "postdoctoral", "master's", "masters", "mba", "md ", "jd", "llm", "graduate degree"}
+_MASTERS_EDUCATION = {"master's", "masters", "master degree", "master's degree", "mba", "graduate degree"}
+_DOCTORAL_PROFESSIONAL_EDUCATION = {
+    "phd", "ph.d", "doctorate", "doctoral", "doctoral/professional", "professional degree",
+    "post-doctoral", "postdoctoral", "md ", "jd", "llm",
+}
+_HIGH_EDUCATION = _MASTERS_EDUCATION | _DOCTORAL_PROFESSIONAL_EDUCATION
 _LOW_EDUCATION = {"no formal education", "primary school", "elementary", "no schooling", "no degree", "high school dropout", "secondary only"}
 _RURAL = {"rural", "village", "small town", "remote area", "countryside", "tier 3", "tier-3", "tier3"}
 _SMALL_TOWN_GEO = {"rural", "village", "small town", "remote", "countryside", "tier 3", "tier-3", "tier3", "suburban town"}
@@ -144,7 +160,10 @@ _ESPORTS = {"esports", "competitive gaming", "competitive esports", "twitch", "g
 _EARLY_ADOPTER = {"early adopter", "tech-forward", "cutting edge", "bleeding edge", "first to try", "tech enthusiast", "early tech", "innovative tech"}
 _HIGH_TRAVEL = {"high-travel", "high travel", "frequent travel", "travel-heavy", "nomadic", "frequent flyer", "always traveling"}
 _RIGID_JOB = {"full-time office", "9-to-5", "9 to 5", "rigid schedule", "fixed hours", "traditional office", "onsite", "in-office"}
-_URBAN_NIGHTLIFE = {"nightlife", "clubbing", "bars", "urban social", "city nightlife", "party scene", "nightclub"}
+_URBAN_NIGHTLIFE = {
+    "nightlife", "nightlife-heavy", "nightlife heavy", "clubbing", "bars", "urban social",
+    "city nightlife", "party scene", "nightclub",
+}
 
 # Occupation / industry
 _MEDICAL_PROFESSIONS = {"doctor", "physician", "surgeon", "dentist", "pharmacist", "nurse", "radiologist", "psychiatrist"}
@@ -164,11 +183,11 @@ _INCOME_YOUNG_HIGH = 150_000
 
 # ---- DEMOGRAPHICS ----
 
-def _rule_age_income(age_lower: Optional[int], income_val: Optional[int]) -> Optional[dict]:
+def _rule_age_income(age_lower: Optional[int], age_upper: Optional[int], income_val: Optional[int]) -> Optional[dict]:
     """Rule 1: Age ↔ Income — young (18-24) or elderly (65+) + very high income."""
-    if age_lower is None or income_val is None:
+    if age_lower is None or age_upper is None or income_val is None:
         return None
-    if (age_lower <= 24 or age_lower >= 65) and income_val >= _INCOME_YOUNG_HIGH:
+    if (age_upper <= 25 or age_lower >= 65) and income_val >= _INCOME_YOUNG_HIGH:
         return _warn(
             "age_income",
             "medium",
@@ -178,59 +197,61 @@ def _rule_age_income(age_lower: Optional[int], income_val: Optional[int]) -> Opt
     return None
 
 
-def _rule_age_education(age_lower: Optional[int], education: Optional[str]) -> Optional[dict]:
+def _rule_age_education(age_upper: Optional[int], education: Optional[str]) -> Optional[dict]:
     """Rule 2: Age ↔ Education — young + advanced degree."""
-    if age_lower is None or not education:
+    if age_upper is None or not education:
         return None
     edu_l = education.lower()
-    if age_lower < 20 and any(k in edu_l for k in {"bachelor", "undergraduate degree"}):
+    if age_upper < 20 and any(k in edu_l for k in {"bachelor", "undergraduate degree"}):
         return _warn("age_education", "soft", "Education level seems advanced for this age group. Please check", ["age_range", "education_level"])
-    if age_lower < 22 and _contains_any(education, _HIGH_EDUCATION):
+    if age_upper <= 25 and _contains_any(education, _DOCTORAL_PROFESSIONAL_EDUCATION):
+        return _warn("age_education", "soft", "Education level seems advanced for this age group. Please check", ["age_range", "education_level"])
+    if age_upper < 22 and _contains_any(education, _MASTERS_EDUCATION):
         return _warn("age_education", "soft", "Education level seems advanced for this age group. Please check", ["age_range", "education_level"])
     return None
 
 
-def _rule_age_occupation(age_lower: Optional[int], occ_words: set[str]) -> Optional[dict]:
+def _rule_age_occupation(age_lower: Optional[int], age_upper: Optional[int], occ_words: set[str]) -> Optional[dict]:
     """Rule 3: Age ↔ Occupation — young + senior leadership; elderly + entry-level."""
-    if age_lower is None:
+    if age_lower is None or age_upper is None:
         return None
-    if age_lower < 22 and _words_overlap(occ_words, _SENIOR | _EXECUTIVE):
+    if age_upper < 22 and _words_overlap(occ_words, _SENIOR | _EXECUTIVE):
         return _warn("age_occupation", "medium", "Selected occupation may not align with this age group. Please review", ["age_range", "occupation"])
     if age_lower > 70 and _words_overlap(occ_words, _ENTRY_LEVEL):
         return _warn("age_occupation", "soft", "Selected occupation may not align with this age group. Please review", ["age_range", "occupation"])
     return None
 
 
-def _rule_age_marital_status(age_lower: Optional[int], marital_status: Optional[str]) -> Optional[dict]:
+def _rule_age_marital_status(age_upper: Optional[int], marital_status: Optional[str]) -> Optional[dict]:
     """Rule 4: Age ↔ Marital Status — age <18 + married; age <22 + widowed/divorced."""
-    if age_lower is None or not marital_status:
+    if age_upper is None or not marital_status:
         return None
     ms = marital_status.lower()
-    if age_lower < 18 and _contains_any(ms, {"married", "widowed", "divorced", "separated"}):
+    if age_upper < 18 and _contains_any(ms, {"married", "widowed", "divorced", "separated"}):
         return _warn("age_marital_status", "medium", "This marital status is less common for this age group. Please check", ["age_range", "marital_status"])
-    if age_lower < 22 and _contains_any(ms, {"widowed", "divorced", "separated"}):
+    if age_upper < 22 and _contains_any(ms, {"widowed", "divorced", "separated"}):
         return _warn("age_marital_status", "soft", "This marital status is less common for this age group. Please check", ["age_range", "marital_status"])
     return None
 
 
-def _rule_age_family_structure(age_lower: Optional[int], family_structure: Optional[str]) -> Optional[dict]:
+def _rule_age_family_structure(age_lower: Optional[int], age_upper: Optional[int], family_structure: Optional[str]) -> Optional[dict]:
     """Rule 5: Age ↔ Family Structure — young + couple with children; elderly + living with parents."""
-    if age_lower is None or not family_structure:
+    if age_lower is None or age_upper is None or not family_structure:
         return None
     fs = family_structure.lower()
-    if age_lower < 22 and _contains_any(fs, _COUPLE_WITH_CHILDREN):
+    if age_upper < 22 and _contains_any(fs, _COUPLE_WITH_CHILDREN):
         return _warn("age_family_structure", "medium", "Family structure may not align with selected age. Please review", ["age_range", "family_structure"])
-    if age_lower > 70 and _contains_any(fs, _LIVING_WITH_PARENTS):
+    if age_lower >= 70 and _contains_any(fs, _LIVING_WITH_PARENTS):
         return _warn("age_family_structure", "soft", "Family structure may not align with selected age. Please review", ["age_range", "family_structure"])
     return None
 
 
-def _rule_age_dependents(age_lower: Optional[int], family_size: Optional[str]) -> Optional[dict]:
+def _rule_age_dependents(age_upper: Optional[int], family_size: Optional[str]) -> Optional[dict]:
     """Rule 6: Age ↔ Dependents — very young + large family size."""
-    if age_lower is None or not family_size:
+    if age_upper is None or not family_size:
         return None
     nums = re.findall(r"\d+", family_size)
-    if nums and age_lower <= 22 and int(nums[0]) >= 5:
+    if nums and age_upper <= 22 and int(nums[0]) >= 5:
         return _warn("age_dependents", "soft", "Dependent profile may not align with selected age. Please check", ["age_range", "family_size"])
     return None
 
@@ -436,7 +457,9 @@ def _rule_digital_adoption_age(digital_adoption: Optional[str], age_lower: Optio
 
 def _rule_lifestyle_occupation(lifestyle_words: set[str], occ_words: set[str]) -> Optional[dict]:
     """Rule 26: Lifestyle ↔ Occupation — high-travel lifestyle + rigid full-time job."""
-    if _words_overlap(lifestyle_words, _HIGH_TRAVEL) and _words_overlap(lifestyle_words | occ_words, _RIGID_JOB):
+    lifestyle_text = " ".join(lifestyle_words)
+    combined_text = " ".join(lifestyle_words | occ_words)
+    if _contains_any(lifestyle_text, _HIGH_TRAVEL) and _contains_any(combined_text, _RIGID_JOB):
         return _warn("lifestyle_occupation_mismatch", "soft", "Lifestyle may not fully align with selected occupation. Please check", ["lifestyle", "occupation"])
     return None
 
@@ -514,6 +537,54 @@ def _rule_industry_category_awareness(industry: Optional[str], category_awarenes
 
 # ---- CROSS-SECTION ----
 
+def _rule_multi_attribute_rare_cluster(
+    age_upper: Optional[int],
+    income_val: Optional[int],
+    lifestyle_words: set[str],
+    category_awareness: Optional[str],
+) -> Optional[dict]:
+    """Rule 33: Young + very high income + expert + luxury lifestyle."""
+    if age_upper is None or income_val is None:
+        return None
+    if (
+        age_upper <= 24
+        and income_val >= _INCOME_VERY_HIGH
+        and _words_overlap(lifestyle_words, _LUXURY)
+        and _contains_any(category_awareness, _EXPERT_AWARENESS)
+    ):
+        return _warn(
+            "multi_attribute_rare_cluster",
+            "high",
+            "This persona includes multiple rare combinations. Please double-check for realism",
+            ["age_range", "income_range", "category_awareness", "lifestyle"],
+        )
+    return None
+
+
+def _rule_cross_section_logical_conflict(
+    occ_words: set[str],
+    income_val: Optional[int],
+    lifestyle_words: set[str],
+    category_awareness: Optional[str],
+) -> Optional[dict]:
+    """Rule 34: Student + high income + luxury lifestyle + low awareness."""
+    if income_val is None:
+        return None
+    if (
+        _words_overlap(occ_words, _STUDENT)
+        and income_val >= _INCOME_HIGH
+        and _words_overlap(lifestyle_words, _LUXURY)
+        and _contains_any(category_awareness, _UNAWARE)
+    ):
+        return _warn(
+            "cross_section_logical_conflict",
+            "high",
+            "Some selections across sections may not form a coherent persona. Please review",
+            ["occupation", "income_range", "lifestyle", "category_awareness"],
+        )
+    return None
+
+
 def _rule_student_luxury(occ_words: set[str], lifestyle_words: set[str], category_awareness: Optional[str]) -> Optional[dict]:
     """Rule 34: Cross-Section Logical Conflict — student + luxury + expert awareness."""
     is_student = _words_overlap(occ_words, _STUDENT)
@@ -551,14 +622,14 @@ def _rule_over_idealized(
 
 
 def _rule_unrealistic_extremes(
-    age_lower: Optional[int],
+    age_upper: Optional[int],
     income_val: Optional[int],
     category_awareness: Optional[str],
 ) -> Optional[dict]:
     """Rule 33 (page 10): Unrealistic Extremes — lowest age + highest income + highest expertise."""
-    if age_lower is None or income_val is None:
+    if age_upper is None or income_val is None:
         return None
-    if age_lower <= 22 and income_val >= _INCOME_VERY_HIGH and _contains_any(category_awareness, _EXPERT_AWARENESS):
+    if age_upper <= 22 and income_val >= _INCOME_VERY_HIGH and _contains_any(category_awareness, _EXPERT_AWARENESS):
         return _warn("unrealistic_extremes", "high", "This combination is highly uncommon. Please check your selections", ["age_range", "income_range", "category_awareness"])
     return None
 
@@ -579,6 +650,112 @@ def _rule_hyper_specific(ctx: dict, age_lower: Optional[int], income_val: Option
     ])
     if specificity >= 8:
         return _warn("hyper_specific_persona", "soft", "This persona is highly specific. Consider broadening for better simulation coverage", ["age_range", "income_range", "education_level", "geography", "occupation"])
+    return None
+
+
+def _rule_sample_size_complexity(ctx: dict, age_lower: Optional[int], income_val: Optional[int], sample_size: Optional[int]) -> Optional[dict]:
+    """Rule 34: Niche persona + very low sample size."""
+    if sample_size is None:
+        return None
+    specificity = sum([
+        age_lower is not None,
+        income_val is not None,
+        bool(ctx["education"]),
+        bool(ctx["geography"]),
+        bool(ctx["marital_status"]),
+        bool(ctx["family_structure"]),
+        bool(ctx["occupation"]),
+        bool(ctx["category_awareness"]),
+        bool(ctx["job_level"]),
+        bool(ctx["industry"]),
+    ])
+    if specificity >= 8 and sample_size < 30:
+        return _warn("sample_size_complexity", "soft", "This persona is highly specific. Consider increasing sample size for reliable simulation", ["sample_size", "age_range", "income_range", "education_level", "geography", "occupation"])
+    return None
+
+
+# ---- DYNAMIC CROSS-SECTION VALIDATIONS ----
+
+def _rule_young_luxury_lifestyle(age_upper: Optional[int], lifestyle_words: set[str]) -> Optional[dict]:
+    if age_upper is None:
+        return None
+    if age_upper <= 25 and _words_overlap(lifestyle_words, _LUXURY):
+        return _warn(
+            "young_luxury_lifestyle",
+            "soft",
+            "Luxury lifestyle is uncommon for this age group. Please check",
+            ["age_range", "lifestyle"],
+        )
+    return None
+
+
+def _rule_student_high_income_luxury(
+    occ_words: set[str],
+    income_val: Optional[int],
+    lifestyle_words: set[str],
+) -> Optional[dict]:
+    if income_val is None:
+        return None
+    if _words_overlap(occ_words, _STUDENT) and income_val >= _INCOME_HIGH and _words_overlap(lifestyle_words, _LUXURY):
+        return _warn(
+            "student_high_income_luxury",
+            "medium",
+            "Student profile combined with high income and luxury lifestyle is uncommon. Please check",
+            ["occupation", "income_range", "lifestyle"],
+        )
+    return None
+
+
+def _rule_rural_luxury_nightlife_lifestyle(geography: Optional[str], lifestyle_words: set[str]) -> Optional[dict]:
+    if not geography:
+        return None
+    if (
+        _contains_any(geography, _RURAL)
+        and _words_overlap(lifestyle_words, _LUXURY)
+        and _words_overlap(lifestyle_words, _URBAN_NIGHTLIFE)
+    ):
+        return _warn(
+            "rural_luxury_nightlife_lifestyle",
+            "soft",
+            "Luxury nightlife-heavy lifestyle may not align with this geography. Please check",
+            ["geography", "lifestyle"],
+        )
+    return None
+
+
+def _rule_young_expert_luxury_high_income(
+    age_upper: Optional[int],
+    income_val: Optional[int],
+    lifestyle_words: set[str],
+    category_awareness: Optional[str],
+) -> Optional[dict]:
+    if age_upper is None or income_val is None:
+        return None
+    if (
+        age_upper <= 25
+        and income_val >= _INCOME_HIGH
+        and _words_overlap(lifestyle_words, _LUXURY)
+        and _contains_any(category_awareness, _EXPERT_AWARENESS)
+    ):
+        return _warn(
+            "young_expert_luxury_high_income",
+            "medium",
+            "Young age combined with expert awareness, high income, and luxury lifestyle is uncommon. Please check",
+            ["age_range", "category_awareness", "income_range", "lifestyle"],
+        )
+    return None
+
+
+def _rule_young_senior_expert(age_upper: Optional[int], occ_words: set[str], category_awareness: Optional[str]) -> Optional[dict]:
+    if age_upper is None:
+        return None
+    if age_upper <= 25 and _words_overlap(occ_words, _SENIOR | _EXECUTIVE) and _contains_any(category_awareness, _EXPERT_AWARENESS):
+        return _warn(
+            "young_senior_expert",
+            "soft",
+            "Senior role and expert awareness are uncommon for this age group. Please check",
+            ["age_range", "occupation", "category_awareness"],
+        )
     return None
 
 
@@ -633,22 +810,41 @@ def _extract_context(payload: dict) -> dict:
         # Behavioural
         "price_sensitivity": behav.get("price_sensitivity") or payload.get("price_sensitivity") or "",
         "brand_sensitivity": behav.get("brand_sensitivity") or payload.get("brand_sensitivity") or "",
-        "digital_adoption": behav.get("digital_adoption") or payload.get("digital_adoption") or "",
+        "digital_adoption": (
+            behav.get("digital_adoption")
+            or behav.get("digital_behaviour")
+            or behav.get("digital_behavior")
+            or payload.get("digital_adoption")
+            or payload.get("digital_behaviour")
+            or payload.get("digital_behavior")
+            or ""
+        ),
         # Additional / Professional
         "category_awareness": extra.get("category_awareness") or payload.get("category_awareness") or "",
         "industry": extra.get("industry") or payload.get("industry") or "",
-        "job_level": extra.get("job_level") or payload.get("job_level") or "",
+        "job_level": (
+            extra.get("job_level")
+            or extra.get("occupation_level")
+            or demo.get("occupation_level")
+            or payload.get("job_level")
+            or payload.get("occupation_level")
+            or ""
+        ),
         "years_of_experience": (
             extra.get("years_of_experience")
             or extra.get("years_experience")
             or payload.get("years_of_experience")
+            or payload.get("years_experience")
             or ""
         ),
         "decision_making": (
             extra.get("decision_making")
             or extra.get("decision_making_role")
             or extra.get("decision_making_style")
+            or behav.get("decision_making_style")
             or payload.get("decision_making")
+            or payload.get("decision_making_role")
+            or payload.get("decision_making_style")
             or ""
         ),
         "company_level": (
@@ -656,21 +852,26 @@ def _extract_context(payload: dict) -> dict:
             or extra.get("company_size_tier")
             or extra.get("company_type")
             or payload.get("company_level")
+            or payload.get("company_size_tier")
+            or payload.get("company_type")
             or ""
         ),
         "employee_size": (
             extra.get("employee_size")
             or extra.get("company_size")
             or payload.get("employee_size")
+            or payload.get("company_size")
             or ""
         ),
-        "department": extra.get("department") or extra.get("function") or payload.get("department") or "",
+        "department": extra.get("department") or extra.get("function") or payload.get("department") or payload.get("function") or "",
         "primary_area_of_responsibility": (
             extra.get("primary_area_of_responsibility")
             or extra.get("area_of_responsibility")
             or payload.get("primary_area_of_responsibility")
+            or payload.get("area_of_responsibility")
             or ""
         ),
+        "sample_size": extra.get("sample_size") or payload.get("sample_size") or "",
     }
 
 
@@ -686,22 +887,23 @@ def evaluate_persona_plausibility(payload: dict) -> list[dict]:
     except Exception:
         return []
 
-    age_lower = _parse_age_lower(ctx["age_range"])
+    age_lower, age_upper = _parse_age_bounds(ctx["age_range"])
     income_val = _parse_income_value(ctx["income_range"])
     lifestyle_words = _lower_set(ctx["lifestyle"])
     values_words = _lower_set(ctx["values"])
     personality_words = _lower_set(ctx["personality"])
     motivations_words = _lower_set(ctx["motivations"])
     occ_words = _lower_set([ctx["occupation"]])
+    sample_size = _parse_number(ctx["sample_size"])
 
     checks = [
         # Demographics (Rules 1–13)
-        _rule_age_income(age_lower, income_val),
-        _rule_age_education(age_lower, ctx["education"]),
-        _rule_age_occupation(age_lower, occ_words),
-        _rule_age_marital_status(age_lower, ctx["marital_status"]),
-        _rule_age_family_structure(age_lower, ctx["family_structure"]),
-        _rule_age_dependents(age_lower, ctx["family_size"]),
+        _rule_age_income(age_lower, age_upper, income_val),
+        _rule_age_education(age_upper, ctx["education"]),
+        _rule_age_occupation(age_lower, age_upper, occ_words),
+        _rule_age_marital_status(age_upper, ctx["marital_status"]),
+        _rule_age_family_structure(age_lower, age_upper, ctx["family_structure"]),
+        _rule_age_dependents(age_upper, ctx["family_size"]),
         _rule_marital_family_structure(ctx["marital_status"], ctx["family_structure"]),
         _rule_gender_family_structure(ctx["marital_status"], ctx["family_structure"]),
         _rule_income_occupation(occ_words, income_val),
@@ -732,11 +934,20 @@ def evaluate_persona_plausibility(payload: dict) -> list[dict]:
         _rule_occupation_category_awareness(occ_words, ctx["category_awareness"]),
         _rule_industry_category_awareness(ctx["industry"], ctx["category_awareness"]),
         # Cross-section
+        _rule_multi_attribute_rare_cluster(age_upper, income_val, lifestyle_words, ctx["category_awareness"]),
+        _rule_cross_section_logical_conflict(occ_words, income_val, lifestyle_words, ctx["category_awareness"]),
         _rule_student_luxury(occ_words, lifestyle_words, ctx["category_awareness"]),
         _rule_price_insensitive_low_income(ctx["price_sensitivity"], income_val),
         _rule_over_idealized(income_val, ctx["education"], lifestyle_words, occ_words, ctx["price_sensitivity"]),
-        _rule_unrealistic_extremes(age_lower, income_val, ctx["category_awareness"]),
+        _rule_unrealistic_extremes(age_upper, income_val, ctx["category_awareness"]),
         _rule_hyper_specific(ctx, age_lower, income_val),
+        _rule_sample_size_complexity(ctx, age_lower, income_val, sample_size),
+        # Dynamic cross-section
+        _rule_young_luxury_lifestyle(age_upper, lifestyle_words),
+        _rule_student_high_income_luxury(occ_words, income_val, lifestyle_words),
+        _rule_rural_luxury_nightlife_lifestyle(ctx["geography"], lifestyle_words),
+        _rule_young_expert_luxury_high_income(age_upper, income_val, lifestyle_words, ctx["category_awareness"]),
+        _rule_young_senior_expert(age_upper, occ_words, ctx["category_awareness"]),
     ]
 
     return [w for w in checks if w is not None]
