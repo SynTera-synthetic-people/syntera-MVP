@@ -7,6 +7,8 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 from app.utils.id_generator import generate_id
 import json
+import logging
+import time
 from openai import AsyncOpenAI
 from app.config import OPENAI_API_KEY
 from app.services.omi import build_persona_validation_prompt, PERSONA_VALIDATION_SYSTEM_PROMPT
@@ -18,6 +20,7 @@ from app.models.persona import Persona
 
 
 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+logger = logging.getLogger(__name__)
 
     
 def to_list(value):
@@ -36,6 +39,17 @@ def to_list(value):
         return parts
     s = str(value).strip()
     return [s] if s else []
+
+def _coerce_str(value: Any) -> str | None:
+    """Coerce any LLM value into a plain str for VARCHAR columns. Joins lists with ', '."""
+    if value is None:
+        return None
+    if isinstance(value, list):
+        return ", ".join(str(v) for v in value if v)
+    if isinstance(value, dict):
+        return None  # dict in VARCHAR → skip; caller falls back to source persona value
+    return str(value) if not isinstance(value, str) else value
+
 
 def safe_json(obj):
     def default(x):
@@ -571,6 +585,10 @@ def persona_to_dict(p: Persona, creator_full_name: Optional[str] = None) -> dict
         "industry": persona_details.get("industry"),
         "family_structure": persona_details.get("family_structure"),
         "occupation_level": persona_details.get("occupation_level"),
+        # Replication Engine v5.0 fields live inside persona_details so existing
+        # deployments do not require new persona table columns.
+        "replication_mode": persona_details.get("replication_mode"),
+        "replication_artifacts": persona_details.get("replication_artifacts"),
     }
 
 async def get_persona(persona_id: str) -> Optional[dict]:
@@ -690,20 +708,61 @@ async def delete_persona(persona_id: str) -> bool:
         await session.commit()
 
         return True
-_REPLICATE_PROMPT = """
-You are adapting an existing consumer persona for a new geographic market.
+async def preview_replication_anchor(
+    source_persona_id: str,
+    target_country: str,
+    exploration_id: str,
+    workspace_id: str,
+    seed_inputs: Optional[str] = None,
+) -> dict:
+    """
+    Docs v5 Anchor-Only Preview: run Stage 1-2 and return core/context.
+    No persona is created.
+    """
+    from app.services.replication.engine import replicate as _engine_replicate
 
-SOURCE PERSONA (JSON):
-{source_json}
+    started_at = time.perf_counter()
+    logger.info(
+        "persona_service.replication_anchor_preview:start source=%s workspace=%s exploration=%s target=%r",
+        source_persona_id,
+        workspace_id,
+        exploration_id,
+        target_country,
+    )
 
-TARGET COUNTRY: {target_country}
+    source = await get_persona(source_persona_id)
+    if not source:
+        raise ValueError("Source persona not found")
+    if str(source.get("exploration_id")) != str(exploration_id) or str(source.get("workspace_id")) != str(workspace_id):
+        raise ValueError("Source persona does not belong to this exploration")
 
-Rules:
-1. Keep the core archetype, behavioral patterns, and psychographic profile intact.
-2. Update ONLY: location fields, income ranges (local currency/norms), education system references, platform/brand names relevant to {target_country}, cultural values where they differ.
-3. Return a valid JSON object containing ALL fields from the source, adapted for {target_country}.
-4. Return ONLY the JSON object — no explanation, no markdown fences.
-""".strip()
+    source_details = source.get("persona_details") or {}
+    if not source_details:
+        raise ValueError("Source persona has no details to replicate")
+    if source.get("calibration_status") == "draft":
+        raise ValueError("Draft personas must be calibrated before replication")
+
+    result = await _engine_replicate(
+        source_persona=source,
+        target_country=target_country,
+        mode="anchor_preview",
+        seed_inputs=seed_inputs,
+    )
+    artifact = result.artifact.model_dump(exclude_none=True)
+    logger.info(
+        "persona_service.replication_anchor_preview:success source=%s total_elapsed_ms=%d",
+        source_persona_id,
+        int((time.perf_counter() - started_at) * 1000),
+    )
+    return {
+        "mode": "anchor_preview",
+        "source_persona_id": source_persona_id,
+        "target_country": target_country,
+        "psychographic_core": artifact.get("psychographic_core"),
+        "market_context": artifact.get("market_context"),
+        "replication_metadata": artifact.get("metadata"),
+        "replication_artifacts": artifact,
+    }
 
 
 async def replicate_persona(
@@ -712,12 +771,30 @@ async def replicate_persona(
     exploration_id: str,
     workspace_id: str,
     current_user_id: str,
+    mode: str = "full_replication",
+    seed_inputs: Optional[str] = None,
 ) -> dict:
     """
     Clone an existing persona and localise it for a different country.
-    Uses a cheap, targeted LLM call (no web search) since we already have
-    the source behavioural data — we only need geographic adaptation.
+
+    mode="fast_localization"  — lightweight geo-adaptation (default, legacy behavior)
+    mode="deep_psychographic" — 5-stage psychographic reconstruction (v5.0 engine)
     """
+    from app.services.replication.engine import replicate as _engine_replicate
+
+    if mode == "anchor_preview":
+        raise ValueError("Anchor-only preview does not create a persona")
+
+    started_at = time.perf_counter()
+    logger.info(
+        "persona_service.replicate:start source=%s workspace=%s exploration=%s target=%r mode=%s",
+        source_persona_id,
+        workspace_id,
+        exploration_id,
+        target_country,
+        mode,
+    )
+
     source = await get_persona(source_persona_id)
     if not source:
         raise ValueError("Source persona not found")
@@ -728,25 +805,30 @@ async def replicate_persona(
     if source.get("calibration_status") == "draft":
         raise ValueError("Draft personas must be calibrated before replication")
 
-    prompt = _REPLICATE_PROMPT.format(
-        source_json=json.dumps(source_details, ensure_ascii=False, default=str),
+    engine_started_at = time.perf_counter()
+    result = await _engine_replicate(
+        source_persona=source,
         target_country=target_country,
+        mode=mode,
+        seed_inputs=seed_inputs,
+    )
+    logger.info(
+        "persona_service.replicate:engine_done source=%s mode=%s elapsed_ms=%d",
+        source_persona_id,
+        mode,
+        int((time.perf_counter() - engine_started_at) * 1000),
     )
 
-    response = await client.chat.completions.create(
-        model="gpt-4o-mini",   # cheap model — no web search needed for geo-adaptation
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.4,
-        response_format={"type": "json_object"},
-    )
-    raw = response.choices[0].message.content
-    adapted: dict = json.loads(raw)
+    adapted = dict(result.adapted_persona_json or {})
+    artifact_dict = result.artifact.model_dump(exclude_none=True)
+    adapted["replication_mode"] = mode
+    adapted["replication_artifacts"] = artifact_dict
 
-    from app.services.auto_generated_persona import _extract_calibration_confidence
     from types import SimpleNamespace
     d = SimpleNamespace(**{**source_details, **adapted})
 
     new_id = generate_id()
+    db_started_at = time.perf_counter()
     async with AsyncSession(async_engine) as session:
         p = Persona(
             id=new_id,
@@ -756,40 +838,44 @@ async def replicate_persona(
             age_range=adapted.get("age_range") or getattr(d, "age_range", ""),
             gender=adapted.get("gender") or getattr(d, "gender", ""),
             location_country=target_country,
-            location_state=adapted.get("location_state") or "",
-            education_level=adapted.get("education_level") or getattr(d, "education_level", ""),
-            occupation=adapted.get("occupation") or getattr(d, "occupation", ""),
-            income_range=adapted.get("income_range") or getattr(d, "income_range", ""),
-            family_size=adapted.get("family_size") or getattr(d, "family_size", ""),
-            geography=adapted.get("geography") or target_country,
-            lifestyle=adapted.get("lifestyle") or getattr(d, "lifestyle", ""),
-            values=adapted.get("values") or getattr(d, "values", ""),
-            personality=adapted.get("personality") or getattr(d, "personality", ""),
-            interests=adapted.get("interests") or getattr(d, "interests", ""),
-            motivations=adapted.get("motivations") or getattr(d, "motivations", ""),
-            brand_sensitivity=adapted.get("brand_sensitivity") or getattr(d, "brand_sensitivity", ""),
-            price_sensitivity=adapted.get("price_sensitivity") or getattr(d, "price_sensitivity", ""),
-            mobility=adapted.get("mobility") or getattr(d, "mobility", ""),
-            accommodation=adapted.get("accommodation") or getattr(d, "accommodation", ""),
-            marital_status=adapted.get("marital_status") or getattr(d, "marital_status", ""),
-            daily_rhythm=adapted.get("daily_rhythm") or getattr(d, "daily_rhythm", ""),
-            hobbies=adapted.get("hobbies") or getattr(d, "hobbies", ""),
-            professional_traits=adapted.get("professional_traits") or getattr(d, "professional_traits", ""),
-            digital_activity=adapted.get("digital_activity") or getattr(d, "digital_activity", ""),
-            preferences=adapted.get("preferences") or getattr(d, "preferences", ""),
-            backstory=adapted.get("backstory") or source.get("backstory") or "",
+            location_state=_coerce_str(adapted.get("location_state")) or "",
+            education_level=_coerce_str(adapted.get("education_level")) or getattr(d, "education_level", ""),
+            occupation=_coerce_str(adapted.get("occupation")) or getattr(d, "occupation", ""),
+            income_range=_coerce_str(adapted.get("income_range")) or getattr(d, "income_range", ""),
+            family_size=_coerce_str(adapted.get("family_size")) or getattr(d, "family_size", ""),
+            geography=_coerce_str(adapted.get("geography")) or target_country,
+            lifestyle=_coerce_str(adapted.get("lifestyle")) or getattr(d, "lifestyle", ""),
+            values=_coerce_str(adapted.get("values")) or _coerce_str(getattr(d, "values", "")),
+            personality=_coerce_str(adapted.get("personality")) or _coerce_str(getattr(d, "personality", "")),
+            interests=adapted.get("interests") if isinstance(adapted.get("interests"), list) else getattr(d, "interests", []),
+            motivations=_coerce_str(adapted.get("motivations")) or getattr(d, "motivations", ""),
+            brand_sensitivity=_coerce_str(adapted.get("brand_sensitivity")) or getattr(d, "brand_sensitivity", ""),
+            price_sensitivity=_coerce_str(adapted.get("price_sensitivity")) or getattr(d, "price_sensitivity", ""),
+            mobility=_coerce_str(adapted.get("mobility")) or getattr(d, "mobility", ""),
+            accommodation=_coerce_str(adapted.get("accommodation")) or getattr(d, "accommodation", ""),
+            marital_status=_coerce_str(adapted.get("marital_status")) or getattr(d, "marital_status", ""),
+            daily_rhythm=_coerce_str(adapted.get("daily_rhythm")) or getattr(d, "daily_rhythm", ""),
+            hobbies=_coerce_str(adapted.get("hobbies")) or getattr(d, "hobbies", ""),
+            professional_traits=_coerce_str(adapted.get("professional_traits")) or getattr(d, "professional_traits", ""),
+            digital_activity=_coerce_str(adapted.get("digital_activity")) or getattr(d, "digital_activity", ""),
+            preferences=_coerce_str(adapted.get("preferences")) or getattr(d, "preferences", ""),
+            backstory=_coerce_str(adapted.get("backstory")) or source.get("backstory") or "",
             created_by=current_user_id,
             persona_details=adapted,
             auto_generated_persona=True,
             parent_persona_id=source_persona_id,
             calibration_status=source.get("calibration_status") or "calibrated",
-            calibration_confidence=_extract_calibration_confidence(adapted)
-                or source.get("calibration_confidence")
-                or 75,
+            calibration_confidence=result.confidence_int,
         )
         session.add(p)
         await session.commit()
         await session.refresh(p)
+        logger.info(
+            "persona_service.replicate:db_saved source=%s new=%s elapsed_ms=%d",
+            source_persona_id,
+            new_id,
+            int((time.perf_counter() - db_started_at) * 1000),
+        )
 
         from app.models.user import User
         user_res = await session.execute(select(User).where(User.id == current_user_id))
@@ -798,7 +884,14 @@ async def replicate_persona(
         if u:
             full_name = u.full_name or f"{u.first_name} {u.last_name}".strip() or None
 
-    return persona_to_dict(p, creator_full_name=full_name)
+    result_dict = persona_to_dict(p, creator_full_name=full_name)
+    logger.info(
+        "persona_service.replicate:success source=%s new=%s total_elapsed_ms=%d",
+        source_persona_id,
+        new_id,
+        int((time.perf_counter() - started_at) * 1000),
+    )
+    return result_dict
 
 
 async def total_sample_size(workspace_id: str, exploration_id: str) -> int:

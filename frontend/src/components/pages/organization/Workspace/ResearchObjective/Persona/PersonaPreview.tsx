@@ -257,6 +257,7 @@ const mapApiTraitsToUi = (
     'auto_fill_report', 'calibration_confidence', 'calibration_status',
     'calibration_breakdown', 'persona_source', 'parent_persona_id',
     'created_by_name', 'subject_key', 'ml_domain',
+    'replication_mode', 'replication_artifacts',
   ]);
 
   const additionalKeys: string[] = [];
@@ -705,10 +706,21 @@ const PersonaPreview: React.FC = () => {
     interpretation?: string;
   }>;
 
+  // Also handle flat format: {"openness": 0.75, ...} stored by the replication engine
+  // before the nested-format fix. Covers already-persisted replicated personas.
+  const OCEAN_KEYS = ['openness', 'conscientiousness', 'extraversion', 'agreeableness', 'neuroticism'];
+  const flatOceanScores = Object.fromEntries(
+    OCEAN_KEYS
+      .filter(k => typeof oceanProfile[k] === 'number')
+      .map(k => [k, oceanProfile[k] as number])
+  );
+
   const resolvedOceanScores: Record<string, number> =
     Object.keys(oceanScores).length > 0
       ? oceanScores
-      : Object.fromEntries(oceanTraits.map(t => [t.name.toLowerCase(), t.score]));
+      : oceanTraits.length > 0
+        ? Object.fromEntries(oceanTraits.map(t => [t.name.toLowerCase(), t.score]))
+        : flatOceanScores;
 
   const oceanSummary = (oceanProfile?.summary ?? oceanProfile?.description ?? '') as string;
   const oceanRationale = (oceanProfile?.rationale ?? {}) as Record<string, string>;

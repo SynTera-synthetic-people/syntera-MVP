@@ -1,3 +1,6 @@
+import logging
+import time
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
 from typing import List
@@ -52,6 +55,48 @@ router = APIRouter(
     prefix="/workspaces/{workspace_id}/explorations/{exploration_id}/personas",
     tags=["personas"],
 )
+
+logger = logging.getLogger(__name__)
+
+def _preview_confidence_from_stored_score(persona: dict) -> dict | None:
+    raw_score = persona.get("calibration_confidence")
+    if raw_score is None:
+        raw_score = persona.get("confidence_score")
+    if raw_score is None:
+        return None
+
+    try:
+        if isinstance(raw_score, str):
+            score_value = float(raw_score.strip().rstrip("%"))
+        else:
+            score_value = float(raw_score)
+    except (TypeError, ValueError):
+        return None
+
+    if score_value <= 1:
+        score_value *= 100
+    score = max(0, min(100, int(round(score_value))))
+    if score <= 0:
+        return None
+
+    if score >= 80:
+        confidence_level = "High"
+    elif score >= 60:
+        confidence_level = "Medium"
+    else:
+        confidence_level = "Low"
+
+    mode = "replication_confidence" if persona.get("parent_persona_id") else "stored_calibration_confidence"
+    return {
+        "score": f"{score}%",
+        "weighted_score": score / 100,
+        "confidence_level": confidence_level,
+        "mode": mode,
+        "note": "Using stored calibration confidence; preview did not run a separate LLM re-score.",
+        "components": {
+            "stored_calibration_score": score,
+        },
+    }
 
 def _to_dict(maybe_obj):
     if maybe_obj is None:
@@ -760,8 +805,25 @@ async def replicate_persona(
     current_user: User = Depends(get_current_active_user),
 ):
     """Generate a country-localised copy of an existing persona."""
+    started_at = time.perf_counter()
+    logger.info(
+        "replicate_persona:start workspace=%s exploration=%s persona=%s user=%s target=%r mode=%s seed=%s",
+        workspace_id,
+        exploration_id,
+        persona_id,
+        current_user.id,
+        payload.target_country,
+        payload.mode,
+        bool(payload.seed_inputs),
+    )
     members = await ws_service.list_workspace_members(workspace_id)
     if not any(m["user_id"] == current_user.id for m in members):
+        logger.warning(
+            "replicate_persona:forbidden workspace=%s user=%s elapsed_ms=%d",
+            workspace_id,
+            current_user.id,
+            int((time.perf_counter() - started_at) * 1000),
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=ErrorResponse(status="error", message="Not a member of this workspace").dict()
@@ -769,9 +831,49 @@ async def replicate_persona(
 
     source = await persona_service.get_persona(persona_id)
     if not source or str(source["exploration_id"]) != str(exploration_id):
+        logger.warning(
+            "replicate_persona:not_found workspace=%s exploration=%s persona=%s elapsed_ms=%d",
+            workspace_id,
+            exploration_id,
+            persona_id,
+            int((time.perf_counter() - started_at) * 1000),
+        )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=ErrorResponse(status="error", message="Persona not found").dict()
+        )
+
+    if payload.mode == "anchor_preview":
+        try:
+            preview = await persona_service.preview_replication_anchor(
+                source_persona_id=persona_id,
+                target_country=payload.target_country,
+                exploration_id=exploration_id,
+                workspace_id=workspace_id,
+                seed_inputs=payload.seed_inputs,
+            )
+        except ValueError as e:
+            logger.warning(
+                "replicate_persona:anchor_preview_bad_request persona=%s target=%r elapsed_ms=%d error=%s",
+                persona_id,
+                payload.target_country,
+                int((time.perf_counter() - started_at) * 1000),
+                e,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=ErrorResponse(status="error", message=str(e)).dict()
+            )
+
+        logger.info(
+            "replicate_persona:anchor_preview_success source=%s target=%r elapsed_ms=%d",
+            persona_id,
+            payload.target_country,
+            int((time.perf_counter() - started_at) * 1000),
+        )
+        return SuccessResponse(
+            message="Anchor-only preview generated successfully",
+            data=preview,
         )
 
     try:
@@ -781,14 +883,57 @@ async def replicate_persona(
             exploration_id=exploration_id,
             workspace_id=workspace_id,
             current_user_id=current_user.id,
+            mode=payload.mode,
+            seed_inputs=payload.seed_inputs,
         )
     except ValueError as e:
+        logger.warning(
+            "replicate_persona:bad_request persona=%s target=%r mode=%s elapsed_ms=%d error=%s",
+            persona_id,
+            payload.target_country,
+            payload.mode,
+            int((time.perf_counter() - started_at) * 1000),
+            e,
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=ErrorResponse(status="error", message=str(e)).dict()
         )
+    except Exception as e:
+        logger.exception(
+            "replicate_persona:failed persona=%s target=%r mode=%s elapsed_ms=%d",
+            persona_id,
+            payload.target_country,
+            payload.mode,
+            int((time.perf_counter() - started_at) * 1000),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=ErrorResponse(
+                status="error",
+                message=f"Replication failed on server: {type(e).__name__}",
+            ).dict(),
+        ) from e
 
-    return SuccessResponse(message="Persona replicated successfully", data=new_persona)
+    mode_label = (
+        "full replication"
+        if payload.mode == "full_replication"
+        else "deep psychographic"
+        if payload.mode == "deep_psychographic"
+        else "fast"
+    )
+    logger.info(
+        "replicate_persona:success source=%s new=%s target=%r mode=%s elapsed_ms=%d",
+        persona_id,
+        new_persona.get("id"),
+        payload.target_country,
+        payload.mode,
+        int((time.perf_counter() - started_at) * 1000),
+    )
+    return SuccessResponse(
+        message=f"Persona replicated successfully ({mode_label})",
+        data=new_persona,
+    )
 
 
 @router.post("/{persona_id}/calibrate", response_model=SuccessResponse)
@@ -845,8 +990,22 @@ async def preview_persona(
     current_user: User = Depends(get_current_active_user),
     session: AsyncSession = Depends(get_session),
 ):
+    started_at = time.perf_counter()
+    logger.info(
+        "preview_persona:start workspace=%s exploration=%s persona=%s user=%s",
+        workspace_id,
+        exploration_id,
+        persona_id,
+        current_user.id,
+    )
     members = await ws_service.list_workspace_members(workspace_id)
     if not any(m["user_id"] == current_user.id for m in members):
+        logger.warning(
+            "preview_persona:forbidden workspace=%s user=%s elapsed_ms=%d",
+            workspace_id,
+            current_user.id,
+            int((time.perf_counter() - started_at) * 1000),
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=ErrorResponse(status="error", message="You are not a member of this workspace").dict()
@@ -854,6 +1013,13 @@ async def preview_persona(
 
     p = await persona_service.get_persona(persona_id)
     if not p or str(p["exploration_id"]) != str(exploration_id):
+        logger.warning(
+            "preview_persona:not_found workspace=%s exploration=%s persona=%s elapsed_ms=%d",
+            workspace_id,
+            exploration_id,
+            persona_id,
+            int((time.perf_counter() - started_at) * 1000),
+        )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=ErrorResponse(status="error", message="Persona not found for this research objective").dict()
@@ -873,12 +1039,35 @@ async def preview_persona(
     full_persona_info = {**flat_fields, **persona_details}
 
     confidence = full_persona_info.get("confidence_scoring", "") or p.get("confidence_scoring", "")
+    confidence_source = "embedded" if confidence else ""
     if not confidence:
+        confidence = _preview_confidence_from_stored_score(p)
+        if confidence:
+            confidence_source = "stored"
+
+    if not confidence:
+        confidence_started_at = time.perf_counter()
+        logger.info("preview_persona:confidence_llm_start persona=%s", persona_id)
         confidence = await persona_service.generate_persona_confidence(p)
+        confidence_source = "llm"
+        logger.info(
+            "preview_persona:confidence_llm_done persona=%s elapsed_ms=%d",
+            persona_id,
+            int((time.perf_counter() - confidence_started_at) * 1000),
+        )
+    logger.info(
+        "preview_persona:confidence_resolved persona=%s source=%s score=%s elapsed_ms=%d",
+        persona_id,
+        confidence_source,
+        confidence.get("score") if isinstance(confidence, dict) else None,
+        int((time.perf_counter() - started_at) * 1000),
+    )
 
     ocean_profile = p.get("ocean_profile")
     if not ocean_profile:
         try:
+            ocean_started_at = time.perf_counter()
+            logger.info("preview_persona:ocean_llm_start persona=%s", persona_id)
             # Fetch persona from database to update
             result = await session.execute(
                 select(Persona).where(Persona.id == persona_id)
@@ -918,12 +1107,26 @@ async def preview_persona(
                 
                 # Update the persona dict with OCEAN profile
                 p["ocean_profile"] = ocean_profile
+                logger.info(
+                    "preview_persona:ocean_llm_done persona=%s elapsed_ms=%d",
+                    persona_id,
+                    int((time.perf_counter() - ocean_started_at) * 1000),
+                )
         except Exception as e:
-            print(f"Failed to generate OCEAN profile: {e}")
+            logger.exception(
+                "preview_persona:ocean_failed persona=%s elapsed_ms=%d",
+                persona_id,
+                int((time.perf_counter() - started_at) * 1000),
+            )
             ocean_profile = None
 
     preview = persona_service.persona_preview_from_dict(p, full_persona_info, confidence=confidence)
 
+    logger.info(
+        "preview_persona:success persona=%s total_elapsed_ms=%d",
+        persona_id,
+        int((time.perf_counter() - started_at) * 1000),
+    )
     return SuccessResponse(message="Persona preview generated successfully", data=preview)
 
 
