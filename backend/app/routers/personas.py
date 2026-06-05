@@ -1,5 +1,6 @@
 import logging
 import time
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
@@ -900,18 +901,22 @@ async def replicate_persona(
             detail=ErrorResponse(status="error", message=str(e)).dict()
         )
     except Exception as e:
+        error_id = str(uuid.uuid4())
         logger.exception(
-            "replicate_persona:failed persona=%s target=%r mode=%s elapsed_ms=%d",
+            "replicate_persona:failed error_id=%s persona=%s target=%r mode=%s elapsed_ms=%d error_type=%s error=%s",
+            error_id,
             persona_id,
             payload.target_country,
             payload.mode,
             int((time.perf_counter() - started_at) * 1000),
+            type(e).__name__,
+            str(e)[:500],
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=ErrorResponse(
                 status="error",
-                message=f"Replication failed on server: {type(e).__name__}",
+                message=f"Replication failed. Error ID: {error_id}",
             ).dict(),
         ) from e
 

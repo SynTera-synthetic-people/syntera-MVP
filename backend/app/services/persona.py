@@ -820,9 +820,29 @@ async def replicate_persona(
     )
 
     adapted = dict(result.adapted_persona_json or {})
-    artifact_dict = result.artifact.model_dump(exclude_none=True)
+    # mode='json' ensures Pydantic v2 converts all types (floats, nested models, etc.)
+    # to JSON-safe primitives before we touch the DB. Without this, asyncpg's JSON
+    # codec can receive a non-serializable Python object (e.g. a Pydantic model
+    # instance, a special float) and raise a TypeError that SQLAlchemy wraps as the
+    # base DBAPIError (no SQLSTATE code) instead of the more specific DataError.
+    artifact_dict = result.artifact.model_dump(mode="json", exclude_none=True)
     adapted["replication_mode"] = mode
     adapted["replication_artifacts"] = artifact_dict
+
+    # Round-trip through JSON to guarantee asyncpg receives a fully serializable
+    # dict. Catches edge cases like nan/inf floats from LLM output, datetime objects
+    # embedded in persona_details, or any type that json.dumps rejects without
+    # default=str. Doing this here (not inside the session) means a serialization
+    # failure surfaces as a clear ValueError before the DB connection is opened.
+    try:
+        adapted = json.loads(json.dumps(adapted, default=str))
+    except Exception as _json_err:
+        logger.error(
+            "persona_service.replicate:json_sanitize_failed source=%s error=%s",
+            source_persona_id,
+            _json_err,
+        )
+        raise ValueError(f"Replication artifact could not be serialized: {_json_err}") from _json_err
 
     from types import SimpleNamespace
     d = SimpleNamespace(**{**source_details, **adapted})
