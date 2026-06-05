@@ -1,10 +1,9 @@
 from sqlmodel import SQLModel, Field, Column
 from sqlalchemy import Column, Boolean
-from sqlalchemy.dialects.postgresql import JSON
+from sqlalchemy.dialects.postgresql import JSONB
 from typing import Optional, List, Dict
 from datetime import datetime
 from app.utils.id_generator import generate_id
-from sqlalchemy.dialects.postgresql import JSONB
 
 
 class Persona(SQLModel, table=True):
@@ -68,12 +67,12 @@ class Persona(SQLModel, table=True):
     backstory: Optional[str] = Field(default=None)
 
     ocean_profile: Optional[dict] = Field(
-        sa_column=Column(JSON),
+        sa_column=Column(JSONB),
         default=None
     )
     persona_details: dict = Field(
         default=None,
-        sa_column=Column(JSON)
+        sa_column=Column(JSONB)
     )
 
     auto_generated_persona: bool = Field(

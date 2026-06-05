@@ -547,6 +547,32 @@ async def _repair_persona_schema(conn: AsyncConnection) -> None:
         END $$;
         """,
     )
+    # Migrate persona_details and ocean_profile to JSONB if they were created as
+    # the plain json type by an older SQLModel create_all run. asyncpg uses
+    # different binary codecs for json (OID 114) vs jsonb (OID 3802); keeping
+    # them as json can cause codec mismatches on some asyncpg/PostgreSQL versions
+    # that surface as a bare DBAPIError on insert.
+    for col in ("persona_details", "ocean_profile"):
+        await _exec(
+            conn,
+            f"""
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                      AND table_name = 'persona'
+                      AND column_name = '{col}'
+                      AND data_type = 'json'
+                ) THEN
+                    ALTER TABLE persona
+                    ALTER COLUMN {col} TYPE JSONB
+                    USING {col}::text::jsonb;
+                END IF;
+            END $$;
+            """,
+        )
 
 
 async def _repair_research_objectives_schema(conn: AsyncConnection) -> None:
