@@ -27,3 +27,6 @@ class ResearchObjectivesOut(BaseModel):
     files: List[ResearchObjectivesFileOut] = Field(default_factory=list)
     created_by: str
     created_at: datetime
+
+class ResearchObjectivesSummaryPatch(BaseModel):
+    description: str = Field(..., min_length=2, max_length=50000)

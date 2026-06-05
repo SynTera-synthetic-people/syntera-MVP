@@ -93,3 +93,6 @@ class OmiChatRequest(BaseModel):
     exploration_id: str
     message: str
     context: Optional[Dict[str, Any]] = None
+
+class OmiMessageContentPatch(BaseModel):
+    content: str = Field(..., min_length=1, max_length=50000)

@@ -948,3 +948,32 @@ async def get_objective_by_id(objective_id):
         objective = select(ResearchObjectives).where(ResearchObjectives.id == objective_id)
         response = await session.execute(objective)
         return response.scalars().first()
+
+
+async def patch_summary_by_exploration(
+    exploration_id: str,
+    description: str,
+) -> Optional[ResearchObjectivesOut]:
+    """Update description for inline summary edits (no LLM validation, no downstream invalidation)."""
+    async with AsyncSession(async_engine) as session:
+        result = await session.execute(
+            select(ResearchObjectives).where(
+                ResearchObjectives.exploration_id == exploration_id
+            )
+        )
+        obj = result.scalars().first()
+        if not obj:
+            return None
+
+        obj.description = description
+        session.add(obj)
+        await session.commit()
+        await session.refresh(obj)
+
+        files_result = await session.execute(
+            select(ResearchObjectivesFile).where(
+                ResearchObjectivesFile.research_objectives_id == obj.id
+            )
+        )
+        files = files_result.scalars().all()
+        return map_to_exploration_out(obj, files)

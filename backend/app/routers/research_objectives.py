@@ -12,7 +12,7 @@ from typing import Optional
 from app.db import get_session
 from app.models.exploration import Exploration
 from app.schemas.response import SuccessResponse, DeleteResponse, ErrorResponse
-from app.schemas.research_objectives import ResearchObjectivesCreate, ResearchObjectivesUpdate, ResearchObjectivesOut
+from app.schemas.research_objectives import ResearchObjectivesCreate, ResearchObjectivesUpdate, ResearchObjectivesOut, ResearchObjectivesSummaryPatch
 from app.services import research_objectives as exp_service
 from app.services import persona as persona_service
 from app.services import interview as interview_service
@@ -304,6 +304,45 @@ async def get_objective(workspace_id: str, objective_id: str, current_user: User
         message="Research objective fetched successfully",
         data=exp
     )
+
+@router.patch("/summary", response_model=SuccessResponse)
+async def patch_objective_summary(
+    workspace_id: str,
+    exploration_id: str,
+    body: ResearchObjectivesSummaryPatch,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Persist an inline summary edit. Skips LLM validation — caller has already refined via Omi."""
+    exploration = await get_exploration(session, exploration_id)
+    if not exploration:
+        raise HTTPException(status_code=404, detail="Exploration not found")
+
+    members = await ws_service.list_workspace_members(workspace_id)
+    if not any(m.get("user_id") == current_user.id for m in members):
+        raise HTTPException(
+            status_code=403,
+            detail=ErrorResponse(
+                status="error",
+                message="You do not have access to this workspace"
+            ).dict()
+        )
+
+    updated = await exp_service.patch_summary_by_exploration(exploration_id, body.description)
+    if not updated:
+        raise HTTPException(
+            status_code=404,
+            detail=ErrorResponse(
+                status="error",
+                message="Research objective not found for this exploration"
+            ).dict()
+        )
+
+    return SuccessResponse(
+        message="Summary updated successfully",
+        data=updated
+    )
+
 
 @router.delete("/{objective_id}", response_model=DeleteResponse)
 async def delete_objective(workspace_id: str, objective_id: str, current_user: User = Depends(get_current_active_user)):

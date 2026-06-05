@@ -22,7 +22,9 @@ import {
   useInitializeOmiSession,
   useSendMessageToOmi,
   useCreateResearchObjective,
-  useConversationHistory
+  useConversationHistory,
+  usePatchResearchObjectiveSummary,
+  usePatchOmiMessageContent,
 } from "../../../../../hooks/useOmiChat";
 import { useOmniWorkflow } from '../../../../../hooks/useOmiWorkflow';
 import { useAutoGeneratePersonas, usePersonas } from '../../../../../hooks/usePersonaBuilder';
@@ -149,6 +151,8 @@ const AddResearchObjective: React.FC = () => {
   } = useSendMessageToOmi(objectiveId, sessionId) as any;
 
   const { mutate: createResearchObjective } = useCreateResearchObjective() as any;
+  const { mutate: persistSummaryEdit } = usePatchResearchObjectiveSummary(workspaceId, objectiveId) as any;
+  const { mutate: persistOmiMessage } = usePatchOmiMessageContent() as any;
 
   const { refetch: triggerPersonaGeneration } = useAutoGeneratePersonas(workspaceId, objectiveId, { enabled: false });
   const {
@@ -358,8 +362,14 @@ const AddResearchObjective: React.FC = () => {
         setMessages(prev =>
           prev.map(m => m.id === summaryMessage.id ? { ...m, text: updatedText } : m)
         );
+        persistOmiMessage(
+          { messageId: summaryMessage.id, content: updatedText },
+          { onError: () => setOmiStatus("Save failed — please retry") }
+        );
       }
-
+      persistSummaryEdit(updatedText, {
+        onError: () => setOmiStatus("Save failed — please retry"),
+      });
       setOmiStatus("Summary updated");
       return;
     }
@@ -396,7 +406,15 @@ const AddResearchObjective: React.FC = () => {
               );
             }
             setOmiStatus("Summary updated");
-            setTimeout(() => refetchHistory(), 500);
+            if (summaryMessage) {
+              persistOmiMessage(
+                { messageId: summaryMessage.id, content: updatedText },
+                { onError: () => setOmiStatus("Save failed — please retry") }
+              );
+            }
+            persistSummaryEdit(updatedText, {
+              onError: () => setOmiStatus("Save failed — please retry"),
+            });
             resolve();
           } else {
             reject(new Error("Refinement failed"));
