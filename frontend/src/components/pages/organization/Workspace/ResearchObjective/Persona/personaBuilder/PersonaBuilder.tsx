@@ -1633,20 +1633,20 @@ const PersonaBuilder: React.FC = () => {
   );
 }, [isEnterpriseUser, navigate, workspaceId, objectiveId, isViewOnly]);
 
-  const handleAddNewPersonaConfirm = async (count: number) => {
-    if (!workspaceId || !objectiveId) return;
+const handleAddNewPersonaConfirm = async (count: number) => {
+  if (!workspaceId || !objectiveId) return;
 
-    try {
-      await personaService.purchasePersonas(workspaceId, objectiveId, count);
-      await refetchPersonaQuota();
-      await queryClient.invalidateQueries({ queryKey: personaKeys.list(workspaceId, objectiveId) });
-      setShowAddNewPersonaModal(false);
-      setShowGrid(false);
-      handleAddPersona();
-    } catch (error) {
-      console.error('Failed to add persona credits:', error);
-    }
-  };
+  try {
+    await personaService.purchasePersonas(workspaceId, objectiveId, count);
+    await refetchPersonaQuota();
+    await queryClient.invalidateQueries({ queryKey: personaKeys.list(workspaceId, objectiveId) });
+    setShowAddNewPersonaModal(false);
+    // Show method selection so user picks "Create with Omi" or "Build Manually"
+    setShowMethodModal(true);
+  } catch (error) {
+    console.error('Failed to add persona credits:', error);
+  }
+};
 
   // ── Replicate handlers ──────────────────────────────────────────────────────
 
