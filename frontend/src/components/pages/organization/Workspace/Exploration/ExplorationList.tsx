@@ -23,6 +23,17 @@ import InviteTeamModal from "../InviteTeamModal";
 import WorkspacePopup from "../WorkspacePopup";
 import Traceability from '../../../Traceability/Traceability';
 import ReportLog from "./ReportLog";
+import { toast } from 'react-toastify';
+import {
+  useDownloadQuantTranscripts,
+  useDownloadQuantDecisionIntelligence,
+  useDownloadQuantBehaviorArchaeology,
+} from '../../../../../hooks/useQuantitativeQueries';
+import { usePrepareQualReport } from '../../../../../hooks/useInterview';
+import { discussionGuideService } from '../../../../../services/discussionGuideService';
+import { interviewService } from '../../../../../services/interviewService';
+import { personaService } from '../../../../../services/personaService';
+import { listPopulationSimulations, downloadExplorationQuestionnaireCsv } from '../../../../../services/quantitativeServices';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -161,6 +172,221 @@ const isAdminUser = (user: User | null): boolean => {
   if (user.is_admin !== undefined) return Boolean(user.is_admin);
   if (user.role) return user.role.toLowerCase().includes("admin");
   return false;
+};
+
+// ── ReportLogContainer ────────────────────────────────────────────────────────
+
+function _triggerBlobDownload(blob: Blob, filename: string) {
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  window.URL.revokeObjectURL(url);
+  document.body.removeChild(a);
+}
+
+interface ReportLogContainerProps {
+  exploration: Exploration;
+  workspaceId: string;
+  onClose: () => void;
+}
+
+const ReportLogContainer: React.FC<ReportLogContainerProps> = ({ exploration, workspaceId, onClose }) => {
+  const navigate = useNavigate();
+  const explorationId = exploration.id;
+
+  const dlQuantTranscripts = useDownloadQuantTranscripts();
+  const dlQuantDI = useDownloadQuantDecisionIntelligence();
+  const dlQuantBA = useDownloadQuantBehaviorArchaeology();
+  const prepareQualReport = usePrepareQualReport(workspaceId, explorationId);
+
+  // Tries to download a qual report. If not cached (404), triggers /prepare,
+  // then polls every 5 s until the PDF is ready and auto-downloads it.
+  const downloadWithPrepare = async (
+    slug: string,
+    downloadFn: () => Promise<Blob>,
+    filename: string,
+    itemLabel: string,
+  ) => {
+    // First attempt — report may already be cached
+    try {
+      const blob = await downloadFn();
+      _triggerBlobDownload(blob, filename);
+      return;
+    } catch (err: any) {
+      if (err?.response?.status !== 404) {
+        toast.error(`Failed to download ${itemLabel}. Please try again.`);
+        return;
+      }
+    }
+
+    // Not cached → trigger background generation
+    const toastId = `prepare-${slug}-${explorationId}`;
+    toast.loading(`Generating ${itemLabel} report, please wait…`, { toastId });
+
+    try {
+      await prepareQualReport.mutateAsync(slug);
+    } catch {
+      toast.update(toastId, {
+        render: `Failed to start ${itemLabel} generation. Please try again.`,
+        type: 'error', isLoading: false, autoClose: 4000,
+      });
+      return;
+    }
+
+    // Poll every 5 s, up to 3 minutes
+    for (let i = 0; i < 36; i++) {
+      await new Promise(r => setTimeout(r, 5000));
+      try {
+        const blob = await downloadFn();
+        toast.dismiss(toastId);
+        _triggerBlobDownload(blob, filename);
+        return;
+      } catch (e: any) {
+        if (e?.response?.status !== 404) {
+          toast.update(toastId, {
+            render: `Failed to download ${itemLabel}. Please try again.`,
+            type: 'error', isLoading: false, autoClose: 4000,
+          });
+          return;
+        }
+        // Still generating — continue polling
+      }
+    }
+
+    toast.update(toastId, {
+      render: `${itemLabel} generation timed out. Please try again.`,
+      type: 'error', isLoading: false, autoClose: 4000,
+    });
+  };
+
+  // Returns the latest population sim ID for quant downloads.
+  // The backend resolves this to the linked survey sim automatically.
+  const getLatestPopSimId = async (): Promise<string | null> => {
+    const sims = await listPopulationSimulations({ workspaceId, explorationId });
+    if (!sims?.length) return null;
+    const sorted = [...sims].sort(
+      (a: any, b: any) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+    );
+    return sorted[0].id;
+  };
+
+  const handleDownload = async (itemId: string, itemLabel: string) => {
+    try {
+      switch (itemId) {
+        case 'interview-verbatim': {
+          const blob = await interviewService.downloadQualTranscripts(workspaceId, explorationId);
+          _triggerBlobDownload(blob, `transcripts_${explorationId}.docx`);
+          break;
+        }
+
+        case 'discussion-guide': {
+          const blob = await discussionGuideService.downloadGuide(workspaceId, explorationId);
+          _triggerBlobDownload(blob, `discussion_guide_${explorationId}.docx`);
+          break;
+        }
+
+        case 'qual-decision-intelligence':
+          await downloadWithPrepare(
+            'decision-intelligence',
+            () => interviewService.downloadQualDecisionIntelligence(workspaceId, explorationId),
+            `decision_intelligence_${explorationId}.pdf`,
+            'Decision Intelligence',
+          );
+          break;
+
+        case 'qual-behaviour-archaeology':
+          await downloadWithPrepare(
+            'behavior-archaeology',
+            () => interviewService.downloadQualBehaviorArchaeology(workspaceId, explorationId),
+            `behavior_archaeology_${explorationId}.pdf`,
+            'Behaviour Archaeology',
+          );
+          break;
+
+        case 'persona-card': {
+          const resp = await personaService.getPersonas(workspaceId, explorationId);
+          // getPersonas returns SuccessResponse { data: [...] } or plain array
+          const personas: any[] = Array.isArray(resp) ? resp : (resp?.data ?? []);
+          if (!personas.length) { toast.error('No personas found for this exploration.'); return; }
+          const ids = personas.map((p: any) => p.id);
+          const blob = await personaService.downloadPersonaCards(workspaceId, explorationId, ids);
+          _triggerBlobDownload(blob, `persona_cards_${explorationId}.pdf`);
+          break;
+        }
+
+        case 'quant-decision-intelligence': {
+          const simId = await getLatestPopSimId();
+          if (!simId) { toast.error('No simulation found. Complete the Population Builder step first.'); return; }
+          await dlQuantDI.mutateAsync({ workspaceId, explorationId, simulationId: simId });
+          break;
+        }
+
+        case 'quant-behaviour-archaeology': {
+          const simId = await getLatestPopSimId();
+          if (!simId) { toast.error('No simulation found. Complete the Population Builder step first.'); return; }
+          await dlQuantBA.mutateAsync({ workspaceId, explorationId, simulationId: simId });
+          break;
+        }
+
+        case 'questionnaire':
+          // Questionnaire design CSV — no simulation ID needed
+          await downloadExplorationQuestionnaireCsv({ workspaceId, explorationId });
+          break;
+
+        case 'raw-data-shell': {
+          // Raw survey data ZIP (questionnaire + results CSVs)
+          const simId = await getLatestPopSimId();
+          if (!simId) { toast.error('No simulation found. Complete the Population Builder step first.'); return; }
+          await dlQuantTranscripts.mutateAsync({ workspaceId, explorationId, simulationId: simId });
+          break;
+        }
+
+        default:
+          toast.info(`${itemLabel} download is not available yet.`);
+      }
+    } catch (err: any) {
+      console.error(`[ReportLog] download failed for "${itemId}":`, err);
+      const status = err?.response?.status;
+      if (status === 404) {
+        toast.error(`${itemLabel} report is not ready yet. Please generate it first.`);
+      } else {
+        toast.error(`Failed to download ${itemLabel}. Please try again.`);
+      }
+    }
+  };
+
+  const handleView = (itemId: string, _itemLabel: string) => {
+    const base = `/main/organization/workspace/research-objectives/${workspaceId}/${explorationId}`;
+    const viewRoutes: Record<string, string> = {
+      'persona-card': `${base}/persona-builder`,
+      'discussion-guide': `${base}/depth-interview`,
+      'interview-verbatim': `${base}/depth-interview`,
+      'qual-decision-intelligence': `${base}/chatview`,
+      'qual-behaviour-archaeology': `${base}/chatview`,
+      'qual-conversation-studio': `${base}/depth-interview`,
+      'questionnaire': `${base}/population-builder`,
+      'raw-data-shell': `${base}/population-builder`,
+      'quant-decision-intelligence': `${base}/population-builder`,
+      'quant-behaviour-archaeology': `${base}/population-builder`,
+      'quant-conversation-studio': `${base}/population-builder`,
+    };
+    const route = viewRoutes[itemId];
+    if (route) { navigate(route); onClose(); }
+    else toast.info('View is not available for this report.');
+  };
+
+  return (
+    <ReportLog
+      isOpen={true}
+      explorationName={exploration.title}
+      onClose={onClose}
+      onDownload={handleDownload}
+      onView={handleView}
+    />
+  );
 };
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -717,11 +943,13 @@ const ExplorationList: React.FC = () => {
       )}
 
       {/* ── Report Log Modal ── */}
-      <ReportLog
-        isOpen={!!reportLogExploration}
-        explorationName={reportLogExploration?.title}
-        onClose={() => setReportLogExploration(null)}
-      />
+      {reportLogExploration && (
+        <ReportLogContainer
+          exploration={reportLogExploration}
+          workspaceId={workspaceId!}
+          onClose={() => setReportLogExploration(null)}
+        />
+      )}
     </div>
   );
 };
