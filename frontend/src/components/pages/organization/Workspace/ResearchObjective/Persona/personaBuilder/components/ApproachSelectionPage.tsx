@@ -6,11 +6,11 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { TbMicrophone, TbChartBar, TbRotate, TbChevronRight, TbArrowLeft } from 'react-icons/tb';
+import { TbChevronRight } from 'react-icons/tb';
 import SpIcon from '../../../../../../../SPIcon';
 import { useUpdateExplorationMethod, useExploration } from '../../../../../../../../hooks/useExplorations';
 import { useOmniWorkflow } from '../../../../../../../../hooks/useOmiWorkflow';
-import omiDarkImg from '../../../../../../../../assets/OMI_Dark.png';
+import OmiGreet from '../../../../../../../../assets/Omi Animations/OmiIdle.mp4';
 import './ApproachSelectionPage.css';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -169,7 +169,14 @@ const ApproachSelectionPage: React.FC = () => {
         transition={{ duration: 0.35, type: 'spring', stiffness: 220 }}
         className="asp-avatar"
       >
-        <img src={omiDarkImg} alt="Omi" className="asp-avatar-img" />
+        <video
+          src={OmiGreet}
+          autoPlay
+          loop
+          muted
+          playsInline
+          className="asp-avatar-video"
+        />
       </motion.div>
 
       {/* ── Heading ── */}
@@ -186,7 +193,6 @@ const ApproachSelectionPage: React.FC = () => {
       {/* ── Cards ── */}
       <div className="asp-cards">
         {visibleOptions.map((opt, i) => {
-          const Icon = opt.icon;
           const isSelected = selected === opt.id;
           const isDisabled =
             isLoading ||
