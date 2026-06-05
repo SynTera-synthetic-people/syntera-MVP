@@ -69,3 +69,20 @@ export const getConversationHistory = async (workspaceId, explorationId) => {
   }
 };
 
+export const patchResearchObjectiveSummary = async (workspaceId, explorationId, description) => {
+  const response = await axiosInstance.patch(
+    `/workspaces/${workspaceId}/research/objectives/summary`,
+    { description },
+    { params: { exploration_id: explorationId } }
+  );
+  return response.data;
+};
+
+export const patchOmiMessageContent = async (messageId, content) => {
+  const response = await axiosInstance.patch(
+    `/workspaces/omi/messages/${messageId}`,
+    { content }
+  );
+  return response.data;
+};
+

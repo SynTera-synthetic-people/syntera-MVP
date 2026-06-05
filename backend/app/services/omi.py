@@ -230,6 +230,35 @@ async def add_message(
         return message
 
 
+async def update_message_content(message_id: str, content: str) -> Optional[OmiMessage]:
+    """Overwrite a single message's content (used for inline summary edits)."""
+    async with AsyncSession(async_engine) as session:
+        msg = await session.get(OmiMessage, message_id)
+        if not msg:
+            return None
+
+        old_content = msg.content  # capture before overwrite for history matching
+        msg.content = content
+        session.add(msg)
+
+        # Keep OmiSession.conversation_history in sync so LLM context stays current
+        omi_result = await session.execute(
+            select(OmiSession).where(OmiSession.id == msg.session_id)
+        )
+        omi_session = omi_result.scalars().first()
+        if omi_session and omi_session.conversation_history:
+            for entry in omi_session.conversation_history:
+                if entry.get("role") == msg.role and entry.get("content") == old_content:
+                    entry["content"] = content
+                    break
+            flag_modified(omi_session, "conversation_history")
+            session.add(omi_session)
+
+        await session.commit()
+        await session.refresh(msg)
+        return msg
+
+
 async def get_conversation_history(session_id: str, limit: int = 50) -> List[OmiMessage]:
     """Get conversation history for a session"""
     async with AsyncSession(async_engine) as session:

@@ -22,6 +22,7 @@ import CreateExploration from "./CreateExploration";
 import InviteTeamModal from "../InviteTeamModal";
 import WorkspacePopup from "../WorkspacePopup";
 import Traceability from '../../../Traceability/Traceability';
+import ReportLog from "./ReportLog";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -170,6 +171,7 @@ const ExplorationList: React.FC = () => {
   const { theme } = useTheme();
 
   const { user } = useSelector((state: RootState) => state.auth);
+  const [reportLogExploration, setReportLogExploration] = useState<Exploration | null>(null);
 
   const userIsAdmin = isAdminUser(user);
   const canInviteTeam = Boolean(user?.can_create_workspace);
@@ -259,21 +261,6 @@ const ExplorationList: React.FC = () => {
   }, [isLoading, error, explorations, searchQuery, statusFilter, audienceFilter]);
 
   // ── Handlers ───────────────────────────────────────────────────────────────
-
-  const handleDownloadQuestionnaireCsv = async (exploration: Exploration) => {
-    try {
-      setCsvDownloadingId(exploration.id);
-      await downloadLatestQuestionnaireCsvForExploration({
-        workspaceId,
-        explorationId: exploration.id,
-      });
-    } catch (e) {
-      console.error(e);
-      alertQuestionnaireExportError(e);
-    } finally {
-      setCsvDownloadingId(null);
-    }
-  };
 
   const handleDelete = async (id: string, title?: string) => {
     setDeleteModalId(id);
@@ -603,7 +590,13 @@ const ExplorationList: React.FC = () => {
                                   <SpIcon name="sp-Edit-Edit_Pencil_01" />Edit
                                 </div>
                                 {exploration.is_end && (
-                                  <div className="menu-item" onClick={() => { handleDownloadQuestionnaireCsv(exploration); setOpenMenuId(null); }}>
+                                  <div
+                                    className="menu-item"
+                                    onClick={() => {
+                                      setReportLogExploration(exploration);
+                                      setOpenMenuId(null);
+                                    }}
+                                  >
                                     <SpIcon name="sp-File-File_Blank" />Report Log
                                   </div>
                                 )}
@@ -622,7 +615,6 @@ const ExplorationList: React.FC = () => {
                                   <div
                                     className="menu-item"
                                     onClick={() => {
-                                      // Always start the view-only journey from Step 1 (research-mode)
                                       navigate(
                                         `/main/organization/workspace/research-objectives/${workspaceId}/${exploration.id}/research-mode`,
                                         { state: { viewOnly: true } }
@@ -723,6 +715,13 @@ const ExplorationList: React.FC = () => {
           onTrialLimitReached={() => setUpgradeRequired(true)}
         />
       )}
+
+      {/* ── Report Log Modal ── */}
+      <ReportLog
+        isOpen={!!reportLogExploration}
+        explorationName={reportLogExploration?.title}
+        onClose={() => setReportLogExploration(null)}
+      />
     </div>
   );
 };

@@ -5,7 +5,8 @@ from app.schemas.omi import (
     OmiChatRequest, OmiChatResponse,
     OmiGuidanceRequest, OmiGuidanceResponse,
     OmiValidationRequest, OmiValidationResponse,
-    OmiStateUpdate, OmiSessionOut, OmiMessageOut, OmiActionOut
+    OmiStateUpdate, OmiSessionOut, OmiMessageOut, OmiActionOut,
+    OmiMessageContentPatch,
 )
 from app.services import omi as omi_service
 from app.services import workspace as ws_service
@@ -438,8 +439,27 @@ async def guide_persona_building(
     
     # Guide
     result = await omi_service.guide_persona_building(session.id, persona_data)
-    
+
     return SuccessResponse(
         message="Persona building guidance provided",
         data=result
+    )
+
+
+@router.patch("/messages/{message_id}", response_model=SuccessResponse)
+async def patch_message_content(
+    message_id: str,
+    body: OmiMessageContentPatch,
+    current_user: User = Depends(get_current_active_user),
+):
+    """Update a single Omi message's content in-place (used for inline summary edits)."""
+    updated = await omi_service.update_message_content(message_id, body.content)
+    if not updated:
+        raise HTTPException(
+            status_code=404,
+            detail=ErrorResponse(status="error", message="Message not found").dict()
+        )
+    return SuccessResponse(
+        message="Message updated successfully",
+        data={"id": updated.id, "content": updated.content}
     )

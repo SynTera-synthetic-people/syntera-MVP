@@ -1,0 +1,286 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   SummaryRefineBubble
+   Flow: select text → pill appears → click pill → input panel expands
+   Portal is fixed-positioned on document.body, anchored by `bottom` so
+   it always grows upward — never overlaps the selected text below it.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Bubble ── */
+.srb-bubble {
+  display: flex;
+  flex-direction: column;
+  padding: 16px 20px 14px;
+  background: #16181C;
+  color: #F8F9F9;
+  border-radius: 8px 24px 24px 24px;
+  width: 680px;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.srb-bubble-text {
+  flex: 1;
+  min-width: 0;
+  color: #F8F9F9;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+
+.srb-bubble-text ::selection {
+  background: rgba(59, 130, 246, 0.32);
+  color: #fff;
+}
+
+/* ── Hint ── */
+.srb-hint {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 12px;
+  color: rgba(107, 114, 128, 0.6);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Portal wrapper
+   KEY: `bottom` is set inline from JS (viewport distance), NOT `top`.
+   This means the element's bottom edge is pinned above the selection and
+   any height growth (pill → panel expansion, sent message) grows UPWARD.
+   No translateY needed or wanted here.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.srb-portal {
+  position: fixed;
+  /* bottom + left injected inline */
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  user-select: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Step 1 — Pill button
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.srb-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px 5px 10px;
+  background: var(--T-Base-B1, #0E0F12);
+  border: 1px solid var(--T-GreyScale-Grey-700, #4F535F);
+  border-radius: 999px;
+  color: white;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow:
+    0 4px 16px rgba(14, 15, 18, 0.8),
+    0 1px 4px rgba(79, 83, 95, 0.4);
+  transition: background 0.15s, border-color 0.15s, color 0.15s,
+              transform 0.1s, box-shadow 0.15s;
+}
+
+.srb-pill:hover {
+  color: #93c5fd;
+  transform: translateY(-1px);
+  box-shadow:
+    0 6px 20px rgba(0, 0, 0, 0.55),
+    0 2px 8px rgba(37, 99, 235, 0.3);
+}
+
+.srb-pill:active {
+  transform: translateY(0);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Step 2 — Input panel
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.srb-input-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 360px;
+  background: var(--T-Base-B1, #0E0F12);
+  border: 1px solid var(--T-GreyScale-Grey-700, #4F535F);
+  border-radius: 12px;
+  padding: 11px 13px 8px; /* less bottom padding — arrow sits below */
+  box-sizing: border-box;
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.65),
+    0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* ── Panel header ── */
+.srb-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.srb-panel-header-left {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: white;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.srb-panel-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: #6b7280;
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.15s, background 0.15s;
+}
+
+.srb-panel-close:hover {
+  color: #d1d5db;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* ── Input row ── */
+.srb-panel-input-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: #16181C;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 4px 4px 4px 10px;
+  transition: border-color 0.2s;
+}
+
+.srb-panel-input-row:focus-within {
+  border-color: var(--T-GreyScale-Grey-700, #4F535F);
+}
+
+.srb-panel-input-row--disabled {
+  opacity: 0.6;
+}
+
+.srb-panel-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 0.8125rem;
+  color: #F8F9F9;
+  font-family: inherit;
+  padding: 4px 0;
+  min-width: 0;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.srb-panel-input::placeholder {
+  color: #374151;
+  font-size: 0.75rem;
+}
+
+.srb-panel-input:disabled {
+  cursor: not-allowed;
+}
+
+/* ── Submit button ── */
+.srb-panel-submit {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 27px;
+  height: 27px;
+  background: #2563eb;
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.srb-panel-submit:hover:not(.srb-panel-submit--disabled) {
+  background: #1d4ed8;
+  transform: scale(1.06);
+}
+
+.srb-panel-submit:active:not(.srb-panel-submit--disabled) {
+  transform: scale(0.96);
+}
+
+.srb-panel-submit--disabled {
+  background: #1e2a40;
+  box-shadow: none;
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+/* ── Sent confirmation ── */
+.srb-panel-sent {
+  font-size: 0.6875rem;
+  color: #34d399;
+  margin: 0;
+  text-align: center;
+  font-weight: 500;
+  overflow: hidden; /* required for height animation */
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Shared — down-pointing arrow (last child of pill wrapper or panel)
+   Always rendered as the last flex item so it sits at the bottom,
+   pointing down at the selected text.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.srb-arrow {
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 6px solid var(--T-GreyScale-Grey-700, #4F535F);
+  flex-shrink: 0;
+  position: relative;
+}
+
+.srb-arrow::after {
+  content: '';
+  position: absolute;
+  top: -8px;
+  left: -5px;
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 5px solid #0E0F12; /* matches pill/panel background */
+}
+
+/* ── Shared animations ── */
+.srb-spin {
+  animation: srb-spin-anim 0.8s linear infinite;
+}
+
+@keyframes srb-spin-anim {
+  to { transform: rotate(360deg); }
+}
+
+.srb-check {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #34d399;
+}

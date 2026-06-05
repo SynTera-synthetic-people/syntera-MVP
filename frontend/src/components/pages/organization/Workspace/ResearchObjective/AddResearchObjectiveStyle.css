@@ -83,9 +83,7 @@
   cursor: pointer;
 }
 
-.aro-retry-btn:hover {
-  color: #2563eb;
-}
+.aro-retry-btn:hover { color: #2563eb; }
 
 .aro-empty-avatar {
   width: 4rem;
@@ -155,19 +153,6 @@
   box-sizing: border-box;
 }
 
-.aro-bubble--omi-summary {
-  display: flex;
-  align-items: flex-start;
-  gap: 16px;
-  padding: 16px 20px;
-  background: #16181C;
-  color: #F8F9F9;
-  border-radius: 8px 24px 24px 24px;
-  width: 680px;
-  max-width: 100%;
-  box-sizing: border-box;
-}
-
 .aro-bubble--omi-error {
   display: flex;
   align-items: flex-start;
@@ -188,17 +173,10 @@
   border-radius: 1rem;
 }
 
-/* ── Chat text — Figma colour #F8F9F9 ── */
-.aro-chat-text {
-  color: #F8F9F9;
-}
+/* ── Chat text ── */
+.aro-chat-text { color: #F8F9F9; }
+.aro-chat-text-bold { color: #F8F9F9; font-weight: 700; }
 
-.aro-chat-text-bold {
-  color: #F8F9F9;
-  font-weight: 700;
-}
-
-/* Text content inside bubble */
 .aro-bubble-text {
   flex: 1;
   min-width: 0;
@@ -219,11 +197,7 @@
   justify-content: center;
 }
 
-/* Slightly larger avatar in the typing indicator */
-.aro-omi-avatar--typing {
-  width: 2.25rem;
-  height: 2.25rem;
-}
+.aro-omi-avatar--typing { width: 2.25rem; height: 2.25rem; }
 
 .aro-omi-video {
   width: 100%;
@@ -232,12 +206,9 @@
   object-position: center 30%;
 }
 
-/* Older (non-latest) Omi messages: pause the video so it shows as a static frame */
 .aro-omi-video--static {
-  /* Prevent autoplay — the element has no autoPlay attr so this is belt-and-braces */
   pointer-events: none;
   opacity: 0.6;
-  /* Show first frame only: we stop it via the missing autoPlay + play() never called */
 }
 
 /* ── File attachment in bubble ── */
@@ -298,7 +269,6 @@
   display: inline-block;
 }
 
-/* ── Animated ellipsis dots ── */
 .aro-typing-dots {
   display: inline-flex;
   align-items: center;
@@ -323,7 +293,256 @@
   30%            { opacity: 1;   transform: translateY(-3px); }
 }
 
-/* ── CTA section ── */
+/* ═══════════════════════════════════════════════════════════════════════════
+   Summary Edit Bubble
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Outer wrapper — same width as normal omi bubble */
+.aro-summary-bubble-outer {
+  width: 680px;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* The summary bubble itself — positions the Edit button absolutely */
+.aro-bubble--omi-summary {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 20px;
+  background: #16181C;
+  color: #F8F9F9;
+  border-radius: 8px 24px 24px 24px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  /* Subtle blue-tinted border to distinguish the summary from regular messages */
+  border: 1px solid rgba(59, 130, 246, 0.18);
+}
+
+/* ── Edit button (top-right of summary bubble) ── */
+.aro-summary-edit-btn {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px 4px 8px;
+  background: rgba(37, 99, 235, 0.12);
+  border: 1px solid rgba(37, 99, 235, 0.25);
+  border-radius: 6px;
+  color: #60a5fa;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.1s ease;
+  white-space: nowrap;
+}
+
+.aro-summary-edit-btn:hover {
+  background: rgba(37, 99, 235, 0.22);
+  border-color: rgba(59, 130, 246, 0.45);
+  color: #93c5fd;
+  transform: translateY(-1px);
+}
+
+.aro-summary-edit-btn:active {
+  transform: translateY(0);
+}
+
+/* ── Edited badge (replaces Edit button after save) ── */
+.aro-summary-edited-badge {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px 4px 8px;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  border-radius: 6px;
+  color: #34d399;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  pointer-events: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Edit mode panel (replaces bubble when user clicks Edit)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.aro-summary-edit-mode {
+  width: 680px;
+  max-width: 100%;
+  box-sizing: border-box;
+  background: #16181C;
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  border-radius: 8px 24px 24px 24px;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ── Edit mode header ── */
+.aro-summary-edit-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.aro-summary-edit-header-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #60a5fa;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+/* Character counter */
+.aro-summary-edit-char-info {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.aro-char-ok  { color: #6b7280; }
+.aro-char-warn { color: #f87171; }
+
+/* ── Hint text ── */
+.aro-summary-edit-hint {
+  font-size: 0.75rem;
+  color: #6b7280;
+  line-height: 1.5;
+  margin: 0;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-left: 2px solid rgba(59, 130, 246, 0.3);
+  border-radius: 0 4px 4px 0;
+}
+
+.aro-summary-edit-hint strong {
+  color: #9ca3af;
+}
+
+/* ── Textarea ── */
+.aro-summary-edit-textarea {
+  width: 100%;
+  min-height: 160px;
+  max-height: 420px;
+  background: #0d1117;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: #F8F9F9;
+  font-size: 0.875rem;
+  line-height: 1.65;
+  padding: 12px 14px;
+  resize: none;
+  outline: none;
+  font-family: inherit;
+  box-sizing: border-box;
+  transition: border-color 0.2s ease;
+  overflow-y: auto;
+}
+
+.aro-summary-edit-textarea:focus {
+  border-color: rgba(59, 130, 246, 0.45);
+}
+
+.aro-summary-edit-textarea--error {
+  border-color: rgba(239, 68, 68, 0.5) !important;
+}
+
+.aro-summary-edit-textarea::-webkit-scrollbar { width: 4px; }
+.aro-summary-edit-textarea::-webkit-scrollbar-track { background: transparent; }
+.aro-summary-edit-textarea::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+
+/* ── Save error message ── */
+.aro-summary-edit-error {
+  font-size: 0.75rem;
+  color: #f87171;
+  margin: 0;
+  padding: 6px 10px;
+  background: rgba(239, 68, 68, 0.08);
+  border-radius: 6px;
+}
+
+/* ── Action row (Cancel / Save) ── */
+.aro-summary-edit-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.aro-summary-cancel-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 14px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: #9ca3af;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.aro-summary-cancel-btn:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.25);
+  color: #d1d5db;
+}
+
+.aro-summary-cancel-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.aro-summary-save-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 16px;
+  background: #2563eb;
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s, transform 0.1s;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+}
+
+.aro-summary-save-btn:hover:not(.aro-summary-save-btn--disabled) {
+  background: #1d4ed8;
+  transform: translateY(-1px);
+}
+
+.aro-summary-save-btn:active:not(.aro-summary-save-btn--disabled) {
+  transform: translateY(0);
+}
+
+.aro-summary-save-btn--disabled {
+  background: #1e2a40;
+  box-shadow: none;
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* Inline spinner for save loading state */
+.aro-spin-inline {
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CTA section
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 .aro-cta-section {
   padding: 1rem 0 0;
 }
@@ -357,14 +576,8 @@
   transition: background 0.2s ease, transform 0.15s ease;
 }
 
-.aro-btn-omi:hover {
-  background: #1d4ed8;
-  transform: scale(1.02);
-}
-
-.aro-btn-omi:active {
-  transform: scale(0.97);
-}
+.aro-btn-omi:hover { background: #1d4ed8; transform: scale(1.02); }
+.aro-btn-omi:active { transform: scale(0.97); }
 
 .aro-btn-manual {
   display: flex;
@@ -381,15 +594,8 @@
   transition: border-color 0.2s ease, color 0.2s ease, transform 0.15s ease;
 }
 
-.aro-btn-manual:hover {
-  border-color: rgba(255, 255, 255, 0.4);
-  color: #F8F9F9;
-  transform: scale(1.02);
-}
-
-.aro-btn-manual:active {
-  transform: scale(0.97);
-}
+.aro-btn-manual:hover { border-color: rgba(255,255,255,0.4); color: #F8F9F9; transform: scale(1.02); }
+.aro-btn-manual:active { transform: scale(0.97); }
 
 /* ── Input bar ── */
 .aro-input-bar {
@@ -408,9 +614,7 @@
   transition: border-color 0.2s ease;
 }
 
-.aro-input-form:focus-within {
-  border-color: rgba(255, 255, 255, 0.25);
-}
+.aro-input-form:focus-within { border-color: rgba(255,255,255,0.25); }
 
 .aro-input-file-label {
   flex-shrink: 0;
@@ -421,10 +625,7 @@
   transition: color 0.2s ease, background 0.2s ease;
 }
 
-.aro-input-file-label:hover {
-  color: #60a5fa;
-  background: rgba(255, 255, 255, 0.05);
-}
+.aro-input-file-label:hover { color: #60a5fa; background: rgba(255,255,255,0.05); }
 
 .aro-textarea {
   flex: 1;
@@ -440,14 +641,8 @@
   font-family: inherit;
 }
 
-.aro-textarea::placeholder {
-  color: #4b5563;
-}
-
-.aro-textarea:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+.aro-textarea::placeholder { color: #4b5563; }
+.aro-textarea:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .aro-input-icon-btn {
   flex-shrink: 0;
@@ -460,15 +655,8 @@
   transition: color 0.2s ease, background 0.2s ease;
 }
 
-.aro-input-icon-btn:hover:not(:disabled) {
-  color: #60a5fa;
-  background: rgba(255, 255, 255, 0.05);
-}
-
-.aro-input-icon-btn:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
+.aro-input-icon-btn:hover:not(:disabled) { color: #60a5fa; background: rgba(255,255,255,0.05); }
+.aro-input-icon-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 
 .aro-send-btn {
   flex-shrink: 0;
@@ -486,16 +674,8 @@
   transition: background 0.2s ease, opacity 0.2s ease;
 }
 
-.aro-send-btn:hover:not(:disabled) {
-  background: #1d4ed8;
-}
-
-.aro-send-btn:disabled {
-  background: #374151;
-  box-shadow: none;
-  cursor: not-allowed;
-  opacity: 0.5;
-}
+.aro-send-btn:hover:not(:disabled) { background: #1d4ed8; }
+.aro-send-btn:disabled { background: #374151; box-shadow: none; cursor: not-allowed; opacity: 0.5; }
 
 /* ── Uploaded file pill ── */
 .aro-file-pill {
@@ -531,58 +711,32 @@
   transition: color 0.15s ease;
 }
 
-.aro-file-pill-remove:hover {
-  color: #f87171;
-}
+.aro-file-pill-remove:hover { color: #f87171; }
 
-/* ── Scrollbar ── */
-.aro-messages::-webkit-scrollbar {
-  width: 4px;
-}
+/* ── Scrollbars ── */
+.aro-messages::-webkit-scrollbar { width: 4px; }
+.aro-messages::-webkit-scrollbar-track { background: transparent; }
+.aro-messages::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.05); border-radius: 10px; }
 
-.aro-messages::-webkit-scrollbar-track {
-  background: transparent;
-}
+.aro-textarea::-webkit-scrollbar { width: 4px; }
+.aro-textarea::-webkit-scrollbar-track { background: transparent; }
+.aro-textarea::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.05); border-radius: 10px; }
 
-.aro-messages::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 10px;
-}
+/* ── Animations ── */
+@keyframes spin { to { transform: rotate(360deg); } }
 
-.aro-textarea::-webkit-scrollbar {
-  width: 4px;
-}
-
-.aro-textarea::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.aro-textarea::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 10px;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* ── Button manual wrap & locked state ────────────────────────────────────── */
-
-.aro-btn-manual-wrap {
-  display: inline-flex;
-}
+/* ── Button manual wrap & locked state ── */
+.aro-btn-manual-wrap { display: inline-flex; }
 
 .aro-btn-manual--locked {
   opacity: 0.45;
   cursor: not-allowed !important;
-  border-color: rgba(255, 255, 255, 0.1) !important;
+  border-color: rgba(255,255,255,0.1) !important;
   color: #6b7280 !important;
 }
 
 .aro-btn-manual--locked:hover {
-  border-color: rgba(255, 255, 255, 0.1) !important;
+  border-color: rgba(255,255,255,0.1) !important;
   color: #6b7280 !important;
   transform: none !important;
 }

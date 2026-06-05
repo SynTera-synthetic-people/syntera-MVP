@@ -3,7 +3,9 @@ import {
   createResearchObjective,
   initializeOmiSession,
   sendMessageToOmi,
-  getConversationHistory
+  getConversationHistory,
+  patchResearchObjectiveSummary,
+  patchOmiMessageContent,
 } from '../services/researchObjectiveService';
 
 // Query keys
@@ -67,6 +69,27 @@ export const useSendMessageToOmi = (explorationId, sessionId) => {
     },
     onError: (error, variables, context) => {
       console.error('Failed to send message:', error);
+    },
+  });
+};
+
+// Hook to update a single Omi message's content in DB (keeps chat history in sync after inline edits)
+export const usePatchOmiMessageContent = () => {
+  return useMutation({
+    mutationFn: ({ messageId, content }) => patchOmiMessageContent(messageId, content),
+    onError: (error) => {
+      console.error('Failed to update Omi message content:', error);
+    },
+  });
+};
+
+// Hook to persist inline summary edits — fire-and-forget, no downstream cache invalidation
+export const usePatchResearchObjectiveSummary = (workspaceId, explorationId) => {
+  return useMutation({
+    mutationFn: (description) =>
+      patchResearchObjectiveSummary(workspaceId, explorationId, description),
+    onError: (error) => {
+      console.error('Failed to persist summary edit:', error);
     },
   });
 };
