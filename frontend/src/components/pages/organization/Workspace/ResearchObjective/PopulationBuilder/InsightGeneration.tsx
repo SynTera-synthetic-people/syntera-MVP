@@ -18,6 +18,8 @@ import ConversationStudioModal from '../DepthInterview/components/ConversationSt
 import InsightViewerModalQuant, { type ViewableCardId } from './InsightViewerModalQuant';
 import './InsightGeneration.css';
 
+import OmiKeyboard from '../../../../../../assets/Omi Animations/OmiKeyboard.mp4';
+
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 interface InsightsGenerationProps {
@@ -96,6 +98,102 @@ const INSIGHT_CARDS: InsightCard[] = [
     comingSoon: true,
   },
 ];
+
+// ── Omi loader messages ───────────────────────────────────────────────────────
+
+const LOADER_MESSAGES: Record<'decision' | 'behaviour', string[]> = {
+  decision: [
+    'Processing patterns from data shell...',
+    'Mapping key consumer segments...',
+    'Identifying statistically significant signals...',
+    'Connecting findings to your research objectives...',
+    'Detecting opportunities, barriers, and risks...',
+    'Prioritizing the signals that matter most...',
+    'Translating data into strategic implications...',
+    'Building your decision intelligence story...',
+    'Structuring recommendations and actions...',
+    'Finalizing your report',
+  ],
+  behaviour: [
+    'Exploring consumer response patterns...',
+    'Looking beneath the surface of the numbers...',
+    'Identifying behavioral clusters...',
+    'Detecting hidden motivations and tensions...',
+    'Mapping decision-making pathways...',
+    'Finding recurring habits and rituals...',
+    'Uncovering trade-offs and triggers...',
+    'Connecting attitudes with likely behaviors...',
+    'Building behavioral archetypes...',
+    'Constructing the behavioral story...',
+    'Unearthing the final insights',
+  ],
+};
+
+// ── OmiLoaderBar ──────────────────────────────────────────────────────────────
+
+interface OmiLoaderBarProps {
+  cardId: 'decision' | 'behaviour';
+}
+
+const OmiLoaderBar: React.FC<OmiLoaderBarProps> = ({ cardId }) => {
+  const messages = LOADER_MESSAGES[cardId];
+  const [msgIdx, setMsgIdx] = useState(0);
+
+  useEffect(() => {
+    setMsgIdx(0);
+  }, [cardId]);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setMsgIdx(prev => (prev + 1) % messages.length);
+    }, 3_200);
+    return () => clearInterval(id);
+  }, [messages.length]);
+
+  return (
+    <motion.div
+      className="ig-omi-bar"
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 16 }}
+      transition={{ duration: 0.3 }}
+    >
+      {/* Omi avatar video */}
+      <div className="ig-omi-bar__avatar">
+        <video
+          src={OmiKeyboard}
+          autoPlay
+          loop
+          muted
+          playsInline
+          className="ig-omi-bar__avatar-video"
+        />
+      </div>
+
+      {/* Cycling message */}
+      <div className="ig-omi-bar__msg-wrap">
+        <AnimatePresence mode="wait">
+          <motion.span
+            key={msgIdx}
+            className="ig-omi-bar__msg"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.22 }}
+          >
+            <span className="ig-omi-bar__bullet" />
+            {messages[msgIdx]}
+          </motion.span>
+        </AnimatePresence>
+      </div>
+
+      {/* Pulsing dots */}
+      <div className="ig-omi-bar__dots">
+        <span /><span /><span />
+      </div>
+    </motion.div>
+  );
+};
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -183,6 +281,14 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
 
   const hasAnyInsightReady = Object.values(cardStates).some((s) => s === 'done');
 
+  // Derive which loader card (if any) is currently generating
+  const activeLoaderCard: 'decision' | 'behaviour' | null =
+    cardStates['decision'] === 'generating'
+      ? 'decision'
+      : cardStates['behaviour'] === 'generating'
+      ? 'behaviour'
+      : null;
+
   // ── Survey simulation ID resolution ──────────────────────────────────────
 
   const getPersonaIds = () => {
@@ -248,12 +354,13 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
       return;
     }
 
-    // Generate: resolve the survey sim so the backend can prepare the report
+    // Set generating immediately so the loader bar appears right away
     setCardStates((prev) => ({ ...prev, [card.id]: 'generating' }));
+
     try {
       await ensureSurveySimulationId();
       setCardStates((prev) => ({ ...prev, [card.id]: 'done' }));
-      markLsReady(card.id, explorationId);  // ← persist so login/logout survives
+      markLsReady(card.id, explorationId);
     } catch (err) {
       console.error(`Failed to prepare ${card.id}:`, err);
       const detail = await getAxiosErrorMessage(err, 'Could not prepare this report.');
@@ -397,6 +504,13 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
           );
         })}
       </motion.div>
+
+      {/* ── Omi loader bar — shown while Decision Intelligence or Behaviour Archaeology is generating ── */}
+      <AnimatePresence>
+        {activeLoaderCard !== null && (
+          <OmiLoaderBar cardId={activeLoaderCard} />
+        )}
+      </AnimatePresence>
 
       {/* ── Footer ── */}
       <div className="ig-footer">

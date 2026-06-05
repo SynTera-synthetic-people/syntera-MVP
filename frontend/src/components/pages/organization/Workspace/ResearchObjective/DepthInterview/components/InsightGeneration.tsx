@@ -20,6 +20,8 @@ import ImpactHighFiveModal from './ImpactHighFiveModal';
 import ConversationStudioModal from './ConversationStudioModal';
 import './InsightGeneration.css';
 
+import OmiKeyboard from '../../../../../../../assets/Omi Animations/OmiKeyboard.mp4';
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type InsightCardId = 'verbatim' | 'decision' | 'behaviour';
@@ -67,6 +69,33 @@ const INSIGHT_CARDS: InsightCard[] = [
   },
 ];
 
+// ── Omi loader messages ───────────────────────────────────────────────────────
+
+const LOADER_MESSAGES: Record<'decision' | 'behaviour', string[]> = {
+  decision: [
+    'Contextualizing your research objective...',
+    'Analyzing interview conversations...',
+    'Identifying recurring behavioral signals...',
+    'Detecting hidden decision drivers...',
+    'Connecting insights to business questions...',
+    'Building strategic narratives...',
+    'Structuring recommendations and actions...',
+    'Finalizing your report',
+  ],
+  behaviour: [
+    'Digging through consumer conversations...',
+    'Looking beyond stated opinions...',
+    'Finding the moments that shape decisions...',
+    'Uncovering hidden motivations...',
+    'Mapping behavioral patterns and rituals...',
+    'Identifying tensions, trade-offs, and triggers...',
+    'Connecting what people say with what they do...',
+    'Revealing the mechanics behind decisions...',
+    'Building your behavioral story...',
+    'Unearthing the final insights',
+  ],
+};
+
 // ── localStorage helpers ──────────────────────────────────────────────────────
 
 const lsKey = (cardId: InsightCardId, objectiveId: string | undefined) =>
@@ -77,6 +106,72 @@ const isLsReady = (cardId: InsightCardId, objectiveId: string | undefined): bool
 
 const markLsReady = (cardId: InsightCardId, objectiveId: string | undefined) =>
   localStorage.setItem(lsKey(cardId, objectiveId), '1');
+
+// ── OmiLoaderBar ──────────────────────────────────────────────────────────────
+
+interface OmiLoaderBarProps {
+  cardId: 'decision' | 'behaviour';
+}
+
+const OmiLoaderBar: React.FC<OmiLoaderBarProps> = ({ cardId }) => {
+  const messages = LOADER_MESSAGES[cardId];
+  const [msgIdx, setMsgIdx] = useState(0);
+
+  useEffect(() => {
+    setMsgIdx(0);
+  }, [cardId]);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setMsgIdx(prev => (prev + 1) % messages.length);
+    }, 3_200);
+    return () => clearInterval(id);
+  }, [messages.length]);
+
+  return (
+    <motion.div
+      className="ig-omi-bar"
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 16 }}
+      transition={{ duration: 0.3 }}
+    >
+      {/* Omi avatar */}
+      <div className="ig-omi-bar__avatar">
+        <video
+          src={OmiKeyboard}
+          autoPlay
+          loop
+          muted
+          playsInline
+          className="ig-omi-bar__avatar-video"
+        />
+      </div>
+
+      {/* Cycling message */}
+      <div className="ig-omi-bar__msg-wrap">
+        <AnimatePresence mode="wait">
+          <motion.span
+            key={msgIdx}
+            className="ig-omi-bar__msg"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.22 }}
+          >
+            <span className="ig-omi-bar__bullet" />
+            {messages[msgIdx]}
+          </motion.span>
+        </AnimatePresence>
+      </div>
+
+      {/* Pulsing dots */}
+      <div className="ig-omi-bar__dots">
+        <span /><span /><span />
+      </div>
+    </motion.div>
+  );
+};
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -179,7 +274,6 @@ const InsightGeneration: React.FC = () => {
       } else if (diPending) {
         next.decision = 'generating';
       } else if (diStatus && next.decision !== 'ready') {
-        // Only reset to idle if not already ready (prevents regression)
         next.decision = 'idle';
       }
 
@@ -236,8 +330,6 @@ const InsightGeneration: React.FC = () => {
   ).toLowerCase().trim();
 
   // True when the user has already ended this exploration (is_end flag from API).
-  // Used to hide "Begin Quant" and treat the page as view-only even when
-  // isViewOnly is false (e.g. user ended after Qual in a "both" exploration).
   const isExplorationEnded = !!_apiData?.is_end;
 
   // ── Generate handlers ─────────────────────────────────────────────────────
@@ -246,14 +338,10 @@ const InsightGeneration: React.FC = () => {
     setCardStates((prev) => ({ ...prev, [cardId]: 'generating' }));
     try {
       if (cardId === 'verbatim') {
-        // Synchronous DOCX generation — no LLM, completes in seconds
         await downloadTranscriptsMutation.mutateAsync();
         setCardStates((prev) => ({ ...prev, [cardId]: 'ready' }));
         markLsReady('verbatim', objectiveId);
       } else {
-        // DI / BA: fire background LLM task on server, return immediately.
-        // useQualReportStatus polls every 5s and flips the card to 'ready'
-        // once the server reports the PDF is done.
         const slug = cardId === 'decision' ? 'decision-intelligence' : 'behavior-archaeology';
         await prepareMutation.mutateAsync(slug);
         setPollingEnabled(true);
@@ -306,6 +394,15 @@ const InsightGeneration: React.FC = () => {
     );
   };
 
+  // ── Derive which loader card is active ────────────────────────────────────
+
+  const activeLoaderCard: 'decision' | 'behaviour' | null =
+    cardStates.decision === 'generating'
+      ? 'decision'
+      : cardStates.behaviour === 'generating'
+      ? 'behaviour'
+      : null;
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
@@ -322,7 +419,7 @@ const InsightGeneration: React.FC = () => {
       {/* ── 3-card grid ── */}
       <div className="ig-cards">
         {INSIGHT_CARDS.map((card, i) => {
-          const state       = cardStates[card.id];
+          const state        = cardStates[card.id];
           const isGenerating = state === 'generating';
           const isReady      = state === 'ready';
 
@@ -375,6 +472,13 @@ const InsightGeneration: React.FC = () => {
         })}
       </div>
 
+      {/* ── Omi loader bar — shown while DI or BA is generating ── */}
+      <AnimatePresence>
+        {activeLoaderCard !== null && (
+          <OmiLoaderBar cardId={activeLoaderCard} />
+        )}
+      </AnimatePresence>
+
       {/* ── Footer action bar ── */}
       <div className="ig-footer">
         <div className="ig-footer__left">
@@ -389,7 +493,7 @@ const InsightGeneration: React.FC = () => {
             </button>
           )}
 
-          {/* Begin Quant Exploration — hidden in view-only mode OR when exploration already ended */}
+          {/* Begin Quant Exploration */}
           {researchApproach === 'both' && !isViewOnly && !isExplorationEnded && (
             <button
               className="ig-footer__btn ig-footer__btn--white"
@@ -401,7 +505,7 @@ const InsightGeneration: React.FC = () => {
           )}
         </div>
 
-        {/* End Journey (view-only or already-ended) / End Exploration (normal) */}
+        {/* End Journey / End Exploration */}
         {(isViewOnly || isExplorationEnded) ? (
           <button
             className="ig-footer__btn ig-footer__btn--end"
