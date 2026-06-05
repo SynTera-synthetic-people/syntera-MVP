@@ -1,6 +1,8 @@
 // services/personaService.js
 import axiosInstance from '../utils/axiosConfig';
 
+const REPLICATION_TIMEOUT_MS = 300000;
+
 export const personaService = {
   // Get persona templates
   getPersonaTemplates: async (workspaceId, objectiveId) => {
@@ -84,12 +86,47 @@ export const personaService = {
     return response.data;
   },
 
-  replicatePersona: async (workspaceId, objectiveId, personaId, targetCountry) => {
-    const response = await axiosInstance.post(
-      `/workspaces/${workspaceId}/explorations/${objectiveId}/personas/${personaId}/replicate`,
-      { target_country: targetCountry }
-    );
-    return response.data;
+  replicatePersona: async (workspaceId, objectiveId, personaId, targetCountry, options = {}) => {
+    const startedAt = performance.now();
+    const mode = options.mode || 'full_replication';
+    const seedInputs = options.seedInputs || '';
+    const url = `/workspaces/${workspaceId}/explorations/${objectiveId}/personas/${personaId}/replicate`;
+    console.info('[persona:replicate] request start', {
+      personaId,
+      targetCountry,
+      mode,
+      timeoutMs: REPLICATION_TIMEOUT_MS,
+    });
+    try {
+      const response = await axiosInstance.post(
+        url,
+        {
+          target_country: targetCountry,
+          mode,
+          seed_inputs: seedInputs || undefined,
+        },
+        { timeout: REPLICATION_TIMEOUT_MS }
+      );
+      console.info('[persona:replicate] request success', {
+        personaId,
+        mode,
+        newPersonaId: response.data?.data?.id,
+        elapsedMs: Math.round(performance.now() - startedAt),
+      });
+      return response.data;
+    } catch (error) {
+      console.error('[persona:replicate] request failed', {
+        personaId,
+        targetCountry,
+        mode,
+        elapsedMs: Math.round(performance.now() - startedAt),
+        code: error?.code,
+        message: error?.message,
+        status: error?.response?.status,
+        detail: error?.response?.data?.detail,
+      });
+      throw error;
+    }
   },
 
   // Get persona preview

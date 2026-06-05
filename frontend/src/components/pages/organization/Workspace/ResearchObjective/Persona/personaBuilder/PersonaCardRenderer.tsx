@@ -31,7 +31,8 @@ export interface PersonaCardData {
   calibration_confidence?: number;
   confidence_score?: number;
   confidence_scoring?: {
-    confidence_calculation_detail?: { weighted_total?: number };
+    weighted_score?: number;
+    confidence_calculation_detail?: { weighted_total?: number; value?: number };
     score?: number;
   };
 
@@ -108,15 +109,66 @@ const SANS  = "'Inter', 'Segoe UI', sans-serif";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+function getRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function getNested(source: unknown, path: string[]): unknown {
+  let current: unknown = source;
+  for (const key of path) {
+    const record = getRecord(current);
+    if (!record) return undefined;
+    current = record[key];
+  }
+  return current;
+}
+
+function coerceConfidenceScore(raw: unknown): number | null {
+  if (raw === null || raw === undefined || typeof raw === 'boolean') return null;
+  const cleaned = typeof raw === 'string' ? raw.trim().replace('%', '') : raw;
+  if (cleaned === '' || String(cleaned).toLowerCase() === 'na') return null;
+  const n = typeof cleaned === 'string'
+    ? Number(cleaned.match(/-?\d+(?:\.\d+)?/)?.[0] ?? cleaned)
+    : Number(cleaned);
+  if (isNaN(n) || n < 0 || n > 100) return null;
+  return Math.round(n <= 1 ? n * 100 : n);
+}
+
 function getConfidenceScore(p: PersonaCardData): number {
-  const raw =
-    p.confidence_scoring?.confidence_calculation_detail?.weighted_total ??
-    p.confidence_scoring?.score ??
-    p.confidence_score ??
-    p.calibration_confidence ??
-    0;
-  const n = Number(raw);
-  return isNaN(n) ? 0 : Math.round(n <= 1 ? n * 100 : n);
+  const details = getRecord(p.persona_details);
+  const candidates = [
+    p.confidence_scoring?.weighted_score,
+    p.confidence_scoring?.score,
+    p.confidence_scoring?.confidence_calculation_detail?.weighted_total,
+    p.confidence_scoring?.confidence_calculation_detail?.value,
+    getNested(details, ['confidence_scoring', 'weighted_score']),
+    getNested(details, ['confidence_scoring', 'score']),
+    getNested(details, ['confidence_scoring', 'confidence_calculation_detail', 'weighted_total']),
+    getNested(details, ['confidence_scoring', 'confidence_calculation_detail', 'value']),
+    getNested(details, ['evidence_snapshot', 'confidence_calculation_detail', 'weighted_total']),
+    getNested(details, ['evidence_snapshot', 'confidence_calculation_detail', 'value']),
+    getNested(details, ['evidence_snapshot', 'confidence_breakdown', 'weighted_total']),
+    getNested(details, ['evidence_snapshot', 'confidence_breakdown', 'value']),
+    getNested(details, ['confidence_calculation_detail', 'weighted_total']),
+    getNested(details, ['confidence_calculation_detail', 'value']),
+    getNested(details, ['confidence_breakdown', 'weighted_total']),
+    getNested(details, ['confidence_breakdown', 'value']),
+    p.confidence_score,
+    p.calibration_confidence,
+    p.confidence,
+  ];
+  for (const candidate of candidates) {
+    const score = coerceConfidenceScore(candidate);
+    if (score !== null) return score;
+  }
+  if (
+    p.auto_generated_persona === false &&
+    (p.calibration_status === 'draft' || details?.raw_traits || details?.raw_form_payload)
+  ) {
+    return 50;
+  }
+  return 0;
 }
 
 function coerce(v: unknown): string {

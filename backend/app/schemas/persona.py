@@ -1,5 +1,5 @@
 from pydantic import BaseModel, ConfigDict, Field
-from typing import Optional, List, Dict
+from typing import Literal, Optional, List, Dict
 from datetime import datetime
 
 
@@ -40,13 +40,32 @@ class BehaviouralInput(BaseModel):
     purchase_triggers: Optional[List[str]] = None
     purchase_barriers: Optional[List[str]] = None
     media_consumption_patterns: Optional[List[str]] = None
+    digital_adoption: Optional[str] = None
     digital_behaviour: Optional[str] = None
+    digital_behavior: Optional[str] = None
 
 
 class AdditionalInfoInput(BaseModel):
     occupation: Optional[str] = None       # overrides demographics.occupation if set
     industry: Optional[str] = None
     category_awareness: Optional[str] = None  # e.g. "Aware", "Considering", "Lapsed User"
+    job_level: Optional[str] = None
+    occupation_level: Optional[str] = None
+    years_of_experience: Optional[str] = None
+    years_experience: Optional[str] = None
+    company_level: Optional[str] = None
+    company_size_tier: Optional[str] = None
+    company_type: Optional[str] = None
+    employee_size: Optional[str] = None
+    company_size: Optional[str] = None
+    department: Optional[str] = None
+    function: Optional[str] = None
+    primary_area_of_responsibility: Optional[str] = None
+    area_of_responsibility: Optional[str] = None
+    decision_making: Optional[str] = None
+    decision_making_role: Optional[str] = None
+    decision_making_style: Optional[str] = None
+    sample_size: Optional[int] = None
 
 
 class ManualPersonaCreate(BaseModel):
@@ -57,6 +76,7 @@ class ManualPersonaCreate(BaseModel):
     behavioural: Optional[BehaviouralInput] = None
     additional_info: Optional[AdditionalInfoInput] = None
     formative_experience: Optional[str] = Field(None, max_length=1000)
+    sample_size: Optional[int] = None
 
 class PersonaBase(BaseModel):
     name: str = Field(..., min_length=3, max_length=50)
@@ -167,6 +187,9 @@ class PersonaOut(PersonaBase):
     parent_persona_id: Optional[str] = None
     calibration_status: Optional[str] = None  # "draft" | "calibrated" | None (legacy)
     created_at: datetime
+    # Replication Engine v5.0
+    replication_mode: Optional[str] = None
+    replication_artifacts: Optional[Dict] = None
 
 
 class PersonaPreview(BaseModel):
@@ -204,6 +227,17 @@ class PersonaBackstoryIn(BaseModel):
 
 class PersonaReplicateRequest(BaseModel):
     target_country: str = Field(..., min_length=2, max_length=100)
+    # "full_replication": docs v5 full 5-stage engine (default)
+    # "anchor_preview": docs v5 Stage 1-2 preview only, no persona is created
+    # legacy aliases kept for backwards compatibility
+    mode: Literal[
+        "full_replication",
+        "anchor_preview",
+        "fast_localization",
+        "deep_psychographic",
+    ] = "full_replication"
+    # Optional client-provided knowledge about the target market (seeds Stage 2)
+    seed_inputs: Optional[str] = Field(default=None, max_length=2000)
 
 
 class PersonaBulkDownloadRequest(BaseModel):

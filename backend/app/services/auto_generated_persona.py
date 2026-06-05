@@ -12,6 +12,7 @@ from sqlalchemy import (
     Table,
     Column,
     String,
+    DateTime,
     insert,
     Text,
     select,
@@ -436,6 +437,7 @@ async def get_interviews_by_exploration_id(
         exploration_id = Column(String)
         persona_id = Column(String)
         messages = Column(JSON)
+        created_at = Column(DateTime)
 
     engine = create_async_engine(DATABASE_URL, echo=False)
     SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
@@ -445,10 +447,11 @@ async def get_interviews_by_exploration_id(
             select(
                 Interview.id,
                 Interview.persona_id,
-                Interview.messages
+                Interview.messages,
+                Interview.created_at
             ).where(
                 Interview.exploration_id == exploration_id
-            ).order_by(Interview.id.asc())
+            ).order_by(Interview.created_at.asc(), Interview.id.asc())
         )
 
         rows = result.all()
@@ -460,7 +463,8 @@ async def get_interviews_by_exploration_id(
         {
             "interview_id": row.id,
             "persona_id": row.persona_id,
-            "messages": row.messages
+            "messages": row.messages,
+            "created_at": row.created_at,
         }
         for row in rows
     ]

@@ -261,7 +261,7 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
     );
 
     try {
-      await sendMessageMutation.mutateAsync({ role: 'user', content: text });
+      await sendMessageMutation.mutateAsync({ role: 'user', text });
       setMessages((prev) => [
         ...prev,
         { sender: 'bot', text: 'Thinking...', timestamp: new Date().toISOString(), isThinking: true },

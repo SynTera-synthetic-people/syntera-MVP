@@ -257,6 +257,7 @@ const mapApiTraitsToUi = (
     'auto_fill_report', 'calibration_confidence', 'calibration_status',
     'calibration_breakdown', 'persona_source', 'parent_persona_id',
     'created_by_name', 'subject_key', 'ml_domain',
+    'replication_mode', 'replication_artifacts',
   ]);
 
   const additionalKeys: string[] = [];
@@ -705,10 +706,21 @@ const PersonaPreview: React.FC = () => {
     interpretation?: string;
   }>;
 
+  // Also handle flat format: {"openness": 0.75, ...} stored by the replication engine
+  // before the nested-format fix. Covers already-persisted replicated personas.
+  const OCEAN_KEYS = ['openness', 'conscientiousness', 'extraversion', 'agreeableness', 'neuroticism'];
+  const flatOceanScores = Object.fromEntries(
+    OCEAN_KEYS
+      .filter(k => typeof oceanProfile[k] === 'number')
+      .map(k => [k, oceanProfile[k] as number])
+  );
+
   const resolvedOceanScores: Record<string, number> =
     Object.keys(oceanScores).length > 0
       ? oceanScores
-      : Object.fromEntries(oceanTraits.map(t => [t.name.toLowerCase(), t.score]));
+      : oceanTraits.length > 0
+        ? Object.fromEntries(oceanTraits.map(t => [t.name.toLowerCase(), t.score]))
+        : flatOceanScores;
 
   const oceanSummary = (oceanProfile?.summary ?? oceanProfile?.description ?? '') as string;
   const oceanRationale = (oceanProfile?.rationale ?? {}) as Record<string, string>;
@@ -857,12 +869,11 @@ const CB_KEY_MAP: Record<CalibKey, string> = {
     if (section) {
       const count = section.count as number | undefined;
       if (count !== undefined && count !== null) {
-        // Manual mode: show actual number; 0 means "no data" → show dash
-        if (count === 0 && isManualMode) return '—';
-        if (count > 0) return count.toLocaleString('en-IN');
+        if (count === 0) return '—';                              // 0 = no data → honest dash
+        return count.toLocaleString('en-IN');                    // real number
       }
     }
-    // Priority 2: Fallback to confidence component breakdown (percentage-based)
+    // Priority 2: Fallback to confidence component breakdown entries (percentage-based)
     const entry = breakdownEntries.find(e =>
       e.label.toLowerCase().includes(key.toLowerCase())
     );
@@ -879,16 +890,27 @@ const CB_KEY_MAP: Record<CalibKey, string> = {
     return label || fallback;
   };
 
-  // For manual mode: build dynamic items from component_scores in multi_platform section
+  // Build dynamic items for multi-platform card:
+  // Manual mode → confidence components (Demographic RO Fit: 85%, etc.)
+  // Omi mode    → platform-level conversation counts (Reddit: 214, Quora: 89, etc.)
   const multiPlatformComponentItems: Array<{ icon: React.ReactNode; label: string }> = (() => {
-    if (!isManualMode) return [];
     const compScores = calibrationBreakdown?.multi_platform_conversations?.component_scores as
       Record<string, number> | undefined;
-    if (!compScores) return [];
-    return Object.entries(compScores).map(([label, score]) => ({
-      icon: <SpIcon name="sp-System-Wifi_High" size={14} />,
-      label: `${label}: ${score}%`,
-    }));
+    if (!compScores || Object.keys(compScores).length === 0) return [];
+
+    if (isManualMode) {
+      // Confidence components — shown as "Label: Score%"
+      return Object.entries(compScores).map(([label, score]) => ({
+        icon: <SpIcon name="sp-System-Wifi_High" size={14} />,
+        label: `${label}: ${score}%`,
+      }));
+    } else {
+      // Platform conversation counts — shown as "Platform: N conversations"
+      return Object.entries(compScores).map(([platform, count]) => ({
+        icon: <SpIcon name="sp-Navigation-Globe" size={14} />,
+        label: `${platform}: ${Number(count).toLocaleString('en-IN')} conversations`,
+      }));
+    }
   })();
 
   if (isLoading && !previewData) {
@@ -1391,8 +1413,11 @@ const CB_KEY_MAP: Record<CalibKey, string> = {
                     count={getCalibCount('multi')}
                     countLabel={getCalibLabel('multi', 'Total conversations inferred')}
                     sections={
-                      isManualMode && multiPlatformComponentItems.length > 0
-                        ? [{ heading: 'Confidence Components', items: multiPlatformComponentItems }]
+                      multiPlatformComponentItems.length > 0
+                        ? [{
+                            heading: isManualMode ? 'Confidence Components' : 'Conversations by Platform',
+                            items: multiPlatformComponentItems,
+                          }]
                         : [{ heading: 'Key Attributes', items: MULTIPLATFORM_ATTRS, variant: 'key-attr' as const }]
                     }
                     extraFooter={

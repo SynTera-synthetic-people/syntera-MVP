@@ -54,7 +54,7 @@ router = APIRouter(
     tags=["reports"],
 )
 
-QUAL_TRANSCRIPTS_CACHE_KEY = "TRANSCRIPTS_QA_DOCX_V3"
+QUAL_TRANSCRIPTS_CACHE_KEY = "TRANSCRIPTS_QA_DOCX_V6"
 QUAL_TRANSCRIPTS_LEGACY_CACHE_KEYS = ("TRANSCRIPTS", "QUAL_VERBATIM_V1")
 QUAL_DI_CACHE_KEY = "DECISION_INTELLIGENCE_V8"
 QUAL_DI_LEGACY_CACHE_KEYS = ("QUAL_DECISION_INTELLIGENCE_V1",)
@@ -65,7 +65,7 @@ QUAL_BA_LEGACY_CACHE_KEYS = (
     "IN_DEPTH_ALL_INTERVIEWS_BA_V1",
 )
 QUAL_ALL_CACHE_KEY = "ALL_COMBINED_V4"
-QUANT_TRANSCRIPTS_CACHE_KEY = "TRANSCRIPTS"
+QUANT_TRANSCRIPTS_CACHE_KEY = "TRANSCRIPTS_V2"
 QUANT_DI_CACHE_KEY = "DECISION_INTELLIGENCE_V2"
 QUANT_BA_CACHE_KEY = "BEHAVIORAL_ARCHAEOLOGY_V2"
 QUAL_PREPARE_CONFIG = {
@@ -750,7 +750,11 @@ async def quant_transcripts(
             raise HTTPException(404, "No questionnaire found for this simulation")
 
         counts_map = parse_survey_results_field(survey_sim.results)
-        questionnaire_csv = questionnaire_sections_to_csv_bytes(questionnaires, counts_map)
+        questionnaire_csv = questionnaire_sections_to_csv_bytes(
+            questionnaires,
+            counts_map,
+            include_count=True,
+        )
 
         # ── CSV 2: Survey results (one row per respondent, wide format) ──
         persona_sample_sizes: dict = survey_sim.persona_sample_sizes or {}

@@ -12,7 +12,7 @@ class Persona(SQLModel, table=True):
 
     exploration_id: str = Field(foreign_key="explorations.id")
     workspace_id: str = Field(foreign_key="workspace.id")
-    
+
     # Basic Identity
     name: str
     age_range: str

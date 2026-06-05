@@ -1,10 +1,9 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { TbAlertTriangle, TbAlertCircle, TbInfoCircle, TbX } from 'react-icons/tb';
+import { TbAlertTriangle, TbX } from 'react-icons/tb';
 
 export interface PlausibilityWarning {
   rule: string;
-  severity: 'high' | 'medium' | 'soft';
   message: string;
   fields: string[];
 }
@@ -14,17 +13,8 @@ interface PlausibilityWarningStripProps {
   onDismiss: () => void;
 }
 
-const SEVERITY_ICON = {
-  high: TbAlertCircle,
-  medium: TbAlertTriangle,
-  soft: TbInfoCircle,
-} as const;
-
-const SEVERITY_COLOR = {
-  high: 'text-red-500 dark:text-red-400',
-  medium: 'text-amber-500 dark:text-amber-400',
-  soft: 'text-blue-500 dark:text-blue-400',
-} as const;
+const WARNING_ICON = TbAlertTriangle;
+const WARNING_COLOR = 'text-amber-500 dark:text-amber-400';
 
 // Maps backend rule ids to a human-readable "Section > Topic" label.
 const RULE_LABEL: Record<string, string> = {
@@ -65,6 +55,11 @@ const RULE_LABEL: Record<string, string> = {
   unrealistic_extremes: 'Cross-section › Unrealistic Extremes',
   hyper_specific: 'Cross-section › Hyper-Specific Persona',
   price_insensitive_low_income: 'Behavioural › Price & Income',
+  young_luxury_lifestyle: 'Cross-section > Young & Luxury Lifestyle',
+  student_high_income_luxury: 'Cross-section > Student, Income & Lifestyle',
+  rural_luxury_nightlife_lifestyle: 'Cross-section > Geography & Lifestyle',
+  young_expert_luxury_high_income: 'Cross-section > Rare Young Expert Cluster',
+  young_senior_expert: 'Cross-section > Young Senior Expert',
 };
 
 const PlausibilityWarningStrip: React.FC<PlausibilityWarningStripProps> = ({
@@ -105,12 +100,10 @@ const PlausibilityWarningStrip: React.FC<PlausibilityWarningStripProps> = ({
         {/* Warning rows */}
         <div className="flex flex-col gap-1.5">
           {warnings.map((w, i) => {
-            const Icon = SEVERITY_ICON[w.severity] ?? TbInfoCircle;
-            const color = SEVERITY_COLOR[w.severity] ?? SEVERITY_COLOR.soft;
             const label = RULE_LABEL[w.rule] ?? w.rule;
             return (
               <div key={i} className="flex items-start gap-2">
-                <Icon className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${color}`} />
+                <WARNING_ICON className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${WARNING_COLOR}`} />
                 <div className="flex-1 min-w-0">
                   <span className="text-xs font-medium text-gray-600 dark:text-gray-400 mr-1">
                     {label}

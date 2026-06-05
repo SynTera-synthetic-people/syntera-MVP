@@ -396,7 +396,9 @@
   border-radius: 20px;
   padding: 32px 28px 28px;
   width: 100%;
-  max-width: 480px;
+  max-width: 560px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
   position: relative;
 }
 
@@ -665,6 +667,109 @@
   line-height: 1.5;
   margin: -4px 0 14px;
   text-align: center;
+}
+
+.pb-replication-mode-box,
+.pb-seed-input-box {
+  margin-top: 16px;
+}
+
+.pb-replication-mode-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.pb-replication-mode-btn {
+  text-align: left;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: #e2e8f0;
+  cursor: pointer;
+}
+
+.pb-replication-mode-btn--active {
+  border-color: rgba(37, 99, 235, 0.75);
+  background: rgba(37, 99, 235, 0.16);
+}
+
+.pb-replication-mode-btn span {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.pb-replication-mode-btn small {
+  display: block;
+  color: #94a3b8;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.pb-seed-input-optional {
+  color: #64748b;
+  font-weight: 500;
+}
+
+.pb-seed-textarea {
+  width: 100%;
+  min-height: 76px;
+  resize: vertical;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: #e2e8f0;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.pb-seed-textarea::placeholder {
+  color: #64748b;
+}
+
+.pb-anchor-preview-box {
+  margin: 14px 0;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(20, 184, 166, 0.28);
+  background: rgba(20, 184, 166, 0.08);
+}
+
+.pb-anchor-preview-title {
+  margin: 0 0 10px;
+  color: #5eead4;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.pb-anchor-preview-section {
+  margin-top: 12px;
+}
+
+.pb-anchor-preview-section span {
+  display: block;
+  color: #f1f5f9;
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.pb-anchor-preview-section p {
+  color: #cbd5e1;
+  font-size: 11px;
+  line-height: 1.45;
+  margin: 4px 0;
+  word-break: break-word;
+}
+
+@media (max-width: 640px) {
+  .pb-replication-mode-options {
+    grid-template-columns: 1fr;
+  }
 }
 
 .pb-modal-danger-btn {

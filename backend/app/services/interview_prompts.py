@@ -1067,6 +1067,9 @@ LIVE_REPLY_PROMPT = _SIMULATION_ENGINE_RULES + """
 **PERSONA:**
 {persona_json}
 
+**RESEARCH CONTEXT:**
+{research_context}
+
 **CONVERSATION HISTORY:**
 {conversation_history}
 
@@ -1082,6 +1085,8 @@ Do both steps internally in one pass:
 
 **OUTPUT FORMAT JSON:**
 {{
-  "response": "Final persona reply. Length variable per Varied Response Lengths rule from the simulation engine. Use Conversational Texture markers and Voice Differentiation parameters assigned to this persona."
+  "response": "Final persona reply. Length variable per Varied Response Lengths rule from the simulation engine. Use Conversational Texture markers and Voice Differentiation parameters assigned to this persona.",
+  "quality_score": 0.87,
+  "independence_score": 0.82
 }}
 """

@@ -32,6 +32,11 @@ import {
   multiSelectAttributes,
 } from './data';
 import { downloadPersonaCardsFrontend } from './DownloadPersonaCard';
+import {
+  getConfidenceBarClass,
+  getConfidenceScore,
+  getConfidenceTextColor,
+} from './PersonaBuilderShared';
 import type { PersonaCardData } from './PersonaCardRenderer';
 import AddPersonaModal from './AddPersonaModal';
 
@@ -48,19 +53,35 @@ interface SavedPersona {
   auto_generated_persona?: boolean;
   created_by?: string;
   created_by_name?: string;
+  created_at?: string;
   age_range?: string;
   gender?: string;
   geography?: string;
   location_country?: string;
   location_state?: string;
   confidence_scoring?: {
+    weighted_score?: number;
     confidence_calculation_detail?: { weighted_total?: number };
     score?: number;
   };
   confidence_score?: number;
   calibration_confidence?: number;
+  parent_persona_id?: string | null;
+  persona_source?: string;
+  replication_mode?: string;
   persona_details?: Record<string, unknown>;
   [key: string]: unknown;
+}
+
+type ReplicationMode = 'full_replication' | 'anchor_preview';
+
+interface AnchorPreviewData {
+  source_persona_id?: string;
+  target_country?: string;
+  psychographic_core?: Record<string, unknown>;
+  market_context?: Record<string, unknown>;
+  replication_metadata?: Record<string, unknown>;
+  replication_artifacts?: Record<string, unknown>;
 }
 
 interface User {
@@ -259,32 +280,6 @@ const DownloadSuccessToast: React.FC<{ onClose: () => void }> = ({ onClose }) =>
     </motion.div>
   </AnimatePresence>
 );
-
-const getConfidenceScore = (persona: SavedPersona): number | null => {
-  const raw =
-    persona.confidence_scoring?.confidence_calculation_detail?.weighted_total ??
-    persona.confidence_scoring?.score ??
-    persona.confidence_score ??
-    persona.calibration_confidence ??
-    (persona as any).confidence ??
-    null;
-  if (raw === null || raw === undefined) return null;
-  const num = Number(raw);
-  if (isNaN(num)) return null;
-  return Math.round(num <= 1 ? num * 100 : num);
-};
-
-const getConfidenceBarClass = (score: number): string => {
-  if (score >= 80) return 'pb-confidence-bar--green';
-  if (score >= 60) return 'pb-confidence-bar--amber';
-  return 'pb-confidence-bar--red';
-};
-
-const getConfidenceTextColor = (score: number): string => {
-  if (score >= 80) return '#22c55e';
-  if (score >= 60) return '#f59e0b';
-  return '#ef4444';
-};
 
 // ── KebabMenu ────────────────────────────────────────────────────────────────
 
@@ -503,9 +498,16 @@ interface ReplicatePersonaModalProps {
   show: boolean;
   personas: SavedPersona[];
   onClose: () => void;
-  onConfirm: (selectedPersonaIds: string[], country: string) => void;
+  onConfirm: (
+    selectedPersonaIds: string[],
+    country: string,
+    mode: ReplicationMode,
+    seedInputs: string
+  ) => void;
   isLoading?: boolean;
   preSelectedPersona?: SavedPersona | null;
+  error?: string;
+  anchorPreview?: AnchorPreviewData | null;
 }
 
 const COUNTRIES = [
@@ -522,12 +524,14 @@ const COUNTRIES = [
 ];
 
 const ReplicatePersonaModal: React.FC<ReplicatePersonaModalProps> = ({
-  show, personas, onClose, onConfirm, isLoading, preSelectedPersona
+  show, personas, onClose, onConfirm, isLoading, preSelectedPersona, error, anchorPreview
 }) => {
   const [selectedPersonaIds, setSelectedPersonaIds] = useState<string[]>(
     preSelectedPersona ? [preSelectedPersona.id] : []
   );
   const [selectedCountry, setSelectedCountry] = useState('');
+  const [replicationMode, setReplicationMode] = useState<ReplicationMode>('full_replication');
+  const [seedInputs, setSeedInputs] = useState('');
   const [agreed, setAgreed] = useState(false);
   const [personaDropdownOpen, setPersonaDropdownOpen] = useState(false);
   const [countryDropdownOpen, setCountryDropdownOpen] = useState(false);
@@ -537,6 +541,8 @@ const ReplicatePersonaModal: React.FC<ReplicatePersonaModalProps> = ({
     if (!show) return;
     setSelectedPersonaIds(preSelectedPersona ? [preSelectedPersona.id] : []);
     setSelectedCountry('');
+    setReplicationMode('full_replication');
+    setSeedInputs('');
     setAgreed(false);
     setPersonaDropdownOpen(false);
     setCountryDropdownOpen(false);
@@ -556,6 +562,10 @@ const ReplicatePersonaModal: React.FC<ReplicatePersonaModalProps> = ({
 
   const togglePersona = (id: string) => {
     setSelectedPersonaIds(prev => {
+      if (replicationMode === 'anchor_preview') {
+        setPersonaDropdownOpen(false);
+        return [id];
+      }
       const next = prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id];
       if (next.length === personas.length) setPersonaDropdownOpen(false);
       return next;
@@ -567,11 +577,26 @@ const ReplicatePersonaModal: React.FC<ReplicatePersonaModalProps> = ({
   };
 
   const selectedCountryObj = COUNTRIES.find(c => c.code === selectedCountry);
+  const isAnchorPreview = replicationMode === 'anchor_preview';
   const additionalCount = selectedPersonaIds.length;
   const priceEach = 49;
-  const totalPrice = additionalCount * priceEach;
+  const totalPrice = isAnchorPreview ? 0 : additionalCount * priceEach;
 
-  const canConfirm = selectedPersonaIds.length > 0 && selectedCountry && agreed;
+  const canConfirm = selectedPersonaIds.length > 0 && selectedCountry && (isAnchorPreview || agreed);
+
+  const handleModeChange = (mode: ReplicationMode) => {
+    setReplicationMode(mode);
+    if (mode === 'anchor_preview') {
+      setSelectedPersonaIds(prev => prev.slice(0, 1));
+      setAgreed(false);
+    }
+  };
+
+  const renderPreviewValue = (value: unknown): string => {
+    if (Array.isArray(value)) return value.filter(Boolean).join(', ');
+    if (value && typeof value === 'object') return JSON.stringify(value);
+    return String(value ?? '');
+  };
 
   if (!show) return null;
 
@@ -606,7 +631,9 @@ const ReplicatePersonaModal: React.FC<ReplicatePersonaModalProps> = ({
                   className="pb-dropdown-btn"
                   onClick={() => { setPersonaDropdownOpen(o => !o); setCountryDropdownOpen(false); }}
                 >
-                  <span className="pb-dropdown-placeholder">Choose Personas</span>
+                  <span className="pb-dropdown-placeholder">
+                    {isAnchorPreview ? 'Choose Persona' : 'Choose Personas'}
+                  </span>
                   <TbChevronRight size={16} className={`pb-dropdown-chevron${personaDropdownOpen ? ' pb-dropdown-chevron--open' : ''}`} />
                 </button>
                 <AnimatePresence>
@@ -682,11 +709,47 @@ const ReplicatePersonaModal: React.FC<ReplicatePersonaModalProps> = ({
               </div>
             </div>
 
+            <div className="pb-replication-mode-box">
+              <p className="pb-modal-label">Replication Mode</p>
+              <div className="pb-replication-mode-options">
+                <button
+                  type="button"
+                  className={`pb-replication-mode-btn${replicationMode === 'full_replication' ? ' pb-replication-mode-btn--active' : ''}`}
+                  onClick={() => handleModeChange('full_replication')}
+                >
+                  <span>Full Replication</span>
+                  <small>All 5 stages. Complete persona, divergence flags, confidence comparison.</small>
+                </button>
+                <button
+                  type="button"
+                  className={`pb-replication-mode-btn${replicationMode === 'anchor_preview' ? ' pb-replication-mode-btn--active' : ''}`}
+                  onClick={() => handleModeChange('anchor_preview')}
+                >
+                  <span>Anchor-Only Preview</span>
+                  <small>Stages 1-2 only. Shows locked core and target market context.</small>
+                </button>
+              </div>
+            </div>
+
+            <div className="pb-seed-input-box">
+              <label className="pb-modal-label" htmlFor="replication-seed-inputs">
+                Client Seed Inputs <span className="pb-seed-input-optional">(optional)</span>
+              </label>
+              <textarea
+                id="replication-seed-inputs"
+                className="pb-seed-textarea"
+                value={seedInputs}
+                maxLength={2000}
+                onChange={e => setSeedInputs(e.target.value)}
+                placeholder="Known target-market data, client notes, local constraints, or Source Bank hints..."
+              />
+            </div>
+
             {/* Pricing */}
             <div className="pb-pricing-box" style={{ marginTop: 16 }}>
               <div className="pb-pricing-row">
-                <span>Additional Personas  x  {additionalCount}</span>
-                <span>${priceEach} each</span>
+                <span>{isAnchorPreview ? 'Anchor-Only Preview' : `Additional Personas  x  ${additionalCount}`}</span>
+                <span>{isAnchorPreview ? '$0' : `$${priceEach} each`}</span>
               </div>
               <div className="pb-pricing-divider" />
               <div className="pb-pricing-row pb-pricing-row--total">
@@ -699,20 +762,45 @@ const ReplicatePersonaModal: React.FC<ReplicatePersonaModalProps> = ({
             <div className="pb-warning-box">
               <SpIcon name="sp-Warning-Octagon_Warning" size={16} className="pb-warning-icon" />
               <p className="pb-warning-text">
-                Additional personas will be added to this exploration. The corresponding cost will be included in your next billing cycle.
+                {isAnchorPreview
+                  ? 'Anchor-Only Preview does not create a persona or add billing. Run Full Replication when you are ready to commit.'
+                  : 'Additional personas will be added to this exploration. The corresponding cost will be included in your next billing cycle.'}
               </p>
             </div>
 
             {/* Agreement */}
-            <label className="pb-agree-row">
-              <div
-                className={`pb-checkbox${agreed ? ' pb-checkbox--checked' : ''}`}
-                onClick={() => setAgreed(a => !a)}
-              >
-                {agreed && <TbCheck size={12} />}
+            {!isAnchorPreview && (
+              <label className="pb-agree-row">
+                <div
+                  className={`pb-checkbox${agreed ? ' pb-checkbox--checked' : ''}`}
+                  onClick={() => setAgreed(a => !a)}
+                >
+                  {agreed && <TbCheck size={12} />}
+                </div>
+                <span className="pb-agree-text">I understand and agree to the additional cost.</span>
+              </label>
+            )}
+
+            {isAnchorPreview && anchorPreview && (
+              <div className="pb-anchor-preview-box">
+                <p className="pb-anchor-preview-title">Anchor-Only Preview</p>
+                <div className="pb-anchor-preview-section">
+                  <span>Psychographic Core</span>
+                  {Object.entries(anchorPreview.psychographic_core ?? {}).slice(0, 8).map(([key, value]) => (
+                    <p key={key}><strong>{key.replace(/_/g, ' ')}:</strong> {renderPreviewValue(value)}</p>
+                  ))}
+                </div>
+                <div className="pb-anchor-preview-section">
+                  <span>Market Context</span>
+                  {Object.entries(anchorPreview.market_context ?? {}).slice(0, 9).map(([key, value]) => (
+                    <p key={key}><strong>{key.replace(/_/g, ' ')}:</strong> {renderPreviewValue(value)}</p>
+                  ))}
+                </div>
               </div>
-              <span className="pb-agree-text">I understand and agree to the additional cost.</span>
-            </label>
+            )}
+
+            {/* Error message */}
+            {error && <p className="pb-modal-error-text">{error}</p>}
 
             {/* Actions */}
             <div className="pb-modal-actions">
@@ -720,10 +808,15 @@ const ReplicatePersonaModal: React.FC<ReplicatePersonaModalProps> = ({
               <button
                 className={`pb-modal-primary-btn${!canConfirm ? ' pb-modal-primary-btn--disabled' : ''}`}
                 disabled={!canConfirm || isLoading}
-                onClick={() => canConfirm && onConfirm(selectedPersonaIds, selectedCountryObj?.name || selectedCountry)}
+                onClick={() => canConfirm && onConfirm(
+                  selectedPersonaIds,
+                  selectedCountryObj?.name || selectedCountry,
+                  replicationMode,
+                  seedInputs.trim()
+                )}
               >
                 {isLoading ? <TbLoader size={14} className="pb-btn-spinner" /> : null}
-                Add & Calibrate
+                {isAnchorPreview ? 'Preview Anchors' : 'Run Full Replication'}
               </button>
             </div>
           </motion.div>
@@ -873,7 +966,9 @@ const PersonaGridCard: React.FC<PersonaGridCardProps> = ({
     .filter(Boolean)
     .join(', ') || 'Location unavailable';
 
-  const isAI = persona.auto_generated_persona;
+  // Replicated personas are user-initiated (they have parent_persona_id set).
+  // Even though auto_generated_persona=true on them, the Omi badge is wrong.
+  const isAI = persona.auto_generated_persona && !persona.parent_persona_id;
   const createdBy = persona.created_by_name ?? persona.created_by ?? 'You';
 
   const kebabItems = [
@@ -1060,14 +1155,48 @@ const PersonasReadyGrid: React.FC<PersonasReadyGridProps> = ({
   isFreeUser,
   isViewOnly = false,
 }) => {
+  const getPersonaCountry = (persona: SavedPersona): string => {
+    const rawCountry = persona.location_country ?? persona.geography ?? 'Other';
+    const country = String(rawCountry).trim();
+    return country || 'Other';
+  };
+
+  const isReplicatedPersona = (persona: SavedPersona): boolean => (
+    Boolean(persona.parent_persona_id) ||
+    persona.persona_source === 'replicated' ||
+    Boolean(persona.replication_mode) ||
+    Boolean((persona.persona_details as Record<string, unknown> | undefined)?.replication_mode)
+  );
+
+  const originalIndexById = new Map(
+    savedPersonas.map((persona, index) => [persona.id, index])
+  );
+
   const grouped = savedPersonas.reduce<Record<string, SavedPersona[]>>((acc, persona) => {
-    const country = persona.location_country ?? persona.geography ?? 'Other';
+    const country = getPersonaCountry(persona);
     if (!acc[country]) acc[country] = [];
     acc[country].push(persona);
     return acc;
   }, {});
 
-  const countryKeys = Object.keys(grouped);
+  for (const personas of Object.values(grouped)) {
+    personas.sort((a, b) => {
+      const replicatedDiff = Number(isReplicatedPersona(a)) - Number(isReplicatedPersona(b));
+      if (replicatedDiff !== 0) return replicatedDiff;
+      return (originalIndexById.get(a.id) ?? 0) - (originalIndexById.get(b.id) ?? 0);
+    });
+  }
+
+  const countryKeys = Object.keys(grouped).sort((a, b) => {
+    const aHasPrimary = grouped[a]!.some(persona => !isReplicatedPersona(persona));
+    const bHasPrimary = grouped[b]!.some(persona => !isReplicatedPersona(persona));
+    if (aHasPrimary !== bHasPrimary) return aHasPrimary ? -1 : 1;
+
+    const firstIndex = (country: string) => Math.min(
+      ...grouped[country]!.map(persona => originalIndexById.get(persona.id) ?? Number.MAX_SAFE_INTEGER)
+    );
+    return firstIndex(a) - firstIndex(b);
+  });
   const totalCount = savedPersonas.length;
 
   const freeAtLimit = isFreeUser && totalCount >= FREE_PERSONA_LIMIT;
@@ -1266,6 +1395,8 @@ const PersonaBuilder: React.FC = () => {
   const [showReplicateModal, setShowReplicateModal] = useState(false);
   const [replicatePreSelectedPersona, setReplicatePreSelectedPersona] = useState<SavedPersona | null>(null);
   const [isReplicating, setIsReplicating] = useState(false);
+  const [replicateError, setReplicateError] = useState('');
+  const [anchorPreview, setAnchorPreview] = useState<AnchorPreviewData | null>(null);
   const [deletingPersonaId, setDeletingPersonaId] = useState<string | null>(null);
   const [pendingDeletePersona, setPendingDeletePersona] = useState<SavedPersona | null>(null);
   const [deletePersonaError, setDeletePersonaError] = useState('');
@@ -1274,6 +1405,9 @@ const PersonaBuilder: React.FC = () => {
   const [showMethodModal, setShowMethodModal] = useState(false);
 
   const processedPersonaRef = useRef(new Set<string>());
+  // Ref-based guard prevents double-click race: useState update is async,
+  // so two rapid clicks can both pass the isReplicating state check.
+  const isReplicatingRef = useRef(false);
   const hasInitializedRef = useRef(false);
 
   const updatePersonaMutation = useUpdatePersona(workspaceId, objectiveId, selectedPersonaId);
@@ -1521,14 +1655,40 @@ const PersonaBuilder: React.FC = () => {
   }, [handleGridPersonaClick]);
 
   const handleReplicatePersona = useCallback((persona: SavedPersona) => {
+    setReplicateError('');
+    setAnchorPreview(null);
     setReplicatePreSelectedPersona(persona);
     setShowReplicateModal(true);
   }, []);
 
   const handleReplicateGroup = useCallback((_country: string) => {
+    setReplicateError('');
+    setAnchorPreview(null);
     setReplicatePreSelectedPersona(null);
     setShowReplicateModal(true);
   }, []);
+
+  const extractReplicationError = (error: unknown): string => {
+    const err = error as {
+      message?: string;
+      response?: {
+        data?: {
+          detail?: string | { message?: string; detail?: string };
+          message?: string;
+        };
+      };
+    };
+    const detail = err?.response?.data?.detail;
+    if (typeof detail === 'string' && detail.trim()) return detail;
+    if (detail && typeof detail === 'object') {
+      if (typeof detail.message === 'string' && detail.message.trim()) return detail.message;
+      if (typeof detail.detail === 'string' && detail.detail.trim()) return detail.detail;
+    }
+    const responseMessage = err?.response?.data?.message;
+    if (typeof responseMessage === 'string' && responseMessage.trim()) return responseMessage;
+    if (typeof err?.message === 'string' && err.message.trim()) return err.message;
+    return 'Replication failed. Please try again.';
+  };
 
   const handleDeletePersona = useCallback((persona: SavedPersona) => {
     if (!persona.id || deletingPersonaId) return;
@@ -1579,32 +1739,93 @@ const PersonaBuilder: React.FC = () => {
     workspaceId,
   ]);
 
-  const handleReplicateConfirm = async (selectedPersonaIds: string[], country: string) => {
+  const handleReplicateConfirm = async (
+    selectedPersonaIds: string[],
+    country: string,
+    mode: ReplicationMode,
+    seedInputs: string
+  ) => {
     if (!workspaceId || !objectiveId || selectedPersonaIds.length === 0 || !country) return;
+    // Ref guard: prevents a second invocation while the first is still in flight.
+    // Cannot rely on isReplicating state alone because React state updates are async
+    // and a rapid double-click can bypass the state check.
+    if (isReplicatingRef.current) return;
 
+    isReplicatingRef.current = true;
     setIsReplicating(true);
-    try {
-      trigger({
-        stage: 'persona_builder',
-        event: 'PERSONA_WORKFLOW_LOADED',
-        payload: {},
-      });
+    setReplicateError('');
+    setAnchorPreview(null);
 
-      await Promise.all(
+    // Fire-and-forget workflow tracking — must NOT affect the replication flow.
+    // Wrapped outside the main try so any throw here is isolated.
+    try { trigger({ stage: 'persona_builder', event: 'PERSONA_WORKFLOW_LOADED', payload: {} }); }
+    catch (e) { console.warn('Workflow trigger failed (non-critical):', e); }
+
+    try {
+      if (mode === 'anchor_preview') {
+        const previewPersonaId = selectedPersonaIds[0];
+        if (!previewPersonaId) return;
+        const response = await personaService.replicatePersona(
+          workspaceId,
+          objectiveId,
+          previewPersonaId,
+          country,
+          { mode, seedInputs }
+        );
+        setAnchorPreview((response?.data ?? null) as AnchorPreviewData | null);
+        return;
+      }
+
+      // allSettled: if the user selected multiple personas and one fails,
+      // we still complete the ones that succeeded instead of failing everything.
+      const results = await Promise.allSettled(
         selectedPersonaIds.map(personaId =>
-          personaService.replicatePersona(workspaceId, objectiveId, personaId, country)
+          personaService.replicatePersona(
+            workspaceId,
+            objectiveId,
+            personaId,
+            country,
+            { mode, seedInputs }
+          )
         )
       );
 
+      const succeeded = results.filter(
+        (r): r is PromiseFulfilledResult<{ data?: { id?: string } }> => r.status === 'fulfilled'
+      );
+      const failed = results.filter(r => r.status === 'rejected');
+
+      if (succeeded.length === 0) {
+        // Every request failed — show error, keep modal open
+        const reason = (failed[0] as PromiseRejectedResult).reason;
+        setReplicateError(extractReplicationError(reason));
+        return;
+      }
+
+      // At least one succeeded
+      if (failed.length > 0) {
+        console.warn(`${failed.length} of ${results.length} replication(s) failed.`);
+      }
+
       setShowReplicateModal(false);
       setReplicatePreSelectedPersona(null);
+      setReplicateError('');
 
+      // Refresh persona list so the replicated card appears on the builder grid.
       await queryClient.invalidateQueries({
         queryKey: personaKeys.list(workspaceId, objectiveId),
       });
-    } catch (error) {
-      console.error('Failed to replicate personas:', error);
+
+      setShowGrid(true);
+      navigate(
+        `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-builder`,
+        { replace: true }
+      );
+    } catch (error: unknown) {
+      console.error('Unexpected error during replication:', error);
+      setReplicateError(extractReplicationError(error));
     } finally {
+      isReplicatingRef.current = false;
       setIsReplicating(false);
     }
   };
@@ -2093,10 +2314,19 @@ const PersonaBuilder: React.FC = () => {
         <ReplicatePersonaModal
           show={showReplicateModal}
           personas={savedPersonasFromAPI}
-          onClose={() => { setShowReplicateModal(false); setReplicatePreSelectedPersona(null); }}
+          onClose={() => {
+            if (isReplicating) return;
+            isReplicatingRef.current = false;
+            setShowReplicateModal(false);
+            setReplicatePreSelectedPersona(null);
+            setReplicateError('');
+            setAnchorPreview(null);
+          }}
           onConfirm={handleReplicateConfirm}
           isLoading={isReplicating}
           preSelectedPersona={replicatePreSelectedPersona}
+          error={replicateError}
+          anchorPreview={anchorPreview}
         />
 
         <DeletePersonaModal
