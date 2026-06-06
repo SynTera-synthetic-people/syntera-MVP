@@ -35,7 +35,7 @@ export const getPostLoginPath = (user) => {
 
   if (pendingInvite) {
     sessionStorage.removeItem('pending_invite_token');
-    return `/invitation/accept?token=${pendingInvite}`;
+    return `/accept-invitation?token=${pendingInvite}`;
   }
 
   if (isPlatformAdmin(user)) {
