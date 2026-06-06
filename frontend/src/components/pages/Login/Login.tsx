@@ -275,7 +275,9 @@ const Login: React.FC = () => {
           <div className="card-footer">
             <p className="signin-text">
               Don't have an account?{" "}
-              <Link to="/signup">Create Account</Link>
+              <a href="https://synthetic-people.ai/#pricing" target="_blank" rel="noopener noreferrer">
+                Create Account
+              </a>
             </p>
 
             <p className="terms">
