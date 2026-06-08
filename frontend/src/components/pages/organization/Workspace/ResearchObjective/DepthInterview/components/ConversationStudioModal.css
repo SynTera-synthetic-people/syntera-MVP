@@ -1,4 +1,23 @@
-/* ── Overlay ─────────────────────────────────────────────────────────────── */
+/* ════════════════════════════════════════════════════════════════════════════
+   ConversationStudioModal
+   Prefix: cs-
+   Sections:
+     1.  Overlay & Panel shell
+     2.  Panel header
+     3.  Room wrapper (flex fill)
+     4.  ── LANDING — room selection ──
+     5.  Body (sidebar + main)
+     6.  Floating history FAB
+     7.  Left sidebar
+     8.  Main content area
+     9.  Persona picker state
+    10.  Dropdown (shared)
+    11.  Chat state (bubbles, input, footer)
+    12.  Decision Room specifics
+    13.  Animations
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1. Overlay & Panel shell ────────────────────────────────────────────── */
 
 .cs-overlay {
   position: fixed;
@@ -12,8 +31,6 @@
   padding: 24px;
   overflow-y: auto;
 }
-
-/* ── Panel ───────────────────────────────────────────────────────────────── */
 
 .cs-panel {
   background: var(--T-Base-B3, #16181C);
@@ -29,7 +46,7 @@
   max-height: 90vh;
 }
 
-/* ── Panel header ────────────────────────────────────────────────────────── */
+/* ── 2. Panel header ─────────────────────────────────────────────────────── */
 
 .cs-panel-header {
   display: flex;
@@ -60,12 +77,42 @@
   margin: 0;
 }
 
+/* Room name appended to title: "Conversation Studio : Decision Room" */
+.cs-panel-header__title-sep {
+  color: rgba(255, 255, 255, 0.3);
+  font-weight: 400;
+}
+
+.cs-panel-header__title-room {
+  color: #06A17B;
+  font-weight: 700;
+}
+
 .cs-panel-header__actions {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-shrink: 0;
 }
+
+/* Back button — shown inside a room */
+.cs-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 0;
+  margin-bottom: 4px;
+  transition: color 0.15s;
+  width: fit-content;
+}
+.cs-back-btn:hover { color: rgba(255, 255, 255, 0.8); }
 
 .cs-header-persona-btn {
   display: inline-flex;
@@ -104,7 +151,182 @@
 }
 .cs-close:hover { color: #fff; background: rgba(255,255,255,0.07); }
 
-/* ── Body — sidebar + main side by side ─────────────────────────────────── */
+/* ── 3. Room wrapper (fills remaining panel height) ──────────────────────── */
+
+.cs-room-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   4. LANDING — Room selection
+   ════════════════════════════════════════════════════════════════════════════ */
+
+.cs-landing {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 28px 48px;
+  overflow-y: auto;
+}
+
+.cs-landing__inner {
+  width: 100%;
+  max-width: 780px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
+}
+
+.cs-landing__eyebrow {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.3);
+  margin: 0;
+}
+
+/* Two-card grid */
+.cs-landing__cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  width: 100%;
+}
+
+/* ── Room card ── */
+.cs-room-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  /* ↓ Changed: center-align all content */
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+  padding: 32px 28px 28px;
+  background: #16181C;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color 0.2s, transform 0.18s;
+  font-family: inherit;
+}
+
+.cs-room-card:hover {
+  transform: translateY(-2px);
+}
+
+/* Decision Room hover accent — green (matches Persona Room palette) */
+.cs-room-card--decision:hover {
+  border-color: rgba(6, 161, 123, 0.35);
+}
+
+/* Persona Room hover accent */
+.cs-room-card--persona:hover {
+  border-color: rgba(37, 99, 235, 0.45);
+}
+
+/* Accent glow that appears on hover */
+.cs-room-card__glow {
+  position: absolute;
+  top: -60px;
+  right: -60px;
+  width: 200px;
+  height: 200px;
+  border-radius: 50%;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+/* Decision Room glow — green */
+.cs-room-card--decision .cs-room-card__glow {
+  background: radial-gradient(circle, rgba(6, 161, 123, 0.15) 0%, transparent 70%);
+}
+
+.cs-room-card--persona .cs-room-card__glow {
+  background: radial-gradient(circle, rgba(37, 99, 235, 0.15) 0%, transparent 70%);
+}
+
+.cs-room-card:hover .cs-room-card__glow { opacity: 1; }
+
+/* Icon */
+.cs-room-card__icon {
+  color: rgba(255, 255, 255, 0.55);
+  margin-top: 4px;
+}
+
+/* Title */
+.cs-room-card__title {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+  line-height: 1.25;
+}
+
+/* Subtitle — new element, sits between title and description */
+.cs-room-card__subtitle {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.45);
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* Description */
+.cs-room-card__desc {
+  font-size: 0.875rem;
+  color: rgba(255, 255, 255, 0.45);
+  margin: 0;
+  line-height: 1.6;
+  flex: 1;
+}
+
+/* CTA row */
+.cs-room-card__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.5);
+  margin-top: 6px;
+  transition: color 0.15s;
+}
+.cs-room-card:hover .cs-room-card__cta {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* Flow context tag at bottom of landing */
+.cs-landing__flow-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.3);
+  font-weight: 500;
+}
+
+.cs-landing__flow-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #06A17B;
+  flex-shrink: 0;
+  animation: cs-dot-pulse 2s ease-in-out infinite;
+}
+
+/* ── 5. Body (sidebar + main) ────────────────────────────────────────────── */
 
 .cs-body {
   flex: 1;
@@ -113,11 +335,10 @@
   min-height: 0;
   overflow: hidden;
   height: 0;
-  position: relative; /* needed for FAB positioning */
+  position: relative;
 }
 
-/* ── Floating history toggle button (FAB) ────────────────────────────────── */
-/* Shown only when sidebar is closed — sits in top-left of body area */
+/* ── 6. Floating history FAB ─────────────────────────────────────────────── */
 
 .cs-history-fab {
   position: absolute;
@@ -142,9 +363,7 @@
   color: rgba(255, 255, 255, 0.8);
 }
 
-/* ════════════════════════════════════════════════════════════════════════════
-   LEFT SIDEBAR — collapsible History panel
-   ════════════════════════════════════════════════════════════════════════════ */
+/* ── 7. Left sidebar ─────────────────────────────────────────────────────── */
 
 .cs-sidebar {
   width: 0;
@@ -164,8 +383,7 @@
   border-right: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-/* ── Sidebar header ── */
-
+/* Sidebar header */
 .cs-sidebar__header {
   padding: 12px 12px 10px;
   flex-shrink: 0;
@@ -246,8 +464,7 @@
   font-weight: 600;
 }
 
-/* ── Thread list ── */
-
+/* Thread list */
 .cs-sidebar__threads {
   flex: 1;
   overflow-y: auto;
@@ -259,8 +476,6 @@
   background: rgba(255, 255, 255, 0.08);
   border-radius: 3px;
 }
-
-/* ── Empty state ── */
 
 .cs-sidebar__empty {
   display: flex;
@@ -274,11 +489,7 @@
   text-align: center;
 }
 
-/* ── Group label (Today / Yesterday / etc.) ── */
-
-.cs-sidebar__group {
-  margin-top: 12px;
-}
+.cs-sidebar__group { margin-top: 12px; }
 .cs-sidebar__group:first-child { margin-top: 4px; }
 
 .cs-sidebar__group-label {
@@ -291,8 +502,7 @@
   margin: 0;
 }
 
-/* ── Single thread item ── */
-
+/* Thread item */
 .cs-thread-item {
   display: flex;
   align-items: flex-start;
@@ -307,16 +517,12 @@
   transition: background 0.12s;
   position: relative;
 }
-.cs-thread-item:hover {
-  background: rgba(255, 255, 255, 0.05);
-}
+.cs-thread-item:hover { background: rgba(255, 255, 255, 0.05); }
 .cs-thread-item--active {
   background: rgba(6, 161, 123, 0.1);
   border: 1px solid rgba(6, 161, 123, 0.2);
 }
-.cs-thread-item--active:hover {
-  background: rgba(6, 161, 123, 0.13);
-}
+.cs-thread-item--active:hover { background: rgba(6, 161, 123, 0.13); }
 
 .cs-thread-item__delete {
   display: none;
@@ -336,12 +542,8 @@
   flex-shrink: 0;
   transition: background 0.12s;
 }
-.cs-thread-item:hover .cs-thread-item__delete {
-  display: flex;
-}
-.cs-thread-item__delete:hover {
-  background: rgba(239, 68, 68, 0.25);
-}
+.cs-thread-item:hover .cs-thread-item__delete { display: flex; }
+.cs-thread-item__delete:hover { background: rgba(239, 68, 68, 0.25); }
 
 .cs-thread-item__avatar {
   width: 28px;
@@ -358,6 +560,13 @@
   color: #06A17B;
   flex-shrink: 0;
   margin-top: 1px;
+}
+
+/* Decision Room avatar — now matches Persona Room (green) */
+.cs-thread-item__avatar--dr {
+  background: rgba(6, 161, 123, 0.18);
+  border-color: rgba(6, 161, 123, 0.3);
+  color: #06A17B;
 }
 
 .cs-thread-item__content {
@@ -402,9 +611,7 @@
   text-overflow: ellipsis;
 }
 
-/* ════════════════════════════════════════════════════════════════════════════
-   MAIN CONTENT AREA (right of sidebar)
-   ════════════════════════════════════════════════════════════════════════════ */
+/* ── 8. Main content area ────────────────────────────────────────────────── */
 
 .cs-main {
   flex: 1;
@@ -414,7 +621,22 @@
   overflow: hidden;
 }
 
-/* ── Persona picker state ────────────────────────────────────────────────── */
+/* Persona room inline header (persona switcher) */
+.cs-persona-room-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 10px 20px 0;
+  flex-shrink: 0;
+}
+
+.cs-dropdown-wrap--inline {
+  position: relative;
+  width: auto;
+  max-width: none;
+}
+
+/* ── 9. Persona picker state ─────────────────────────────────────────────── */
 
 .cs-picker-state {
   flex: 1;
@@ -440,9 +662,7 @@
   text-align: center;
 }
 
-.cs-picker-card__icon {
-  color: rgba(255, 255, 255, 0.4);
-}
+.cs-picker-card__icon { color: rgba(255, 255, 255, 0.4); }
 
 .cs-picker-card__title {
   font-size: 1.125rem;
@@ -452,7 +672,7 @@
   line-height: 1.35;
 }
 
-/* ── Dropdown shared ─────────────────────────────────────────────────────── */
+/* ── 10. Dropdown (shared) ───────────────────────────────────────────────── */
 
 .cs-dropdown-wrap {
   position: relative;
@@ -481,7 +701,6 @@
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
 }
-
 .cs-dropdown-trigger:hover {
   border-color: rgba(255, 255, 255, 0.28);
   background: rgba(255, 255, 255, 0.08);
@@ -491,9 +710,7 @@
   flex-shrink: 0;
   transition: transform 0.2s;
 }
-.cs-dropdown-trigger__chevron--open {
-  transform: rotate(180deg);
-}
+.cs-dropdown-trigger__chevron--open { transform: rotate(180deg); }
 
 .cs-dropdown-menu {
   position: absolute;
@@ -578,7 +795,7 @@
   font-size: 0.875rem;
 }
 
-/* ── Chat state ──────────────────────────────────────────────────────────── */
+/* ── 11. Chat state ──────────────────────────────────────────────────────── */
 
 .cs-chat {
   flex: 1;
@@ -588,7 +805,6 @@
   overflow: hidden;
 }
 
-/* Messages area */
 .cs-messages {
   flex: 1;
   overflow-y: auto;
@@ -606,6 +822,11 @@
   border-radius: 4px;
 }
 
+/* Decision Room messages — slightly narrower left padding */
+.cs-messages--dr {
+  padding-left: 52px;
+}
+
 .cs-messages__empty {
   flex: 1;
   display: flex;
@@ -617,9 +838,7 @@
   padding: 40px;
 }
 
-.cs-messages__empty-icon {
-  color: rgba(255, 255, 255, 0.2);
-}
+.cs-messages__empty-icon { color: rgba(255, 255, 255, 0.2); }
 
 .cs-messages__empty-title {
   font-size: 1.125rem;
@@ -649,8 +868,7 @@
   animation: cs-spin 1s linear infinite;
 }
 
-/* ── Start Interview button ──────────────────────────────────────────────── */
-
+/* Start Interview button */
 .cs-start-btn {
   display: inline-flex;
   align-items: center;
@@ -670,22 +888,16 @@
 }
 .cs-start-btn:hover:not(:disabled) { background: #059068; }
 .cs-start-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.cs-start-btn__spinner { animation: cs-spin 1s linear infinite; }
 
-.cs-start-btn__spinner {
-  animation: cs-spin 1s linear infinite;
-}
-
-/* ── Chat bubbles ────────────────────────────────────────────────────────── */
-
+/* Chat bubbles */
 .cs-bubble-row {
   display: flex;
   align-items: flex-start;
   gap: 12px;
 }
 
-.cs-bubble-row--user {
-  flex-direction: row-reverse;
-}
+.cs-bubble-row--user { flex-direction: row-reverse; }
 
 .cs-bubble-avatar {
   width: 40px;
@@ -715,6 +927,13 @@
   border: none;
 }
 
+/* Decision Room analyst avatar — now green (matches Persona Room) */
+.cs-bubble-avatar--dr {
+  background: rgba(6, 161, 123, 0.12);
+  border-color: rgba(6, 161, 123, 0.25);
+  color: #06A17B;
+}
+
 .cs-bubble-col {
   display: flex;
   flex-direction: column;
@@ -735,15 +954,20 @@
   border-radius: 0 16px 16px 16px;
 }
 
+/* Decision Room analyst bubble — identical to Persona Room bot bubble */
+.cs-bubble--analyst {
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.9);
+  border-radius: 0 16px 16px 16px;
+}
+
 .cs-bubble--user {
   background: #2563eb;
   color: #ffffff;
   border-radius: 16px 16px 0 16px;
 }
 
-.cs-bubble--thinking {
-  opacity: 0.65;
-}
+.cs-bubble--thinking { opacity: 0.65; }
 
 .cs-bubble__thinking {
   display: flex;
@@ -752,10 +976,7 @@
   font-style: italic;
 }
 
-.cs-bubble__thinking-spinner {
-  animation: cs-spin 1s linear infinite;
-  flex-shrink: 0;
-}
+.cs-bubble__thinking-spinner { animation: cs-spin 1s linear infinite; flex-shrink: 0; }
 
 .cs-bubble-meta {
   font-size: 0.75rem;
@@ -769,8 +990,7 @@
   padding-right: 2px;
 }
 
-/* ── Input area ──────────────────────────────────────────────────────────── */
-
+/* Input area */
 .cs-input-area {
   padding: 12px 28px;
   border-top: 1px solid rgba(255, 255, 255, 0.07);
@@ -801,10 +1021,7 @@
 }
 .cs-input-attach:hover { color: rgba(255, 255, 255, 0.6); }
 
-.cs-input-wrap {
-  flex: 1;
-  min-width: 0;
-}
+.cs-input-wrap { flex: 1; min-width: 0; }
 
 .cs-input {
   width: 100%;
@@ -822,6 +1039,7 @@
   max-height: 120px;
 }
 .cs-input::placeholder { color: rgba(255, 255, 255, 0.25); }
+.cs-input:disabled { opacity: 0.5; }
 
 .cs-input-voice {
   display: flex;
@@ -854,13 +1072,16 @@
 }
 .cs-send-btn:hover:not(:disabled) { background: #059068; }
 .cs-send-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.cs-send-btn__spinner { animation: cs-spin 1s linear infinite; }
 
-.cs-send-btn__spinner {
-  animation: cs-spin 1s linear infinite;
+/* Decision Room send button — now green (uniform with Persona Room) */
+.cs-send-btn--dr {
+  background: #06A17B;
+  color: #ffffff;
 }
+.cs-send-btn--dr:hover:not(:disabled) { background: #059068; }
 
-/* ── Footer ──────────────────────────────────────────────────────────────── */
-
+/* Footer */
 .cs-footer {
   display: flex;
   align-items: center;
@@ -872,9 +1093,7 @@
   gap: 12px;
 }
 
-.cs-footer--picker {
-  justify-content: flex-end;
-}
+.cs-footer--picker { justify-content: flex-end; }
 
 .cs-footer__download {
   display: inline-flex;
@@ -917,7 +1136,116 @@
   color: #07c49a;
 }
 
-/* ── Spin ────────────────────────────────────────────────────────────────── */
+/* ════════════════════════════════════════════════════════════════════════════
+   12. Decision Room specifics
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* DR header strip — green accent (uniform with Persona Room) */
+.cs-dr-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px 12px 56px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+  background: rgba(6, 161, 123, 0.03);
+}
+
+.cs-dr-header__left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cs-dr-header__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  background: rgba(6, 161, 123, 0.1);
+  border: 1px solid rgba(6, 161, 123, 0.25);
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #06A17B;
+}
+
+.cs-dr-header__flow-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.35);
+  font-weight: 500;
+}
+
+.cs-dr-header__new-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 7px;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 0.75rem;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.13s, border-color 0.13s, color 0.13s;
+}
+.cs-dr-header__new-btn:hover {
+  background: rgba(6, 161, 123, 0.07);
+  border-color: rgba(6, 161, 123, 0.3);
+  color: #06A17B;
+}
+
+/* Suggested prompts tray */
+.cs-dr-suggestions {
+  padding: 0 28px 16px 52px;
+  flex-shrink: 0;
+}
+
+.cs-dr-suggestions__label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.25);
+  margin: 0 0 10px;
+}
+
+.cs-dr-suggestions__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Suggestion chips — green (uniform with Persona Room accent) */
+.cs-dr-suggestion-chip {
+  padding: 8px 14px;
+  background: rgba(6, 161, 123, 0.05);
+  border: 1px solid rgba(6, 161, 123, 0.18);
+  border-radius: 20px;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  text-align: left;
+  line-height: 1.4;
+}
+.cs-dr-suggestion-chip:hover {
+  background: rgba(6, 161, 123, 0.10);
+  border-color: rgba(6, 161, 123, 0.35);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* ── 13. Animations ──────────────────────────────────────────────────────── */
 
 @keyframes cs-spin {
   to { transform: rotate(360deg); }
@@ -926,4 +1254,9 @@
 @keyframes cs-pulse {
   0%, 100% { opacity: 1; }
   50%       { opacity: 0.5; }
+}
+
+@keyframes cs-dot-pulse {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50%       { opacity: 1;   transform: scale(1.3); }
 }

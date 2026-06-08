@@ -530,6 +530,7 @@ const InsightGeneration: React.FC = () => {
           <ConversationStudioModal
             workspaceId={workspaceId ?? ''}
             objectiveId={objectiveId ?? ''}
+            flow="qual"
             onClose={() => setShowConversationStudio(false)}
           />
         )}

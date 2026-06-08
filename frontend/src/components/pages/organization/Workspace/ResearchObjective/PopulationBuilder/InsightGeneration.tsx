@@ -564,6 +564,7 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
         {showConversationStudio && (
           <ConversationStudioModal
             workspaceId={workspaceId}
+            flow="quant" 
             objectiveId={explorationId}
             onClose={() => setShowConversationStudio(false)}
           />
