@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
-import { loginStart, clearError } from "../../../redux/slices/authSlice";
+import { loginStart } from "../../../redux/slices/authSlice";
 import { validateLogin } from "../../../utils/validation";
 import { motion } from "framer-motion";
 import HalfGlobe from "./HalfGlobe";
@@ -34,27 +34,45 @@ interface RootState {
   auth: AuthState;
 }
 
+const validateEmail = (value: string): boolean => {
+  const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return regex.test(value);
+};
+
 const Login: React.FC = () => {
-  const [values, setValues] = useState<LoginValues>({ email: "", password: "" });
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const inviteToken = searchParams.get("invite_token");
+  const initialEmail = searchParams.get("email") || "";
+
+  const [values, setValues] = useState<LoginValues>({ email: initialEmail, password: "" });
   const [errors, setErrors] = useState<ValidationErrors>({});
   const [showPassword, setShowPassword] = useState(false);
-  const [emailStatus, setEmailStatus] = useState<"" | "success" | "error">("");
+  const [emailStatus, setEmailStatus] = useState<"" | "success" | "error">(
+    initialEmail ? (validateEmail(initialEmail) ? "success" : "error") : ""
+  );
   const [showError, setShowError] = useState(false);
 
   const dispatch = useDispatch();
-  const navigate = useNavigate();
 
-  const { loading, error, isAuthenticated, user } = useSelector(
+  const { loading, error } = useSelector(
     (state: RootState) => state.auth
   );
 
-  // ── Email validation ──
-  const validateEmail = (value: string): boolean => {
-    const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return regex.test(value);
-  };
+  // Preserve invite context while the login saga redirects after authentication.
+  useEffect(() => {
+    if (inviteToken) {
+      sessionStorage.setItem("pending_invite_token", inviteToken);
+    }
+  }, [inviteToken]);
 
-  // ── Debounced error display ──
+  useEffect(() => {
+    if (initialEmail) {
+      setValues((prev) => ({ ...prev, email: initialEmail }));
+      setEmailStatus(validateEmail(initialEmail) ? "success" : "error");
+    }
+  }, [initialEmail]);
+
   useEffect(() => {
     if (values.email.trim() === "") {
       setShowError(false);
@@ -257,7 +275,9 @@ const Login: React.FC = () => {
           <div className="card-footer">
             <p className="signin-text">
               Don't have an account?{" "}
-              <Link to="/signup">Create Account</Link>
+              <a href="https://synthetic-people.ai/#pricing" target="_blank" rel="noopener noreferrer">
+                Create Account
+              </a>
             </p>
 
             <p className="terms">

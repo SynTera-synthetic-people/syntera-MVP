@@ -51,7 +51,7 @@ import AdminDashboard from "./components/pages/Admin/AdminDashboard";
 import AdminUserList from "./components/pages/Admin/AdminUserList";
 import AdminUserProvision from "./components/pages/Admin/AdminUserProvision";
 import AdminUserDetail from "./components/pages/Admin/AdminUserDetail";
-// import ChangePassword from "./components/pages/ChangePassword/ChangePassword";
+import ChangePassword from "./components/pages/ChangePassword/ChangePassword";
 import Upgrade from "./components/pages/Upgrade/Upgrade";
 import EnterpriseOrgsPage from "./components/pages/Admin/EnterpriseOrgsPage";
 import EnterpriseOrgDetail from "./components/pages/Admin/EnterpriseOrgDetail";
@@ -204,14 +204,14 @@ function App() {
             </Route>
 
             {/* PROTECTED ROUTES */}
-            {/* <Route
+            <Route
               path="/change-password"
               element={
                 <ProtectedRoute>
                   <ChangePassword />
                 </ProtectedRoute>
               }
-            /> */}
+            />
             <Route
               path="/upgrade"
               element={
