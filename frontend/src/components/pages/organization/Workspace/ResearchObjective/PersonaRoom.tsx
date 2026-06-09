@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   TbX, TbSend, TbMicrophone, TbLoader, TbChevronDown,
   TbMessageCircle, TbPaperclip, TbFileText, TbClock,
@@ -11,7 +11,12 @@ import {
   useStartInterview,
   useSendMessage,
   useInterview,
-} from '../../../../..//hooks/useInterview';
+  useInterviews,
+  useDeleteInterview,
+  interviewKeys,
+} from '../../../../../hooks/useInterview';
+import { interviewService } from '../../../../../services/interviewService';
+import { useQueryClient } from '@tanstack/react-query';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -19,7 +24,6 @@ interface PersonaRoomProps {
   workspaceId: string;
   objectiveId: string;
   onClose: () => void;
-  /** Sidebar open state is lifted so the shell can control the FAB */
   isSidebarOpen: boolean;
   onSidebarOpen: () => void;
   onSidebarClose: () => void;
@@ -40,41 +44,50 @@ export interface ChatMessage {
   isThinking?: boolean;
 }
 
-export interface ConversationThread {
+interface BackendInterview {
   id: string;
-  personaId: string;
-  personaName: string;
-  title: string;
-  preview: string;
-  startedAt: string;
-  messages: ChatMessage[];
+  persona_id?: string;
+  personaId?: string;
+  messages?: Array<{ role: string; text: string; ts: string }>;
+  created_at?: string;
+  [key: string]: unknown;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const groupThreadsByDate = (threads: ConversationThread[]) => {
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const weekAgo = new Date(today);
-  weekAgo.setDate(weekAgo.getDate() - 7);
+const toFrontendMessages = (apiMessages: Array<{ role: string; text: string; ts: string }> = []): ChatMessage[] =>
+  apiMessages
+    .filter((m) => m.role !== 'system')
+    .map((m) => ({
+      sender: m.role === 'user' ? 'user' : 'bot',
+      text: m.text || '',
+      timestamp: m.ts,
+    }));
 
-  const todayGroup:   { label: string; threads: ConversationThread[] } = { label: 'Today',           threads: [] };
-  const yestGroup:    { label: string; threads: ConversationThread[] } = { label: 'Yesterday',        threads: [] };
-  const weekGroup:    { label: string; threads: ConversationThread[] } = { label: 'Previous 7 Days',  threads: [] };
-  const olderGroup:   { label: string; threads: ConversationThread[] } = { label: 'Older',            threads: [] };
+const groupByDate = <T extends { startedAt: string }>(items: T[]) => {
+  const now       = new Date();
+  const today     = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
+  const weekAgo   = new Date(today); weekAgo.setDate(weekAgo.getDate() - 7);
 
-  threads.forEach((t) => {
-    const d   = new Date(t.startedAt);
+  type Group = { label: string; items: T[] };
+  const groups: Group[] = [
+    { label: 'Today', items: [] },
+    { label: 'Yesterday', items: [] },
+    { label: 'Previous 7 Days', items: [] },
+    { label: 'Older', items: [] },
+  ];
+
+  for (const item of items) {
+    const d   = new Date(item.startedAt);
     const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    if (day >= today)          todayGroup.threads.push(t);
-    else if (day >= yesterday) yestGroup.threads.push(t);
-    else if (day >= weekAgo)   weekGroup.threads.push(t);
-    else                       olderGroup.threads.push(t);
-  });
+    if (day >= today)          groups[0].items.push(item);
+    else if (day >= yesterday) groups[1].items.push(item);
+    else if (day >= weekAgo)   groups[2].items.push(item);
+    else                       groups[3].items.push(item);
+  }
 
-  return [todayGroup, yestGroup, weekGroup, olderGroup].filter((g) => g.threads.length > 0);
+  return groups.filter((g) => g.items.length > 0);
 };
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -101,53 +114,86 @@ const PersonaRoom: React.FC<PersonaRoomProps> = ({
   const [messages,            setMessages]            = useState<ChatMessage[]>([]);
   const [inputValue,          setInputValue]          = useState<string>('');
   const [interviewId,         setInterviewId]         = useState<string | null>(null);
-  const [threads,             setThreads]             = useState<ConversationThread[]>([]);
   const [activeThreadId,      setActiveThreadId]      = useState<string | null>(null);
 
-  const chatEndRef  = useRef<HTMLDivElement>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const chatEndRef      = useRef<HTMLDivElement>(null);
+  const dropdownRef     = useRef<HTMLDivElement>(null);
+  const skipAutoResume  = useRef(false); // set true when user explicitly wants a new chat
+  const queryClient     = useQueryClient();
 
-  // ── Hooks ─────────────────────────────────────────────────────────────────
+  // ── Backend hooks ─────────────────────────────────────────────────────────
 
   const startInterviewMutation = useStartInterview(workspaceId, objectiveId);
   const sendMessageMutation    = useSendMessage(workspaceId, objectiveId, interviewId ?? '');
+  const deleteInterview        = useDeleteInterview(workspaceId, objectiveId);
 
+  // List of all interviews for this exploration — drives the sidebar
+  const { data: interviewsRaw } = useInterviews(workspaceId, objectiveId, {
+    staleTime: 20_000,
+    refetchOnWindowFocus: true,
+  });
+
+  // Active interview polling — brings in new messages after send
   const { data: interviewData, isLoading: isInterviewLoading } = useInterview(
     workspaceId,
     objectiveId,
     interviewId ?? '',
-    {
-      enabled: !!interviewId,
-      refetchInterval: isChatActive ? 5_000 : false,
-    }
+    { enabled: !!interviewId, refetchInterval: isChatActive ? 4_000 : false },
   );
+
+  // ── Derive threads from backend list ──────────────────────────────────────
+
+  const rawInterviews: BackendInterview[] =
+    (interviewsRaw as any)?.data ?? (Array.isArray(interviewsRaw) ? interviewsRaw : []);
+
+  const threads = rawInterviews.map((iv) => {
+    const pid       = iv.persona_id ?? iv.personaId ?? '';
+    const persona   = personas.find((p) => p.id === pid);
+    const pName     = persona?.name ?? 'Persona';
+    const msgs      = toFrontendMessages(iv.messages as any ?? []);
+    const lastMsg   = msgs.filter((m) => m.sender !== 'bot' || msgs.indexOf(m) > 0).at(-1);
+    return {
+      id:          iv.id,
+      personaId:   pid,
+      personaName: pName,
+      title:       `Chat with ${pName}`,
+      preview:     lastMsg?.text?.slice(0, 60) ?? '',
+      startedAt:   iv.created_at ?? new Date().toISOString(),
+      messages:    msgs,
+    };
+  });
+
+  const sidebarThreads = selectedPersona
+    ? threads.filter((t) => t.personaId === selectedPersona)
+    : threads;
+
+  const groupedThreads = groupByDate(sidebarThreads);
 
   // ── Effects ───────────────────────────────────────────────────────────────
 
   useEffect(() => {
     const apiMessages = (interviewData as any)?.data?.messages;
     if (!apiMessages) return;
-
-    const visible   = apiMessages.filter((msg: any) => msg.role !== 'system');
-    if (visible.length === 0) return;
-
-    const formatted: ChatMessage[] = visible.map((msg: any) => ({
-      sender:    msg.role === 'user' ? 'user' : 'bot',
-      text:      msg.text || '',
-      timestamp: msg.ts,
-    }));
+    const formatted = toFrontendMessages(apiMessages);
+    if (formatted.length === 0) return;
     setMessages(formatted);
-
-    if (activeThreadId) {
-      setThreads((prev) =>
-        prev.map((t) =>
-          t.id === activeThreadId
-            ? { ...t, messages: formatted, preview: formatted[formatted.length - 1]?.text?.slice(0, 60) ?? t.preview }
-            : t
-        )
-      );
-    }
   }, [interviewData]);
+
+  // Auto-resume: when a persona is selected and interviews are loaded, jump straight
+  // into the most recent conversation — no "Start Interview" click needed.
+  // Skipped when the user has explicitly requested a new chat (skipAutoResume ref).
+  useEffect(() => {
+    if (!selectedPersona || isChatActive || interviewId || skipAutoResume.current) return;
+
+    const personaThreads = threads
+      .filter((t) => t.personaId === selectedPersona)
+      .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
+
+    if (personaThreads.length === 0) return;
+
+    // Use handleLoadThread so the fetch-and-clear logic is shared
+    handleLoadThread(personaThreads[0]);
+  }, [selectedPersona, threads]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -166,22 +212,25 @@ const PersonaRoom: React.FC<PersonaRoomProps> = ({
   // ── Handlers ─────────────────────────────────────────────────────────────
 
   const handlePersonaSelect = (id: string, name: string) => {
+    skipAutoResume.current = false; // allow auto-resume for fresh persona selection
     setSelectedPersona(id);
     setSelectedPersonaName(name);
     setIsDropdownOpen(false);
+    setInputValue('');
+    // Reset chat state — auto-resume effect will re-open existing conversation if found
     setIsChatActive(false);
     setMessages([]);
-    setInputValue('');
     setInterviewId(null);
     setActiveThreadId(null);
   };
 
   const handleStartConversation = async () => {
     if (!selectedPersona) return;
+    skipAutoResume.current = false; // a new interview IS the new "most recent" — allow future resumes
     try {
       const result = await startInterviewMutation.mutateAsync({
-        personaId: selectedPersona,
-        forceNew:  true,
+        personaId:   selectedPersona,
+        forceNew:    true,
         lightweight: true,
       });
       const id = (result as any)?.data?.id;
@@ -191,37 +240,49 @@ const PersonaRoom: React.FC<PersonaRoomProps> = ({
           text:      `Hey, I'm ${selectedPersonaName}. I'm here and ready for all your what-ifs, curiosities, and tough questions.`,
           timestamp: new Date().toISOString(),
         };
-        const newThread: ConversationThread = {
-          id,
-          personaId:   selectedPersona,
-          personaName: selectedPersonaName,
-          title:       `Chat with ${selectedPersonaName}`,
-          preview:     greeting.text.slice(0, 60),
-          startedAt:   new Date().toISOString(),
-          messages:    [greeting],
-        };
-        setThreads((prev) => [newThread, ...prev]);
         setActiveThreadId(id);
         setMessages([greeting]);
         setInterviewId(id);
         setIsChatActive(true);
+        // interviews list is already invalidated by useStartInterview.onSuccess
       }
     } catch (err) {
       console.error('Failed to start interview:', err);
     }
   };
 
-  const handleLoadThread = (thread: ConversationThread) => {
+  const handleLoadThread = useCallback(async (thread: { id: string; personaId: string; personaName: string; messages: ChatMessage[]; startedAt: string }) => {
+    // Clear current messages immediately so the old chat doesn't bleed through
+    setMessages([]);
+    setInterviewId(null);        // disables polling for old interview
+    setIsChatActive(false);
+
     setSelectedPersona(thread.personaId);
     setSelectedPersonaName(thread.personaName);
     setActiveThreadId(thread.id);
-    setInterviewId(thread.id);
-    setMessages(thread.messages);
-    setIsChatActive(true);
     setIsDropdownOpen(false);
-  };
+
+    try {
+      // Always fetch fresh — don't rely on stale list data or active polling
+      const res = await queryClient.fetchQuery({
+        queryKey: interviewKeys.detail(workspaceId, objectiveId, thread.id),
+        queryFn:  () => interviewService.getInterview(workspaceId, objectiveId, thread.id),
+        staleTime: 0,
+      });
+      const apiMessages = (res as any)?.data?.messages ?? (res as any)?.messages ?? [];
+      setMessages(toFrontendMessages(apiMessages));
+    } catch {
+      // Fallback: use what's already in the derived threads list
+      if (thread.messages.length > 0) setMessages(thread.messages);
+    }
+
+    setInterviewId(thread.id);
+    setIsChatActive(true);
+    onSidebarClose();
+  }, [workspaceId, objectiveId, queryClient, onSidebarClose]);
 
   const handleNewChat = () => {
+    skipAutoResume.current = true; // user explicitly wants new — don't auto-resume
     setIsChatActive(false);
     setMessages([]);
     setInputValue('');
@@ -229,9 +290,13 @@ const PersonaRoom: React.FC<PersonaRoomProps> = ({
     setActiveThreadId(null);
   };
 
-  const handleDeleteThread = (e: React.MouseEvent, threadId: string) => {
+  const handleDeleteThread = async (e: React.MouseEvent, threadId: string) => {
     e.stopPropagation();
-    setThreads((prev) => prev.filter((t) => t.id !== threadId));
+    try {
+      await deleteInterview.mutateAsync(threadId);
+    } catch {
+      // non-critical — remove from UI regardless
+    }
     if (activeThreadId === threadId) handleNewChat();
   };
 
@@ -243,20 +308,9 @@ const PersonaRoom: React.FC<PersonaRoomProps> = ({
     setMessages((prev) => [...prev, userMsg]);
     setInputValue('');
 
-    setThreads((prev) =>
-      prev.map((t) =>
-        t.id === activeThreadId
-          ? { ...t, preview: text.slice(0, 60), messages: [...t.messages, userMsg] }
-          : t
-      )
-    );
-
     try {
       await sendMessageMutation.mutateAsync({ role: 'user', text });
-      setMessages((prev) => [
-        ...prev,
-        { sender: 'bot', text: 'Thinking...', timestamp: new Date().toISOString(), isThinking: true },
-      ]);
+      // useInterview polling will pick up the persona reply automatically
     } catch (err) {
       console.error('Send failed:', err);
       setMessages((prev) => [
@@ -288,11 +342,9 @@ const PersonaRoom: React.FC<PersonaRoomProps> = ({
 
   // ── Derived ───────────────────────────────────────────────────────────────
 
-  const activePersona    = personas.find((p) => p.id === selectedPersona);
-  const hasSelection     = !!selectedPersona;
-  const isStarting       = startInterviewMutation.isPending;
-  const sidebarThreads   = selectedPersona ? threads.filter((t) => t.personaId === selectedPersona) : threads;
-  const groupedThreads   = groupThreadsByDate(sidebarThreads);
+  const activePersona = personas.find((p) => p.id === selectedPersona);
+  const hasSelection  = !!selectedPersona;
+  const isStarting    = startInterviewMutation.isPending;
 
   const formatTime = (ts: string) => {
     try {
@@ -359,7 +411,7 @@ const PersonaRoom: React.FC<PersonaRoomProps> = ({
             groupedThreads.map((group) => (
               <div key={group.label} className="cs-sidebar__group">
                 <p className="cs-sidebar__group-label">{group.label}</p>
-                {group.threads.map((thread) => (
+                {group.items.map((thread) => (
                   <button
                     key={thread.id}
                     className={`cs-thread-item ${activeThreadId === thread.id ? 'cs-thread-item--active' : ''}`}
@@ -393,7 +445,7 @@ const PersonaRoom: React.FC<PersonaRoomProps> = ({
       {/* Main content */}
       <div className="cs-main">
 
-        {/* Header row — persona switcher in persona room */}
+        {/* Header row — persona switcher */}
         {hasSelection && (
           <div className="cs-persona-room-header">
             <div className="cs-dropdown-wrap cs-dropdown-wrap--inline" ref={dropdownRef}>

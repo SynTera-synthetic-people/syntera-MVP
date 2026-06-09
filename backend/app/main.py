@@ -14,7 +14,8 @@ from app.db import async_session
 from app.migrations.startup import run_startup_migrations
 from app.routers import (auth, orgs, workspace, research_objectives, personas, interview,
                          population, questionnaire, rebuttal, traceability, omi, exploration,
-                         omi_workflow, admin, enterprise, syncdb, billing, product_state)
+                         omi_workflow, admin, enterprise, syncdb, billing, product_state,
+                         decision_room)
 from app.routers import settings as settings_router
 from app.routers import reports as reports_router_module
 from app.schemas.response import ErrorResponse
@@ -120,6 +121,7 @@ app.include_router(billing.router)
 app.include_router(settings_router.router)
 app.include_router(product_state.router)
 app.include_router(insights.router)
+app.include_router(decision_room.router)
 
 # default_cors_origins = [
 #     "http://localhost:5173",

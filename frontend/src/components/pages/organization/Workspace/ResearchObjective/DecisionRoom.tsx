@@ -1,10 +1,18 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   TbSend, TbLoader, TbFileText, TbClock, TbPlus, TbTrash, TbX,
   TbBrain, TbSparkles,
 } from 'react-icons/tb';
-import { motion, AnimatePresence } from 'framer-motion';
 import SpIcon from '../../../../SPIcon';
+import {
+  useCreateDRSession,
+  useDRSessions,
+  useDeleteDRSession,
+  streamDRMessage,
+  drKeys,
+} from '../../../../../hooks/useDecisionRoom';
+import { decisionRoomApi } from '../../../../../services/decisionRoomService';
+import { useQueryClient } from '@tanstack/react-query';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -25,14 +33,18 @@ interface ChatMessage {
   text: string;
   timestamp: string;
   isThinking?: boolean;
+  isStreaming?: boolean;
 }
 
-interface DecisionThread {
+interface SessionSummary {
   id: string;
-  title: string;
-  preview: string;
-  startedAt: string;
-  messages: ChatMessage[];
+  title: string | null;
+  flow: string;
+  status: string;
+  message_count: number;
+  cost_usd_total: number;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 // ── Suggested prompts per flow ────────────────────────────────────────────────
@@ -53,32 +65,38 @@ const QUANT_PROMPTS = [
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const groupThreadsByDate = (threads: DecisionThread[]) => {
+const groupSessionsByDate = (sessions: SessionSummary[]) => {
   const now       = new Date();
   const today     = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const weekAgo   = new Date(today);
-  weekAgo.setDate(weekAgo.getDate() - 7);
+  const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
+  const weekAgo   = new Date(today); weekAgo.setDate(weekAgo.getDate() - 7);
 
-  const todayGroup: { label: string; threads: DecisionThread[] } = { label: 'Today',           threads: [] };
-  const yestGroup:  { label: string; threads: DecisionThread[] } = { label: 'Yesterday',       threads: [] };
-  const weekGroup:  { label: string; threads: DecisionThread[] } = { label: 'Previous 7 Days', threads: [] };
-  const olderGroup: { label: string; threads: DecisionThread[] } = { label: 'Older',           threads: [] };
+  type Group = { label: string; sessions: SessionSummary[] };
+  const groups: Group[] = [
+    { label: 'Today', sessions: [] },
+    { label: 'Yesterday', sessions: [] },
+    { label: 'Previous 7 Days', sessions: [] },
+    { label: 'Older', sessions: [] },
+  ];
 
-  threads.forEach((t) => {
-    const d   = new Date(t.startedAt);
+  for (const s of sessions) {
+    const d = new Date(s.updated_at || s.created_at || '');
     const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    if (day >= today)          todayGroup.threads.push(t);
-    else if (day >= yesterday) yestGroup.threads.push(t);
-    else if (day >= weekAgo)   weekGroup.threads.push(t);
-    else                       olderGroup.threads.push(t);
-  });
+    if (day >= today)          groups[0].sessions.push(s);
+    else if (day >= yesterday) groups[1].sessions.push(s);
+    else if (day >= weekAgo)   groups[2].sessions.push(s);
+    else                       groups[3].sessions.push(s);
+  }
 
-  return [todayGroup, yestGroup, weekGroup, olderGroup].filter((g) => g.threads.length > 0);
+  return groups.filter((g) => g.sessions.length > 0);
 };
 
-const generateThreadId = () => `dr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+const messagesFromApi = (apiMessages: any[]): ChatMessage[] =>
+  (apiMessages || []).map((m) => ({
+    sender: m.role === 'user' ? 'user' : 'analyst',
+    text: m.content,
+    timestamp: m.created_at || new Date().toISOString(),
+  }));
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -91,99 +109,168 @@ const DecisionRoom: React.FC<DecisionRoomProps> = ({
   onSidebarOpen,
   onSidebarClose,
 }) => {
-  const [threads,        setThreads]        = useState<DecisionThread[]>([]);
-  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [messages,       setMessages]       = useState<ChatMessage[]>([]);
   const [inputValue,     setInputValue]     = useState<string>('');
   const [isChatActive,   setIsChatActive]   = useState<boolean>(false);
   const [isSending,      setIsSending]      = useState<boolean>(false);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef    = useRef<HTMLTextAreaElement>(null);
+  const queryClient = useQueryClient();
   const suggestedPrompts = flow === 'qual' ? QUAL_PROMPTS : QUANT_PROMPTS;
 
-  // ── Effects ───────────────────────────────────────────────────────────────
+  // ── React Query hooks ──────────────────────────────────────────────────────
+
+  const createSession  = useCreateDRSession(workspaceId, objectiveId);
+  const deleteSession  = useDeleteDRSession(workspaceId, objectiveId);
+  const { data: sessionList = [] } = useDRSessions(workspaceId, objectiveId, flow);
+
+  // ── Effects ────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Auto-start a session when the Decision Room mounts (no persona selection needed)
+  // Auto-start a session on mount
   useEffect(() => {
     if (!isChatActive) {
       handleStartSession();
     }
-    // Only run on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Session management ────────────────────────────────────────────────────
+  // Refresh session title in sidebar after title generation completes
+  useEffect(() => {
+    if (!activeSessionId) return;
+    const timer = setTimeout(() => {
+      queryClient.invalidateQueries({ queryKey: drKeys.sessions(workspaceId, objectiveId, flow) });
+    }, 8000);
+    return () => clearTimeout(timer);
+  }, [activeSessionId]);
 
-  const handleStartSession = () => {
-    const greeting: ChatMessage = {
-      sender:    'analyst',
-      text:      'Hi, I am your Strategy Partner for this exploration. I have read through the study and I am here to help you make sense of the signals, spot the opportunities, and decide what to do next.',
-      timestamp: new Date().toISOString(),
-    };
+  // ── Session management ─────────────────────────────────────────────────────
 
-    const threadId = generateThreadId();
-    const newThread: DecisionThread = {
-      id:        threadId,
-      title:     `Analysis Session`,
-      preview:   greeting.text.slice(0, 60),
-      startedAt: new Date().toISOString(),
-      messages:  [greeting],
-    };
-
-    setThreads((prev) => [newThread, ...prev]);
-    setActiveThreadId(threadId);
-    setMessages([greeting]);
-    setIsChatActive(true);
-  };
+  const handleStartSession = useCallback(async () => {
+    try {
+      const res = await createSession.mutateAsync(flow);
+      const { session_id, greeting } = res.data.data;
+      setActiveSessionId(session_id);
+      setMessages([{
+        sender: 'analyst',
+        text: greeting,
+        timestamp: new Date().toISOString(),
+      }]);
+      setIsChatActive(true);
+    } catch {
+      // Fallback: show greeting locally even if network fails
+      setMessages([{
+        sender: 'analyst',
+        text: 'You have the research. Now let us figure out what to do with it. What decision is on the table?',
+        timestamp: new Date().toISOString(),
+      }]);
+      setIsChatActive(true);
+    }
+  }, [createSession, flow]);
 
   const handleNewSession = () => {
+    setActiveSessionId(null);
+    setMessages([]);
+    setIsChatActive(false);
     handleStartSession();
   };
 
-  const handleLoadThread = (thread: DecisionThread) => {
-    setActiveThreadId(thread.id);
-    setMessages(thread.messages);
-    setIsChatActive(true);
+  const handleLoadThread = async (session: SessionSummary) => {
+    try {
+      const res = await queryClient.fetchQuery({
+        queryKey: drKeys.session(workspaceId, objectiveId, session.id),
+        queryFn: () => decisionRoomApi.getSession(workspaceId, objectiveId, session.id),
+      });
+      const detail = (res as any).data?.data ?? (res as any).data;
+      setActiveSessionId(session.id);
+      setMessages(messagesFromApi(detail?.messages || []));
+      setIsChatActive(true);
+    } catch {
+      // If fetch fails, just set as active without loading messages
+      setActiveSessionId(session.id);
+      setIsChatActive(true);
+    }
+    onSidebarClose();
   };
 
-  const handleDeleteThread = (e: React.MouseEvent, threadId: string) => {
+  const handleDeleteThread = async (e: React.MouseEvent, sessionId: string) => {
     e.stopPropagation();
-    setThreads((prev) => prev.filter((t) => t.id !== threadId));
-    if (activeThreadId === threadId) {
+    await deleteSession.mutateAsync(sessionId);
+    if (activeSessionId === sessionId) {
       setMessages([]);
       setIsChatActive(false);
-      setActiveThreadId(null);
+      setActiveSessionId(null);
     }
   };
 
-  // ── Messaging ─────────────────────────────────────────────────────────────
+  // ── Messaging (streaming) ──────────────────────────────────────────────────
 
-  const sendToAnalyst = (text: string) => {
+  const sendToAnalyst = useCallback(async (text: string) => {
+    if (!activeSessionId || isSending) return;
+
     const userMsg: ChatMessage = { sender: 'user', text, timestamp: new Date().toISOString() };
-
-    // Append user message and clear input immediately
     setMessages((prev) => [...prev, userMsg]);
     setInputValue('');
     setIsSending(true);
 
-    // Update thread preview in sidebar
-    setThreads((prev) =>
-      prev.map((t) =>
-        t.id === activeThreadId
-          ? { ...t, preview: text.slice(0, 60), messages: [...t.messages, userMsg] }
-          : t
-      )
-    );
+    // Add a streaming analyst bubble
+    const streamingPlaceholder: ChatMessage = {
+      sender: 'analyst',
+      text: '',
+      timestamp: new Date().toISOString(),
+      isStreaming: true,
+    };
+    setMessages((prev) => [...prev, streamingPlaceholder]);
 
-    // TODO: wire up backend call here — response handling is owned by the backend team.
-    // The backend should resolve to a ChatMessage with sender: 'analyst' and append it via setMessages.
-    setIsSending(false);
-  };
+    await streamDRMessage(
+      workspaceId,
+      objectiveId,
+      activeSessionId,
+      text,
+      {
+        onDelta: (delta: string) => {
+          setMessages((prev) => {
+            const msgs = [...prev];
+            const last = msgs[msgs.length - 1];
+            if (last?.isStreaming) {
+              msgs[msgs.length - 1] = { ...last, text: last.text + delta };
+            }
+            return msgs;
+          });
+        },
+        onDone: () => {
+          // Mark streaming as done
+          setMessages((prev) => {
+            const msgs = [...prev];
+            const last = msgs[msgs.length - 1];
+            if (last?.isStreaming) {
+              msgs[msgs.length - 1] = { ...last, isStreaming: false };
+            }
+            return msgs;
+          });
+          // Refresh sidebar sessions to get updated title / message count
+          queryClient.invalidateQueries({
+            queryKey: drKeys.sessions(workspaceId, objectiveId, flow),
+          });
+          setIsSending(false);
+        },
+        onError: (_err: string) => {
+          // Remove streaming placeholder on error
+          setMessages((prev) => {
+            const msgs = [...prev];
+            if (msgs[msgs.length - 1]?.isStreaming) msgs.pop();
+            return msgs;
+          });
+          setIsSending(false);
+        },
+      },
+    );
+  }, [activeSessionId, isSending, workspaceId, objectiveId, flow, queryClient]);
 
   const handleSend = () => {
     if (!inputValue.trim() || isSending) return;
@@ -199,9 +286,7 @@ const DecisionRoom: React.FC<DecisionRoomProps> = ({
 
   const handleSuggestedPrompt = (prompt: string) => {
     if (isSending) return;
-    // Feed into input box so user can review/edit before sending
     setInputValue(prompt);
-    // Focus the textarea so user can continue typing or just hit Enter
     setTimeout(() => inputRef.current?.focus(), 0);
   };
 
@@ -229,12 +314,13 @@ const DecisionRoom: React.FC<DecisionRoomProps> = ({
     } catch { return ''; }
   };
 
-  const formatThreadDate = (ts: string) => {
+  const formatThreadDate = (ts: string | null) => {
+    if (!ts) return '';
     try { return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); }
     catch { return ''; }
   };
 
-  const groupedThreads = groupThreadsByDate(threads);
+  const groupedSessions = groupSessionsByDate(sessionList as SessionSummary[]);
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -276,34 +362,40 @@ const DecisionRoom: React.FC<DecisionRoomProps> = ({
         </div>
 
         <div className="cs-sidebar__threads">
-          {threads.length === 0 ? (
+          {(sessionList as SessionSummary[]).length === 0 ? (
             <div className="cs-sidebar__empty">
               <TbBrain size={22} />
               <span>No sessions yet</span>
             </div>
           ) : (
-            groupedThreads.map((group) => (
+            groupedSessions.map((group) => (
               <div key={group.label} className="cs-sidebar__group">
                 <p className="cs-sidebar__group-label">{group.label}</p>
-                {group.threads.map((thread) => (
+                {group.sessions.map((session) => (
                   <button
-                    key={thread.id}
-                    className={`cs-thread-item ${activeThreadId === thread.id ? 'cs-thread-item--active' : ''}`}
-                    onClick={() => handleLoadThread(thread)}
+                    key={session.id}
+                    className={`cs-thread-item ${activeSessionId === session.id ? 'cs-thread-item--active' : ''}`}
+                    onClick={() => handleLoadThread(session)}
                   >
                     <div className="cs-thread-item__avatar cs-thread-item__avatar--dr">
                       <TbBrain size={14} />
                     </div>
                     <div className="cs-thread-item__content">
                       <div className="cs-thread-item__top">
-                        <span className="cs-thread-item__name">{thread.title}</span>
-                        <span className="cs-thread-item__date">{formatThreadDate(thread.startedAt)}</span>
+                        <span className="cs-thread-item__name">
+                          {session.title || 'Analysis Session'}
+                        </span>
+                        <span className="cs-thread-item__date">
+                          {formatThreadDate(session.updated_at || session.created_at)}
+                        </span>
                       </div>
-                      <p className="cs-thread-item__preview">{thread.preview}…</p>
+                      <p className="cs-thread-item__preview">
+                        {session.message_count} message{session.message_count !== 1 ? 's' : ''}
+                      </p>
                     </div>
                     <button
                       className="cs-thread-item__delete"
-                      onClick={(e) => handleDeleteThread(e, thread.id)}
+                      onClick={(e) => handleDeleteThread(e, session.id)}
                       title="Delete session"
                     >
                       <TbTrash size={13} />
@@ -319,10 +411,9 @@ const DecisionRoom: React.FC<DecisionRoomProps> = ({
       {/* Main content */}
       <div className="cs-main">
 
-        {/* Decision Room header strip — flow tag removed */}
+        {/* Header strip */}
         <div className="cs-dr-header">
-          <div className="cs-dr-header__left">
-          </div>
+          <div className="cs-dr-header__left" />
           <button className="cs-dr-header__new-btn" onClick={handleNewSession} title="Start new session">
             <TbPlus size={14} />
             New Session
@@ -355,8 +446,12 @@ const DecisionRoom: React.FC<DecisionRoomProps> = ({
                         <TbLoader size={14} className="cs-bubble__thinking-spinner" />
                         <span>{msg.text}</span>
                       </div>
+                    ) : msg.isStreaming && msg.text === '' ? (
+                      <div className="cs-bubble__thinking">
+                        <TbLoader size={14} className="cs-bubble__thinking-spinner" />
+                        <span>Analyzing…</span>
+                      </div>
                     ) : (
-                      /* Render newlines from analyst replies */
                       msg.text.split('\n').map((line, li) => (
                         <React.Fragment key={li}>
                           {line}
@@ -379,7 +474,7 @@ const DecisionRoom: React.FC<DecisionRoomProps> = ({
             <div ref={chatEndRef} />
           </div>
 
-          {/* Suggested prompts — visible only before first send AND while input is empty */}
+          {/* Suggested prompts */}
           {isChatActive && messages.filter((m) => m.sender === 'user').length === 0 && !isSending && inputValue.trim() === '' && (
             <div className="cs-dr-suggestions">
               <p className="cs-dr-suggestions__label">
