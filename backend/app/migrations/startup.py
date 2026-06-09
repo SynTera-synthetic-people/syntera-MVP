@@ -1394,6 +1394,99 @@ async def _repair_settings_schema(conn: AsyncConnection) -> None:
     )
 
 
+async def _repair_decision_room_schema(conn: AsyncConnection) -> None:
+    await ensure_table(
+        conn,
+        """
+        CREATE TABLE IF NOT EXISTS decision_room_session (
+            id                  VARCHAR PRIMARY KEY,
+            workspace_id        VARCHAR NOT NULL,
+            exploration_id      VARCHAR NOT NULL,
+            flow                VARCHAR NOT NULL,
+            title               VARCHAR,
+            status              VARCHAR NOT NULL DEFAULT 'active',
+            context_rendered    TEXT NOT NULL DEFAULT '',
+            context_metadata    JSONB NOT NULL DEFAULT '{}',
+            prompt_version      VARCHAR NOT NULL DEFAULT 'v1.0',
+            token_total_input   INTEGER NOT NULL DEFAULT 0,
+            token_total_output  INTEGER NOT NULL DEFAULT 0,
+            cost_usd_total      DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+            created_by          VARCHAR NOT NULL,
+            created_at          TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
+            updated_at          TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
+        )
+        """,
+    )
+    await ensure_table(
+        conn,
+        """
+        CREATE TABLE IF NOT EXISTS decision_room_message (
+            id              VARCHAR PRIMARY KEY,
+            session_id      VARCHAR NOT NULL,
+            role            VARCHAR NOT NULL,
+            content         TEXT NOT NULL,
+            sequence_num    INTEGER NOT NULL DEFAULT 0,
+            model_used      VARCHAR,
+            token_input     INTEGER,
+            token_output    INTEGER,
+            cost_usd        DOUBLE PRECISION,
+            latency_ms      INTEGER,
+            evidence        JSONB,
+            stream_complete BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at      TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
+        )
+        """,
+    )
+    for index_sql in (
+        "CREATE INDEX IF NOT EXISTS ix_drs_workspace_id ON decision_room_session (workspace_id)",
+        "CREATE INDEX IF NOT EXISTS ix_drs_exploration_id ON decision_room_session (exploration_id)",
+        "CREATE INDEX IF NOT EXISTS ix_drs_created_by ON decision_room_session (created_by)",
+        "CREATE INDEX IF NOT EXISTS ix_drs_status ON decision_room_session (status)",
+        "CREATE INDEX IF NOT EXISTS ix_drs_flow ON decision_room_session (flow)",
+        "CREATE INDEX IF NOT EXISTS ix_drm_session_seq ON decision_room_message (session_id, sequence_num)",
+        "CREATE INDEX IF NOT EXISTS ix_drm_role ON decision_room_message (role)",
+    ):
+        await ensure_index(conn, index_sql)
+    await ensure_foreign_key(
+        conn,
+        table_sql="decision_room_session",
+        schema="public",
+        table="decision_room_session",
+        column="workspace_id",
+        referenced_table="workspace",
+        constraint_name="fk_drs_workspace_id",
+    )
+    await ensure_foreign_key(
+        conn,
+        table_sql="decision_room_session",
+        schema="public",
+        table="decision_room_session",
+        column="exploration_id",
+        referenced_table="explorations",
+        constraint_name="fk_drs_exploration_id",
+    )
+    await ensure_foreign_key(
+        conn,
+        table_sql="decision_room_session",
+        schema="public",
+        table="decision_room_session",
+        column="created_by",
+        referenced_table="user",
+        constraint_name="fk_drs_created_by",
+        on_delete="CASCADE",
+    )
+    await ensure_foreign_key(
+        conn,
+        table_sql="decision_room_message",
+        schema="public",
+        table="decision_room_message",
+        column="session_id",
+        referenced_table="decision_room_session",
+        constraint_name="fk_drm_session_id",
+        on_delete="CASCADE",
+    )
+
+
 _MIGRATION_STEPS: tuple[tuple[str, str, MigrationStep], ...] = (
     ("base", "create_sqlmodel_tables", _create_sqlmodel_tables),
     ("public", "repair_core_public_schema", _repair_core_public_schema),
@@ -1403,4 +1496,5 @@ _MIGRATION_STEPS: tuple[tuple[str, str, MigrationStep], ...] = (
     ("reports", "repair_report_cache_schema", _repair_report_cache_schema),
     ("billing", "repair_billing_schema", _repair_billing_schema),
     ("settings", "repair_settings_schema", _repair_settings_schema),
+    ("decision_room", "repair_decision_room_schema", _repair_decision_room_schema),
 )

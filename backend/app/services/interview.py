@@ -808,6 +808,23 @@ async def get_interview_by_persona(workspace_id: str, exploration_id: str, perso
         return _map_interview_row_to_out(iv)
 
 
+async def delete_interview(workspace_id: str, exploration_id: str, interview_id: str) -> bool:
+    async with AsyncSession(async_engine) as session:
+        result = await session.execute(
+            select(Interview).where(
+                Interview.id == interview_id,
+                Interview.workspace_id == workspace_id,
+                Interview.exploration_id == exploration_id,
+            )
+        )
+        iv = result.scalars().first()
+        if not iv:
+            return False
+        await session.delete(iv)
+        await session.commit()
+        return True
+
+
 async def list_interviews_for_objective(workspace_id: str, exploration_id: str) -> List[InterviewOut]:
     async with AsyncSession(async_engine) as session:
         query = select(Interview).where(

@@ -258,6 +258,23 @@ async def list_interviews(workspace_id: str, exploration_id: str, current_user: 
     return SuccessResponse(message="Interviews fetched", data=data)
 
 
+@router.delete("/interviews/{interview_id}", response_model=SuccessResponse)
+async def delete_interview(
+    workspace_id: str,
+    exploration_id: str,
+    interview_id: str,
+    current_user: User = Depends(get_current_active_user),
+):
+    members = await ws_service.list_workspace_members(workspace_id)
+    if not any(m.get("user_id") == current_user.id for m in members):
+        raise HTTPException(status_code=403, detail=ErrorResponse(status="error", message="Not a member").dict())
+
+    ok = await interview_service.delete_interview(workspace_id, exploration_id, interview_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail=ErrorResponse(status="error", message="Interview not found").dict())
+    return SuccessResponse(message="Interview deleted", data=True)
+
+
 @router.get("/interviews/preview", response_model=SuccessResponse)
 async def preview_all_interviews(workspace_id: str, exploration_id: str, current_user: User = Depends(get_current_active_user)):
     members = await ws_service.list_workspace_members(workspace_id)
