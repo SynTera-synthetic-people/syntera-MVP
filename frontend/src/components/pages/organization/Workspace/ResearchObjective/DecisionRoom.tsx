@@ -71,31 +71,28 @@ const groupSessionsByDate = (sessions: SessionSummary[]) => {
   const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
   const weekAgo   = new Date(today); weekAgo.setDate(weekAgo.getDate() - 7);
 
-  type Group = { label: string; sessions: SessionSummary[] };
-  const groups: Group[] = [
-    { label: 'Today', sessions: [] },
-    { label: 'Yesterday', sessions: [] },
-    { label: 'Previous 7 Days', sessions: [] },
-    { label: 'Older', sessions: [] },
-  ];
+  const todayGroup:   { label: string; sessions: SessionSummary[] } = { label: 'Today',           sessions: [] };
+  const yestGroup:    { label: string; sessions: SessionSummary[] } = { label: 'Yesterday',        sessions: [] };
+  const weekGroup:    { label: string; sessions: SessionSummary[] } = { label: 'Previous 7 Days',  sessions: [] };
+  const olderGroup:   { label: string; sessions: SessionSummary[] } = { label: 'Older',            sessions: [] };
 
   for (const s of sessions) {
-    const d = new Date(s.updated_at || s.created_at || '');
+    const d   = new Date(s.updated_at ?? s.created_at ?? '');
     const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    if (day >= today)          groups[0].sessions.push(s);
-    else if (day >= yesterday) groups[1].sessions.push(s);
-    else if (day >= weekAgo)   groups[2].sessions.push(s);
-    else                       groups[3].sessions.push(s);
+    if (day >= today)          todayGroup.sessions.push(s);
+    else if (day >= yesterday) yestGroup.sessions.push(s);
+    else if (day >= weekAgo)   weekGroup.sessions.push(s);
+    else                       olderGroup.sessions.push(s);
   }
 
-  return groups.filter((g) => g.sessions.length > 0);
+  return [todayGroup, yestGroup, weekGroup, olderGroup].filter((g) => g.sessions.length > 0);
 };
 
 const messagesFromApi = (apiMessages: any[]): ChatMessage[] =>
-  (apiMessages || []).map((m) => ({
-    sender: m.role === 'user' ? 'user' : 'analyst',
-    text: m.content,
-    timestamp: m.created_at || new Date().toISOString(),
+  (apiMessages ?? []).map((m) => ({
+    sender:    m.role === 'user' ? 'user' : 'analyst' as 'user' | 'analyst',
+    text:      m.content,
+    timestamp: m.created_at ?? new Date().toISOString(),
   }));
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -109,21 +106,21 @@ const DecisionRoom: React.FC<DecisionRoomProps> = ({
   onSidebarOpen,
   onSidebarClose,
 }) => {
-  const [messages,       setMessages]       = useState<ChatMessage[]>([]);
-  const [inputValue,     setInputValue]     = useState<string>('');
-  const [isChatActive,   setIsChatActive]   = useState<boolean>(false);
-  const [isSending,      setIsSending]      = useState<boolean>(false);
+  const [messages,        setMessages]        = useState<ChatMessage[]>([]);
+  const [inputValue,      setInputValue]      = useState<string>('');
+  const [isChatActive,    setIsChatActive]    = useState<boolean>(false);
+  const [isSending,       setIsSending]       = useState<boolean>(false);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
-  const inputRef    = useRef<HTMLTextAreaElement>(null);
+  const inputRef   = useRef<HTMLTextAreaElement>(null);
   const queryClient = useQueryClient();
   const suggestedPrompts = flow === 'qual' ? QUAL_PROMPTS : QUANT_PROMPTS;
 
   // ── React Query hooks ──────────────────────────────────────────────────────
 
-  const createSession  = useCreateDRSession(workspaceId, objectiveId);
-  const deleteSession  = useDeleteDRSession(workspaceId, objectiveId);
+  const createSession = useCreateDRSession(workspaceId, objectiveId);
+  const deleteSession = useDeleteDRSession(workspaceId, objectiveId);
   const { data: sessionList = [] } = useDRSessions(workspaceId, objectiveId, flow);
 
   // ── Effects ────────────────────────────────────────────────────────────────
@@ -132,7 +129,6 @@ const DecisionRoom: React.FC<DecisionRoomProps> = ({
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Auto-start a session on mount
   useEffect(() => {
     if (!isChatActive) {
       handleStartSession();
@@ -140,33 +136,32 @@ const DecisionRoom: React.FC<DecisionRoomProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Refresh session title in sidebar after title generation completes
   useEffect(() => {
     if (!activeSessionId) return;
     const timer = setTimeout(() => {
       queryClient.invalidateQueries({ queryKey: drKeys.sessions(workspaceId, objectiveId, flow) });
     }, 8000);
     return () => clearTimeout(timer);
-  }, [activeSessionId]);
+  }, [activeSessionId, workspaceId, objectiveId, flow, queryClient]);
 
   // ── Session management ─────────────────────────────────────────────────────
 
   const handleStartSession = useCallback(async () => {
     try {
-      const res = await createSession.mutateAsync(flow);
-      const { session_id, greeting } = res.data.data;
-      setActiveSessionId(session_id);
+
+      const res = await (createSession.mutateAsync as unknown as (v: string) => Promise<unknown>)(flow);
+      const { session_id, greeting } = (res as any).data?.data ?? (res as any).data ?? {};
+      setActiveSessionId(session_id ?? null);
       setMessages([{
-        sender: 'analyst',
-        text: greeting,
+        sender:    'analyst',
+        text:      greeting ?? 'You have the research. Now let us figure out what to do with it. What decision is on the table?',
         timestamp: new Date().toISOString(),
       }]);
       setIsChatActive(true);
     } catch {
-      // Fallback: show greeting locally even if network fails
       setMessages([{
-        sender: 'analyst',
-        text: 'You have the research. Now let us figure out what to do with it. What decision is on the table?',
+        sender:    'analyst',
+        text:      'You have the research. Now let us figure out what to do with it. What decision is on the table?',
         timestamp: new Date().toISOString(),
       }]);
       setIsChatActive(true);
@@ -184,14 +179,13 @@ const DecisionRoom: React.FC<DecisionRoomProps> = ({
     try {
       const res = await queryClient.fetchQuery({
         queryKey: drKeys.session(workspaceId, objectiveId, session.id),
-        queryFn: () => decisionRoomApi.getSession(workspaceId, objectiveId, session.id),
+        queryFn:  () => decisionRoomApi.getSession(workspaceId, objectiveId, session.id),
       });
       const detail = (res as any).data?.data ?? (res as any).data;
       setActiveSessionId(session.id);
-      setMessages(messagesFromApi(detail?.messages || []));
+      setMessages(messagesFromApi(detail?.messages ?? []));
       setIsChatActive(true);
     } catch {
-      // If fetch fails, just set as active without loading messages
       setActiveSessionId(session.id);
       setIsChatActive(true);
     }
@@ -200,7 +194,12 @@ const DecisionRoom: React.FC<DecisionRoomProps> = ({
 
   const handleDeleteThread = async (e: React.MouseEvent, sessionId: string) => {
     e.stopPropagation();
-    await deleteSession.mutateAsync(sessionId);
+    try {
+
+      await (deleteSession.mutateAsync as unknown as (v: string) => Promise<unknown>)(sessionId);
+    } catch {
+      // non-critical
+    }
     if (activeSessionId === sessionId) {
       setMessages([]);
       setIsChatActive(false);
@@ -218,11 +217,10 @@ const DecisionRoom: React.FC<DecisionRoomProps> = ({
     setInputValue('');
     setIsSending(true);
 
-    // Add a streaming analyst bubble
     const streamingPlaceholder: ChatMessage = {
-      sender: 'analyst',
-      text: '',
-      timestamp: new Date().toISOString(),
+      sender:      'analyst',
+      text:        '',
+      timestamp:   new Date().toISOString(),
       isStreaming: true,
     };
     setMessages((prev) => [...prev, streamingPlaceholder]);
@@ -244,7 +242,6 @@ const DecisionRoom: React.FC<DecisionRoomProps> = ({
           });
         },
         onDone: () => {
-          // Mark streaming as done
           setMessages((prev) => {
             const msgs = [...prev];
             const last = msgs[msgs.length - 1];
@@ -253,14 +250,12 @@ const DecisionRoom: React.FC<DecisionRoomProps> = ({
             }
             return msgs;
           });
-          // Refresh sidebar sessions to get updated title / message count
           queryClient.invalidateQueries({
             queryKey: drKeys.sessions(workspaceId, objectiveId, flow),
           });
           setIsSending(false);
         },
         onError: (_err: string) => {
-          // Remove streaming placeholder on error
           setMessages((prev) => {
             const msgs = [...prev];
             if (msgs[msgs.length - 1]?.isStreaming) msgs.pop();
@@ -339,7 +334,7 @@ const DecisionRoom: React.FC<DecisionRoomProps> = ({
         </button>
       )}
 
-      {/* Left sidebar — Decision Room sessions */}
+      {/* Left sidebar */}
       <aside className={`cs-sidebar ${isSidebarOpen ? 'cs-sidebar--open' : ''}`}>
         <div className="cs-sidebar__header">
           <div className="cs-sidebar__header-top">
@@ -383,10 +378,10 @@ const DecisionRoom: React.FC<DecisionRoomProps> = ({
                     <div className="cs-thread-item__content">
                       <div className="cs-thread-item__top">
                         <span className="cs-thread-item__name">
-                          {session.title || 'Analysis Session'}
+                          {session.title ?? 'Analysis Session'}
                         </span>
                         <span className="cs-thread-item__date">
-                          {formatThreadDate(session.updated_at || session.created_at)}
+                          {formatThreadDate(session.updated_at ?? session.created_at)}
                         </span>
                       </div>
                       <p className="cs-thread-item__preview">
