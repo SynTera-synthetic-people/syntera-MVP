@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     JWT_SECRET: str
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 120
-    IDLE_TIMEOUT: int = 15
+    IDLE_TIMEOUT: int = 60
     MAIL_USERNAME: str
     MAIL_PASSWORD: str
     SUPERADMIN_NAME: str
