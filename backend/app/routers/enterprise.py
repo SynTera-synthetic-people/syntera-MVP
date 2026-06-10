@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.permissions import require_enterprise_admin_or_sp, require_sp_admin
 from app.db import get_session
+from app.models.organization import Organization
 from app.models.user import User
 from app.routers.auth_dependencies import get_current_active_user
 from app.schemas.enterprise import (
@@ -172,12 +173,14 @@ async def add_enterprise_member(
         added_by_id=current_user.id,
     )
 
-    from app.utils.email_utils import send_enterprise_welcome_email
+    org = await session.get(Organization, org_id)
+    from app.utils.email_utils import send_enterprise_member_welcome_email
     background_tasks.add_task(
-        send_enterprise_welcome_email,
+        send_enterprise_member_welcome_email,
         user.email,
         user.full_name,
         temp_password,
+        org.name if org else None,
     )
 
     logger.info(
