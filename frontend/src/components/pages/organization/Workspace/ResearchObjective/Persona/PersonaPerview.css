@@ -9,21 +9,11 @@
   display: flex;
   flex-direction: column;
   width: 100%;
-  padding-bottom: 80px;
+  min-height: 100%;
   color: #f1f5f9;
   font-family: inherit;
   overflow-y: auto;
-  background: #0a0b0f;
-}
-
-/* ── Center pages ─────────────────────────────────────────────── */
-.pp-center-page {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: 400px;
-  gap: 12px;
+  background: transparent;
 }
 
 .pp-spin {
@@ -867,19 +857,15 @@
 
 /* ── Bottom navigation ────────────────────────────────────────── */
 .pp-bottom-nav {
-  position: fixed;
+  position: sticky;
   bottom: 0;
-  left: 260px;
-  right: 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 12px 32px;
-  background: rgba(10, 11, 15, 0.96);
-  backdrop-filter: blur(12px);
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  background: #060606;
   z-index: 40;
-  pointer-events: auto;
+  margin-top: auto;
 }
 
 .pp-nav-arrow {

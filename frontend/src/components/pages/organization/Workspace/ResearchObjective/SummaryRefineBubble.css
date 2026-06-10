@@ -60,7 +60,7 @@
   z-index: 9999;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   user-select: none;
 }
 
@@ -283,4 +283,12 @@
   font-size: 0.875rem;
   font-weight: 700;
   color: #34d399;
+}
+/* ── Fake selection highlight — keeps text visually selected after pill click ── */
+mark.srb-highlight {
+  background: rgba(59, 130, 246, 0.32);
+  color: inherit;
+  border-radius: 2px;
+  /* no padding — keeps layout exactly as before */
+  padding: 0;
 }
