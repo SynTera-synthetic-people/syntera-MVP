@@ -139,16 +139,21 @@ const OmiLoaderBar: React.FC<OmiLoaderBarProps> = ({ cardId }) => {
   const messages = LOADER_MESSAGES[cardId];
   const [msgIdx, setMsgIdx] = useState(0);
 
+  // Reset when card switches
   useEffect(() => {
     setMsgIdx(0);
   }, [cardId]);
 
   useEffect(() => {
-    const id = setInterval(() => {
-      setMsgIdx(prev => (prev + 1) % messages.length);
-    }, 3_200);
-    return () => clearInterval(id);
-  }, [messages.length]);
+    // Stay on the last message — don't loop
+    if (msgIdx >= messages.length - 1) return;
+
+    const id = setTimeout(() => {
+      setMsgIdx(prev => prev + 1);
+    }, 8_500);
+
+    return () => clearTimeout(id);
+  }, [msgIdx, messages.length]);
 
   return (
     <motion.div
@@ -158,7 +163,6 @@ const OmiLoaderBar: React.FC<OmiLoaderBarProps> = ({ cardId }) => {
       exit={{ opacity: 0, y: 16 }}
       transition={{ duration: 0.3 }}
     >
-      {/* Omi avatar video */}
       <div className="ig-omi-bar__avatar">
         <video
           src={OmiKeyboard}
@@ -170,7 +174,6 @@ const OmiLoaderBar: React.FC<OmiLoaderBarProps> = ({ cardId }) => {
         />
       </div>
 
-      {/* Cycling message */}
       <div className="ig-omi-bar__msg-wrap">
         <AnimatePresence mode="wait">
           <motion.span
@@ -187,7 +190,6 @@ const OmiLoaderBar: React.FC<OmiLoaderBarProps> = ({ cardId }) => {
         </AnimatePresence>
       </div>
 
-      {/* Pulsing dots */}
       <div className="ig-omi-bar__dots">
         <span /><span /><span />
       </div>
@@ -213,9 +215,9 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
   const populationSimulationId: string = simulationResult?.id ?? '';
 
   const ensureSurveySimulationMutation = useEnsureSurveySimulation();
-  const downloadTranscriptsMutation    = useDownloadQuantTranscripts();
-  const downloadDecisionMutation       = useDownloadQuantDecisionIntelligence();
-  const downloadBehaviourMutation      = useDownloadQuantBehaviorArchaeology();
+  const downloadTranscriptsMutation = useDownloadQuantTranscripts();
+  const downloadDecisionMutation = useDownloadQuantDecisionIntelligence();
+  const downloadBehaviourMutation = useDownloadQuantBehaviorArchaeology();
 
   // ── Card states — initialised from localStorage so they survive logout ────
   const [cardStates, setCardStates] = useState<Record<string, CardState>>(() => {
@@ -226,8 +228,8 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
     }, {});
   });
 
-  const [viewingCard, setViewingCard]               = useState<ViewableCardId | null>(null);
-  const [showImpactModal, setShowImpactModal]        = useState(false);
+  const [viewingCard, setViewingCard] = useState<ViewableCardId | null>(null);
+  const [showImpactModal, setShowImpactModal] = useState(false);
   const [showConversationStudio, setShowConversationStudio] = useState(false);
   const [surveySimulationId, setSurveySimulationId] = useState(initialSurveySimulationId ?? '');
   const ensureSurveyPromiseRef = useRef<Promise<string> | null>(null);
@@ -286,8 +288,8 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
     cardStates['decision'] === 'generating'
       ? 'decision'
       : cardStates['behaviour'] === 'generating'
-      ? 'behaviour'
-      : null;
+        ? 'behaviour'
+        : null;
 
   // ── Survey simulation ID resolution ──────────────────────────────────────
 
@@ -295,7 +297,7 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
     const selectedIds = selectedPersonas.map((p) => p.id).filter(Boolean);
     if (selectedIds.length > 0) return selectedIds;
     if (Array.isArray(simulationResult?.persona_ids)) return simulationResult.persona_ids.filter(Boolean);
-    if (Array.isArray(simulationResult?.persona_id))  return simulationResult.persona_id.filter(Boolean);
+    if (Array.isArray(simulationResult?.persona_id)) return simulationResult.persona_id.filter(Boolean);
     return [];
   };
 
@@ -455,9 +457,9 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
         animate="visible"
       >
         {INSIGHT_CARDS.map((card) => {
-          const state        = cardStates[card.id] ?? 'idle';
+          const state = cardStates[card.id] ?? 'idle';
           const isGenerating = state === 'generating';
-          const isDone       = state === 'done';
+          const isDone = state === 'done';
 
           return (
             <motion.div key={card.id} className="ig-card" variants={cardVariants}>
@@ -472,15 +474,14 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
               <p className="ig-card__desc">{card.description}</p>
 
               <button
-                className={`ig-card__btn ${
-                  card.comingSoon
+                className={`ig-card__btn ${card.comingSoon
                     ? 'ig-card__btn--coming-soon'
                     : isDone && card.hasViewer
                       ? 'ig-card__btn--view'
                       : isDone
                         ? 'ig-card__btn--done'
                         : ''
-                }`}
+                  }`}
                 onClick={() => !card.comingSoon && handleAction(card)}
                 disabled={
                   isGenerating ||
@@ -564,7 +565,7 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
         {showConversationStudio && (
           <ConversationStudioModal
             workspaceId={workspaceId}
-            flow="quant" 
+            flow="quant"
             objectiveId={explorationId}
             onClose={() => setShowConversationStudio(false)}
           />

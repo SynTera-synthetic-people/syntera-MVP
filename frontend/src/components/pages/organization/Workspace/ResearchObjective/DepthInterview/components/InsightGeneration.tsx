@@ -117,16 +117,21 @@ const OmiLoaderBar: React.FC<OmiLoaderBarProps> = ({ cardId }) => {
   const messages = LOADER_MESSAGES[cardId];
   const [msgIdx, setMsgIdx] = useState(0);
 
+  // Reset when card switches
   useEffect(() => {
     setMsgIdx(0);
   }, [cardId]);
 
   useEffect(() => {
-    const id = setInterval(() => {
-      setMsgIdx(prev => (prev + 1) % messages.length);
-    }, 3_200);
-    return () => clearInterval(id);
-  }, [messages.length]);
+    // Stay on the last message — don't loop
+    if (msgIdx >= messages.length - 1) return;
+
+    const id = setTimeout(() => {
+      setMsgIdx(prev => prev + 1);
+    }, 8_500);
+
+    return () => clearTimeout(id);
+  }, [msgIdx, messages.length]);
 
   return (
     <motion.div
@@ -136,7 +141,6 @@ const OmiLoaderBar: React.FC<OmiLoaderBarProps> = ({ cardId }) => {
       exit={{ opacity: 0, y: 16 }}
       transition={{ duration: 0.3 }}
     >
-      {/* Omi avatar — inline styles so size is never overridden by stale CSS */}
       <div
         className="ig-omi-bar__avatar"
         style={{
@@ -169,7 +173,6 @@ const OmiLoaderBar: React.FC<OmiLoaderBarProps> = ({ cardId }) => {
         />
       </div>
 
-      {/* Cycling message */}
       <div className="ig-omi-bar__msg-wrap">
         <AnimatePresence mode="wait">
           <motion.span
@@ -186,7 +189,6 @@ const OmiLoaderBar: React.FC<OmiLoaderBarProps> = ({ cardId }) => {
         </AnimatePresence>
       </div>
 
-      {/* Pulsing dots */}
       <div className="ig-omi-bar__dots">
         <span /><span /><span />
       </div>
@@ -210,8 +212,8 @@ const InsightGeneration: React.FC = () => {
   const prevStatusRef = useRef<{ DI?: string; BA?: string }>({});
 
   const [cardStates, setCardStates] = useState<CardStates>(() => ({
-    verbatim:  isLsReady('verbatim',  objectiveId) ? 'ready' : 'idle',
-    decision:  isLsReady('decision',  objectiveId) ? 'ready' : 'idle',
+    verbatim: isLsReady('verbatim', objectiveId) ? 'ready' : 'idle',
+    decision: isLsReady('decision', objectiveId) ? 'ready' : 'idle',
     behaviour: isLsReady('behaviour', objectiveId) ? 'ready' : 'idle',
   }));
 
@@ -223,9 +225,9 @@ const InsightGeneration: React.FC = () => {
   const hasAnyInsightReady = Object.values(cardStates).some((s) => s === 'ready');
 
   const downloadTranscriptsMutation = useDownloadQualTranscripts(workspaceId, objectiveId);
-  const downloadDecisionMutation    = useDownloadQualDecisionIntelligence(workspaceId, objectiveId);
-  const downloadBehaviourMutation   = useDownloadQualBehaviorArchaeology(workspaceId, objectiveId);
-  const prepareMutation             = usePrepareQualReport(workspaceId, objectiveId);
+  const downloadDecisionMutation = useDownloadQualDecisionIntelligence(workspaceId, objectiveId);
+  const downloadBehaviourMutation = useDownloadQualBehaviorArchaeology(workspaceId, objectiveId);
+  const prepareMutation = usePrepareQualReport(workspaceId, objectiveId);
 
   const { data: reportStatusData } = useQualReportStatus(workspaceId, objectiveId, {
     enabled: !!(workspaceId && objectiveId),
@@ -237,17 +239,17 @@ const InsightGeneration: React.FC = () => {
     const qual = (reportStatusData as any)?.qual;
     if (!qual) return;
 
-    const diStatus  = qual.DECISION_INTELLIGENCE;
-    const baStatus  = qual.BEHAVIORAL_ARCHAEOLOGY;
-    const trStatus  = qual.TRANSCRIPTS;
+    const diStatus = qual.DECISION_INTELLIGENCE;
+    const baStatus = qual.BEHAVIORAL_ARCHAEOLOGY;
+    const trStatus = qual.TRANSCRIPTS;
 
     const DI = diStatus?.status as string | undefined;
     const BA = baStatus?.status as string | undefined;
     const TR = trStatus?.status as string | undefined;
 
-    const diReady   = Boolean(diStatus?.available) || DI === 'done';
-    const baReady   = Boolean(baStatus?.available) || BA === 'done';
-    const trReady   = Boolean(trStatus?.available) || TR === 'done';
+    const diReady = Boolean(diStatus?.available) || DI === 'done';
+    const baReady = Boolean(baStatus?.available) || BA === 'done';
+    const trReady = Boolean(trStatus?.available) || TR === 'done';
     const diPending = DI === 'pending' || DI === 'generating';
     const baPending = BA === 'pending' || BA === 'generating';
     const trPending = TR === 'pending' || TR === 'generating';
@@ -325,9 +327,9 @@ const InsightGeneration: React.FC = () => {
   const { data: explorationData } = useExploration(objectiveId);
   const updateExplorationMutation = useUpdateExplorationMethod();
 
-  const _apiData         = (explorationData as any)?.data ?? (explorationData as any) ?? {};
-  const _isQual          = !!_apiData?.is_qualitative;
-  const _isQuant         = !!_apiData?.is_quantitative;
+  const _apiData = (explorationData as any)?.data ?? (explorationData as any) ?? {};
+  const _isQual = !!_apiData?.is_qualitative;
+  const _isQuant = !!_apiData?.is_quantitative;
   const _derivedFromFlags = _isQual && _isQuant ? 'both' : _isQual ? 'qualitative' : _isQuant ? 'quantitative' : '';
   const researchApproach = (
     _apiData?.research_approach ||
@@ -393,12 +395,15 @@ const InsightGeneration: React.FC = () => {
     );
   };
 
+  // FIX: only show the loader bar when the card is strictly in 'generating' state.
+  // When the poll resolves and cardStates flips to 'ready', this becomes null
+  // immediately and AnimatePresence unmounts the bar with its exit animation.
   const activeLoaderCard: 'decision' | 'behaviour' | null =
     cardStates.decision === 'generating'
       ? 'decision'
       : cardStates.behaviour === 'generating'
-      ? 'behaviour'
-      : null;
+        ? 'behaviour'
+        : null;
 
   return (
     <div className="ig-page">
@@ -412,9 +417,9 @@ const InsightGeneration: React.FC = () => {
 
       <div className="ig-cards">
         {INSIGHT_CARDS.map((card, i) => {
-          const state        = cardStates[card.id];
+          const state = cardStates[card.id];
           const isGenerating = state === 'generating';
-          const isReady      = state === 'ready';
+          const isReady = state === 'ready';
 
           return (
             <motion.div
@@ -459,6 +464,9 @@ const InsightGeneration: React.FC = () => {
         })}
       </div>
 
+      {/* FIX: bar is only rendered when activeLoaderCard is non-null (i.e. state
+          is 'generating'). The moment a card transitions to 'ready', activeLoaderCard
+          becomes null and AnimatePresence triggers the exit animation. */}
       <AnimatePresence>
         {activeLoaderCard !== null && (
           <OmiLoaderBar cardId={activeLoaderCard} />
