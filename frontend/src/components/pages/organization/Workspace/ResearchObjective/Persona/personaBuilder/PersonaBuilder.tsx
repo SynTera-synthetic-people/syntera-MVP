@@ -1011,36 +1011,41 @@ const PersonaGridCard: React.FC<PersonaGridCardProps> = ({
 
       <div className="pb-card-spacer" />
 
+      {/* ── Card bottom: confidence left, created-by right ── */}
       <div className="pb-card-bottom">
-        <div className="pb-bottom-top-row">
-          <span className="pb-confidence-label">Calibration Confidence:</span>
-          <span className="pb-confidence-value" style={{ color: textColor }}>
-            {confidenceScore !== null ? `${displayScore}%` : '—'}
-          </span>
+        {/* LEFT: confidence label + bar stacked */}
+        <div className="pb-card-bottom-left">
+          <div className="pb-bottom-top-row">
+            <span className="pb-confidence-label">Calibration Confidence:</span>
+            <span className="pb-confidence-value" style={{ color: textColor }}>
+              {confidenceScore !== null ? `${displayScore}%` : '—'}
+            </span>
+          </div>
+          <div className="pb-bottom-bar-row">
+            <div className="pb-confidence-bar-track">
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${Math.min(displayScore, 100)}%` }}
+                transition={{ duration: 1, ease: 'easeOut' }}
+                className={`pb-confidence-bar-fill ${barClass}`}
+              />
+            </div>
+          </div>
         </div>
 
-        <div className="pb-bottom-bar-row">
-          <div className="pb-confidence-bar-track">
-            <motion.div
-              initial={{ width: 0 }}
-              animate={{ width: `${Math.min(displayScore, 100)}%` }}
-              transition={{ duration: 1, ease: 'easeOut' }}
-              className={`pb-confidence-bar-fill ${barClass}`}
-            />
-          </div>
-          <div className="pb-created-col">
-            <span className="pb-created-label">Created By</span>
-            {isAI ? (
-              <span className="pb-created-omi-pill">
-                <span className="pb-omi-pill-avatar">
-                  <img src={omiDarkImg} alt="Omi" className="pb-omi-pill-video" />
-                </span>
-                Omi
+        {/* RIGHT: Created By */}
+        <div className="pb-created-col">
+          <span className="pb-created-label">Created By</span>
+          {isAI ? (
+            <span className="pb-created-omi-pill">
+              <span className="pb-omi-pill-avatar">
+                <img src={omiDarkImg} alt="Omi" className="pb-omi-pill-video" />
               </span>
-            ) : (
-              <span className="pb-created-value">{createdBy}</span>
-            )}
-          </div>
+              Omi
+            </span>
+          ) : (
+            <span className="pb-created-value">{createdBy}</span>
+          )}
         </div>
       </div>
     </motion.div>
@@ -1405,8 +1410,6 @@ const PersonaBuilder: React.FC = () => {
   const [showMethodModal, setShowMethodModal] = useState(false);
 
   const processedPersonaRef = useRef(new Set<string>());
-  // Ref-based guard prevents double-click race: useState update is async,
-  // so two rapid clicks can both pass the isReplicating state check.
   const isReplicatingRef = useRef(false);
   const hasInitializedRef = useRef(false);
 
@@ -1582,20 +1585,9 @@ const PersonaBuilder: React.FC = () => {
     }
   }, [navigate, workspaceId, objectiveId]);
 
-  // ── "Create New Persona" tile click ────────────────────────────────────────
-  //
-  // Tier matrix:
-  //   free at/above limit        → no-op (tile is hidden)
-  //   tier1 at limit             → AddPersonaModal ($49/persona buy-more)
-  //   tier2/others at soft cap   → AddNewPersonaModal (existing paid flow)
-  //   enterprise / enterprise_admin → CreatePersonaMethodModal (Omi | Manual)
-  //   everyone else under limit  → CreatePersonaMethodModal (Omi | Manual)
   const handleGridCreateNew = useCallback(() => {
-    // free: tile is hidden so this should never fire, but guard just in case
     if (isFreeUser && savedPersonasFromAPI.length >= FREE_PERSONA_LIMIT) return;
 
-    // tier1 at limit → buy-more modal
-    // tier2 / enterprise at soft cap → existing paid add modal
     if (isTier1User && savedPersonasFromAPI.length >= personaLimitForTier) {
       setShowAddPersonaModal(true);
       return;
@@ -1606,11 +1598,9 @@ const PersonaBuilder: React.FC = () => {
       return;
     }
 
-    // All other cases (including enterprise at any count) → method selection
     setShowMethodModal(true);
   }, [isFreeUser, isTier1User, isEnterpriseUser, savedPersonasFromAPI.length]);
 
-  // ── Called when user picks "Create with Omi" from the method modal ──────────
   const handleCreateWithOmi = useCallback(() => {
     trigger({ stage: 'persona_builder', event: 'PERSONA_WORKFLOW_LOADED', payload: {} });
 
@@ -1621,32 +1611,30 @@ const PersonaBuilder: React.FC = () => {
       { state: { flow: 'omi' } }
     );
   }, [isFreeUser, isTier1User, isFreeOrTier1, personaLimitForTier, savedPersonasFromAPI.length, generatePersonas, navigate, workspaceId, objectiveId]);
+
   const handleBuildManually = useCallback(() => {
-  if (!isEnterpriseUser) {
-    // shouldn't reach here normally (button is locked in modal),
-    // but guard defensively
-    return;
-  }
-  navigate(
-    `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-builder/manual`,
-    { state: { flow: 'manual', viewOnly: isViewOnly } }
-  );
-}, [isEnterpriseUser, navigate, workspaceId, objectiveId, isViewOnly]);
+    if (!isEnterpriseUser) {
+      return;
+    }
+    navigate(
+      `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-builder/manual`,
+      { state: { flow: 'manual', viewOnly: isViewOnly } }
+    );
+  }, [isEnterpriseUser, navigate, workspaceId, objectiveId, isViewOnly]);
 
-const handleAddNewPersonaConfirm = async (count: number) => {
-  if (!workspaceId || !objectiveId) return;
+  const handleAddNewPersonaConfirm = async (count: number) => {
+    if (!workspaceId || !objectiveId) return;
 
-  try {
-    await personaService.purchasePersonas(workspaceId, objectiveId, count);
-    await refetchPersonaQuota();
-    await queryClient.invalidateQueries({ queryKey: personaKeys.list(workspaceId, objectiveId) });
-    setShowAddNewPersonaModal(false);
-    // Show method selection so user picks "Create with Omi" or "Build Manually"
-    setShowMethodModal(true);
-  } catch (error) {
-    console.error('Failed to add persona credits:', error);
-  }
-};
+    try {
+      await personaService.purchasePersonas(workspaceId, objectiveId, count);
+      await refetchPersonaQuota();
+      await queryClient.invalidateQueries({ queryKey: personaKeys.list(workspaceId, objectiveId) });
+      setShowAddNewPersonaModal(false);
+      setShowMethodModal(true);
+    } catch (error) {
+      console.error('Failed to add persona credits:', error);
+    }
+  };
 
   // ── Replicate handlers ──────────────────────────────────────────────────────
 
@@ -1746,9 +1734,6 @@ const handleAddNewPersonaConfirm = async (count: number) => {
     seedInputs: string
   ) => {
     if (!workspaceId || !objectiveId || selectedPersonaIds.length === 0 || !country) return;
-    // Ref guard: prevents a second invocation while the first is still in flight.
-    // Cannot rely on isReplicating state alone because React state updates are async
-    // and a rapid double-click can bypass the state check.
     if (isReplicatingRef.current) return;
 
     isReplicatingRef.current = true;
@@ -1756,8 +1741,6 @@ const handleAddNewPersonaConfirm = async (count: number) => {
     setReplicateError('');
     setAnchorPreview(null);
 
-    // Fire-and-forget workflow tracking — must NOT affect the replication flow.
-    // Wrapped outside the main try so any throw here is isolated.
     try { trigger({ stage: 'persona_builder', event: 'PERSONA_WORKFLOW_LOADED', payload: {} }); }
     catch (e) { console.warn('Workflow trigger failed (non-critical):', e); }
 
@@ -1776,8 +1759,6 @@ const handleAddNewPersonaConfirm = async (count: number) => {
         return;
       }
 
-      // allSettled: if the user selected multiple personas and one fails,
-      // we still complete the ones that succeeded instead of failing everything.
       const results = await Promise.allSettled(
         selectedPersonaIds.map(personaId =>
           personaService.replicatePersona(
@@ -1796,13 +1777,11 @@ const handleAddNewPersonaConfirm = async (count: number) => {
       const failed = results.filter(r => r.status === 'rejected');
 
       if (succeeded.length === 0) {
-        // Every request failed — show error, keep modal open
         const reason = (failed[0] as PromiseRejectedResult).reason;
         setReplicateError(extractReplicationError(reason));
         return;
       }
 
-      // At least one succeeded
       if (failed.length > 0) {
         console.warn(`${failed.length} of ${results.length} replication(s) failed.`);
       }
@@ -1811,7 +1790,6 @@ const handleAddNewPersonaConfirm = async (count: number) => {
       setReplicatePreSelectedPersona(null);
       setReplicateError('');
 
-      // Refresh persona list so the replicated card appears on the builder grid.
       await queryClient.invalidateQueries({
         queryKey: personaKeys.list(workspaceId, objectiveId),
       });
@@ -1862,7 +1840,6 @@ const handleAddNewPersonaConfirm = async (count: number) => {
     try {
       const usablePersonaCount = savedPersonasFromAPI.filter(p => p?.calibration_status !== "draft").length;
       if (usablePersonaCount >= personaLimitForTier) {
-        // Existing personas are reusable once the tier limit is reached.
         setShowGrid(true);
         return;
       }
@@ -2296,7 +2273,6 @@ const handleAddNewPersonaConfirm = async (count: number) => {
           isViewOnly={isViewOnly}
         />
 
-        {/* ── Create Persona Method Modal (enterprise / enterprise_admin) ── */}
         <CreatePersonaMethodModal
           show={showMethodModal}
           onClose={() => setShowMethodModal(false)}
@@ -2341,7 +2317,6 @@ const handleAddNewPersonaConfirm = async (count: number) => {
           onConfirm={handleConfirmDeletePersona}
         />
 
-        {/* ── Buy-more personas modal (tier1 users at limit) ── */}
         {workspaceId && objectiveId && (
           <AddPersonaModal
             isOpen={showAddPersonaModal}
@@ -2368,7 +2343,6 @@ const handleAddNewPersonaConfirm = async (count: number) => {
           />
         )}
 
-        {/* ── Download modal ── */}
         <DownloadPersonaCardModal
           show={showDownloadModal}
           personas={savedPersonasFromAPI}
@@ -2376,7 +2350,6 @@ const handleAddNewPersonaConfirm = async (count: number) => {
           onDownload={handleDownloadPersonaCards}
         />
 
-        {/* ── Download success toast ── */}
         {showDownloadToast && (
           <DownloadSuccessToast onClose={() => setShowDownloadToast(false)} />
         )}
@@ -2384,7 +2357,6 @@ const handleAddNewPersonaConfirm = async (count: number) => {
     );
   }
 
-  // ── Trait builder view (currently commented out in original) ────────────────
   return null;
 };
 

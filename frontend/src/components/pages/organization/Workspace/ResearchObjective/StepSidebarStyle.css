@@ -3,8 +3,8 @@
 .step-sidebar {
   width: 16rem;
   min-width: 16rem;
-  height: 100vh;  
-  background: #000000;
+  height: 100vh;
+  background: #060606;
   border-right: 1px solid rgba(255, 255, 255, 0.06);
   display: flex;
   flex-direction: column;

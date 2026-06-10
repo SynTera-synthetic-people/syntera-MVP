@@ -14,8 +14,12 @@ interface Message {
 interface PillAnchor {
   /** Distance from viewport bottom to the TOP of the selection. Floater bottom = this + gap. */
   bottom: number;
-  /** Distance from viewport left, centred over selection. */
+  /** Distance from viewport left — left edge of the floater panel/pill. */
   left: number;
+  /** Arrow offset from the left edge of the floater — points at selection centre. */
+  arrowOffset: number;
+  /** The centre X of the selection in viewport coords — used to recompute arrowOffset after panel expands. */
+  selectionCentreX: number;
 }
 
 interface SummaryRefineBubbleProps {
@@ -37,15 +41,48 @@ const SummaryRefineBubble: React.FC<SummaryRefineBubbleProps> = ({
   onRefine,
   renderMessageContent,
 }) => {
-  const textAreaRef = useRef<HTMLDivElement>(null);
-  const pillRef     = useRef<HTMLDivElement>(null);
-  const inputRef    = useRef<HTMLInputElement>(null);
+  const textAreaRef    = useRef<HTMLDivElement>(null);
+  const pillRef        = useRef<HTMLDivElement>(null);
+  const inputRef       = useRef<HTMLInputElement>(null);
+  // Saved range — lets us restore the highlight after the pill steals focus
+  const savedRangeRef  = useRef<Range | null>(null);
+  // Fake-highlight <mark> element injected into the DOM
+  const markRef        = useRef<HTMLElement | null>(null);
 
   const [selectedText, setSelectedText] = useState<string>("");
   const [anchor,       setAnchor]       = useState<PillAnchor | null>(null);
   const [inputOpen,    setInputOpen]    = useState<boolean>(false);
   const [instruction,  setInstruction]  = useState<string>("");
   const [status,       setStatus]       = useState<"idle" | "sending" | "sent">("idle");
+
+  // ── Fake highlight helpers ────────────────────────────────────────────────
+
+  /** Wrap the saved range in a <mark class="srb-highlight"> so the selection
+   *  stays visible even after the native selection is cleared by button clicks. */
+  const applyFakeHighlight = useCallback(() => {
+    removeFakeHighlight();
+    const range = savedRangeRef.current;
+    if (!range) return;
+    try {
+      const mark = document.createElement("mark");
+      mark.className = "srb-highlight";
+      range.surroundContents(mark);
+      markRef.current = mark;
+    } catch {
+      // surroundContents throws if the range crosses element boundaries — safe to ignore
+    }
+  }, []);
+
+  /** Unwrap the <mark> and restore its text content in-place. */
+  const removeFakeHighlight = useCallback(() => {
+    const mark = markRef.current;
+    if (!mark || !mark.parentNode) return;
+    const parent = mark.parentNode;
+    while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+    parent.removeChild(mark);
+    parent.normalize();
+    markRef.current = null;
+  }, []);
 
   // ── Show pill on pointerup ────────────────────────────────────────────────
 
@@ -65,25 +102,49 @@ const SummaryRefineBubble: React.FC<SummaryRefineBubbleProps> = ({
       const rangeRect = range.getBoundingClientRect();
       if (!rangeRect.width && !rangeRect.height) return;
 
+      // Save the range so we can restore highlight after button clicks
+      savedRangeRef.current = range.cloneRange();
+
       const vpWidth  = window.innerWidth;
       const vpHeight = window.innerHeight;
 
-      // Centre pill over selection; clamp to viewport edges (use panel width
-      // for clamping so the wider panel doesn't clip when it opens)
-      let left = rangeRect.left + rangeRect.width / 2 - PILL_WIDTH / 2;
+      // Centre the selection — used to point the arrow
+      const selectionCentreX = rangeRect.left + rangeRect.width / 2;
+
+      // Position floater left edge: try to centre pill over selection,
+      // clamp so the wider panel never clips the viewport edge
+      let left = selectionCentreX - PILL_WIDTH / 2;
       left = Math.max(8, Math.min(left, vpWidth - PANEL_WIDTH - 8));
 
-      // bottom = distance from viewport bottom to TOP of selection + gap
-      // → floater bottom edge sits exactly GAP px above the selection top
+      // Arrow offset = how far the selection centre is from the floater's left edge
+      const arrowOffset = Math.max(12, Math.min(selectionCentreX - left, PANEL_WIDTH - 12));
+
+      // bottom = viewport bottom → TOP of selection + gap
       const bottom = vpHeight - rangeRect.top + GAP;
 
       setSelectedText(raw);
-      setAnchor({ bottom, left });
+      setAnchor({ bottom, left, arrowOffset, selectionCentreX });
       setInputOpen(false);
       setInstruction("");
       setStatus("idle");
     });
   }, [isLocked]);
+
+  // Apply fake highlight as soon as anchor is set (pill appears)
+  useEffect(() => {
+    if (anchor) {
+      applyFakeHighlight();
+      // Clear native selection — highlight is now handled by the <mark>
+      window.getSelection()?.removeAllRanges();
+    } else {
+      removeFakeHighlight();
+    }
+  }, [anchor, applyFakeHighlight, removeFakeHighlight]);
+
+  // Recalculate arrow offset when panel expands (pill → panel width change)
+  const arrowOffset = anchor
+    ? Math.max(12, Math.min(anchor.selectionCentreX - anchor.left, (inputOpen ? PANEL_WIDTH : PILL_WIDTH) - 12))
+    : 0;
 
   // ── Dismiss on outside click ──────────────────────────────────────────────
 
@@ -119,6 +180,8 @@ const SummaryRefineBubble: React.FC<SummaryRefineBubbleProps> = ({
   // ── Dismiss ───────────────────────────────────────────────────────────────
 
   const dismiss = () => {
+    removeFakeHighlight();
+    savedRangeRef.current = null;
     setAnchor(null);
     setSelectedText("");
     setInputOpen(false);
@@ -148,9 +211,6 @@ const SummaryRefineBubble: React.FC<SummaryRefineBubbleProps> = ({
     }
   };
 
-  const previewText =
-    selectedText.length > 60 ? selectedText.slice(0, 57) + "…" : selectedText;
-
   // ── Portal ────────────────────────────────────────────────────────────────
 
   const portal = anchor
@@ -177,7 +237,8 @@ const SummaryRefineBubble: React.FC<SummaryRefineBubbleProps> = ({
                   <TbSparkles size={12} />
                   <span>Explore another angle</span>
                 </button>
-                <div className="srb-arrow" />
+                {/* Arrow points at selection centre */}
+                <div className="srb-arrow" style={{ marginLeft: arrowOffset - 6 }} />
               </>
             ) : (
               /* ── Step 2: Input panel ── */
@@ -242,8 +303,8 @@ const SummaryRefineBubble: React.FC<SummaryRefineBubbleProps> = ({
                   )}
                 </AnimatePresence>
 
-                {/* Arrow — always last so it sits at the bottom */}
-                <div className="srb-arrow" />
+                {/* Arrow — points at selection centre */}
+                <div className="srb-arrow" style={{ marginLeft: arrowOffset - 6 }} />
               </motion.div>
             )}
           </motion.div>

@@ -90,7 +90,9 @@ const ResearchObjectiveLayoutInner: React.FC = () => {
       />
 
       <div className="rol-content">
-        <Outlet />
+        <div className="rol-page-inner">
+          <Outlet />
+        </div>
       </div>
 
     </div>
