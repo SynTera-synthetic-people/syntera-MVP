@@ -3,12 +3,13 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { motion } from 'framer-motion';
 import { TbLock, TbAlertTriangle, TbCheck } from 'react-icons/tb';
+import SpIcon from '../../SPIcon';
 import { authService } from '../../../services/authService';
 import { setCredentials } from '../../../redux/slices/authSlice';
 import { buildAuthUser, getPostLoginPath } from '../../../utils/authRouting';
 import HalfGlobe from '../Login/HalfGlobe';
 import Logo from '../../common/Logo';
-import './changePassword.css';
+import './ChangePassword.css';
 
 interface AuthState {
   user: {
@@ -27,6 +28,12 @@ interface FormState {
   confirmPassword: string;
 }
 
+interface VisibilityState {
+  currentPassword: boolean;
+  newPassword: boolean;
+  confirmPassword: boolean;
+}
+
 const ChangePassword: React.FC = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
@@ -39,6 +46,11 @@ const ChangePassword: React.FC = () => {
     newPassword: '',
     confirmPassword: '',
   });
+  const [showPassword, setShowPassword] = useState<VisibilityState>({
+    currentPassword: false,
+    newPassword: false,
+    confirmPassword: false,
+  });
   const [error, setError] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
@@ -46,6 +58,10 @@ const ChangePassword: React.FC = () => {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
     setError('');
+  };
+
+  const toggleVisibility = (field: keyof VisibilityState) => {
+    setShowPassword((prev) => ({ ...prev, [field]: !prev[field] }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -135,42 +151,75 @@ const ChangePassword: React.FC = () => {
               <label>
                 Current (Temporary) Password <span>*</span>
               </label>
-              <input
-                type="password"
-                name="currentPassword"
-                value={form.currentPassword}
-                onChange={handleChange}
-                disabled={isSubmitting}
-                placeholder="Enter the temporary password"
-              />
+              <div className="input-wrapper">
+                <input
+                  type={showPassword.currentPassword ? 'text' : 'password'}
+                  name="currentPassword"
+                  value={form.currentPassword}
+                  onChange={handleChange}
+                  disabled={isSubmitting}
+                  placeholder="Enter the temporary password"
+                />
+                <button
+                  type="button"
+                  className="toggle-visibility-btn"
+                  onClick={() => toggleVisibility('currentPassword')}
+                  tabIndex={-1}
+                  aria-label={showPassword.currentPassword ? 'Hide password' : 'Show password'}
+                >
+                  <SpIcon name={showPassword.currentPassword ? 'sp-Edit-Hide' : 'sp-Edit-Show'} />
+                </button>
+              </div>
             </div>
 
             <div className="form-group">
               <label>
                 New Password <span>*</span>
               </label>
-              <input
-                type="password"
-                name="newPassword"
-                value={form.newPassword}
-                onChange={handleChange}
-                disabled={isSubmitting}
-                placeholder="Min 8 chars, uppercase, lowercase, number"
-              />
+              <div className="input-wrapper">
+                <input
+                  type={showPassword.newPassword ? 'text' : 'password'}
+                  name="newPassword"
+                  value={form.newPassword}
+                  onChange={handleChange}
+                  disabled={isSubmitting}
+                  placeholder="Min 8 chars, uppercase, lowercase, number"
+                />
+                <button
+                  type="button"
+                  className="toggle-visibility-btn"
+                  onClick={() => toggleVisibility('newPassword')}
+                  tabIndex={-1}
+                  aria-label={showPassword.newPassword ? 'Hide password' : 'Show password'}
+                >
+                  <SpIcon name={showPassword.newPassword ? 'sp-Edit-Hide' : 'sp-Edit-Show'} />
+                </button>
+              </div>
             </div>
 
             <div className="form-group">
               <label>
                 Confirm New Password <span>*</span>
               </label>
-              <input
-                type="password"
-                name="confirmPassword"
-                value={form.confirmPassword}
-                onChange={handleChange}
-                disabled={isSubmitting}
-                placeholder="Repeat new password"
-              />
+              <div className="input-wrapper">
+                <input
+                  type={showPassword.confirmPassword ? 'text' : 'password'}
+                  name="confirmPassword"
+                  value={form.confirmPassword}
+                  onChange={handleChange}
+                  disabled={isSubmitting}
+                  placeholder="Repeat new password"
+                />
+                <button
+                  type="button"
+                  className="toggle-visibility-btn"
+                  onClick={() => toggleVisibility('confirmPassword')}
+                  tabIndex={-1}
+                  aria-label={showPassword.confirmPassword ? 'Hide password' : 'Show password'}
+                >
+                  <SpIcon name={showPassword.confirmPassword ? 'sp-Edit-Hide' : 'sp-Edit-Show'} />
+                </button>
+              </div>
             </div>
 
             {error && (
