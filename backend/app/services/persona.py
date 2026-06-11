@@ -589,6 +589,116 @@ def persona_to_dict(p: Persona, creator_full_name: Optional[str] = None) -> dict
         # deployments do not require new persona table columns.
         "replication_mode": persona_details.get("replication_mode"),
         "replication_artifacts": persona_details.get("replication_artifacts"),
+
+        # ✅ NEW: Card Display Fields (Evidence & Triggers)
+        "functional_triggers": (
+            persona_details.get("triggers_opportunities", {}).get("functional_triggers", [])
+            if isinstance(persona_details.get("triggers_opportunities"), dict)
+            else []
+        ),
+        "emotional_triggers": (
+            persona_details.get("triggers_opportunities", {}).get("emotional_triggers", [])
+            if isinstance(persona_details.get("triggers_opportunities"), dict)
+            else []
+        ),
+        "situational_triggers": (
+            persona_details.get("triggers_opportunities", {}).get("situational_triggers", [])
+            if isinstance(persona_details.get("triggers_opportunities"), dict)
+            else []
+        ),
+        "promotional_triggers": (
+            persona_details.get("triggers_opportunities", {}).get("promotional_triggers", [])
+            if isinstance(persona_details.get("triggers_opportunities"), dict)
+            else []
+        ),
+        
+        # Barriers
+        "structural_barriers": (
+            persona_details.get("barriers_pain_points", {}).get("structural", [])
+            if isinstance(persona_details.get("barriers_pain_points"), dict)
+            else []
+        ),
+        "psychological_barriers": (
+            persona_details.get("barriers_pain_points", {}).get("psychological", [])
+            if isinstance(persona_details.get("barriers_pain_points"), dict)
+            else []
+        ),
+        "emotional_barriers": (
+            persona_details.get("barriers_pain_points", {}).get("emotional", [])
+            if isinstance(persona_details.get("barriers_pain_points"), dict)
+            else []
+        ),
+        "category_specific_barriers": (
+            persona_details.get("barriers_pain_points", {}).get("category_specific", [])
+            if isinstance(persona_details.get("barriers_pain_points"), dict)
+            else []
+        ),
+        
+        # Decision & Behavior
+        "switching_tendency": persona_details.get("switching_tendency"),
+        "category_awareness": persona_details.get("category_awareness"),
+        
+        # Media & Digital (already have some, but ensure exposed)
+        # media_consumption_patterns: already exposed ✓
+        # digital_behaviour: already exposed ✓
+        
+        # Evidence & Sources
+        "reference_sites_with_usage": persona_details.get("reference_sites_with_usage", []),
+        "evidence_snapshot": persona_details.get("evidence_snapshot"),
+        
+        # Flattened evidence fields for easy frontend access
+        "sources_breakdown": (
+            persona_details.get("evidence_snapshot", {}).get("sources", [])
+            if isinstance(persona_details.get("evidence_snapshot"), dict)
+            else []
+        ),
+        "total_conversations_analyzed": (
+            persona_details.get("evidence_snapshot", {}).get("total_conversations", 0)
+            if isinstance(persona_details.get("evidence_snapshot"), dict)
+            else 0
+        ),
+        "evidence_confidence_score": (
+            persona_details.get("evidence_snapshot", {})
+            .get("confidence_calculation_detail", {})
+            .get("value")
+            if isinstance(persona_details.get("evidence_snapshot"), dict)
+            else None
+        ),
+        "evidence_confidence_level": (
+            persona_details.get("evidence_snapshot", {})
+            .get("confidence_calculation_detail", {})
+            .get("level")
+            if isinstance(persona_details.get("evidence_snapshot"), dict)
+            else None
+        ),
+        "evidence_source": (
+            persona_details.get("evidence_snapshot", {}).get("evidence_source", "evidence_based")
+            if isinstance(persona_details.get("evidence_snapshot"), dict)
+            else "evidence_based"
+        ),
+        "recency_percentage": (
+            persona_details.get("evidence_snapshot", {})
+            .get("timeframe", {})
+            .get("recent_activity", {})
+            .get("percentage")
+            if isinstance(persona_details.get("evidence_snapshot"), dict)
+            else None
+        ),
+        "recency_months": (
+            persona_details.get("evidence_snapshot", {})
+            .get("timeframe", {})
+            .get("recent_activity", {})
+            .get("months")
+            if isinstance(persona_details.get("evidence_snapshot"), dict)
+            else None
+        ),
+        "months_analyzed": (
+            persona_details.get("evidence_snapshot", {})
+            .get("timeframe", {})
+            .get("months_analyzed")
+            if isinstance(persona_details.get("evidence_snapshot"), dict)
+            else None
+        ),
     }
 
 async def get_persona(persona_id: str) -> Optional[dict]:
@@ -2138,6 +2248,21 @@ values as provided legacy placeholders and return the full success JSON.
         merged.update(enriched)
         merged["auto_fill_report"] = auto_fill_report
         merged["confidence_scoring"] = confidence_scoring
+        # Add evidence_snapshot for manual personas (consistent structure)
+        merged["evidence_snapshot"] = {
+            "evidence_source": "manual_build_mode",
+            "total_conversations": 0,
+            "sources": [],
+            "confidence_calculation_detail": {
+                "level": confidence_scoring.get("confidence_level", "Medium"),
+                "value": confidence_scoring.get("weighted_score", 0.5),
+            },
+            "timeframe": {
+                "months_analyzed": None,
+                "recent_activity": {"months": None, "percentage": None}
+            }
+        }
+        merged["reference_sites_with_usage"] = []
         p.persona_details = merged
 
         session.add(p)
