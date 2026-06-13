@@ -25,22 +25,8 @@ interface Persona {
     [key: string]: unknown;
 }
 
-interface InterviewLoaderStep {
-    label: string;
-}
-
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const LOADER_STEPS: InterviewLoaderStep[] = [
-    { label: 'Initiating Interviews...' },
-    { label: 'Capturing Responses...' },
-    { label: 'Probing Behavioral Depth...' },
-    { label: 'Resolving Contradictions...' },
-    { label: 'Structuring Transcripts...' },
-];
-
-const TOTAL_STEPS = LOADER_STEPS.length;
-const STEP_MS = 5_000;
 const RING_RADIUS = 54;
 const RING_CIRC = 2 * Math.PI * RING_RADIUS;
 
@@ -138,50 +124,71 @@ const RunningInterviews: React.FC = () => {
 
     const startInterviewMutation = useStartInterview(workspaceId, objectiveId);
 
-    const [currentStep, setCurrentStep] = useState<number>(0);
-    const [done, setDone] = useState<boolean>(false);
-    const [activePersonaIndex, setActivePersonaIndex] = useState<number>(0);
+    // currentPersonaIndex: which persona is currently being interviewed (set before each API call)
+    // completedCount: how many personas have finished (success or fail), set after each API call
+    const [currentPersonaIndex, setCurrentPersonaIndex] = useState<number>(0);
+    const [completedCount, setCompletedCount] = useState<number>(0);
+    const [interviewsComplete, setInterviewsComplete] = useState<boolean>(false);
+    const [interviewError, setInterviewError] = useState<boolean>(false);
 
-    const ringProgress = ((currentStep + 1) / TOTAL_STEPS) * 100;
+    const total = personas.length || 1;
+    const ringProgress = (completedCount / total) * 100;
+    const currentPersona = personas[currentPersonaIndex];
 
-    const runInterviewsInBackground = useCallback(async () => {
-        if (!personas.length || !objectiveId) return;
-        trigger({ stage: 'qualitative_exploration', event: 'INTERVIEWS_STARTED', payload: {} });
-        for (const persona of personas) {
-            try {
-                await startInterviewMutation.mutateAsync({ personaId: persona.id });
-            } catch (err) {
-                console.error(`Interview failed for persona ${persona.id}:`, err);
-            }
+    const runInterviews = useCallback(async () => {
+        if (!personas.length || !objectiveId) {
+            setInterviewsComplete(true);
+            return;
         }
+        trigger({ stage: 'qualitative_exploration', event: 'INTERVIEWS_STARTED', payload: {} });
+        let successCount = 0;
+        for (let i = 0; i < personas.length; i++) {
+            setCurrentPersonaIndex(i);
+            try {
+                await startInterviewMutation.mutateAsync({ personaId: personas[i].id });
+                successCount++;
+            } catch (err) {
+                console.error(`Interview failed for persona ${personas[i].id}:`, err);
+            }
+            setCompletedCount(i + 1);
+        }
+        if (successCount === 0) setInterviewError(true);
+        setInterviewsComplete(true);
     }, [personas, objectiveId]); // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => {
-        if (personas.length > 0) runInterviewsInBackground();
+        if (personas.length > 0) runInterviews();
     }, [personas.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
+    // Navigate once all API calls are done (and at least one succeeded).
     useEffect(() => {
-        if (done) return;
-        const timer = setTimeout(() => {
-            if (currentStep < TOTAL_STEPS - 1) {
-                setCurrentStep((s) => s + 1);
-                setActivePersonaIndex((i) => (i + 1) % Math.max(personas.length, 1));
-            } else {
-                setDone(true);
-                setTimeout(() => {
-                    if (objectiveId) localStorage.setItem(`qualitative_sub2_${objectiveId}`, '1');
-                    trigger({ stage: 'qualitative_exploration', event: 'INTERVIEWS_COMPLETE', payload: {} });
-                    navigate(
-                        `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/chatview`,
-                        { state: { interviewsDone: true } }
-                    );
-                }, 1_200);
-            }
-        }, STEP_MS);
-        return () => clearTimeout(timer);
-    }, [currentStep, done, personas.length]); // eslint-disable-line react-hooks/exhaustive-deps
+        if (!interviewsComplete || interviewError) return;
+        if (objectiveId) localStorage.setItem(`qualitative_sub2_${objectiveId}`, '1');
+        trigger({ stage: 'qualitative_exploration', event: 'INTERVIEWS_COMPLETE', payload: {} });
+        navigate(
+            `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/chatview`,
+            { state: { interviewsDone: true } }
+        );
+    }, [interviewsComplete, interviewError]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    const step = LOADER_STEPS[currentStep]!;
+    if (interviewError) {
+        return (
+            <div className="ri-page" style={{ justifyContent: 'center', alignItems: 'center', textAlign: 'center', gap: '1.5rem' }}>
+                <h1 className="ri-title">Interview Generation Failed</h1>
+                <p className="ri-subtitle" style={{ color: '#f87171' }}>
+                    All interviews failed to run. This may be a temporary server issue.
+                    Please go back and try starting the interviews again.
+                </p>
+                <button
+                    className="ri-retry-btn"
+                    onClick={() => navigate(-1)}
+                    style={{ marginTop: '1rem', padding: '0.75rem 2rem', borderRadius: '8px', background: '#3b82f6', color: '#fff', border: 'none', cursor: 'pointer', fontSize: '1rem' }}
+                >
+                    ← Go Back &amp; Retry
+                </button>
+            </div>
+        );
+    }
 
     return (
         <div className="ri-page">
@@ -202,7 +209,7 @@ const RunningInterviews: React.FC = () => {
                             key={persona.id}
                             persona={persona}
                             index={index}
-                            isActive={index === activePersonaIndex}
+                            isActive={index === currentPersonaIndex}
                         />
                     ))
                 ) : (
@@ -213,7 +220,7 @@ const RunningInterviews: React.FC = () => {
             </div>
 
             <motion.p
-                key={currentStep}
+                key={currentPersonaIndex}
                 className="ri-statement"
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -231,20 +238,20 @@ const RunningInterviews: React.FC = () => {
                             <video className="ri-omi__video" src={OmiKeyboard} autoPlay loop muted playsInline />
                         </div>
                     </div>
-                    <p className="ri-step-label">Step {currentStep + 1}/{TOTAL_STEPS}</p>
+                    <p className="ri-step-label">Step {currentPersonaIndex + 1}/{personas.length || 1}</p>
                 </div>
                 <div className="ri-loader-card__divider" />
                 <div className="ri-loader-card__right">
                     <AnimatePresence mode="wait">
                         <motion.p
-                            key={currentStep}
+                            key={currentPersonaIndex}
                             className="ri-step-text"
                             initial={{ opacity: 0, y: 6 }}
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: -6 }}
                             transition={{ duration: 0.3 }}
                         >
-                            {step.label}
+                            {currentPersona ? `Interviewing ${currentPersona.name ?? 'Persona'}...` : 'Initializing interviews...'}
                         </motion.p>
                     </AnimatePresence>
                 </div>

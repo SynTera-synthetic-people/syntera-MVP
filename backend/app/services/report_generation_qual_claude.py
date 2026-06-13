@@ -3,11 +3,14 @@ import csv
 import html
 import io
 import json
+import logging
 import os
 import re
 import uuid
 from datetime import datetime
 from typing import List, Optional, Dict, Any
+
+logger = logging.getLogger(__name__)
 
 import markdown
 from dotenv import load_dotenv
@@ -1032,6 +1035,51 @@ def _dedupe_latest_valid_interviews_by_persona(
     return [item["interview"] for item in selected]
 
 
+async def get_valid_interviews_for_exploration(
+    exploration_id: str,
+    interview_id: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Return deduplicated, valid interviews for an exploration.
+
+    When interview_id is provided, returns that single interview (raises ValueError
+    if not found under the exploration). When None, returns the best interview per
+    persona filtered to those with at least one extractable Q&A pair.
+
+    Logs a warning whenever the result is empty so ops can diagnose without reading
+    tracebacks.
+    """
+    rows = await get_interviews_by_exploration_id(exploration_id)
+    raw_total = len(rows)
+
+    if interview_id:
+        matched = [
+            r for r in rows
+            if r.get("interview_id") == interview_id or r.get("id") == interview_id
+        ]
+        if not matched:
+            raise ValueError(
+                f"Interview '{interview_id}' not found under exploration '{exploration_id}'"
+            )
+        logger.info(
+            "interview fetch — exploration=%s interview_id=%s found=%d",
+            exploration_id, interview_id, len(matched),
+        )
+        return matched
+
+    valid = _dedupe_latest_valid_interviews_by_persona(rows)
+    logger.info(
+        "interview fetch — exploration=%s raw=%d valid=%d",
+        exploration_id, raw_total, len(valid),
+    )
+    if not valid:
+        logger.warning(
+            "no valid interviews for exploration=%s (raw_rows=%d); "
+            "interviews may not have run, completed, or contain extractable Q&A",
+            exploration_id, raw_total,
+        )
+    return valid
+
+
 async def call_anthropic(
     payload: dict,
     system_prompt: str,
@@ -1186,44 +1234,7 @@ async def build_llm_payload(
 
     research_objective = await get_description(objective_id)
 
-    interview_results = await get_interviews_by_exploration_id(objective_id)
-
-    if interview_id:
-        interview_results = [
-            i for i in interview_results if i.get("interview_id") == interview_id
-        ]
-
-        if not interview_results:
-            raise ValueError(
-                f"Interview '{interview_id}' not found under exploration '{objective_id}'"
-            )
-
-    # Deduplicate by persona_id: keep the interview with the most Q&A items per persona.
-    # Multiple rows per persona accumulate via force_new=True (Conversation Studio re-sessions
-    # and interview regenerations both bypass the idempotency guard in the interview router).
-    _best_by_persona: Dict[str, Dict] = {}
-    for _iv in interview_results:
-        _pid = _iv.get("persona_id")
-        if not _pid:
-            continue
-        _qa_count = sum(
-            1 for m in (_iv.get("messages") or []) if m.get("role") == "persona"
-        )
-        existing_best = _best_by_persona.get(_pid)
-        if existing_best is None:
-            _best_by_persona[_pid] = {"interview": _iv, "qa_count": _qa_count}
-        elif _qa_count >= existing_best["qa_count"]:
-            _best_by_persona[_pid] = {"interview": _iv, "qa_count": _qa_count}
-
-    raw_total = len(interview_results)
-    interview_results = [v["interview"] for v in _best_by_persona.values()]
-    print(f"[Dedup] raw interview rows={raw_total} → unique personas={len(interview_results)}")
-
-    if not interview_id:
-        interview_results = _dedupe_latest_valid_interviews_by_persona(
-            await get_interviews_by_exploration_id(objective_id)
-        )
-        print(f"[Dedup] valid transcript interviews={len(interview_results)}")
+    interview_results = await get_valid_interviews_for_exploration(objective_id, interview_id)
 
     personas_payload = []
 
@@ -1287,7 +1298,7 @@ async def build_llm_payload(
                 "ground_truth": ground_truth,
             }
         )
-    print("Total Length of Persona: ", len(personas_payload))
+    logger.info("build_llm_payload — exploration=%s personas_with_qa=%d", objective_id, len(personas_payload))
 
     if not personas_payload:
         raise ValueError("No valid interview data found to generate report")
@@ -1704,15 +1715,7 @@ async def generate_qual_transcripts_docx(
     out_path: str,
     interview_id: Optional[str] = None,
 ) -> str:
-    interviews = await get_interviews_by_exploration_id(objective_id)
-
-    if interview_id:
-        interviews = [
-            row for row in interviews
-            if row.get("interview_id") == interview_id or row.get("id") == interview_id
-        ]
-    else:
-        interviews = _dedupe_latest_valid_interviews_by_persona(interviews)
+    interviews = await get_valid_interviews_for_exploration(objective_id, interview_id)
 
     if not interviews:
         raise ValueError("No interviews found for transcript export")

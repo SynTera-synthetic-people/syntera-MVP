@@ -390,10 +390,20 @@ async def _ensure_qual_transcripts_cached(exploration_id: str):
             )
 
     out_path = generate_docx_path(prefix="qual_transcripts")
-    docx_path = await generate_qual_transcripts_docx(
-        objective_id=exploration_id,
-        out_path=out_path,
-    )
+    try:
+        docx_path = await generate_qual_transcripts_docx(
+            objective_id=exploration_id,
+            out_path=out_path,
+        )
+    except ValueError as exc:
+        logger.warning(
+            "transcript export skipped — exploration=%s reason=%s",
+            exploration_id, exc,
+        )
+        raise HTTPException(
+            status_code=422,
+            detail=str(exc) or "No completed interviews found. Run interviews first.",
+        )
     content = _read_file(docx_path)
     return await _store_file_report_cache(
         exploration_id=exploration_id,
