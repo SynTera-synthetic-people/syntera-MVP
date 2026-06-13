@@ -6,7 +6,7 @@ metadata:
   labels:
     app: synth-backend
 spec:
-  replicas: 3
+  replicas: 4
   progressDeadlineSeconds: 1800
   selector:
     matchLabels:
