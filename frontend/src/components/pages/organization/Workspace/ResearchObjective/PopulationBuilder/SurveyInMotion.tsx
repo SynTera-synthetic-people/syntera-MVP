@@ -27,8 +27,6 @@ interface SurveyStepData {
   outcome: string;
 }
 
-// ── Step definitions — exact sequence from spec ───────────────────────────────
-
 const SURVEY_STEPS: SurveyStepData[] = [
   {
     label: 'Context Setup',
@@ -66,13 +64,12 @@ const TICK_MS     = 2_800;
 const RING_RADIUS = 43;
 const RING_CIRC   = 2 * Math.PI * RING_RADIUS;
 
-// ── Component ─────────────────────────────────────────────────────────────────
-
-const SurveyInMotion: React.FC<SurveyInMotionProps> = ({ onSurveyComplete }) => {
-  // globalCheckedCount is the single source of truth — one counter that
-  // increments every TICK_MS, same pattern as PersonaGenerationLoader.
+const SurveyInMotion: React.FC<SurveyInMotionProps> = ({
+  questionnairesLoading,
+  onSurveyComplete,
+}) => {
   const [globalCheckedCount, setGlobalCheckedCount] = useState<number>(0);
-  const [isComplete, setIsComplete] = useState(false);
+  const [isAnimationComplete, setIsAnimationComplete] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const onSurveyCompleteRef = useRef(onSurveyComplete);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -81,10 +78,8 @@ const SurveyInMotion: React.FC<SurveyInMotionProps> = ({ onSurveyComplete }) => 
     onSurveyCompleteRef.current = onSurveyComplete;
   }, [onSurveyComplete]);
 
-  // ── Derived totals ────────────────────────────────────────────────────────
   const totalItems = SURVEY_STEPS.reduce((acc, s) => acc + s.items.length, 0);
 
-  // Which step are we currently in?
   const currentStep = (() => {
     let acc = 0;
     for (let i = 0; i < SURVEY_STEPS.length; i++) {
@@ -100,14 +95,8 @@ const SurveyInMotion: React.FC<SurveyInMotionProps> = ({ onSurveyComplete }) => 
     .slice(0, currentStep)
     .reduce((acc, s) => acc + s.items.length, 0);
 
-  // How many items are done within the current step
   const currentStepItemsDone = globalCheckedCount - itemsBeforeCurrentStep;
 
-  // The index of the currently-active item within this step
-  // (the item that just appeared — not yet ticked)
-  const activeItemIdx = Math.min(currentStepItemsDone, activeStep.items.length - 1);
-
-  // Ring progress = ratio of done items within current step
   const ringProgress = Math.min(
     (currentStepItemsDone / activeStep.items.length) * 100,
     100
@@ -118,14 +107,14 @@ const SurveyInMotion: React.FC<SurveyInMotionProps> = ({ onSurveyComplete }) => 
   // ── Auto-tick ─────────────────────────────────────────────────────────────
   useEffect(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
-    if (isComplete) return;
+    if (isAnimationComplete) return;
 
     intervalRef.current = setInterval(() => {
       setGlobalCheckedCount((prev) => {
         const next = prev + 1;
         if (next >= totalItems) {
           if (intervalRef.current) clearInterval(intervalRef.current);
-          setTimeout(() => setIsComplete(true), 1_000);
+          setTimeout(() => setIsAnimationComplete(true), 1_000);
           return totalItems;
         }
         return next;
@@ -138,18 +127,15 @@ const SurveyInMotion: React.FC<SurveyInMotionProps> = ({ onSurveyComplete }) => 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [totalItems]);
 
-  // ── Navigate when complete ────────────────────────────────────────────────
+  // ── Navigate only when BOTH animation is done AND data has loaded ─────────
   useEffect(() => {
-    if (!isComplete) return;
+    if (!isAnimationComplete) return;
+    if (questionnairesLoading) return; // wait for backend if still in flight
     void onSurveyCompleteRef.current();
-  }, [isComplete]);
+  }, [isAnimationComplete, questionnairesLoading]);
 
-  // ── The single item to display (current active item in the step) ──────────
-  // Once an item is "done" (globalCheckedCount moved past it) we show the
-  // next one. Only ONE item is shown at a time, with a tick if it's done.
-  const displayItemIdx  = Math.min(currentStepItemsDone, activeStep.items.length - 1);
-  const displayItem     = activeStep.items[displayItemIdx] ?? '';
-  // Item is done once the counter has moved past this item's global index
+  const displayItemIdx   = Math.min(currentStepItemsDone, activeStep.items.length - 1);
+  const displayItem      = activeStep.items[displayItemIdx] ?? '';
   const globalDisplayIdx = itemsBeforeCurrentStep + displayItemIdx;
   const displayItemDone  = globalCheckedCount > globalDisplayIdx;
 
@@ -214,7 +200,6 @@ const SurveyInMotion: React.FC<SurveyInMotionProps> = ({ onSurveyComplete }) => 
 
           {/* Right: step title + single-item display */}
           <div className="sim-card-right">
-            {/* Step title animates when step changes */}
             <AnimatePresence mode="wait">
               <motion.div
                 key={`step-title-${currentStep}`}
@@ -228,7 +213,6 @@ const SurveyInMotion: React.FC<SurveyInMotionProps> = ({ onSurveyComplete }) => 
               </motion.div>
             </AnimatePresence>
 
-            {/* Single item — animates out/in as each item changes */}
             <AnimatePresence mode="wait">
               <motion.div
                 key={`item-${currentStep}-${displayItemIdx}`}
@@ -251,7 +235,6 @@ const SurveyInMotion: React.FC<SurveyInMotionProps> = ({ onSurveyComplete }) => 
               </motion.div>
             </AnimatePresence>
 
-            {/* Outcome appears once all items in this step are done */}
             <AnimatePresence>
               {currentStepItemsDone >= activeStep.items.length && (
                 <motion.p

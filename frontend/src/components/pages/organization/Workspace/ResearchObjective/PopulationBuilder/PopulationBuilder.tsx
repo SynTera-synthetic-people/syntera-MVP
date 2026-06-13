@@ -41,12 +41,12 @@ const PopulationBuilder: React.FC = () => {
   const [selectedPersonas, setSelectedPersonas] = useState<SelectedPersona[]>([]);
   const [sampleSizes, setSampleSizes] = useState<SampleSizes>({});
   const [phase, setPhase] = useState<PopulationPhase>('setup');
+  const [surveyError, setSurveyError] = useState<string | null>(null); // ← NEW: track error state
 
-  // Sync survey-in-motion phase with the layout so StepSidebar hides Back
-  // button while the survey simulation is running.
   const { setLoaderActive } = useLoaderActive();
   useEffect(() => { setLoaderActive(phase === 'survey'); }, [phase, setLoaderActive]);
   useEffect(() => () => setLoaderActive(false), [setLoaderActive]);
+
   const [simulationResult, setSimulationResult] = useState<any>(null);
   const [questionnaireData, setQuestionnaireData] = useState<any[]>([]);
   const [simulationId, setSimulationId] = useState<string | null>(null);
@@ -56,8 +56,6 @@ const PopulationBuilder: React.FC = () => {
   const queryClient = useQueryClient();
   const restoredFromServerRef = useRef(false);
   const surveyEnsurePromiseRef = useRef<Promise<string> | null>(null);
-  // Tracks whether the questionnaire has loaded so handleSurveyComplete can
-  // wait for it when the animation finishes before the background job does.
   const questionnaireReadyRef = useRef(false);
 
   const { data: personasData, isLoading: personasLoading } = usePersonas(workspaceId, explorationId);
@@ -93,20 +91,16 @@ const PopulationBuilder: React.FC = () => {
       (section) => Array.isArray(section?.questions) && section.questions.length > 0,
     );
 
-  // Keep the readiness ref in sync so async callbacks can read it without
-  // capturing a stale closure value.
   useEffect(() => {
     questionnaireReadyRef.current = hasQuestionnaireQuestions;
   }, [hasQuestionnaireQuestions]);
 
-  // Mark quant sub-step 1 (Questionnaire Design) done when questionnaire data loads
   useEffect(() => {
     if (explorationId && questionnairesData?.data?.length) {
       localStorage.setItem(`quant_sub1_${explorationId}`, '1');
     }
   }, [questionnairesData, explorationId]);
 
-  // Mark quant sub-step 2 (Population Calibration) done when phase leaves setup
   useEffect(() => {
     if (explorationId && phase !== 'setup') {
       localStorage.setItem(`quant_sub2_${explorationId}`, '1');
@@ -131,11 +125,6 @@ const PopulationBuilder: React.FC = () => {
 
     (async () => {
       try {
-        // ── Fast-path: honour an in-progress Start Survey that survived a remount ──
-        // handleStartSurvey writes activeSurveySim_<explorationId> to sessionStorage
-        // when the population simulation succeeds and clears it once survey simulation
-        // completes.  If the key is present we skip the expensive server scan and lock
-        // directly onto that simulation so the questionnaire polling can finish.
         const SESSION_KEY = `activeSurveySim_${explorationId}`;
         const activeSimId = sessionStorage.getItem(SESSION_KEY);
         console.log('[PB] restoration: sessionStorage activeSimId =', activeSimId);
@@ -171,20 +160,15 @@ const PopulationBuilder: React.FC = () => {
             setPhase('survey');
             return;
           }
-          // Sim not in the list yet — wait for next simulationList update.
           console.log('[PB] restoration: fast-path activeSimId not yet in simulationList, waiting');
           return;
         }
 
-        // ── Normal scan: find the newest sim with a completed survey or questionnaire ──
         const sorted = [...simulationList].sort(
           (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime(),
         );
         const simsToCheck = sorted.slice(0, 5);
 
-        // ── Parallel scan: check questionnaire + survey existence for each sim ──
-        // This finds the newest sim with a COMPLETED survey (questionnaire + survey sim)
-        // so users always land on their latest finished work rather than an in-progress one.
         const checks = await Promise.all(
           simsToCheck.map(async (sim) => {
             try {
@@ -209,13 +193,10 @@ const PopulationBuilder: React.FC = () => {
 
         if (cancelled) return;
 
-        // Pick best candidate: newest sim with both questionnaire AND completed survey.
-        // Fall back to newest sim with questionnaire only (will show survey animation).
         let insightCandidate: { sim: any; qData: any[]; surveyId: string } | null = null;
         let surveyCandidate: { sim: any; qData: any[] } | null = null;
 
         for (const check of checks) {
-          // checks is already sorted newest-first
           if (check.qData.length === 0) continue;
           if (!surveyCandidate) surveyCandidate = { sim: check.sim, qData: check.qData };
           if (check.surveyId) {
@@ -230,7 +211,7 @@ const PopulationBuilder: React.FC = () => {
           surveyCandidate: surveyCandidate?.sim?.id ?? null,
           chosen: candidate?.sim?.id ?? null,
         });
-        if (!candidate) return; // Nothing restorable — stay in setup
+        if (!candidate) return;
 
         restoredFromServerRef.current = true;
 
@@ -297,6 +278,7 @@ const PopulationBuilder: React.FC = () => {
     setSampleSizes(next);
   };
 
+  // ── FIX 1: Navigate to survey phase IMMEDIATELY, run APIs in background ──
   const handleStartSurvey = async () => {
     if (selectedPersonas.length === 0) return;
     if (!workspaceId || !explorationId) return;
@@ -309,12 +291,11 @@ const PopulationBuilder: React.FC = () => {
       explorationId,
     });
 
-    // Lock restoration BEFORE the mutation starts.  The population simulation
-    // takes 30–80 s; without this, React Query background refetches update
-    // simulationList mid-wait, the restoration effect fires while the ref is
-    // still false, and it overwrites simulationResult.id with an old sim ID.
     restoredFromServerRef.current = true;
-    console.log('[PB] handleStartSurvey: restoredFromServerRef locked');
+    setSurveyError(null); // clear any previous error
+
+    // ── Navigate immediately — don't wait for the API ──
+    setPhase('survey');
 
     try {
       const personaIds = selectedPersonas.map((p) => p.id);
@@ -335,8 +316,6 @@ const PopulationBuilder: React.FC = () => {
       });
 
       if (simulationResponse.status === 'success') {
-        // Persist active sim ID across remounts so the restoration fast-path
-        // reattaches to this simulation instead of scanning old ones.
         sessionStorage.setItem(`activeSurveySim_${explorationId}`, simulationResponse.data.id);
 
         console.log('[PB] handleStartSurvey: status=success, simId =', simulationResponse.data?.id);
@@ -344,16 +323,10 @@ const PopulationBuilder: React.FC = () => {
         setSimulationId(simulationResponse.data.id);
         setSurveySimulationId('');
         surveyEnsurePromiseRef.current = null;
-        questionnaireReadyRef.current = false; // new questionnaire incoming
+        questionnaireReadyRef.current = false;
 
-        // Mark sub-step 2 done (Population Calibration confirmed)
         localStorage.setItem(`quant_sub2_${explorationId}`, '1');
-
         trigger({ stage: 'questionnaire', event: 'QUESTIONAIRE_BUILD', payload: {} });
-
-        // Move to survey phase immediately — globe shows while questionnaire generates
-        console.log('[PB] handleStartSurvey: setting phase = survey');
-        setPhase('survey');
 
         console.log('[PB] handleStartSurvey: calling generateQuestionnaire');
         const generateResponse = await generateQuestionnaireMutation.mutateAsync({
@@ -370,16 +343,13 @@ const PopulationBuilder: React.FC = () => {
           full: generateResponse,
         });
 
-        // Questionnaire generation runs as a background job — poll until done so
-        // hasQuestionnaireQuestions becomes true and ensureSurveyRun can fire.
-        // Backend returns job_id (not id) in the questionnaire_generation_job_to_dict shape.
         const genJobId = (generateResponse?.data?.job_id ?? generateResponse?.data?.id) as string | undefined;
         if (generateResponse?.data?.should_poll && genJobId) {
           const jobId = genJobId;
-          const MAX_ATTEMPTS = 40; // 40 × 3 s = 2 min ceiling
+          const MAX_ATTEMPTS = 40;
           let attempts = 0;
           const pollUntilDone = async (): Promise<void> => {
-            if (attempts++ >= MAX_ATTEMPTS) return; // give up gracefully
+            if (attempts++ >= MAX_ATTEMPTS) return;
             try {
               const statusRes = await getQuestionnaireGenerationStatus({
                 workspaceId,
@@ -390,8 +360,6 @@ const PopulationBuilder: React.FC = () => {
               console.log('[PB] questionnaire job poll attempt', attempts, '| status =', status);
               if (status === 'completed') {
                 console.log('[PB] questionnaire job completed, invalidating cache');
-                // Questionnaire is in the DB — refresh the cache so the
-                // useQuestionnaires query picks up the new data.
                 queryClient.invalidateQueries({
                   queryKey: ['questionnaires', workspaceId, explorationId],
                 });
@@ -402,15 +370,16 @@ const PopulationBuilder: React.FC = () => {
                 return pollUntilDone();
               }
             } catch {
-              // swallow transient errors and keep polling
               await new Promise<void>((res) => setTimeout(res, 3_000));
               return pollUntilDone();
             }
           };
-          // Run polling in the background — don't await so the survey
-          // animation can play concurrently.
           void pollUntilDone();
         }
+      } else {
+        // ── FIX 2: simulatePopulation returned non-success — show error, let user retry ──
+        console.error('[PB] handleStartSurvey: simulatePopulation non-success response', simulationResponse);
+        setSurveyError('Population simulation failed. Please go back and try again.');
       }
     } catch (error: any) {
       console.error('[PB] handleStartSurvey: CAUGHT ERROR', {
@@ -419,21 +388,20 @@ const PopulationBuilder: React.FC = () => {
         responseData: error?.response?.data,
         full: error,
       });
+      // ── FIX 3: API threw — show error with retry option instead of trapping user ──
+      setSurveyError('Something went wrong starting the survey. Please go back and try again.');
     }
   };
 
   const getPersonaIdsForSurvey = useCallback(() => {
     const selectedIds = selectedPersonas.map((p) => p.id).filter(Boolean);
     if (selectedIds.length > 0) return selectedIds;
-
     if (Array.isArray(simulationResult?.persona_ids)) {
       return simulationResult.persona_ids.filter(Boolean);
     }
-
     if (Array.isArray(simulationResult?.persona_id)) {
       return simulationResult.persona_id.filter(Boolean);
     }
-
     return [];
   }, [selectedPersonas, simulationResult]);
 
@@ -476,10 +444,8 @@ const PopulationBuilder: React.FC = () => {
         console.error('[PB] ensureSurveyRun: no id in result', result);
         throw new Error('Survey simulation did not return an ID.');
       }
-
       setSurveySimulationId(nextSurveySimulationId);
       localStorage.setItem(`quant_sub3_${explorationId}`, '1');
-      // Survey simulation is now complete — clean up the cross-remount signal.
       sessionStorage.removeItem(`activeSurveySim_${explorationId}`);
       sessionStorage.removeItem(`forceRerun_${explorationId}`);
       setQuestionnaireModified(false);
@@ -517,16 +483,22 @@ const PopulationBuilder: React.FC = () => {
     });
   }, [phase, hasQuestionnaireQuestions, simulationResult?.id, ensureSurveyRun]);
 
+  // ── FIX 4: handleSurveyComplete — on failure go back to setup, never trap user ──
   const handleSurveyComplete = async () => {
     console.log('[PB] handleSurveyComplete: fired', {
       questionnaireReady: questionnaireReadyRef.current,
       surveySimulationId,
       simulationResultId: simulationResult?.id,
     });
+
+    // If there was an error during handleStartSurvey, go back to setup
+    if (surveyError) {
+      setPhase('setup');
+      setSurveyError(null);
+      return;
+    }
+
     try {
-      // If the animation finished before questionnaire generation completed,
-      // wait up to 90 s for it to arrive (polled via refetchInterval + manual
-      // invalidation in handleStartSurvey) before running the survey simulation.
       if (!questionnaireReadyRef.current) {
         const WAIT_MS = 90_000;
         const TICK_MS = 2_000;
@@ -536,6 +508,15 @@ const PopulationBuilder: React.FC = () => {
           waited += TICK_MS;
         }
       }
+
+      // If still not ready after waiting, go back to setup instead of hanging
+      if (!questionnaireReadyRef.current) {
+        console.error('[PB] handleSurveyComplete: questionnaire never became ready after 90s');
+        setSurveyError('Survey setup timed out. Please try again.');
+        setPhase('setup');
+        return;
+      }
+
       console.log('[PB] handleSurveyComplete: questionnaire ready, calling ensureSurveyRun');
       await ensureSurveyRun();
       console.log('[PB] handleSurveyComplete: ensureSurveyRun done, setting phase = insights');
@@ -546,11 +527,14 @@ const PopulationBuilder: React.FC = () => {
         status: error?.response?.status,
         responseData: error?.response?.data,
       });
-      alert('Survey simulation could not be completed. Please try again.');
+      // ── FIX 5: Instead of alert + stuck forever, go back to setup with error ──
+      setSurveyError('Survey simulation could not be completed. Please try again.');
+      setPhase('setup');
     }
   };
 
   const handleEditConfiguration = () => {
+    setSurveyError(null);
     setPhase('setup');
   };
 
@@ -629,6 +613,25 @@ const PopulationBuilder: React.FC = () => {
           />
         )}
       </AnimatePresence>
+
+      {/* ── FIX 6: Error banner shown on setup page after being sent back ── */}
+      {phase === 'setup' && surveyError && (
+        <div style={{
+          position: 'fixed',
+          bottom: '24px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: '#ff4444',
+          color: '#fff',
+          padding: '12px 24px',
+          borderRadius: '8px',
+          fontSize: '14px',
+          zIndex: 9999,
+          boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+        }}>
+          {surveyError}
+        </div>
+      )}
     </div>
   );
 };
