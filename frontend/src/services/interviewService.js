@@ -6,7 +6,8 @@ export const interviewService = {
   startInterview: async (workspaceId, explorationId, personaId, forceNew = false, lightweight = false) => {
     const response = await axiosInstance.post(
       `/workspaces/${workspaceId}/explorations/${explorationId}/in-depth/interviews`,
-      { persona_id: personaId, force_new: forceNew, lightweight }
+      { persona_id: personaId, force_new: forceNew, lightweight },
+      { timeout: 300_000 }, // LLM generation per persona can take 1-3 min; override global 15s timeout
     );
     return response.data;
   },
