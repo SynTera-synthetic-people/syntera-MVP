@@ -89,6 +89,28 @@ const canBuildManually = (tier: string | undefined): boolean => {
   return t === 'enterprise' || t === 'enterprise_admin' || t === 'tier1';
 };
 
+// Maximum number of times a user can refine the research objective summary
+const MAX_SUMMARY_EDITS = 5;
+
+/**
+ * Detects the internal, system-generated "refine summary" prompt that is sent
+ * to Omi via `sendMessage` when the LLM-fallback refinement path runs.
+ *
+ * This prompt is a behind-the-scenes instruction — it must NEVER be rendered
+ * in the conversation thread, whether it's:
+ *   - optimistically appended on the client, or
+ *   - returned back from the backend via conversation history (some backends
+ *     persist every `sendMessage` call as a user-role message).
+ *
+ * Both the outgoing prompt text and the constraints, "Rules:" block, etc.
+ * always include this distinctive marker phrase, so matching on it is a
+ * reliable, low-risk way to filter it out everywhere messages are rendered.
+ */
+const isInternalRefinePrompt = (text: unknown): boolean =>
+  typeof text === 'string' &&
+  text.includes("Here is the current Research Objective Summary in full") &&
+  text.includes("do NOT change any part of it except");
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 const AddResearchObjective: React.FC = () => {
@@ -129,6 +151,24 @@ const AddResearchObjective: React.FC = () => {
   // ── Persona flow lock — true after user clicks Create with Omi or Build Manually ──
   const [personaFlowStarted, setPersonaFlowStarted] = useState(false);
 
+  // ── Summary edit count — capped at MAX_SUMMARY_EDITS, persisted per objective ──
+  const [summaryEditCount, setSummaryEditCount] = useState<number>(0);
+
+  useEffect(() => {
+    if (objectiveId) {
+      const stored = localStorage.getItem(`summary_edit_count_${objectiveId}`);
+      if (stored) setSummaryEditCount(parseInt(stored, 10) || 0);
+    }
+  }, [objectiveId]);
+
+  const incrementSummaryEditCount = useCallback(() => {
+    setSummaryEditCount(prev => {
+      const next = prev + 1;
+      if (objectiveId) localStorage.setItem(`summary_edit_count_${objectiveId}`, String(next));
+      return next;
+    });
+  }, [objectiveId]);
+
   // TanStack Query Hooks
   const {
     data: sessionData,
@@ -159,6 +199,19 @@ const AddResearchObjective: React.FC = () => {
     data: existingPersonasData,
     refetch: refetchExistingPersonas,
   } = usePersonas(workspaceId, objectiveId);
+
+  // ── Derived: do any personas already exist for this objective? ─────────────
+  // Once personas exist, the research objective summary should be permanently
+  // locked from further refinement — even on a fresh page load / revisit.
+  const personasExist = (() => {
+    const data = (existingPersonasData as any)?.data;
+    const arr = Array.isArray(data)
+      ? data
+      : Array.isArray(existingPersonasData)
+        ? existingPersonasData
+        : [];
+    return arr.length > 0;
+  })();
 
   // Redux state
   const {
@@ -194,16 +247,20 @@ const AddResearchObjective: React.FC = () => {
 
   const transformMessages = useCallback((apiMessages: any[]): Message[] => {
     if (!apiMessages || !Array.isArray(apiMessages)) return [];
-    return apiMessages.map((msg: any, index: number) => ({
-      id: msg.id || `msg-${index}`,
-      sender: msg.role === 'omi' ? 'omi' : 'user',
-      text: msg.content,
-      timestamp: new Date(msg.created_at),
-      omiState: msg.omi_state,
-      workflowStage: msg.workflow_stage,
-      messageType: msg.message_type,
-      originalData: msg
-    }));
+    return apiMessages
+      // ── Strip out internal "refine summary" prompts that some backends
+      //    persist as user-role messages — these must never be shown.
+      .filter((msg: any) => !isInternalRefinePrompt(msg?.content))
+      .map((msg: any, index: number) => ({
+        id: msg.id || `msg-${index}`,
+        sender: msg.role === 'omi' ? 'omi' : 'user',
+        text: msg.content,
+        timestamp: new Date(msg.created_at),
+        omiState: msg.omi_state,
+        workflowStage: msg.workflow_stage,
+        messageType: msg.message_type,
+        originalData: msg
+      }));
   }, []);
 
   useEffect(() => {
@@ -314,12 +371,32 @@ const AddResearchObjective: React.FC = () => {
    * 2. LLM fallback for semantic instructions (rephrase, expand, etc.):
    *    Sends a tightly-constrained prompt; the response replaces the summary
    *    bubble text in-place. Still no new thread messages.
+   *
+   *    IMPORTANT: this constrained prompt is an *internal* instruction to
+   *    Omi and must never be rendered as a chat bubble. We deliberately do
+   *    NOT push it into `messages`, and `transformMessages` additionally
+   *    filters it out if the backend ever persists it into conversation
+   *    history (see `isInternalRefinePrompt`).
+   *
+   * Both paths are capped at MAX_SUMMARY_EDITS total refinements per
+   * objective, and are permanently disabled once personas have been
+   * generated for this objective (see `personasExist`).
    */
   const handleRefineRequest = async (
     selectedText: string,
     instruction: string
   ): Promise<void> => {
     if (!sessionId) throw new Error("No active session");
+
+    // ── Hard guards: edit limit + persona lock ──────────────────────────────
+    if (summaryEditCount >= MAX_SUMMARY_EDITS) {
+      setOmiStatus(`You've reached the maximum of ${MAX_SUMMARY_EDITS} edits for this summary.`);
+      return;
+    }
+    if (personasExist || isViewOnly) {
+      setOmiStatus("This research objective is locked — personas have already been created.");
+      return;
+    }
 
     // ── Find the current summary message ────────────────────────────────────
     const summaryMessage = [...messages].reverse().find(m =>
@@ -371,12 +448,18 @@ const AddResearchObjective: React.FC = () => {
         onError: () => setOmiStatus("Save failed — please retry"),
       });
       setOmiStatus("Summary updated");
+      incrementSummaryEditCount();
       return;
     }
 
     // ── LLM fallback for semantic/complex instructions ───────────────────────
     // Constrained prompt: pass the full summary, ask the model to return the
     // complete rewritten text (only the selected passage changed).
+    //
+    // NOTE: this is sent via `sendMessage` so Omi can process it, but it is
+    // an internal instruction — it is NEVER appended to `messages`, and
+    // `transformMessages` filters it out of conversation history too (via
+    // `isInternalRefinePrompt`) in case the backend persists it.
     const prompt =
       `Here is the current Research Objective Summary in full — do NOT change any part of it except the specific passage called out below:\n\n` +
       `---\n${currentSummaryFull}\n---\n\n` +
@@ -415,6 +498,7 @@ const AddResearchObjective: React.FC = () => {
             persistSummaryEdit(updatedText, {
               onError: () => setOmiStatus("Save failed — please retry"),
             });
+            incrementSummaryEditCount();
             resolve();
           } else {
             reject(new Error("Refinement failed"));
@@ -718,8 +802,13 @@ const AddResearchObjective: React.FC = () => {
               </div>
             ) : (
               <>
-                {messages.map((message, index) => {
-                  const isLatestOmi = message.sender === 'omi' && index === lastOmiMessageIndex;
+                {messages
+                  .filter((message) => !isInternalRefinePrompt(message.text))
+                  .map((message, index, filteredMessages) => {
+                  const isLatestOmi = message.sender === 'omi' &&
+                    index === filteredMessages.reduce((lastIdx, msg, idx) =>
+                      msg.sender === 'omi' ? idx : lastIdx, -1
+                    );
                   const isSummary = isSummaryMessage(message);
 
                   return (
@@ -735,10 +824,12 @@ const AddResearchObjective: React.FC = () => {
                         {isSummary ? (
                           <SummaryRefineBubble
                             message={message}
-                            isLocked={personaFlowStarted || isViewOnly}
+                            isLocked={personaFlowStarted || isViewOnly || personasExist}
                             isSending={isSendingMessage || isSubmitting}
                             onRefine={handleRefineRequest}
                             renderMessageContent={renderMessageWithPersonaButton}
+                            editCount={summaryEditCount}
+                            maxEdits={MAX_SUMMARY_EDITS}
                           />
                         ) : (
                           /* ── All other messages ── */

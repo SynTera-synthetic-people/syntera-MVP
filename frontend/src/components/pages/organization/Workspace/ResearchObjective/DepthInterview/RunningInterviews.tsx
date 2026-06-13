@@ -142,13 +142,18 @@ const RunningInterviews: React.FC = () => {
         }
         trigger({ stage: 'qualitative_exploration', event: 'INTERVIEWS_STARTED', payload: {} });
         let successCount = 0;
-        for (let i = 0; i < personas.length; i++) {
+ for (let i = 0; i < personas.length; i++) {
             setCurrentPersonaIndex(i);
+            const persona = personas[i];
+            if (!persona) {
+                setCompletedCount(i + 1);
+                continue;
+            }
             try {
-                await startInterviewMutation.mutateAsync({ personaId: personas[i].id });
+                await startInterviewMutation.mutateAsync({ personaId: persona.id });
                 successCount++;
             } catch (err) {
-                console.error(`Interview failed for persona ${personas[i].id}:`, err);
+                console.error(`Interview failed for persona ${persona.id}:`, err);
             }
             setCompletedCount(i + 1);
         }
