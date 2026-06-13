@@ -1,0 +1,579 @@
+/* MyOrganization.module.css
+   Enterprise Admin Dashboard — Figma-accurate dark theme. */
+
+/* ─── Root ───────────────────────────────────────────────── */
+.root {
+  min-height: 100vh;
+  background: #121317;
+  color: #e8eaf0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* ─── Top Bar ────────────────────────────────────────────── */
+.topBar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 24px;
+  background: rgba(14,17,23,0.95);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.topBarLeft {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.topBarAvatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #1a6cff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.topBarTitle {
+  font-size: 17px;
+  font-weight: 600;
+  color: #e8eaf0;
+  letter-spacing: -0.01em;
+}
+
+.topBarActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.iconBtn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: transparent;
+  color: #a0a8b8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+  flex-shrink: 0;
+}
+.iconBtn:hover {
+  background: rgba(255,255,255,0.06);
+  color: #e8eaf0;
+}
+
+.createBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: #1a6cff;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+  white-space: nowrap;
+}
+.createBtn:hover { background: #1459d9; }
+.createBtn:active { transform: scale(0.98); }
+
+/* CSV button */
+.csvBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  color: #a0a8b8;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+  white-space: nowrap;
+}
+.csvBtn:hover {
+  background: rgba(255,255,255,0.05);
+  color: #e8eaf0;
+}
+
+/* ─── Notification dropdown ──────────────────────────────── */
+.notifWrapper { position: relative; }
+.notifDropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 360px;
+  background: #161b27;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  overflow: hidden;
+  z-index: 200;
+}
+.notifHeader {
+  padding: 14px 20px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #e8eaf0;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  text-align: center;
+}
+.notifItem {
+  padding: 12px 20px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  transition: background 0.15s;
+}
+.notifItem:hover { background: rgba(255,255,255,0.03); }
+.notifItem:last-child { border-bottom: none; }
+.notifContent { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.notifName { font-size: 13px; font-weight: 600; color: #e8eaf0; }
+.notifDesc { font-size: 12px; color: #8a93a6; }
+.notifTime { font-size: 11px; color: #4a5568; }
+.notifRight { display: flex; align-items: center; gap: 8px; flex-shrink: 0; padding-top: 2px; }
+.notifCta {
+  font-size: 12px;
+  color: #00c4a7;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.notifUnread {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #00c4a7;
+  flex-shrink: 0;
+}
+
+/* ─── Banner ─────────────────────────────────────────────── */
+.banner {
+  margin: 16px 24px 0;
+  padding: 12px 16px;
+  background: #121317;
+  border:  1px solid var(--T-GreyScale-Grey-800, #393C45);;
+  border-radius: 10px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  color: #a0a8b8;
+  line-height: 1.5;
+  position: relative;
+  z-index: 1;
+}
+.bannerIcon { margin-top: 1px; color: #5c6880; flex-shrink: 0; }
+
+/* ─── Main content wrapper ───────────────────────────────── */
+.content {
+  padding: 20px 24px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  position: relative;
+  z-index: 1;
+}
+
+/* ─── KPI row (7 cards) ──────────────────────────────────── */
+.kpiRow {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 12px;
+}
+.kpiCard {
+  background: #121317;
+  border: 1px solid var(--T-GreyScale-Grey-800, #393C45);;
+  border-radius: 10px;
+  padding: 14px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+  transition: border-color 0.2s, transform 0.2s;
+}
+.kpiCard:hover {
+  border-color: rgba(26,108,255,0.3);
+  transform: translateY(-2px);
+}
+.kpiValue {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+.kpiValueBlue   { color: #1a6cff; }
+.kpiValueTeal   { color: #00c4a7; }
+.kpiValueIndigo { color: #818cf8; }
+.kpiValueRose   { color: #fb7185; }
+.kpiValueAmber  { color: #fbbf24; }
+.kpiValueEmerald{ color: #34d399; }
+.kpiValuePurple { color: #c084fc; }
+.kpiLabel {
+  font-size: 10px;
+  font-weight: 600;
+  color: #5c6880;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  line-height: 1.3;
+}
+
+/* ─── Combined Usage/Outcome/Economics panel ── */
+.combinedMetricsPanel {
+  background: #121317;
+  border:  1px solid var(--T-GreyScale-Grey-800, #393C45);
+  border-radius: 12px;
+  padding: 18px 20px;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 24px;
+}
+.combinedMetricsPanel .metricPanel {
+  background: transparent;
+  border: none;
+  padding: 0;
+  border-right: 1px solid var(--T-GreyScale-Grey-800, #393C45);
+}
+.combinedMetricsPanel .metricPanel:last-child {
+  border-right: none;
+}
+
+/* ─── Metrics panels row ───────────────────── */
+.metricsRow {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+.metricPanel {
+  padding: 0 24px;
+  border-right: 1px solid #393C45;
+  background: transparent;
+  border-radius: 0;
+}
+.metricPanelTitle {
+  font-size: 12px;
+  font-weight: 500;
+  color: #8a93a6;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.metricItems { display: flex; align-items: flex-start; gap: 24px; flex-wrap: wrap; }
+.metricItem  { display: flex; flex-direction: column; gap: 4px; }
+.metricValue {
+  font-size: 22px;
+  font-weight: 700;
+  color: #e8eaf0;
+  letter-spacing: -0.02em;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  line-height: 1;
+}
+.metricUnit  { font-size: 11px; font-weight: 400; color: #8a93a6; }
+.metricLabel { font-size: 11px; color: #5c6880; line-height: 1.4; max-width: 90px; }
+.trendUp     { color: #00c4a7; font-size: 14px; }
+.trendDown   { color: #ff5757; font-size: 14px; }
+.infoIcon    { color: #4a5568; cursor: pointer; flex-shrink: 0; }
+
+/* ─── Two-column section grid ────────────────────────────── */
+.sectionGrid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+/* ─── Section panel ── */
+.sectionPanel {
+  background: #121317;
+  border: 1px solid var(--T-GreyScale-Grey-800, #393C45);
+  border-radius: 12px;
+  padding: 18px 20px;
+}
+.sectionPanelTitle {
+  font-size: 12px;
+  font-weight: 500;
+  color: #8a93a6;
+  margin-bottom: 14px;
+  letter-spacing: 0.02em;
+}
+
+/* ─── Tab strip (replaces stacked stat cards + charts) ──────
+   The 4 or 5 stat cards are now clickable tabs that switch
+   the single chart rendered below them.                      */
+.tabStrip {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.tabStrip4 { grid-template-columns: repeat(4, 1fr); }
+.tabStrip5 { grid-template-columns: repeat(5, 1fr); }
+
+.tabCard {
+  background: #121317;
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  text-align: left;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.tabCard:hover:not(.tabCardActive) {
+  background: rgba(255,255,255,0.06);
+}
+.tabCardActive {
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(255,255,255,0.18);
+}
+
+.tabValue {
+  font-size: 18px;
+  font-weight: 700;
+  color: #e8eaf0;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.tabLabel {
+  font-size: 10px;
+  color: #5c6880;
+  margin-top: 5px;
+  line-height: 1.4;
+}
+
+/* ─── Chart controls row ─────────────────────────────────── */
+.chartControls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.chartTitle {
+  font-size: 14px;
+  font-weight: 700;
+  color: #e8eaf0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+
+.chartBlockTitleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  gap: 12px;
+}
+.chartBlockTitle {
+  font-size: 16px;
+  font-weight: 700;
+  color: #e8eaf0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+
+.chevron { color: #8a93a6; }
+.periodSelect {
+  background: #121317;
+  border: 1px solid var(--T-GreyScale-Grey-800, #393C45);
+  border-radius: 6px;
+  color: #e8eaf0;
+  font-size: 12px;
+  padding: 5px 24px 5px 10px;
+  cursor: pointer;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238a93a6' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  flex-shrink: 0;
+}
+.periodSelectWide { min-width: 190px; }
+
+/* ─── Chart areas ────────────────────────────────────────── */
+.chartArea    { height: 200px; width: 100%; }
+.chartAreaSm  { height: 180px; width: 100%; }
+
+/* ─── Chart legend ───────────────────────────────────────── */
+.chartLegend {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 10px;
+  justify-content: center;
+}
+.legendItem { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #8a93a6; }
+.legendDot  { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+
+/* ─── Loading / Error ────────────────────────────────────── */
+.loadingState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 80vh;
+  gap: 16px;
+  color: #5c6880;
+}
+.spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid rgba(26,108,255,0.15);
+  border-top-color: #1a6cff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.errorState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 80vh;
+  gap: 12px;
+}
+.retryBtn {
+  padding: 8px 20px;
+  background: #1a6cff;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.errorText { color: #ff5757; font-size: 13px; }
+
+/* ─── CSV Modal ──────────────────────────────────────────── */
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(4px);
+}
+.modal {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  z-index: 110;
+  width: min(100%, 420px);
+  max-height: 90vh;
+  overflow-y: auto;
+  transform: translate(-50%, -50%);
+  background: #161b27;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.6);
+}
+.modalTitle {
+  font-size: 16px;
+  font-weight: 700;
+  color: #e8eaf0;
+  margin-bottom: 6px;
+}
+.modalSubtitle {
+  font-size: 13px;
+  color: #8a93a6;
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+.modalLabel {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: #8a93a6;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 6px;
+}
+.modalSelect {
+  width: 100%;
+  margin-bottom: 16px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 10px;
+  color: #e8eaf0;
+  font-size: 13px;
+  padding: 10px 12px;
+  outline: none;
+  cursor: pointer;
+}
+.modalSelect:disabled { opacity: 0.5; cursor: not-allowed; }
+.modalSelect option { background: #161b27; }
+.modalActions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.modalCancelBtn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.1);
+  color: #a0a8b8;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.modalCancelBtn:hover { background: rgba(255,255,255,0.05); }
+.modalDownloadBtn {
+  padding: 8px 18px;
+  border-radius: 8px;
+  background: #1a6cff;
+  border: none;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.2s;
+}
+.modalDownloadBtn:hover:not(:disabled) { background: #1459d9; }
+.modalDownloadBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+.spinnerSm {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
