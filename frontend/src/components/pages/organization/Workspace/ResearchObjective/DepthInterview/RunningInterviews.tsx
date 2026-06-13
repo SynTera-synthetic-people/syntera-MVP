@@ -2,8 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePersonaBuilder } from '../../../../../../hooks/usePersonaBuilder';
-import { useStartInterview } from '../../../../../../hooks/useInterview';
 import { useOmniWorkflow } from '../../../../../../hooks/useOmiWorkflow';
+import { interviewService } from '../../../../../../services/interviewService';
 import OmiKeyboard from '../../../../../../assets/Omi Animations/OmiKeyboard.mp4';
 import PersonaDynamicAvatar from './PersonaDynamicAvatar';
 import { getAvatarConfig } from './PersonaAvatarUtils';
@@ -24,6 +24,8 @@ interface Persona {
     demographics?: string;
     [key: string]: unknown;
 }
+
+type InterviewStatus = 'pending' | 'active' | 'done' | 'failed';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -52,15 +54,25 @@ const RingProgress: React.FC<{ progress: number }> = ({ progress }) => {
 interface PersonaAvatarProps {
     persona: Persona;
     index: number;
-    isActive: boolean;
+    status: InterviewStatus;
 }
 
-const PersonaAvatar: React.FC<PersonaAvatarProps> = ({ persona, index, isActive }) => {
+const PersonaAvatar: React.FC<PersonaAvatarProps> = ({ persona, index, status }) => {
+    const isActive = status === 'active';
     const config = getAvatarConfig(persona as Record<string, unknown>);
     const accent = config.ringColor;
-
-    // Truncate name to first name only, max 8 chars
     const firstName = (persona.name ?? '').split(' ')[0]?.slice(0, 8) ?? '';
+
+    const ringColor =
+        status === 'done'   ? '#06A17B' :
+        status === 'failed' ? '#ef4444' :
+        accent;
+
+    const ringBoxShadow =
+        isActive            ? `0 0 0 3px ${accent}50, 0 0 20px ${accent}60` :
+        status === 'done'   ? '0 0 12px rgba(6,161,123,0.45)' :
+        status === 'failed' ? '0 0 10px rgba(239,68,68,0.35)' :
+        `0 0 6px ${accent}20`;
 
     return (
         <motion.div
@@ -69,14 +81,13 @@ const PersonaAvatar: React.FC<PersonaAvatarProps> = ({ persona, index, isActive 
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: index * 0.08, duration: 0.4, ease: 'easeOut' }}
         >
-            {/* Ring wrapper */}
             <div
                 className="ri-persona-ring"
                 style={{
-                    borderColor: accent,
-                    boxShadow: isActive
-                        ? `0 0 0 3px ${accent}50, 0 0 20px ${accent}60`
-                        : `0 0 10px ${accent}50`,
+                    borderColor: ringColor,
+                    boxShadow: ringBoxShadow,
+                    opacity: status === 'pending' ? 0.4 : 1,
+                    transition: 'border-color 0.4s, box-shadow 0.4s, opacity 0.4s',
                 }}
             >
                 {isActive && (
@@ -87,7 +98,13 @@ const PersonaAvatar: React.FC<PersonaAvatarProps> = ({ persona, index, isActive 
                     </>
                 )}
 
-                {/* Avatar image or dynamic silhouette */}
+                {/* Status badge — top-right of ring */}
+                {(status === 'done' || status === 'failed') && (
+                    <div className={`ri-status-badge ri-status-badge--${status}`}>
+                        {status === 'done' ? '✓' : '✗'}
+                    </div>
+                )}
+
                 {persona.image ? (
                     <div className="ri-persona-circle">
                         <img src={persona.image} alt={persona.name ?? 'Persona'} className="ri-persona-img" />
@@ -101,7 +118,6 @@ const PersonaAvatar: React.FC<PersonaAvatarProps> = ({ persona, index, isActive 
                 )}
             </div>
 
-            {/* Name label — OUTSIDE the ring, below it */}
             {firstName && (
                 <p className="ri-persona-name">{firstName}</p>
             )}
@@ -122,70 +138,77 @@ const RunningInterviews: React.FC = () => {
     const { personas: fetchedPersonas } = usePersonaBuilder(workspaceId, objectiveId);
     const personas: Persona[] = (fetchedPersonas?.data ?? []) as Persona[];
 
-    const startInterviewMutation = useStartInterview(workspaceId, objectiveId);
-
-    // currentPersonaIndex: which persona is currently being interviewed (set before each API call)
-    // completedCount: how many personas have finished (success or fail), set after each API call
-    const [currentPersonaIndex, setCurrentPersonaIndex] = useState<number>(0);
-    const [completedCount, setCompletedCount] = useState<number>(0);
-    const [interviewsComplete, setInterviewsComplete] = useState<boolean>(false);
-    const [interviewError, setInterviewError] = useState<boolean>(false);
+    // Per-persona status: 'pending' → 'active' → 'done' | 'failed'
+    const [statuses, setStatuses] = useState<InterviewStatus[]>([]);
+    const [interviewsDone, setInterviewsDone] = useState(false);
+    const [failedCount, setFailedCount] = useState(0);
 
     const total = personas.length || 1;
+    const completedCount = statuses.filter(s => s === 'done' || s === 'failed').length;
     const ringProgress = (completedCount / total) * 100;
-    const currentPersona = personas[currentPersonaIndex];
+    const allFailed = interviewsDone && statuses.length > 0 && statuses.every(s => s === 'failed');
+    const partialFail = interviewsDone && failedCount > 0 && !allFailed;
 
     const runInterviews = useCallback(async () => {
-        if (!personas.length || !objectiveId) {
-            setInterviewsComplete(true);
+        if (!personas.length || !workspaceId || !objectiveId) {
+            setInterviewsDone(true);
             return;
         }
+        // All interviews fire simultaneously — all statuses start as 'active'
+        setStatuses(personas.map(() => 'active' as InterviewStatus));
         trigger({ stage: 'qualitative_exploration', event: 'INTERVIEWS_STARTED', payload: {} });
-        let successCount = 0;
- for (let i = 0; i < personas.length; i++) {
-            setCurrentPersonaIndex(i);
-            const persona = personas[i];
-            if (!persona) {
-                setCompletedCount(i + 1);
-                continue;
-            }
-            try {
-                await startInterviewMutation.mutateAsync({ personaId: persona.id });
-                successCount++;
-            } catch (err) {
-                console.error(`Interview failed for persona ${persona.id}:`, err);
-            }
-            setCompletedCount(i + 1);
-        }
-        if (successCount === 0) setInterviewError(true);
-        setInterviewsComplete(true);
-    }, [personas, objectiveId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+        const results = await Promise.allSettled(
+            personas.map((persona, i) =>
+                interviewService
+                    .startInterview(workspaceId, objectiveId, persona.id)
+                    .then((res: unknown) => {
+                        setStatuses(prev => { const n = [...prev]; n[i] = 'done'; return n; });
+                        return res;
+                    })
+                    .catch((err: unknown) => {
+                        setStatuses(prev => { const n = [...prev]; n[i] = 'failed'; return n; });
+                        console.error(`Interview failed for persona ${persona.id}:`, err);
+                        throw err;
+                    })
+            )
+        );
+
+        const failed = results.filter(r => r.status === 'rejected').length;
+        setFailedCount(failed);
+        setInterviewsDone(true);
+    }, [personas, workspaceId, objectiveId]); // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => {
         if (personas.length > 0) runInterviews();
     }, [personas.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // Navigate once all API calls are done (and at least one succeeded).
+    // Navigate when done. Partial failures show a 3s warning before navigating.
     useEffect(() => {
-        if (!interviewsComplete || interviewError) return;
+        if (!interviewsDone || allFailed) return;
         if (objectiveId) localStorage.setItem(`qualitative_sub2_${objectiveId}`, '1');
         trigger({ stage: 'qualitative_exploration', event: 'INTERVIEWS_COMPLETE', payload: {} });
-        navigate(
-            `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/chatview`,
-            { state: { interviewsDone: true } }
-        );
-    }, [interviewsComplete, interviewError]); // eslint-disable-line react-hooks/exhaustive-deps
+        const delay = partialFail ? 3000 : 500;
+        const timer = setTimeout(() => {
+            navigate(
+                `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/chatview`,
+                { state: { interviewsDone: true, failedCount } }
+            );
+        }, delay);
+        return () => clearTimeout(timer);
+    }, [interviewsDone, allFailed, partialFail]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    if (interviewError) {
+    // ── All failed — error screen ─────────────────────────────────────────────
+
+    if (allFailed) {
         return (
             <div className="ri-page" style={{ justifyContent: 'center', alignItems: 'center', textAlign: 'center', gap: '1.5rem' }}>
                 <h1 className="ri-title">Interview Generation Failed</h1>
                 <p className="ri-subtitle" style={{ color: '#f87171' }}>
                     All interviews failed to run. This may be a temporary server issue.
-                    Please go back and try starting the interviews again.
+                    Please go back and try again.
                 </p>
                 <button
-                    className="ri-retry-btn"
                     onClick={() => navigate(-1)}
                     style={{ marginTop: '1rem', padding: '0.75rem 2rem', borderRadius: '8px', background: '#3b82f6', color: '#fff', border: 'none', cursor: 'pointer', fontSize: '1rem' }}
                 >
@@ -195,8 +218,24 @@ const RunningInterviews: React.FC = () => {
         );
     }
 
+    // ── Normal / partial-fail screen ──────────────────────────────────────────
+
     return (
         <div className="ri-page">
+
+            <AnimatePresence>
+                {partialFail && (
+                    <motion.div
+                        className="ri-warning-banner"
+                        initial={{ opacity: 0, y: -12 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.3 }}
+                    >
+                        ⚠ {failedCount} of {personas.length} interview{failedCount !== 1 ? 's' : ''} failed — continuing with successful results.
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             <div className="ri-header">
                 <h1 className="ri-title">Running Interviews</h1>
@@ -214,7 +253,7 @@ const RunningInterviews: React.FC = () => {
                             key={persona.id}
                             persona={persona}
                             index={index}
-                            isActive={index === currentPersonaIndex}
+                            status={statuses[index] ?? 'pending'}
                         />
                     ))
                 ) : (
@@ -225,7 +264,7 @@ const RunningInterviews: React.FC = () => {
             </div>
 
             <motion.p
-                key={currentPersonaIndex}
+                key={completedCount}
                 className="ri-statement"
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -243,20 +282,26 @@ const RunningInterviews: React.FC = () => {
                             <video className="ri-omi__video" src={OmiKeyboard} autoPlay loop muted playsInline />
                         </div>
                     </div>
-                    <p className="ri-step-label">Step {currentPersonaIndex + 1}/{personas.length || 1}</p>
+                    <p className="ri-step-label">
+                        {completedCount}/{personas.length} done
+                    </p>
                 </div>
                 <div className="ri-loader-card__divider" />
                 <div className="ri-loader-card__right">
                     <AnimatePresence mode="wait">
                         <motion.p
-                            key={currentPersonaIndex}
+                            key={interviewsDone ? 'done' : completedCount}
                             className="ri-step-text"
                             initial={{ opacity: 0, y: 6 }}
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: -6 }}
                             transition={{ duration: 0.3 }}
                         >
-                            {currentPersona ? `Interviewing ${currentPersona.name ?? 'Persona'}...` : 'Initializing interviews...'}
+                            {interviewsDone
+                                ? partialFail
+                                    ? `${failedCount} interview${failedCount !== 1 ? 's' : ''} failed — navigating with successful results...`
+                                    : 'All interviews complete. Navigating...'
+                                : `${completedCount} of ${personas.length} interviews complete`}
                         </motion.p>
                     </AnimatePresence>
                 </div>
