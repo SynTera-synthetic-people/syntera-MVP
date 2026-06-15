@@ -27,12 +27,6 @@ interface StepSidebarProps {
   completedSubSteps?: number[];
   completedQuantSubSteps?: number[];
   isViewOnly?: boolean;
-  /**
-   * Pass `true` from any parent page that is currently showing an overlay
-   * loader (DiscussionGuideLoader, QuestionnaireLoader, SurveyInMotion).
-   * Route-based loaders (persona-generating, RunningInterviews) are detected
-   * automatically from the URL so you don't need to pass this for those.
-   */
   hideBack?: boolean;
 }
 
@@ -71,7 +65,9 @@ const STEPS: StepItem[] = [
       { number: 1, label: "Step 1", name: "Questionnaire Design", path: "questionnaire" },
       { number: 2, label: "Step 2", name: "Population Calibration", path: "population-builder" },
       { number: 3, label: "Step 3", name: "Survey Execution", path: "survey-results" },
-      { number: 4, label: "Step 4", name: "Insights Generation", path: "rebuttal-mode" },
+      // Sub-step 4 navigates to population-builder — the insights phase is rendered
+      // inside PopulationBuilder (phase='insights'), there is no separate route.
+      { number: 4, label: "Step 4", name: "Insights Generation", path: "population-builder" },
     ],
   },
 ];
@@ -95,8 +91,7 @@ const getActiveStep = (pathname: string): number => {
   if (
     pathname.includes("population-builder") ||
     pathname.includes("survey-results") ||
-    pathname.includes("questionnaire") ||
-    pathname.includes("rebuttal-mode")
+    pathname.includes("questionnaire")
   ) return 4;
   return 1;
 };
@@ -112,15 +107,18 @@ const getActiveQualSubStep = (pathname: string, currentId?: string): number => {
 };
 
 const getActiveQuantSubStep = (pathname: string, currentId?: string): number => {
-  if (pathname.includes("rebuttal-mode")) return 4;
+  // Sub-step 4 (Insights Generation) lives inside population-builder as a phase.
+  // Since the URL stays at "population-builder", we detect it via localStorage
+  // key quant_sub4 which InsightsGeneration sets on mount.
+  if (pathname.includes("population-builder")) {
+    if (currentId && localStorage.getItem(`quant_sub4_${currentId}`)) return 4;
+    if (currentId && localStorage.getItem(`quant_sub3_${currentId}`)) return 3;
+    if (currentId && localStorage.getItem(`quant_sub2_${currentId}`)) return 2;
+    return 2; // population-builder is always at least sub-step 2
+  }
   if (pathname.includes("survey-results")) {
     if (currentId && localStorage.getItem(`quant_sub3_${currentId}`)) return 4;
     return 3;
-  }
-  if (pathname.includes("population-builder")) {
-    if (currentId && localStorage.getItem(`quant_sub3_${currentId}`)) return 4;
-    if (currentId && localStorage.getItem(`quant_sub2_${currentId}`)) return 3;
-    return 2;
   }
   if (pathname.includes("questionnaire")) return 1;
   return 0;
@@ -171,6 +169,7 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
     if (n === 1) return !!localStorage.getItem(`quantitative_sub1_${currentId}`);
     if (n === 2) return !!localStorage.getItem(`quant_sub2_${currentId}`);
     if (n === 3) return !!localStorage.getItem(`quant_sub3_${currentId}`);
+    if (n === 4) return !!localStorage.getItem(`quant_sub4_${currentId}`); // ← was missing
     return false;
   };
 
@@ -231,13 +230,12 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
     }
 
     if (step.number === 4) {
-      // Navigate to the FIRST incomplete sub-step (forward-first progression).
-      // This prevents jumping ahead to e.g. population-builder when the user
-      // hasn't started questionnaire yet (stale/leftover localStorage keys).
+      // Forward-first: navigate to the earliest incomplete sub-step.
+      // Sub-steps 2, 3 and 4 all live inside population-builder (as phases),
+      // so navigating there lets PopulationBuilder restore the correct phase
+      // from its own localStorage/server restoration logic.
       if (!isQuantSubStepCompleted(1)) go("questionnaire");
-      else if (!isQuantSubStepCompleted(2)) go("population-builder");
-      else if (!isQuantSubStepCompleted(3)) go("survey-results");
-      else go("rebuttal-mode");
+      else go("population-builder"); // covers sub-steps 2, 3 and 4
       return;
     }
 
@@ -309,20 +307,18 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
                   ? (lsStep2Done || !!localStorage.getItem(`approach_${currentId}`) || activeStep >= 3)
                   : step.number === 4
                     ? (
-                      activeStep >= 4 ||                                              // ← was: activeStep === 4
+                      activeStep >= 4 ||
                       !!localStorage.getItem(`qualitative_sub3_${currentId}`) ||
                       localStorage.getItem(`approach_${currentId}`) === 'quantitative'
                     )
                     : false;
 
           const locked = !isStepUnlocked(step.number) && !lsUnlocked;
-
           const showSubSteps = !!step.subSteps && active;
 
           return (
             <div key={step.number} className="step-sidebar__step-group">
 
-              {/* ── Main step row ── */}
               <button
                 className={[
                   "step-sidebar__step",
@@ -352,7 +348,6 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
                 </div>
               </button>
 
-              {/* ── Sub-steps (only shown when this step is active) ── */}
               {showSubSteps && step.subSteps && (
                 <div className="step-sidebar__substeps">
                   {step.subSteps.map((sub) => {
