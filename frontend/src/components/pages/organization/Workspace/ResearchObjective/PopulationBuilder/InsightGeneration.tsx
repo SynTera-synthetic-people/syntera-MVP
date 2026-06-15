@@ -219,7 +219,10 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
   const downloadDecisionMutation = useDownloadQuantDecisionIntelligence();
   const downloadBehaviourMutation = useDownloadQuantBehaviorArchaeology();
 
-  // ── Card states — initialised from localStorage so they survive logout ────
+  // ── Card states ───────────────────────────────────────────────────────────
+  // localStorage is used only to RESTORE "done" state from a prior session so
+  // the "View" button reappears on reload — it does NOT skip the Generate flow
+  // when the user explicitly clicks Generate on an idle card.
   const [cardStates, setCardStates] = useState<Record<string, CardState>>(() => {
     if (!explorationId) return {};
     return INSIGHT_CARDS.reduce<Record<string, CardState>>((acc, card) => {
@@ -340,13 +343,20 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
   const handleAction = async (card: InsightCard) => {
     const state = cardStates[card.id] ?? 'idle';
 
-    // Done + has viewer → open modal
+    // ── "View" click: card already generated, open the modal ─────────────
+    // Only enter this branch when state is 'done' AND the user clicks the
+    // "View" button (button label changes to "View" when done + hasViewer).
+    // The "Generate" button is only rendered when state === 'idle', so there
+    // is no risk of accidentally entering this branch on a Generate click.
     if (state === 'done' && card.hasViewer) {
       setViewingCard(card.id as ViewableCardId);
       return;
     }
 
-    // Playground — no API, mark done instantly
+    // Already generating — ignore double-clicks
+    if (state === 'generating') return;
+
+    // ── Playground — no API, mark done instantly ──────────────────────────
     if (card.id === 'playground') {
       setCardStates((prev) => ({ ...prev, [card.id]: 'generating' }));
       setTimeout(() => {
@@ -356,22 +366,38 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
       return;
     }
 
+    // ── Generate flow for raw / decision / behaviour ──────────────────────
     // Set generating immediately so the loader bar appears right away
     setCardStates((prev) => ({ ...prev, [card.id]: 'generating' }));
 
     try {
-      await ensureSurveySimulationId();
+      // Step 1: make sure the survey simulation exists
+      const simulationId = await ensureSurveySimulationId();
+      const payload = { workspaceId, explorationId, simulationId };
+
+      // Step 2: call the card-specific generation/download mutation
+      if (card.id === 'raw') {
+        await downloadTranscriptsMutation.mutateAsync(payload);
+      } else if (card.id === 'decision') {
+        await downloadDecisionMutation.mutateAsync(payload);
+      } else if (card.id === 'behaviour') {
+        await downloadBehaviourMutation.mutateAsync(payload);
+      }
+
+      // Step 3: mark done
       setCardStates((prev) => ({ ...prev, [card.id]: 'done' }));
       markLsReady(card.id, explorationId);
     } catch (err) {
-      console.error(`Failed to prepare ${card.id}:`, err);
-      const detail = await getAxiosErrorMessage(err, 'Could not prepare this report.');
+      console.error(`Failed to generate ${card.id}:`, err);
+      const detail = await getAxiosErrorMessage(err, 'Could not generate this report.');
       alert(detail);
       setCardStates((prev) => ({ ...prev, [card.id]: 'idle' }));
     }
   };
 
   // ── Modal download ────────────────────────────────────────────────────────
+  // The modal download re-downloads an already-generated report.
+  // It does NOT re-run generation — just fetches the existing artifact again.
 
   const handleModalDownload = async () => {
     if (!viewingCard) return;
@@ -428,7 +454,6 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
   };
 
   const isModalDownloading =
-    ensureSurveySimulationMutation.isPending ||
     downloadTranscriptsMutation.isPending ||
     downloadDecisionMutation.isPending ||
     downloadBehaviourMutation.isPending;

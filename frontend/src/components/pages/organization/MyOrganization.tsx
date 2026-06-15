@@ -32,8 +32,6 @@ import {
   alertQuestionnaireExportError,
 } from "../../../utils/questionnaireExportFlow";
 import {
-  DEPARTMENTS,
-  MONTHS,
   calcAvgTimePerExploration,
   calcCollaborationRate,
   calcAvgPersonaConfidence,
@@ -45,6 +43,8 @@ import {
   calcHumanSampleReduced,
   deptBarMock,
   deptLineMock,
+  wsBarMock,
+  wsLineMock,
   monthStackedMock,
   type LinePoint,
   type DeptPoint,
@@ -168,7 +168,7 @@ interface ApiResponse {
   };
 }
 
-interface Workspace { id: string; name?: string; }
+interface Workspace  { id: string; name?: string; }
 interface Exploration { id: string; title?: string; }
 
 const MONTH_NAMES: string[] = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -176,24 +176,24 @@ const MONTH_NAMES: string[] = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Ju
 // ─── Mock chart data ──────────────────────────────────────────────────────────
 
 const MOCK_CHARTS: DashboardStats["charts"] = {
-  workspacesCreated: deptBarMock(3.1),
-  explorationsLaunched: deptBarMock(5.3),
-  personasCalibrated: monthStackedMock(2.9),
-  reportsDownloaded: deptLineMock(7.1),
-  registeredUsers: deptLineMock(4.2),
-  activeUsers: deptLineMock(4.6),
-  avgTimePerExploration: calcAvgTimePerExploration(),
-  collaborationRate: calcCollaborationRate(),
-  avgPersonaConfidence: calcAvgPersonaConfidence(),
-  populationConfidence: calcAvgPopulationConfidence(),
-  realPeoplesActions: calcAvgRealPeopleActions(),
+  workspacesCreated:         deptBarMock(3.1),
+  explorationsLaunched:      wsBarMock(5.3),
+  personasCalibrated:        monthStackedMock(2.9),
+  reportsDownloaded:         wsLineMock(7.1),
+  registeredUsers:           deptLineMock(4.2),
+  activeUsers:               deptLineMock(4.6),
+  avgTimePerExploration:     calcAvgTimePerExploration(),
+  collaborationRate:         calcCollaborationRate(),
+  avgPersonaConfidence:      calcAvgPersonaConfidence(),
+  populationConfidence:      calcAvgPopulationConfidence(),
+  realPeoplesActions:        calcAvgRealPeopleActions(),
   multiplatformConversation: calcAvgMultiplatformConversation(),
-  credibleSources: calcAvgCredibleSources(),
-  decisionInfluenced: monthStackedMock(6.4),
-  timeSaved: deptLineMock(8.8),
-  researchSpendSaved: deptLineMock(9.3),
-  humanStudiesReplaced: calcHumanStudiesReplaced(),
-  humanSampleReduced: calcHumanSampleReduced(),
+  credibleSources:           calcAvgCredibleSources(),
+  decisionInfluenced:        monthStackedMock(6.4),
+  timeSaved:                 deptLineMock(8.8),
+  researchSpendSaved:        deptLineMock(9.3),
+  humanStudiesReplaced:      calcHumanStudiesReplaced(),
+  humanSampleReduced:        calcHumanSampleReduced(),
 };
 
 const INITIAL_STATS: DashboardStats = {
@@ -212,10 +212,10 @@ const INITIAL_STATS: DashboardStats = {
     researchSpendSaved:   { value: "$000" },
   },
   adoption: {
-    workspacesCreated: 123,
+    workspacesCreated:    123,
     explorationsLaunched: 234,
-    personasCalibrated: 234,
-    reportsDownloaded: 12,
+    personasCalibrated:   234,
+    reportsDownloaded:    12,
   },
   userEngagement: {
     registeredUsers:       { value: "000%" },
@@ -224,27 +224,27 @@ const INITIAL_STATS: DashboardStats = {
     collaborationRate:     { value: "000" },
   },
   conviction: {
-    personaConfidence: { value: "000%" },
-    populationConfidence: 0,
-    realPeoplesActions: 0,
-    multiplatformConversation: 0,
-    credibleSources: 0,
+    personaConfidence:        { value: "000%" },
+    populationConfidence:     0,
+    realPeoplesActions:       0,
+    multiplatformConversation:0,
+    credibleSources:          0,
   },
   valueDelivered: {
-    decisionInfluenced: { value: "000%" },
-    timeSaved:          { value: "000", unit: "hrs" },
-    researchSpendSaved: { value: "000" },
+    decisionInfluenced:   { value: "000%" },
+    timeSaved:            { value: "000", unit: "hrs" },
+    researchSpendSaved:   { value: "000" },
     humanStudiesReplaced: 0,
-    humanSampleReduced: 0,
+    humanSampleReduced:   0,
   },
   kpi: {
-    totalWorkflows: "0",
-    totalExplorations: "0",
-    totalUsers: "81",
-    outcomeInfluenced: "68%",
-    hoursSaved: "487",
-    reportsDownloaded: "0",
-    humanStudiesAvoided: "18",
+    totalWorkflows:     "0",
+    totalExplorations:  "0",
+    totalUsers:         "81",
+    outcomeInfluenced:  "68%",
+    hoursSaved:         "487",
+    reportsDownloaded:  "0",
+    humanStudiesAvoided:"18",
   },
   charts: MOCK_CHARTS,
 };
@@ -270,13 +270,13 @@ function mergeApiData(api: ApiResponse, prev: DashboardStats): DashboardStats {
 
   const exData = mapMonthly(api.active_chart?.explorations_monthly);
   const wsData = mapMonthly(api.active_chart?.workspaces_monthly);
-  const reportsData = mapMonthly(api.active_chart?.report_downloads_monthly);
+  const dlData = mapMonthly(api.active_chart?.report_downloads_monthly);
 
   return {
     ...prev,
     kpi: {
       ...prev.kpi,
-      totalWorkflows: String(api.kpi_cards?.total_workspaces ?? prev.kpi.totalWorkflows),
+      totalWorkflows:    String(api.kpi_cards?.total_workspaces   ?? prev.kpi.totalWorkflows),
       totalExplorations: String(api.kpi_cards?.total_explorations ?? prev.kpi.totalExplorations),
       reportsDownloaded: String(totalDownloads),
     },
@@ -286,7 +286,7 @@ function mergeApiData(api: ApiResponse, prev: DashboardStats): DashboardStats {
         wsData.length > 0 ? wsData.map((p) => ({ dept: p.name, value: p.value })) : prev.charts.workspacesCreated,
       explorationsLaunched:
         exData.length > 0 ? exData.map((p) => ({ dept: p.name, value: p.value })) : prev.charts.explorationsLaunched,
-      reportsDownloaded: reportsData.length > 0 ? reportsData : prev.charts.reportsDownloaded,
+      reportsDownloaded:    dlData.length > 0 ? dlData : prev.charts.reportsDownloaded,
       avgPersonaConfidence: personaConfData,
       populationConfidence: popConfData,
     },
@@ -296,11 +296,11 @@ function mergeApiData(api: ApiResponse, prev: DashboardStats): DashboardStats {
 // ─── Chart shared config ──────────────────────────────────────────────────────
 
 const C = {
-  barBlue:   "#6c7fdb",
+  barBlue:   "#3b7eff",
+  barPurple: "#7c6fdb",
   barTeal:   "#4ecdc4",
-  barPurple: "#9b8cf0",
   line:      "#6c7fdb",
-  grid:      "rgba(255,255,255,0.05)",
+  grid:      "rgba(255,255,255,0.06)",
 } as const;
 
 const TTStyle: React.CSSProperties = {
@@ -311,7 +311,17 @@ const TTStyle: React.CSSProperties = {
   color: "#e8eaf0",
 };
 
-const tickStyle = { fontSize: 10, fill: "#5c6880" } as const;
+const tickStyle      = { fontSize: 10, fill: "#5c6880" } as const;
+const axisLabelStyle = { fontSize: 10, fill: "#5c6880" } as const;
+const axisLabelStyleSm = { fontSize: 9, fill: "#5c6880" } as const;
+
+// ─── Shared chart margins ─────────────────────────────────────────────────────
+// FIX: Increased left margin so Y-axis label has room to render
+// without overlapping the tick values.
+const CHART_MARGIN         = { top: 10, right: 10, left: 36, bottom: 24 } as const;
+const CHART_MARGIN_NO_XLAB = { top: 10, right: 10, left: 36, bottom: 4  } as const;
+// Long Y-axis labels need a little more room
+const CHART_MARGIN_WIDE    = { top: 10, right: 10, left: 44, bottom: 4  } as const;
 
 // ─── Period option types ──────────────────────────────────────────────────────
 
@@ -341,7 +351,7 @@ const HOURS_OPTS: PeriodOption[] = [
   { value: "days",  label: "Days"  },
 ];
 
-// ─── Shared chart header ──────────────────────────────────────────────────────
+// ─── Shared sub-components ────────────────────────────────────────────────────
 
 interface ChartCtrlProps {
   title: string;
@@ -369,27 +379,29 @@ const ChartCtrl: React.FC<ChartCtrlProps> = ({ title, value, onChange, options =
   </div>
 );
 
-const StackedLegend: React.FC<{ a: string; b: string }> = ({ a, b }) => (
+const StackedLegend: React.FC<{ a: string; b: string; colorA?: string; colorB?: string }> = ({
+  a, b, colorA = C.barBlue, colorB = C.barTeal,
+}) => (
   <div className={styles.chartLegend}>
     <div className={styles.legendItem}>
-      <span className={styles.legendDot} style={{ background: C.barBlue }} />{a}
+      <span className={styles.legendDot} style={{ background: colorA }} />{a}
     </div>
     <div className={styles.legendItem}>
-      <span className={styles.legendDot} style={{ background: C.barTeal }} />{b}
+      <span className={styles.legendDot} style={{ background: colorB }} />{b}
     </div>
   </div>
 );
 
-// ─── Notification items ───────────────────────────────────────────────────────
+// ─── Notification dropdown ────────────────────────────────────────────────────
 
 interface NotifItem { id: number; name: string; desc: string; time: string; cta?: boolean; unread?: boolean; }
 
 const NOTIFS: NotifItem[] = [
-  { id: 1, name: "Notification Name", desc: "Notification Name", time: "12:00 AM", cta: true, unread: true },
-  { id: 2, name: "Notification Name", desc: "Notification Name", time: "12:00 AM", unread: true },
-  { id: 3, name: "Notification Name", desc: "Notification Name", time: "12:00 AM" },
-  { id: 4, name: "Notification Name", desc: "Notification Name", time: "12:00 AM" },
-  { id: 5, name: "Notification Name", desc: "Notification Name", time: "12:00 AM" },
+  { id: 1, name: "Notification Name", desc: "Notification Name", time: "12:00 AM", cta: true,  unread: true  },
+  { id: 2, name: "Notification Name", desc: "Notification Name", time: "12:00 AM",             unread: true  },
+  { id: 3, name: "Notification Name", desc: "Notification Name", time: "12:00 AM"                            },
+  { id: 4, name: "Notification Name", desc: "Notification Name", time: "12:00 AM"                            },
+  { id: 5, name: "Notification Name", desc: "Notification Name", time: "12:00 AM"                            },
 ];
 
 const NotifDropdown: React.FC = () => (
@@ -403,11 +415,7 @@ const NotifDropdown: React.FC = () => (
           <span className={styles.notifTime}>{n.time}</span>
         </div>
         <div className={styles.notifRight}>
-          {n.cta && (
-            <span className={styles.notifCta}>
-              Button CTA <TbArrowRight size={12} />
-            </span>
-          )}
+          {n.cta   && <span className={styles.notifCta}>Button CTA <TbArrowRight size={12} /></span>}
           {n.unread && <span className={styles.notifUnread} />}
         </div>
       </div>
@@ -439,43 +447,41 @@ interface Periods {
 }
 
 const INIT_PERIODS: Periods = {
-  workspacesCreated: "annually",
+  workspacesCreated:    "annually",
   explorationsLaunched: "half_year",
-  personasCalibrated: "half_year",
-  reportsDownloaded: "annually_2026",
-  registeredUsers: "annually",
-  activeUsers: "annually",
-  avgTime: "annually",
-  collaboration: "annually",
-  avgPersonaConf: "annually",
-  populationConf: "annually",
-  realPeople: "annually",
-  multiplatform: "annually",
-  credible: "annually",
-  decisionInfluenced: "annually",
-  timeSaved: "hours",
-  researchSpend: "hours",
-  humanStudies: "annually",
-  humanSample: "annually",
+  personasCalibrated:   "half_year",
+  reportsDownloaded:    "annually_2026",
+  registeredUsers:      "annually",
+  activeUsers:          "annually",
+  avgTime:              "annually",
+  collaboration:        "annually",
+  avgPersonaConf:       "annually",
+  populationConf:       "annually",
+  realPeople:           "annually",
+  multiplatform:        "annually",
+  credible:             "annually",
+  decisionInfluenced:   "annually",
+  timeSaved:            "hours",
+  researchSpend:        "hours",
+  humanStudies:         "annually",
+  humanSample:          "annually",
 };
 
-// ─── Tab index state ──────────────────────────────────────────────────────────
-
 interface ActiveTabs {
-  adoption: number;
+  adoption:   number;
   engagement: number;
   conviction: number;
-  value: number;
+  value:      number;
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
 const MyOrganization: React.FC = () => {
-  const navigate  = useNavigate();
-  const dispatch  = useDispatch();
+  const navigate = useNavigate();
+  const dispatch = useDispatch();
 
-  const auth          = useSelector((s: RootState) => s.auth);
-  const omi           = useSelector((s: RootState) => s.omi);
+  const auth              = useSelector((s: RootState) => s.auth);
+  const omi               = useSelector((s: RootState) => s.omi);
   const { organizations } = useSelector((s: RootState) => s.organizations);
   const orgName = organizations?.data?.name ?? "{Enterprise Name}";
   const orgId   = organizations?.data?.id   ?? "default-org";
@@ -486,21 +492,17 @@ const MyOrganization: React.FC = () => {
     }
   }, [auth?.user, navigate]);
 
-  const [showNotif, setShowNotif] = useState<boolean>(false);
-  const [periods,   setPeriods]   = useState<Periods>(INIT_PERIODS);
-  const [activeTabs, setActiveTabs] = useState<ActiveTabs>({
-    adoption: 0, engagement: 0, conviction: 0, value: 0,
-  });
-
-  const [stats,   setStats]   = useState<DashboardStats>(INITIAL_STATS);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error,   setError]   = useState<string | null>(null);
-
-  const [csvOpen,  setCsvOpen]  = useState<boolean>(false);
-  const [csvWsId,  setCsvWsId]  = useState<string>("");
-  const [csvExId,  setCsvExId]  = useState<string>("");
-  const [csvBusy,  setCsvBusy]  = useState<boolean>(false);
-  const [moreOpen, setMoreOpen] = useState<boolean>(false);
+  const [showNotif,  setShowNotif]  = useState<boolean>(false);
+  const [moreOpen,   setMoreOpen]   = useState<boolean>(false);
+  const [periods,    setPeriods]    = useState<Periods>(INIT_PERIODS);
+  const [activeTabs, setActiveTabs] = useState<ActiveTabs>({ adoption: 0, engagement: 0, conviction: 0, value: 0 });
+  const [stats,      setStats]      = useState<DashboardStats>(INITIAL_STATS);
+  const [loading,    setLoading]    = useState<boolean>(true);
+  const [error,      setError]      = useState<string | null>(null);
+  const [csvOpen,    setCsvOpen]    = useState<boolean>(false);
+  const [csvWsId,    setCsvWsId]    = useState<string>("");
+  const [csvExId,    setCsvExId]    = useState<string>("");
+  const [csvBusy,    setCsvBusy]    = useState<boolean>(false);
 
   const { data: wsRaw } = useWorkspaces() as { data: Workspace[] | { data: Workspace[] } | null };
   const workspaces = useMemo<Workspace[]>(() => {
@@ -521,9 +523,7 @@ const MyOrganization: React.FC = () => {
   useEffect(() => { setCsvExId(""); }, [csvWsId]);
 
   useEffect(() => {
-    if (orgId && !omi.isInitialized) {
-      dispatch(initializeSessionStart({ orgId }));
-    }
+    if (orgId && !omi.isInitialized) dispatch(initializeSessionStart({ orgId }));
   }, [orgId, dispatch, omi.isInitialized]);
 
   const fetchData = useCallback(async () => {
@@ -533,8 +533,7 @@ const MyOrganization: React.FC = () => {
       const api: ApiResponse = await adminService.getAdminDashboardData("all_time");
       setStats((prev) => mergeApiData(api, prev));
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to load dashboard";
-      setError(msg);
+      setError(err instanceof Error ? err.message : "Failed to load dashboard");
     } finally {
       setLoading(false);
     }
@@ -546,10 +545,8 @@ const MyOrganization: React.FC = () => {
     (key: keyof Periods) => (v: string) => setPeriods((p) => ({ ...p, [key]: v })),
     []
   );
-
   const setTab = useCallback(
-    (section: keyof ActiveTabs) => (idx: number) =>
-      setActiveTabs((p) => ({ ...p, [section]: idx })),
+    (section: keyof ActiveTabs) => (idx: number) => setActiveTabs((p) => ({ ...p, [section]: idx })),
     []
   );
 
@@ -562,51 +559,81 @@ const MyOrganization: React.FC = () => {
     } catch (e) {
       console.error(e);
       alertQuestionnaireExportError(e);
-    } finally {
-      setCsvBusy(false);
-    }
+    } finally { setCsvBusy(false); }
   };
 
   const openCsvModal = (): void => { setCsvOpen(true); setCsvWsId(""); setCsvExId(""); setMoreOpen(false); };
 
-  if (loading) {
-    return (
-      <div className={styles.loadingState}>
-        <div className={styles.spinner} />
-        <span>Loading dashboard…</span>
-      </div>
-    );
-  }
+  if (loading) return (
+    <div className={styles.loadingState}>
+      <div className={styles.spinner} />
+      <span>Loading dashboard…</span>
+    </div>
+  );
+  if (error) return (
+    <div className={styles.errorState}>
+      <span className={styles.errorText}>{error}</span>
+      <button className={styles.retryBtn} onClick={fetchData}>Retry</button>
+    </div>
+  );
 
-  if (error) {
-    return (
-      <div className={styles.errorState}>
-        <span className={styles.errorText}>{error}</span>
-        <button className={styles.retryBtn} onClick={fetchData}>Retry</button>
-      </div>
-    );
-  }
-
-  // ─── Adoption tab definitions ─────────────────────────────────────────────
+  // ─── Adoption tab definitions ───────────────────────────────────────────────
 
   const adoptionTabs = [
-    { value: stats.adoption.workspacesCreated,    label: "Workspaces Created"    },
-    { value: stats.adoption.explorationsLaunched, label: "Explorations Launched" },
-    { value: stats.adoption.personasCalibrated,   label: "Personas Calibrated"   },
-    { value: String(stats.adoption.reportsDownloaded).padStart(3, "0"), label: "Reports Downloaded" },
+    { value: stats.adoption.workspacesCreated,                                label: "Workspaces Created"    },
+    { value: stats.adoption.explorationsLaunched,                             label: "Explorations Launched" },
+    { value: stats.adoption.personasCalibrated,                               label: "Personas Calibrated"   },
+    { value: String(stats.adoption.reportsDownloaded).padStart(3, "0"),       label: "Reports Downloaded"    },
   ];
 
   const renderAdoptionChart = (): React.ReactNode => {
     const idx = activeTabs.adoption;
+
+    // ── Tab 0: Workspaces Created ────────────────────────────────────────────
     if (idx === 0) return (
       <>
-        <ChartCtrl title="Workspaces Created" value={periods.workspacesCreated} onChange={setPeriod("workspacesCreated")} />
+        <ChartCtrl
+          title="Workspaces Created"
+          value={periods.workspacesCreated}
+          onChange={setPeriod("workspacesCreated")}
+        />
         <div className={styles.chartArea}>
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={stats.charts.workspacesCreated} barSize={22}>
+            <BarChart
+              data={stats.charts.workspacesCreated}
+              barSize={28}
+              margin={CHART_MARGIN}
+            >
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
-              <XAxis dataKey="dept" tick={tickStyle} axisLine={false} tickLine={false} />
-              <YAxis tick={tickStyle} axisLine={false} tickLine={false} domain={[0, 100]} />
+              <XAxis
+                dataKey="dept"
+                tick={tickStyle}
+                axisLine={false}
+                tickLine={false}
+                interval={0}
+                label={{
+                  value: "Department Name",
+                  position: "insideBottom",
+                  offset: -12,
+                  style: axisLabelStyle,
+                }}
+              />
+              <YAxis
+                tick={tickStyle}
+                axisLine={false}
+                tickLine={false}
+                domain={[0, 100]}
+                ticks={[0, 20, 40, 60, 80, 100]}
+                width={40}
+                label={{
+                  value: "No. of workspaces",
+                  angle: -90,
+                  position: "insideLeft",
+                  offset: 0,
+                  dx: -10,
+                  style: axisLabelStyle,
+                }}
+              />
               <Tooltip contentStyle={TTStyle} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
               <Bar dataKey="value" name="Workspaces" fill={C.barBlue} radius={[3, 3, 0, 0]} />
             </BarChart>
@@ -614,15 +641,47 @@ const MyOrganization: React.FC = () => {
         </div>
       </>
     );
+
+    // ── Tab 1: Explorations Launched ─────────────────────────────────────────
     if (idx === 1) return (
       <>
-        <ChartCtrl title="Explorations Launched" value={periods.explorationsLaunched} onChange={setPeriod("explorationsLaunched")} options={HALF_YEAR_OPTS} />
+        <ChartCtrl
+          title="Explorations Launched"
+          value={periods.explorationsLaunched}
+          onChange={setPeriod("explorationsLaunched")}
+          options={HALF_YEAR_OPTS}
+        />
         <div className={styles.chartArea}>
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={stats.charts.explorationsLaunched} barSize={22}>
+            <BarChart
+              data={stats.charts.explorationsLaunched}
+              barSize={28}
+              margin={CHART_MARGIN_NO_XLAB}
+            >
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
-              <XAxis dataKey="dept" tick={tickStyle} axisLine={false} tickLine={false} />
-              <YAxis tick={tickStyle} axisLine={false} tickLine={false} domain={[0, 150]} />
+              <XAxis
+                dataKey="dept"
+                tick={tickStyle}
+                axisLine={false}
+                tickLine={false}
+                interval={0}
+              />
+              <YAxis
+                tick={tickStyle}
+                axisLine={false}
+                tickLine={false}
+                domain={[0, 150]}
+                ticks={[0, 30, 60, 90, 120, 150]}
+                width={40}
+                label={{
+                  value: "Count of explorations",
+                  angle: -90,
+                  position: "insideLeft",
+                  offset: 0,
+                  dx: -10,
+                  style: axisLabelStyle,
+                }}
+              />
               <Tooltip contentStyle={TTStyle} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
               <Bar dataKey="value" name="Explorations" fill={C.barPurple} radius={[3, 3, 0, 0]} />
             </BarChart>
@@ -630,37 +689,111 @@ const MyOrganization: React.FC = () => {
         </div>
       </>
     );
+
+    // ── Tab 2: Personas Calibrated ───────────────────────────────────────────
     if (idx === 2) return (
       <>
-        <ChartCtrl title="Personas Calibrated" value={periods.personasCalibrated} onChange={setPeriod("personasCalibrated")}
-          options={[{ value: "half_year_range", label: "Half Year (Jan 2026 - Jun 2026)" }, ...HALF_YEAR_OPTS]} wide />
+        <ChartCtrl
+          title="Personas Calibrated"
+          value={periods.personasCalibrated}
+          onChange={setPeriod("personasCalibrated")}
+          options={[
+            { value: "half_year_range", label: "Half Year (Jan 2026 - Jun 2026)" },
+            ...HALF_YEAR_OPTS,
+          ]}
+          wide
+        />
         <div className={styles.chartArea}>
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={stats.charts.personasCalibrated} barSize={22}>
+            <BarChart
+              data={stats.charts.personasCalibrated}
+              barSize={28}
+              margin={CHART_MARGIN_NO_XLAB}
+            >
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
-              <XAxis dataKey="month" tick={tickStyle} axisLine={false} tickLine={false} />
-              <YAxis tick={tickStyle} axisLine={false} tickLine={false} domain={[0, 150]} />
+              <XAxis
+                dataKey="month"
+                tick={tickStyle}
+                axisLine={false}
+                tickLine={false}
+                interval={0}
+              />
+              <YAxis
+                tick={tickStyle}
+                axisLine={false}
+                tickLine={false}
+                domain={[0, 150]}
+                ticks={[0, 30, 60, 90, 120, 150]}
+                width={40}
+                label={{
+                  value: "Number of Personas",
+                  angle: -90,
+                  position: "insideLeft",
+                  offset: 0,
+                  dx: -10,
+                  style: axisLabelStyle,
+                }}
+              />
               <Tooltip contentStyle={TTStyle} />
-              <Bar dataKey="singleUser" name="Standard Personas" stackId="a" fill={C.barBlue} />
+              <Bar dataKey="singleUser" name="Standard Personas"   stackId="a" fill={C.barPurple} />
               <Bar dataKey="multiUser"  name="Additional Personas" stackId="a" fill={C.barTeal} radius={[3, 3, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
-        <StackedLegend a="Standard Personas" b="Additional Personas" />
+        <StackedLegend a="Standard Personas" b="Additional Personas" colorA={C.barPurple} colorB={C.barTeal} />
       </>
     );
+
+    // ── Tab 3: Reports Downloaded ────────────────────────────────────────────
     return (
       <>
-        <ChartCtrl title="Reports Downloaded" value={periods.reportsDownloaded} onChange={setPeriod("reportsDownloaded")} options={ANNUAL_2026_OPTS} wide />
+        <ChartCtrl
+          title="Reports Downloaded"
+          value={periods.reportsDownloaded}
+          onChange={setPeriod("reportsDownloaded")}
+          options={ANNUAL_2026_OPTS}
+          wide
+        />
         <div className={styles.chartArea}>
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={stats.charts.reportsDownloaded}>
+            <LineChart
+              data={stats.charts.reportsDownloaded}
+              margin={CHART_MARGIN_NO_XLAB}
+            >
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
-              <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} />
-              <YAxis tick={tickStyle} axisLine={false} tickLine={false} domain={[0, 100]} />
+              <XAxis
+                dataKey="name"
+                tick={tickStyle}
+                axisLine={false}
+                tickLine={false}
+                interval={0}
+              />
+              <YAxis
+                tick={tickStyle}
+                axisLine={false}
+                tickLine={false}
+                domain={[0, 100]}
+                ticks={[0, 20, 40, 60, 80, 100]}
+                width={40}
+                label={{
+                  value: "Reports Downloaded",
+                  angle: -90,
+                  position: "insideLeft",
+                  offset: 0,
+                  dx: -10,
+                  style: axisLabelStyle,
+                }}
+              />
               <Tooltip contentStyle={TTStyle} />
-              <Line type="monotone" dataKey="value" name="Reports Downloaded" stroke={C.line} strokeWidth={2}
-                dot={{ r: 4, fill: C.line, strokeWidth: 0 }} activeDot={{ r: 5 }} />
+              <Line
+                type="monotone"
+                dataKey="value"
+                name="Reports Downloaded"
+                stroke={C.line}
+                strokeWidth={2}
+                dot={{ r: 4, fill: C.line, strokeWidth: 0 }}
+                activeDot={{ r: 5 }}
+              />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -668,26 +801,32 @@ const MyOrganization: React.FC = () => {
     );
   };
 
-  // ─── Engagement tab definitions ───────────────────────────────────────────
+  // ─── Engagement tab definitions ─────────────────────────────────────────────
 
   const engagementTabs = [
-    { value: stats.userEngagement.registeredUsers.value,       label: "Registered Users"          },
-    { value: stats.userEngagement.activeUsers.value,           label: "Active Users"               },
+    { value: stats.userEngagement.registeredUsers.value,       label: "Registered Users"             },
+    { value: stats.userEngagement.activeUsers.value,           label: "Active Users"                  },
     { value: stats.userEngagement.avgTimePerExploration.value, label: "hrs Avg. Time per Exploration" },
-    { value: stats.userEngagement.collaborationRate.value,     label: "Collaboration Rate"         },
+    { value: stats.userEngagement.collaborationRate.value,     label: "Collaboration Rate"            },
   ];
 
   const renderEngagementChart = (): React.ReactNode => {
     const idx = activeTabs.engagement;
+
     if (idx === 0) return (
       <>
         <ChartCtrl title="Registered Users" value={periods.registeredUsers} onChange={setPeriod("registeredUsers")} options={ANNUAL_VARIANT_OPTS} />
         <div className={styles.chartArea}>
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={stats.charts.registeredUsers}>
+            <LineChart data={stats.charts.registeredUsers} margin={CHART_MARGIN_NO_XLAB}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
-              <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} />
-              <YAxis tick={tickStyle} axisLine={false} tickLine={false} domain={[0, 100]} />
+              <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
+              <YAxis
+                tick={tickStyle} axisLine={false} tickLine={false}
+                domain={[0, 100]} ticks={[0, 20, 40, 60, 80, 100]}
+                width={40}
+                label={{ value: "Registered Users", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }}
+              />
               <Tooltip contentStyle={TTStyle} />
               <Line type="monotone" dataKey="value" name="Registered Users" stroke={C.line} strokeWidth={2}
                 dot={{ r: 4, fill: C.line, strokeWidth: 0 }} activeDot={{ r: 5 }} />
@@ -697,15 +836,21 @@ const MyOrganization: React.FC = () => {
         <StackedLegend a="Single User" b="Multiple Users" />
       </>
     );
+
     if (idx === 1) return (
       <>
         <ChartCtrl title="Active Users" value={periods.activeUsers} onChange={setPeriod("activeUsers")} options={ANNUAL_VARIANT_OPTS} />
         <div className={styles.chartArea}>
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={stats.charts.activeUsers}>
+            <LineChart data={stats.charts.activeUsers} margin={CHART_MARGIN_NO_XLAB}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
-              <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} />
-              <YAxis tick={tickStyle} axisLine={false} tickLine={false} domain={[0, 100]} />
+              <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
+              <YAxis
+                tick={tickStyle} axisLine={false} tickLine={false}
+                domain={[0, 100]} ticks={[0, 20, 40, 60, 80, 100]}
+                width={40}
+                label={{ value: "Active Users", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }}
+              />
               <Tooltip contentStyle={TTStyle} />
               <Line type="monotone" dataKey="value" name="Active Users" stroke={C.line} strokeWidth={2}
                 dot={{ r: 4, fill: C.line, strokeWidth: 0 }} activeDot={{ r: 5 }} />
@@ -714,15 +859,21 @@ const MyOrganization: React.FC = () => {
         </div>
       </>
     );
+
     if (idx === 2) return (
       <>
         <ChartCtrl title="Avg. Time per Exploration" value={periods.avgTime} onChange={setPeriod("avgTime")} options={ANNUAL_VARIANT_OPTS} />
         <div className={styles.chartArea}>
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={stats.charts.avgTimePerExploration} barSize={22}>
+            <BarChart data={stats.charts.avgTimePerExploration} barSize={28} margin={CHART_MARGIN_NO_XLAB}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
-              <XAxis dataKey="dept" tick={tickStyle} axisLine={false} tickLine={false} />
-              <YAxis tick={tickStyle} axisLine={false} tickLine={false} domain={[0, 100]} />
+              <XAxis dataKey="dept" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
+              <YAxis
+                tick={tickStyle} axisLine={false} tickLine={false}
+                domain={[0, 100]} ticks={[0, 20, 40, 60, 80, 100]}
+                width={40}
+                label={{ value: "Avg hrs / Exploration", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }}
+              />
               <Tooltip contentStyle={TTStyle} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
               <Bar dataKey="value" name="Avg hrs per Exploration" fill={C.barPurple} radius={[3, 3, 0, 0]} />
             </BarChart>
@@ -730,18 +881,24 @@ const MyOrganization: React.FC = () => {
         </div>
       </>
     );
+
     return (
       <>
         <ChartCtrl title="Collaboration Rate" value={periods.collaboration} onChange={setPeriod("collaboration")} options={ANNUAL_VARIANT_OPTS} />
         <div className={styles.chartArea}>
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={stats.charts.collaborationRate} barSize={22}>
+            <BarChart data={stats.charts.collaborationRate} barSize={28} margin={CHART_MARGIN_NO_XLAB}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
-              <XAxis dataKey="month" tick={tickStyle} axisLine={false} tickLine={false} />
-              <YAxis tick={tickStyle} axisLine={false} tickLine={false} domain={[0, 150]} />
+              <XAxis dataKey="month" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
+              <YAxis
+                tick={tickStyle} axisLine={false} tickLine={false}
+                domain={[0, 150]} ticks={[0, 30, 60, 90, 120, 150]}
+                width={40}
+                label={{ value: "Number of Personas", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }}
+              />
               <Tooltip contentStyle={TTStyle} />
-              <Bar dataKey="singleUser" name="Single User"     stackId="a" fill={C.barBlue} />
-              <Bar dataKey="multiUser"  name="Multiple Users"  stackId="a" fill={C.barTeal} radius={[3, 3, 0, 0]} />
+              <Bar dataKey="singleUser" name="Single User"    stackId="a" fill={C.barBlue} />
+              <Bar dataKey="multiUser"  name="Multiple Users" stackId="a" fill={C.barTeal} radius={[3, 3, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -750,93 +907,130 @@ const MyOrganization: React.FC = () => {
     );
   };
 
-  // ─── Conviction tab definitions ───────────────────────────────────────────
+  // ─── Conviction tab definitions ─────────────────────────────────────────────
 
   const convictionTabs = [
-    { value: stats.conviction.personaConfidence.value,      label: "Persona Confidence"                  },
-    { value: stats.conviction.populationConfidence,          label: "Population Confidence"               },
-    { value: stats.conviction.realPeoplesActions,            label: "Real People's Actions Calibrated"    },
-    { value: stats.conviction.multiplatformConversation,     label: "Multi-platform Conversation"         },
-    { value: stats.conviction.credibleSources,               label: "Credible Sources Contextualised"     },
+    { value: stats.conviction.personaConfidence.value,      label: "Persona Confidence"               },
+    { value: stats.conviction.populationConfidence,          label: "Population Confidence"            },
+    { value: stats.conviction.realPeoplesActions,            label: "Real People's Actions Calibrated" },
+    { value: stats.conviction.multiplatformConversation,     label: "Multi-platform Conversation"      },
+    { value: stats.conviction.credibleSources,               label: "Credible Sources Contextualised"  },
   ];
 
   const renderConvictionChart = (): React.ReactNode => {
     const idx = activeTabs.conviction;
+
     if (idx === 0) return (
       <>
         <ChartCtrl title="Avg. Persona Confidence" value={periods.avgPersonaConf} onChange={setPeriod("avgPersonaConf")} />
         <div className={styles.chartArea}>
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={stats.charts.avgPersonaConfidence}>
-              <CartesianGrid strokeDasharray="3 3" stroke={C.grid} />
-              <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} />
-              <YAxis tick={tickStyle} axisLine={false} tickLine={false} domain={[0, 100]} tickFormatter={(v: number) => `${v}%`} />
+            <LineChart data={stats.charts.avgPersonaConfidence} margin={CHART_MARGIN_NO_XLAB}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
+              <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
+              <YAxis
+                tick={tickStyle} axisLine={false} tickLine={false}
+                domain={[0, 100]} ticks={[0, 20, 40, 60, 80, 100]}
+                tickFormatter={(v: number) => `${v}%`}
+                width={44}
+                label={{ value: "Persona Confidence (%)", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }}
+              />
               <Tooltip contentStyle={TTStyle} />
-              <Line type="monotone" dataKey="value" name="Avg Persona Confidence (%)" stroke={C.line} strokeWidth={2} dot={{ r: 4, fill: C.line, strokeWidth: 0 }} />
+              <Line type="monotone" dataKey="value" name="Avg Persona Confidence (%)" stroke={C.line} strokeWidth={2}
+                dot={{ r: 4, fill: C.line, strokeWidth: 0 }} />
             </LineChart>
           </ResponsiveContainer>
         </div>
       </>
     );
+
     if (idx === 1) return (
       <>
         <ChartCtrl title="Population Confidence" value={periods.populationConf} onChange={setPeriod("populationConf")} />
         <div className={styles.chartArea}>
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={stats.charts.populationConfidence}>
-              <CartesianGrid strokeDasharray="3 3" stroke={C.grid} />
-              <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} />
-              <YAxis tick={tickStyle} axisLine={false} tickLine={false} domain={[0, 100]} tickFormatter={(v: number) => `${v}%`} />
+            <LineChart data={stats.charts.populationConfidence} margin={CHART_MARGIN_NO_XLAB}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
+              <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
+              <YAxis
+                tick={tickStyle} axisLine={false} tickLine={false}
+                domain={[0, 100]} ticks={[0, 20, 40, 60, 80, 100]}
+                tickFormatter={(v: number) => `${v}%`}
+                width={44}
+                label={{ value: "Population Confidence (%)", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }}
+              />
               <Tooltip contentStyle={TTStyle} />
-              <Line type="monotone" dataKey="value" name="Avg Population Confidence (%)" stroke={C.line} strokeWidth={2} dot={{ r: 4, fill: C.line, strokeWidth: 0 }} />
+              <Line type="monotone" dataKey="value" name="Avg Population Confidence (%)" stroke={C.line} strokeWidth={2}
+                dot={{ r: 4, fill: C.line, strokeWidth: 0 }} />
             </LineChart>
           </ResponsiveContainer>
         </div>
       </>
     );
+
     if (idx === 2) return (
       <>
         <ChartCtrl title="Avg. Real People's Actions Calibrated" value={periods.realPeople} onChange={setPeriod("realPeople")} />
         <div className={styles.chartArea}>
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={stats.charts.realPeoplesActions}>
-              <CartesianGrid strokeDasharray="3 3" stroke={C.grid} />
-              <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} />
-              <YAxis tick={tickStyle} axisLine={false} tickLine={false} domain={[0, 100]} />
+            <LineChart data={stats.charts.realPeoplesActions} margin={CHART_MARGIN_NO_XLAB}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
+              <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
+              <YAxis
+                tick={tickStyle} axisLine={false} tickLine={false}
+                domain={[0, 100]} ticks={[0, 20, 40, 60, 80, 100]}
+                width={40}
+                label={{ value: "Actions Calibrated", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }}
+              />
               <Tooltip contentStyle={TTStyle} />
-              <Line type="monotone" dataKey="value" name="Real People's Actions Calibrated" stroke={C.line} strokeWidth={2} dot={{ r: 4, fill: C.line, strokeWidth: 0 }} />
+              <Line type="monotone" dataKey="value" name="Real People's Actions Calibrated" stroke={C.line} strokeWidth={2}
+                dot={{ r: 4, fill: C.line, strokeWidth: 0 }} />
             </LineChart>
           </ResponsiveContainer>
         </div>
       </>
     );
+
     if (idx === 3) return (
       <>
         <ChartCtrl title="Avg. Multi-platform Conversation" value={periods.multiplatform} onChange={setPeriod("multiplatform")} />
         <div className={styles.chartArea}>
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={stats.charts.multiplatformConversation}>
-              <CartesianGrid strokeDasharray="3 3" stroke={C.grid} />
-              <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} />
-              <YAxis tick={tickStyle} axisLine={false} tickLine={false} domain={[0, 100]} />
+            <LineChart data={stats.charts.multiplatformConversation} margin={CHART_MARGIN_NO_XLAB}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
+              <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
+              <YAxis
+                tick={tickStyle} axisLine={false} tickLine={false}
+                domain={[0, 100]} ticks={[0, 20, 40, 60, 80, 100]}
+                width={40}
+                label={{ value: "Conversations", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }}
+              />
               <Tooltip contentStyle={TTStyle} />
-              <Line type="monotone" dataKey="value" name="Multi-platform Conversation" stroke={C.line} strokeWidth={2} dot={{ r: 4, fill: C.line, strokeWidth: 0 }} />
+              <Line type="monotone" dataKey="value" name="Multi-platform Conversation" stroke={C.line} strokeWidth={2}
+                dot={{ r: 4, fill: C.line, strokeWidth: 0 }} />
             </LineChart>
           </ResponsiveContainer>
         </div>
       </>
     );
+
     return (
       <>
         <ChartCtrl title="Avg. Credible Sources Contextualized" value={periods.credible} onChange={setPeriod("credible")} />
         <div className={styles.chartArea}>
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={stats.charts.credibleSources}>
-              <CartesianGrid strokeDasharray="3 3" stroke={C.grid} />
-              <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} />
-              <YAxis tick={tickStyle} axisLine={false} tickLine={false} domain={[0, 100]} />
+            <LineChart data={stats.charts.credibleSources} margin={CHART_MARGIN_NO_XLAB}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
+              <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
+              <YAxis
+                tick={tickStyle} axisLine={false} tickLine={false}
+                domain={[0, 100]} ticks={[0, 20, 40, 60, 80, 100]}
+                width={40}
+                label={{ value: "Credible Sources", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }}
+              />
               <Tooltip contentStyle={TTStyle} />
-              <Line type="monotone" dataKey="value" name="Credible Sources Contextualized" stroke={C.line} strokeWidth={2} dot={{ r: 4, fill: C.line, strokeWidth: 0 }} />
+              <Line type="monotone" dataKey="value" name="Credible Sources Contextualized" stroke={C.line} strokeWidth={2}
+                dot={{ r: 4, fill: C.line, strokeWidth: 0 }} />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -844,29 +1038,35 @@ const MyOrganization: React.FC = () => {
     );
   };
 
-  // ─── Value Delivered tab definitions ─────────────────────────────────────
+  // ─── Value Delivered tab definitions ────────────────────────────────────────
 
   const valueTabs = [
-    { value: stats.valueDelivered.decisionInfluenced.value,  label: "Decision Influenced"      },
-    { value: `${stats.valueDelivered.timeSaved.value} hrs`,  label: "Time Saved"               },
-    { value: `$ ${stats.valueDelivered.researchSpendSaved.value}`, label: "Research Spend Saved" },
-    { value: stats.valueDelivered.humanStudiesReplaced,      label: "Human Studies Replaced"   },
-    { value: stats.valueDelivered.humanSampleReduced,        label: "Human Sample Reduced"     },
+    { value: stats.valueDelivered.decisionInfluenced.value,        label: "Decision Influenced"     },
+    { value: `${stats.valueDelivered.timeSaved.value} hrs`,        label: "Time Saved"              },
+    { value: `$ ${stats.valueDelivered.researchSpendSaved.value}`, label: "Research Spend Saved"    },
+    { value: stats.valueDelivered.humanStudiesReplaced,            label: "Human Studies Replaced"  },
+    { value: stats.valueDelivered.humanSampleReduced,              label: "Human Sample Reduced"    },
   ];
 
   const renderValueChart = (): React.ReactNode => {
     const idx = activeTabs.value;
+
     if (idx === 0) return (
       <>
         <ChartCtrl title="Decision Influenced" value={periods.decisionInfluenced} onChange={setPeriod("decisionInfluenced")} />
         <div className={styles.chartArea}>
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={stats.charts.decisionInfluenced} barSize={22}>
+            <BarChart data={stats.charts.decisionInfluenced} barSize={28} margin={CHART_MARGIN_NO_XLAB}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
-              <XAxis dataKey="month" tick={tickStyle} axisLine={false} tickLine={false} />
-              <YAxis tick={tickStyle} axisLine={false} tickLine={false} domain={[0, 150]} />
+              <XAxis dataKey="month" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
+              <YAxis
+                tick={tickStyle} axisLine={false} tickLine={false}
+                domain={[0, 150]} ticks={[0, 30, 60, 90, 120, 150]}
+                width={40}
+                label={{ value: "Decisions Influenced", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }}
+              />
               <Tooltip contentStyle={TTStyle} />
-              <Bar dataKey="singleUser" name="Total Explorations" stackId="a" fill={C.barBlue} />
+              <Bar dataKey="singleUser" name="Total Explorations"  stackId="a" fill={C.barBlue} />
               <Bar dataKey="multiUser"  name="Decision Influenced" stackId="a" fill={C.barTeal} radius={[3, 3, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
@@ -874,49 +1074,70 @@ const MyOrganization: React.FC = () => {
         <StackedLegend a="Total Explorations" b="Decision Influenced" />
       </>
     );
+
     if (idx === 1) return (
       <>
         <ChartCtrl title="Time Saved" value={periods.timeSaved} onChange={setPeriod("timeSaved")} options={HOURS_OPTS} />
         <div className={styles.chartArea}>
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={stats.charts.timeSaved}>
-              <CartesianGrid strokeDasharray="3 3" stroke={C.grid} />
-              <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} />
-              <YAxis tick={tickStyle} axisLine={false} tickLine={false} domain={[0, 100]} />
+            <LineChart data={stats.charts.timeSaved} margin={CHART_MARGIN_NO_XLAB}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
+              <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
+              <YAxis
+                tick={tickStyle} axisLine={false} tickLine={false}
+                domain={[0, 100]} ticks={[0, 20, 40, 60, 80, 100]}
+                width={40}
+                label={{ value: "Time saved (hrs)", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }}
+              />
               <Tooltip contentStyle={TTStyle} />
-              <Line type="monotone" dataKey="value" name="Time Saved (hrs)" stroke={C.line} strokeWidth={2} dot={{ r: 4, fill: C.line, strokeWidth: 0 }} />
+              <Line type="monotone" dataKey="value" name="Time Saved (hrs)" stroke={C.line} strokeWidth={2}
+                dot={{ r: 4, fill: C.line, strokeWidth: 0 }} />
             </LineChart>
           </ResponsiveContainer>
         </div>
       </>
     );
+
     if (idx === 2) return (
       <>
         <ChartCtrl title="Research Spend Saved" value={periods.researchSpend} onChange={setPeriod("researchSpend")} options={HOURS_OPTS} />
         <div className={styles.chartArea}>
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={stats.charts.researchSpendSaved}>
-              <CartesianGrid strokeDasharray="3 3" stroke={C.grid} />
-              <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} />
-              <YAxis tick={tickStyle} axisLine={false} tickLine={false} domain={[0, 100]} tickFormatter={(v: number) => `$${v}`} />
+            <LineChart data={stats.charts.researchSpendSaved} margin={CHART_MARGIN_NO_XLAB}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
+              <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
+              <YAxis
+                tick={tickStyle} axisLine={false} tickLine={false}
+                domain={[0, 100]} ticks={[0, 20, 40, 60, 80, 100]}
+                tickFormatter={(v: number) => `$${v}`}
+                width={44}
+                label={{ value: "Cost saved ($)", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }}
+              />
               <Tooltip contentStyle={TTStyle} />
-              <Line type="monotone" dataKey="value" name="Research Spend Saved ($)" stroke={C.line} strokeWidth={2} dot={{ r: 4, fill: C.line, strokeWidth: 0 }} />
+              <Line type="monotone" dataKey="value" name="Research Spend Saved ($)" stroke={C.line} strokeWidth={2}
+                dot={{ r: 4, fill: C.line, strokeWidth: 0 }} />
             </LineChart>
           </ResponsiveContainer>
         </div>
       </>
     );
+
     if (idx === 3) return (
       <>
         <ChartCtrl title="Human Studies Replaced" value={periods.humanStudies} onChange={setPeriod("humanStudies")} />
         <div className={styles.chartArea}>
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={stats.charts.humanStudiesReplaced} barSize={22}>
+            <BarChart data={stats.charts.humanStudiesReplaced} barSize={28} margin={CHART_MARGIN_WIDE}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
-              <XAxis dataKey="month" tick={tickStyle} axisLine={false} tickLine={false} />
-              <YAxis tick={tickStyle} axisLine={false} tickLine={false} domain={[0, 150]} />
+              <XAxis dataKey="month" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
+              <YAxis
+                tick={tickStyle} axisLine={false} tickLine={false}
+                domain={[0, 150]} ticks={[0, 30, 60, 90, 120, 150]}
+                width={48}
+                label={{ value: "Explorations replacing studies", angle: -90, position: "insideLeft", offset: 0, dx: -12, style: axisLabelStyleSm }}
+              />
               <Tooltip contentStyle={TTStyle} />
-              <Bar dataKey="singleUser" name="Total Explorations"   stackId="a" fill={C.barBlue} />
+              <Bar dataKey="singleUser" name="Total Explorations"     stackId="a" fill={C.barBlue} />
               <Bar dataKey="multiUser"  name="Replaced Human Studies" stackId="a" fill={C.barTeal} radius={[3, 3, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
@@ -924,17 +1145,23 @@ const MyOrganization: React.FC = () => {
         <StackedLegend a="Total Explorations" b="Replaced Human Studies" />
       </>
     );
+
     return (
       <>
         <ChartCtrl title="Human Sample Reduced" value={periods.humanSample} onChange={setPeriod("humanSample")} />
         <div className={styles.chartArea}>
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={stats.charts.humanSampleReduced} barSize={22}>
+            <BarChart data={stats.charts.humanSampleReduced} barSize={28} margin={CHART_MARGIN_WIDE}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
-              <XAxis dataKey="month" tick={tickStyle} axisLine={false} tickLine={false} />
-              <YAxis tick={tickStyle} axisLine={false} tickLine={false} domain={[0, 150]} />
+              <XAxis dataKey="month" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
+              <YAxis
+                tick={tickStyle} axisLine={false} tickLine={false}
+                domain={[0, 150]} ticks={[0, 30, 60, 90, 120, 150]}
+                width={48}
+                label={{ value: "Explorations reducing sampling", angle: -90, position: "insideLeft", offset: 0, dx: -12, style: axisLabelStyleSm }}
+              />
               <Tooltip contentStyle={TTStyle} />
-              <Bar dataKey="singleUser" name="Total Explorations"  stackId="a" fill={C.barBlue} />
+              <Bar dataKey="singleUser" name="Total Explorations"   stackId="a" fill={C.barBlue} />
               <Bar dataKey="multiUser"  name="Reduced Human Sample" stackId="a" fill={C.barTeal} radius={[3, 3, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
@@ -973,9 +1200,7 @@ const MyOrganization: React.FC = () => {
             {moreOpen && (
               <div className={styles.notifDropdown} role="menu">
                 <div className={styles.notifHeader}>More Options</div>
-                <button className={styles.csvBtn}
-                  style={{ width: "calc(100% - 32px)", margin: "12px 16px" }}
-                  onClick={openCsvModal}>
+                <button className={styles.csvBtn} onClick={openCsvModal}>
                   <TbDownload size={14} /> Download Questionnaire CSV
                 </button>
               </div>
@@ -1056,7 +1281,6 @@ const MyOrganization: React.FC = () => {
         {/* ── Adoption Dynamics + User Engagement ─────────────── */}
         <div className={styles.sectionGrid2}>
 
-          {/* Adoption Dynamics */}
           <div className={styles.sectionPanel}>
             <div className={styles.sectionPanelTitle}>Adoption Dynamics</div>
             <div className={`${styles.tabStrip} ${styles.tabStrip4}`}>
@@ -1074,7 +1298,6 @@ const MyOrganization: React.FC = () => {
             {renderAdoptionChart()}
           </div>
 
-          {/* User Engagement */}
           <div className={styles.sectionPanel}>
             <div className={styles.sectionPanelTitle}>User Engagement</div>
             <div className={`${styles.tabStrip} ${styles.tabStrip4}`}>
@@ -1096,7 +1319,6 @@ const MyOrganization: React.FC = () => {
         {/* ── Conviction Measurement + Value Delivered ─────────── */}
         <div className={styles.sectionGrid2}>
 
-          {/* Conviction Measurement */}
           <div className={styles.sectionPanel}>
             <div className={styles.sectionPanelTitle}>Conviction Measurement</div>
             <div className={`${styles.tabStrip} ${styles.tabStrip5}`}>
@@ -1114,7 +1336,6 @@ const MyOrganization: React.FC = () => {
             {renderConvictionChart()}
           </div>
 
-          {/* Value Delivered */}
           <div className={styles.sectionPanel}>
             <div className={styles.sectionPanelTitle}>Value Delivered</div>
             <div className={`${styles.tabStrip} ${styles.tabStrip5}`}>
@@ -1133,7 +1354,7 @@ const MyOrganization: React.FC = () => {
           </div>
         </div>
 
-      </div>{/* /content */}
+      </div>
 
       {/* ── CSV Modal ────────────────────────────────────────── */}
       {csvOpen && (
@@ -1147,17 +1368,13 @@ const MyOrganization: React.FC = () => {
             <label htmlFor="csv-ws" className={styles.modalLabel}>Workspace</label>
             <select id="csv-ws" className={styles.modalSelect} value={csvWsId} onChange={(e) => setCsvWsId(e.target.value)}>
               <option value="">Choose workspace…</option>
-              {workspaces.map((w) => (
-                <option key={w.id} value={w.id}>{w.name ?? w.id}</option>
-              ))}
+              {workspaces.map((w) => <option key={w.id} value={w.id}>{w.name ?? w.id}</option>)}
             </select>
             <label htmlFor="csv-ex" className={styles.modalLabel}>Exploration</label>
             <select id="csv-ex" className={styles.modalSelect} value={csvExId}
               onChange={(e) => setCsvExId(e.target.value)} disabled={!csvWsId || exLoading}>
               <option value="">{exLoading ? "Loading…" : "Choose exploration…"}</option>
-              {explorations.map((ex) => (
-                <option key={ex.id} value={ex.id}>{ex.title ?? ex.id}</option>
-              ))}
+              {explorations.map((ex) => <option key={ex.id} value={ex.id}>{ex.title ?? ex.id}</option>)}
             </select>
             <div className={styles.modalActions}>
               <button className={styles.modalCancelBtn} onClick={() => setCsvOpen(false)} disabled={csvBusy}>Cancel</button>

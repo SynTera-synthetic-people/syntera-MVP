@@ -198,9 +198,8 @@
 }
 
 .nav-item-active {
-  background: #0E63EC;
+  background: #4A536A;
   color: white;
-  box-shadow: 0 4px 12px rgba(14, 99, 236, 0.3);
 }
 
 .nav-item-active::before {
@@ -211,7 +210,7 @@
   transform: translateY(-50%);
   width: 0.25rem;
   height: 2rem;
-  background: white;
+  background: #37FFCE;
   border-radius: 0 9999px 9999px 0;
 }
 

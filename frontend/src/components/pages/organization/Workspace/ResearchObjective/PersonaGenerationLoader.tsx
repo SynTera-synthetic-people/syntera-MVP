@@ -245,12 +245,8 @@ const PersonaGenerationLoader: React.FC<Props> = ({
             title: "Persona Synthesis",
             description: "Assembling all layers into a coherent, simulation-ready decision model",
             items: [
-                "Merging behavioural and contextual layers into a unified profile",
-                "Validating internal consistency across emotional states and decision scenarios",
-                "Finalising voice, motivation stack, and constraint framework",
-                "Preparing persona for qualitative simulation and research interaction",
             ],
-            outcome: "A fully assembled persona ready to think, respond, and reveal insight under research conditions.",
+            outcome: "",
         },
     ];
 

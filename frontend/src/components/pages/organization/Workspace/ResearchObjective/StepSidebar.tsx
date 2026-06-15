@@ -201,16 +201,6 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
   isBackEnabled = isStepCompleted(activeStep);
 
   // ── Detect route-based loader screens ────────────────────────────────────
-  // These are screens where an expensive process is running and navigating
-  // away would break it and waste compute. Back is hidden automatically.
-  //
-  //  1. persona-generating  — PersonaGenerationLoader (separate route)
-  //  2. chatview with interviews still running — RunningInterviews is shown
-  //     when qualitative_sub2 is NOT yet set in localStorage
-  //
-  // Overlay-based loaders (DiscussionGuideLoader, QuestionnaireLoader,
-  // SurveyInMotion) are controlled by the `hideBack` prop passed from the
-  // parent page component.
 
   const interviewsStillRunning =
     pathname.includes("chatview") &&
@@ -223,7 +213,7 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
 
   const shouldHideBack = hideBack || isRouteLoader;
 
-  // ── Navigation — always carry viewOnly in state ─────────────────────────────
+  // ── Navigation ─────────────────────────────────────────────────────────────
 
   const go = (path: string) =>
     navigate(
@@ -241,10 +231,13 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
     }
 
     if (step.number === 4) {
-      if (isQuantSubStepCompleted(3)) go("rebuttal-mode");
-      else if (isQuantSubStepCompleted(2)) go("survey-results");
-      else if (isQuantSubStepCompleted(1)) go("population-builder");
-      else go("questionnaire");
+      // Navigate to the FIRST incomplete sub-step (forward-first progression).
+      // This prevents jumping ahead to e.g. population-builder when the user
+      // hasn't started questionnaire yet (stale/leftover localStorage keys).
+      if (!isQuantSubStepCompleted(1)) go("questionnaire");
+      else if (!isQuantSubStepCompleted(2)) go("population-builder");
+      else if (!isQuantSubStepCompleted(3)) go("survey-results");
+      else go("rebuttal-mode");
       return;
     }
 
@@ -284,7 +277,6 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
   return (
     <aside className="step-sidebar">
 
-      {/* Back button — hidden during any active loader/process screen */}
       {!shouldHideBack && (
         <button
           className="step-sidebar__back"
@@ -317,7 +309,7 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
                   ? (lsStep2Done || !!localStorage.getItem(`approach_${currentId}`) || activeStep >= 3)
                   : step.number === 4
                     ? (
-                      activeStep === 4 ||
+                      activeStep >= 4 ||                                              // ← was: activeStep === 4
                       !!localStorage.getItem(`qualitative_sub3_${currentId}`) ||
                       localStorage.getItem(`approach_${currentId}`) === 'quantitative'
                     )
