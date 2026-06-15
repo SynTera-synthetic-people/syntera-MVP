@@ -8,7 +8,7 @@
 .qu-page {
   flex: 1;
   min-height: 100%;
-  background: #0E0F12;
+  background: #060606;
   display: flex;
   flex-direction: column;
   overflow-y: auto;

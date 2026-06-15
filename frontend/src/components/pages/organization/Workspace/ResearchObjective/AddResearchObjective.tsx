@@ -15,6 +15,11 @@ import {
   TbCheck,
   TbX,
   TbEdit,
+  TbBrain,
+  TbFileTypePdf,
+  TbFileTypeDoc,
+  TbFileTypeXls,
+  TbAlertCircle,
 } from "react-icons/tb";
 import SpIcon from "../../../../SPIcon";
 import { useTheme } from "../../../../../context/ThemeContext";
@@ -82,34 +87,79 @@ interface RootState {
   auth: { user: User | null };
 }
 
+// ── File upload constants ─────────────────────────────────────────────────────
+
+const ACCEPTED_FILE_TYPES = {
+  'application/pdf': ['.pdf'],
+  'application/msword': ['.doc'],
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+  'application/vnd.ms-excel': ['.xls'],
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+};
+
+const ACCEPTED_EXTENSIONS = ['.pdf', '.doc', '.docx', '.xls', '.xlsx'];
+const ACCEPTED_MIME_TYPES = Object.keys(ACCEPTED_FILE_TYPES);
+const MAX_FILE_SIZE_MB = 10;
+const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const canBuildManually = (tier: string | undefined): boolean => {
   const t = (tier ?? '').toLowerCase().trim();
-  return t === 'enterprise' || t === 'enterprise_admin' || t === 'tier1';
+  return t === 'enterprise' || t === 'enterprise_admin';
 };
 
-// Maximum number of times a user can refine the research objective summary
 const MAX_SUMMARY_EDITS = 5;
 
-/**
- * Detects the internal, system-generated "refine summary" prompt that is sent
- * to Omi via `sendMessage` when the LLM-fallback refinement path runs.
- *
- * This prompt is a behind-the-scenes instruction — it must NEVER be rendered
- * in the conversation thread, whether it's:
- *   - optimistically appended on the client, or
- *   - returned back from the backend via conversation history (some backends
- *     persist every `sendMessage` call as a user-role message).
- *
- * Both the outgoing prompt text and the constraints, "Rules:" block, etc.
- * always include this distinctive marker phrase, so matching on it is a
- * reliable, low-risk way to filter it out everywhere messages are rendered.
- */
 const isInternalRefinePrompt = (text: unknown): boolean =>
   typeof text === 'string' &&
   text.includes("Here is the current Research Objective Summary in full") &&
   text.includes("do NOT change any part of it except");
+
+/**
+ * Convert a File to a base64 string (data-URI stripped).
+ */
+const fileToBase64 = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      // Strip the "data:<mime>;base64," prefix — send raw base64 only
+      resolve(result.split(',')[1] ?? '');
+    };
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.readAsDataURL(file);
+  });
+
+/**
+ * Validate that the file is an accepted type and within size limits.
+ * Returns an error string, or null if valid.
+ */
+const validateFile = (file: File): string | null => {
+  const ext = '.' + file.name.split('.').pop()?.toLowerCase();
+  const mimeOk = ACCEPTED_MIME_TYPES.includes(file.type);
+  const extOk = ACCEPTED_EXTENSIONS.includes(ext);
+
+  if (!mimeOk && !extOk) {
+    return `Only PDF, DOC, DOCX, XLS, and XLSX files are supported.`;
+  }
+  if (file.size > MAX_FILE_SIZE_BYTES) {
+    return `File is too large. Maximum size is ${MAX_FILE_SIZE_MB} MB.`;
+  }
+  return null;
+};
+
+/**
+ * Return a short human-readable label for a file's type.
+ */
+const getFileTypeLabel = (file: File): string => {
+  if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) return 'PDF';
+  if (file.name.toLowerCase().endsWith('.docx')) return 'DOCX';
+  if (file.name.toLowerCase().endsWith('.doc')) return 'DOC';
+  if (file.name.toLowerCase().endsWith('.xlsx')) return 'XLSX';
+  if (file.name.toLowerCase().endsWith('.xls')) return 'XLS';
+  return 'File';
+};
 
 // ── Component ────────────────────────────────────────────────────────────────
 
@@ -127,6 +177,7 @@ const AddResearchObjective: React.FC = () => {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── Auth / tier ────────────────────────────────────────────────────────────
   const { user } = useSelector((state: RootState) => state.auth);
@@ -148,10 +199,13 @@ const AddResearchObjective: React.FC = () => {
     }
   };
 
-  // ── Persona flow lock — true after user clicks Create with Omi or Build Manually ──
+  // ── File upload state ──────────────────────────────────────────────────────
+  const [fileError, setFileError] = useState<string | null>(null);
+
+  // ── Persona flow lock ──────────────────────────────────────────────────────
   const [personaFlowStarted, setPersonaFlowStarted] = useState(false);
 
-  // ── Summary edit count — capped at MAX_SUMMARY_EDITS, persisted per objective ──
+  // ── Summary edit count ─────────────────────────────────────────────────────
   const [summaryEditCount, setSummaryEditCount] = useState<number>(0);
 
   useEffect(() => {
@@ -169,7 +223,7 @@ const AddResearchObjective: React.FC = () => {
     });
   }, [objectiveId]);
 
-  // TanStack Query Hooks
+  // ── TanStack Query hooks ───────────────────────────────────────────────────
   const {
     data: sessionData,
     isLoading: sessionLoading,
@@ -200,9 +254,6 @@ const AddResearchObjective: React.FC = () => {
     refetch: refetchExistingPersonas,
   } = usePersonas(workspaceId, objectiveId);
 
-  // ── Derived: do any personas already exist for this objective? ─────────────
-  // Once personas exist, the research objective summary should be permanently
-  // locked from further refinement — even on a fresh page load / revisit.
   const personasExist = (() => {
     const data = (existingPersonasData as any)?.data;
     const arr = Array.isArray(data)
@@ -213,7 +264,7 @@ const AddResearchObjective: React.FC = () => {
     return arr.length > 0;
   })();
 
-  // Redux state
+  // ── Redux state ────────────────────────────────────────────────────────────
   const {
     templates,
     selectedTemplate,
@@ -223,7 +274,7 @@ const AddResearchObjective: React.FC = () => {
     error: templatesError
   } = useSelector((state: RootState) => state.researchObjective);
 
-  // Chat State
+  // ── Chat state ─────────────────────────────────────────────────────────────
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState<string>("");
   const [omiStatus, setOmiStatus] = useState<string>("Starting research insight shown here...");
@@ -233,7 +284,7 @@ const AddResearchObjective: React.FC = () => {
   const [prevMessagesLength, setPrevMessagesLength] = useState<number>(0);
   const [hasTriggeredInitialEvent, setHasTriggeredInitialEvent] = useState<boolean>(false);
 
-  // ── Typing indicator text cycling ─────────────────────────────────────────
+  // ── Thinking phrase cycling ────────────────────────────────────────────────
   const thinkingPhrases = ["Working on a response", "Thinking", "Analyzing your input", "Processing"];
   const [thinkingPhraseIndex, setThinkingPhraseIndex] = useState(0);
 
@@ -248,8 +299,6 @@ const AddResearchObjective: React.FC = () => {
   const transformMessages = useCallback((apiMessages: any[]): Message[] => {
     if (!apiMessages || !Array.isArray(apiMessages)) return [];
     return apiMessages
-      // ── Strip out internal "refine summary" prompts that some backends
-      //    persist as user-role messages — these must never be shown.
       .filter((msg: any) => !isInternalRefinePrompt(msg?.content))
       .map((msg: any, index: number) => ({
         id: msg.id || `msg-${index}`,
@@ -359,36 +408,12 @@ const AddResearchObjective: React.FC = () => {
   }, [messages, objectiveId, workspaceId]);
 
   // ── Summary refinement handler ────────────────────────────────────────────
-  /**
-   * In-place edit strategy (ChatGPT-style):
-   * The summary bubble text is updated directly — no new messages are appended
-   * to the thread. The floater's own UI handles the "sent ✓" feedback.
-   *
-   * 1. Client-side substitution (~80% of cases):
-   *    "change X to Y", "replace X with Y", "use Y instead", or a short
-   *    plain-word replacement — all resolved locally with no LLM call.
-   *
-   * 2. LLM fallback for semantic instructions (rephrase, expand, etc.):
-   *    Sends a tightly-constrained prompt; the response replaces the summary
-   *    bubble text in-place. Still no new thread messages.
-   *
-   *    IMPORTANT: this constrained prompt is an *internal* instruction to
-   *    Omi and must never be rendered as a chat bubble. We deliberately do
-   *    NOT push it into `messages`, and `transformMessages` additionally
-   *    filters it out if the backend ever persists it into conversation
-   *    history (see `isInternalRefinePrompt`).
-   *
-   * Both paths are capped at MAX_SUMMARY_EDITS total refinements per
-   * objective, and are permanently disabled once personas have been
-   * generated for this objective (see `personasExist`).
-   */
   const handleRefineRequest = async (
     selectedText: string,
     instruction: string
   ): Promise<void> => {
     if (!sessionId) throw new Error("No active session");
 
-    // ── Hard guards: edit limit + persona lock ──────────────────────────────
     if (summaryEditCount >= MAX_SUMMARY_EDITS) {
       setOmiStatus(`You've reached the maximum of ${MAX_SUMMARY_EDITS} edits for this summary.`);
       return;
@@ -398,18 +423,13 @@ const AddResearchObjective: React.FC = () => {
       return;
     }
 
-    // ── Find the current summary message ────────────────────────────────────
     const summaryMessage = [...messages].reverse().find(m =>
       m.sender === 'omi' && m.text?.includes("carry this forward into personas")
     );
     const currentSummaryFull = summaryMessage?.text ?? "";
 
-    // ── Attempt client-side substitution first ───────────────────────────────
     const trimmedInstruction = instruction.trim();
-
-    // Pattern: "change X to Y" or "replace X with Y"
     const changeToPattern = /^(?:change|replace)\s+["']?(.+?)["']?\s+(?:to|with)\s+["']?(.+?)["']?$/i;
-    // Pattern: "use Y instead [of X]" or "use Y"
     const useInsteadPattern = /^use\s+["']?(.+?)["']?(?:\s+instead(?:\s+of\s+["']?.+?["']?)?)?$/i;
 
     let replacement: string | null = null;
@@ -422,8 +442,8 @@ const AddResearchObjective: React.FC = () => {
       replacement = changeMatch[2]!.trim();
     } else if (useMatch) {
       replacement = useMatch[1]!.trim();
-    } else if (changeThisMatch) {                    
-      replacement = changeThisMatch[1]!.trim();     
+    } else if (changeThisMatch) {
+      replacement = changeThisMatch[1]!.trim();
     } else if (
       !/\b(rephrase|rewrite|expand|...)\b/i.test(trimmedInstruction) &&
       trimmedInstruction.split(/\s+/).length <= 6
@@ -432,9 +452,7 @@ const AddResearchObjective: React.FC = () => {
     }
 
     if (replacement !== null && currentSummaryFull.includes(selectedText)) {
-      // ── Pure client-side swap — patch bubble in-place, no new messages ────
       const updatedText = currentSummaryFull.replace(selectedText, replacement);
-
       if (summaryMessage) {
         setMessages(prev =>
           prev.map(m => m.id === summaryMessage.id ? { ...m, text: updatedText } : m)
@@ -452,14 +470,6 @@ const AddResearchObjective: React.FC = () => {
       return;
     }
 
-    // ── LLM fallback for semantic/complex instructions ───────────────────────
-    // Constrained prompt: pass the full summary, ask the model to return the
-    // complete rewritten text (only the selected passage changed).
-    //
-    // NOTE: this is sent via `sendMessage` so Omi can process it, but it is
-    // an internal instruction — it is NEVER appended to `messages`, and
-    // `transformMessages` filters it out of conversation history too (via
-    // `isInternalRefinePrompt`) in case the backend persists it.
     const prompt =
       `Here is the current Research Objective Summary in full — do NOT change any part of it except the specific passage called out below:\n\n` +
       `---\n${currentSummaryFull}\n---\n\n` +
@@ -477,7 +487,6 @@ const AddResearchObjective: React.FC = () => {
       sendMessage(prompt, {
         onSuccess: (response: any) => {
           if (response.status === "success") {
-            // ── Patch the summary bubble in-place — no new thread messages ──
             const updatedText: string = response.data.message;
             if (summaryMessage) {
               setMessages(prev =>
@@ -516,7 +525,6 @@ const AddResearchObjective: React.FC = () => {
 
   const handleCreateWithOmi = async () => {
     setPersonaFlowStarted(true);
-
     trigger({ stage: 'persona_builder', event: 'PERSONA_WORKFLOW_LOADED', payload: {} });
     if (objectiveId) localStorage.setItem(`step1_done_${objectiveId}`, '1');
 
@@ -559,24 +567,49 @@ const AddResearchObjective: React.FC = () => {
       setShowUpgradeModal(true);
       return;
     }
-
     setPersonaFlowStarted(true);
-
     trigger({ stage: 'persona_builder', event: 'PERSONA_WORKFLOW_LOADED', payload: {} });
     if (objectiveId) localStorage.setItem(`step1_done_${objectiveId}`, '1');
-
     navigate(
       `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-builder/manual`,
       { state: { flow: "manual", viewOnly: isViewOnly } }
     );
   };
 
+  // ── File handling ─────────────────────────────────────────────────────────
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFileError(null);
+    const file = e.target.files?.[0] ?? null;
+    // Reset input so the same file can be re-selected after removal
+    e.target.value = '';
+
+    if (!file) return;
+
+    const error = validateFile(file);
+    if (error) {
+      setFileError(error);
+      return;
+    }
+
+    setUploadedFile(file);
+  };
+
+  const handleRemoveFile = () => {
+    setUploadedFile(null);
+    setFileError(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
   // ── Message sending ──────────────────────────────────────────────────────────
 
-  const handleSendMessage = (e?: React.FormEvent) => {
+  const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (inputValue.trim() === "" && !uploadedFile) return;
+    const hasText = inputValue.trim() !== "";
+    const hasFile = uploadedFile !== null;
+    if (!hasText && !hasFile) return;
 
+    // Optimistically add the user message to the thread
     const userMessage: Message = {
       id: `user-${Date.now()}`,
       sender: 'user',
@@ -590,27 +623,61 @@ const AddResearchObjective: React.FC = () => {
     trigger({ stage: 'research_objective', event: 'RESEARCH_OBJECTIVE_SUBMITTED', payload: {} });
 
     const messageToSend = inputValue;
+    const fileToSend = uploadedFile;
+
     setInputValue("");
     setUploadedFile(null);
+    setFileError(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
     setOmiAnimation("greeting");
     setOmiStatus("Omi is thinking...");
 
     if (!sessionId) {
       setOmiAnimation("error");
       console.error('No session ID available');
-      const errorMessage: Message = {
+      setMessages(prev => [...prev, {
         id: `error-${Date.now()}`,
         sender: 'omi',
         text: "Session not initialized. Please try again.",
         timestamp: new Date(),
         isError: true
-      };
-      setMessages(prev => [...prev, errorMessage]);
+      }]);
       setOmiStatus("Session error");
       return;
     }
 
-    sendMessage(messageToSend, {
+    // ── Build the payload: text + optional file as base64 ──────────────────
+    let payload: any = messageToSend;
+
+    if (fileToSend) {
+      try {
+        const base64Data = await fileToBase64(fileToSend);
+        payload = {
+          message: messageToSend,
+          file: {
+            name: fileToSend.name,
+            type: fileToSend.type,
+            size: fileToSend.size,
+            data: base64Data,
+          },
+        };
+      } catch {
+        setOmiAnimation("error");
+        setMessages(prev => [...prev, {
+          id: `error-${Date.now()}`,
+          sender: 'omi',
+          text: "Failed to read the uploaded file. Please try again.",
+          timestamp: new Date(),
+          isError: true
+        }]);
+        setOmiStatus("File read error");
+        return;
+      }
+    }
+
+    setIsSubmitting(true);
+
+    sendMessage(payload, {
       onSuccess: (response: any) => {
         if (response.status === "success") {
           const omiMessage: Message = {
@@ -633,14 +700,13 @@ const AddResearchObjective: React.FC = () => {
           setTimeout(() => { refetchHistory(); }, 500);
         } else {
           setOmiAnimation("error");
-          const errorMessage: Message = {
+          setMessages(prev => [...prev, {
             id: `error-${Date.now()}`,
             sender: 'omi',
             text: "Sorry, I encountered an error. Please try again.",
             timestamp: new Date(),
             isError: true
-          };
-          setMessages(prev => [...prev, errorMessage]);
+          }]);
           setOmiStatus("Error occurred");
         }
         setIsSubmitting(false);
@@ -648,24 +714,17 @@ const AddResearchObjective: React.FC = () => {
       onError: (error: any) => {
         setOmiAnimation("error");
         console.error('Failed to send message:', error);
-        const errorMessage: Message = {
+        setMessages(prev => [...prev, {
           id: `error-${Date.now()}`,
           sender: 'omi',
           text: "Sorry, I'm having trouble connecting. Please check your connection and try again.",
           timestamp: new Date(),
           isError: true
-        };
-        setMessages(prev => [...prev, errorMessage]);
+        }]);
         setOmiStatus("Connection error");
         setIsSubmitting(false);
       }
     });
-
-    setIsSubmitting(true);
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) setUploadedFile(e.target.files[0] ?? null);
   };
 
   const handleRefreshHistory = () => { refetchHistory(); };
@@ -805,79 +864,84 @@ const AddResearchObjective: React.FC = () => {
                 {messages
                   .filter((message) => !isInternalRefinePrompt(message.text))
                   .map((message, index, filteredMessages) => {
-                  const isLatestOmi = message.sender === 'omi' &&
-                    index === filteredMessages.reduce((lastIdx, msg, idx) =>
-                      msg.sender === 'omi' ? idx : lastIdx, -1
-                    );
-                  const isSummary = isSummaryMessage(message);
+                    const isLatestOmi = message.sender === 'omi' &&
+                      index === filteredMessages.reduce((lastIdx, msg, idx) =>
+                        msg.sender === 'omi' ? idx : lastIdx, -1
+                      );
+                    const isSummary = isSummaryMessage(message);
 
-                  return (
-                    <motion.div
-                      key={message.id}
-                      initial={{ opacity: 0, y: 10, scale: 0.98 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      className={`aro-message-row ${message.sender === 'user' ? 'aro-message-row--user' : 'aro-message-row--omi'}`}
-                    >
-                      <div className={`aro-bubble-wrapper ${message.sender === 'user' ? 'aro-bubble-wrapper--user' : 'aro-bubble-wrapper--omi'}`}>
+                    return (
+                      <motion.div
+                        key={message.id}
+                        initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        className={`aro-message-row ${message.sender === 'user' ? 'aro-message-row--user' : 'aro-message-row--omi'}`}
+                      >
+                        <div className={`aro-bubble-wrapper ${message.sender === 'user' ? 'aro-bubble-wrapper--user' : 'aro-bubble-wrapper--omi'}`}>
 
-                        {/* ── Summary message: selection-triggered AI refinement ── */}
-                        {isSummary ? (
-                          <SummaryRefineBubble
-                            message={message}
-                            isLocked={personaFlowStarted || isViewOnly || personasExist}
-                            isSending={isSendingMessage || isSubmitting}
-                            onRefine={handleRefineRequest}
-                            renderMessageContent={renderMessageWithPersonaButton}
-                            editCount={summaryEditCount}
-                            maxEdits={MAX_SUMMARY_EDITS}
-                          />
-                        ) : (
-                          /* ── All other messages ── */
-                          <div className={`aro-bubble ${message.sender === 'omi'
-                            ? message.isError
-                              ? 'aro-bubble--omi-error'
-                              : 'aro-bubble--omi'
-                            : 'aro-bubble--user'
-                            }`}>
-                            {message.sender === 'omi' && (
-                              <div className="aro-omi-avatar">
-                                {isLatestOmi ? (
-                                  <video
-                                    key={message.isError ? "error" : omiAnimation}
-                                    className="aro-omi-video"
-                                    src={message.isError ? OmiCaution : getOmiVideo()}
-                                    autoPlay loop muted playsInline
-                                  />
-                                ) : (
-                                  <video
-                                    className="aro-omi-video aro-omi-video--static"
-                                    src={message.isError ? OmiCaution : OmiGreet}
-                                    muted playsInline
-                                  />
-                                )}
-                              </div>
-                            )}
-                            <div className="aro-bubble-text">
-                              {renderMessageWithPersonaButton(message)}
-                              {message.file && (
-                                <div className="aro-bubble-file">
-                                  <TbPaperclip size={16} />
-                                  <span className="aro-bubble-file-name">{(message.file as File).name}</span>
+                          {isSummary ? (
+                            <SummaryRefineBubble
+                              message={message}
+                              isLocked={personaFlowStarted || isViewOnly || personasExist}
+                              isSending={isSendingMessage || isSubmitting}
+                              onRefine={handleRefineRequest}
+                              renderMessageContent={renderMessageWithPersonaButton}
+                              editCount={summaryEditCount}
+                              maxEdits={MAX_SUMMARY_EDITS}
+                            />
+                          ) : (
+                            <div className={`aro-bubble ${message.sender === 'omi'
+                              ? message.isError
+                                ? 'aro-bubble--omi-error'
+                                : 'aro-bubble--omi'
+                              : 'aro-bubble--user'
+                              }`}>
+                              {message.sender === 'omi' && (
+                                <div className="aro-omi-avatar">
+                                  {isLatestOmi ? (
+                                    <video
+                                      key={message.isError ? "error" : omiAnimation}
+                                      className="aro-omi-video"
+                                      src={message.isError ? OmiCaution : getOmiVideo()}
+                                      autoPlay loop muted playsInline
+                                    />
+                                  ) : (
+                                    <video
+                                      className="aro-omi-video aro-omi-video--static"
+                                      src={message.isError ? OmiCaution : OmiGreet}
+                                      muted playsInline
+                                    />
+                                  )}
                                 </div>
                               )}
+                              <div className="aro-bubble-text">
+                                {renderMessageWithPersonaButton(message)}
+                                {/* File attachment badge on user messages */}
+                                {message.file && (
+                                  <div className="aro-bubble-file">
+                                    {(message.file as File).name.toLowerCase().endsWith('.pdf')
+                                      ? <TbFileTypePdf size={15} />
+                                      : ((message.file as File).name.toLowerCase().endsWith('.xls') || (message.file as File).name.toLowerCase().endsWith('.xlsx'))
+                                        ? <TbFileTypeXls size={15} />
+                                        : <TbFileTypeDoc size={15} />
+                                    }
+                                    <span className="aro-bubble-file-name">{(message.file as File).name}</span>
+                                    <span className="aro-bubble-file-type">{getFileTypeLabel(message.file as File)}</span>
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        )}
+                          )}
 
-                        <span className="aro-timestamp">
-                          {message.sender === 'omi' ? 'Omi' : 'You'} • {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      </div>
-                    </motion.div>
-                  );
-                })}
+                          <span className="aro-timestamp">
+                            {message.sender === 'omi' ? 'Omi' : 'You'} • {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
 
-                {/* ── Typing indicator ── */}
+                {/* ── Thinking indicator (brain icon + cycling phrases) ── */}
                 <AnimatePresence>
                   {(isSendingMessage || isSubmitting) && (
                     <motion.div
@@ -890,8 +954,9 @@ const AddResearchObjective: React.FC = () => {
                     >
                       <div className="aro-bubble-wrapper aro-bubble-wrapper--omi">
                         <div className="aro-typing-indicator">
-                          <div className="aro-omi-avatar aro-omi-avatar--typing">
-                            <video className="aro-omi-video" src={OmiKeyboard} autoPlay loop muted playsInline />
+                          {/* Brain icon replaces the video animation */}
+                          <div className="aro-thinking-icon-wrap">
+                            <TbBrain size={20} className="aro-thinking-brain" />
                           </div>
                           <div className="aro-typing-text-wrap">
                             <AnimatePresence mode="wait">
@@ -991,11 +1056,69 @@ const AddResearchObjective: React.FC = () => {
             </motion.div>
           ) : (
             <div className="aro-input-bar">
+              {/* ── File preview pill (above the input) ── */}
+              <AnimatePresence>
+                {uploadedFile && (
+                  <motion.div
+                    className="aro-file-pill"
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 6 }}
+                    transition={{ duration: 0.15 }}
+                  >
+                    {uploadedFile.name.toLowerCase().endsWith('.pdf')
+                      ? <TbFileTypePdf size={14} />
+                      : (uploadedFile.name.toLowerCase().endsWith('.xls') || uploadedFile.name.toLowerCase().endsWith('.xlsx'))
+                        ? <TbFileTypeXls size={14} />
+                        : <TbFileTypeDoc size={14} />
+                    }
+                    <span className="aro-file-pill-name">{uploadedFile.name}</span>
+                    <span className="aro-file-pill-badge">{getFileTypeLabel(uploadedFile)}</span>
+                    <button
+                      className="aro-file-pill-remove"
+                      onClick={handleRemoveFile}
+                      disabled={isSubmitting}
+                      aria-label="Remove file"
+                    >
+                      <TbX size={13} />
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* ── File error ── */}
+              <AnimatePresence>
+                {fileError && (
+                  <motion.div
+                    className="aro-file-error"
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.15 }}
+                  >
+                    <TbAlertCircle size={14} />
+                    <span>{fileError}</span>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               <form onSubmit={handleSendMessage} className="aro-input-form">
-                <label className="aro-input-file-label">
+                {/* ── File upload trigger ── */}
+                <label
+                  className="aro-input-file-label"
+                  title="Attach a PDF, DOC, DOCX, XLS, or XLSX file"
+                >
                   <SpIcon name="sp-Edit-Paperclip_Attechment_Tilt" />
-                  <input type="file" className="hidden" onChange={handleFileChange} disabled={isSubmitting || isLoading || !sessionData} />
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    className="hidden"
+                    accept=".pdf,.doc,.docx,.xls,.xlsx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    onChange={handleFileChange}
+                    disabled={isSubmitting || isLoading || !sessionData || !!uploadedFile}
+                  />
                 </label>
+
                 <textarea
                   ref={textareaRef}
                   value={inputValue}
@@ -1006,10 +1129,13 @@ const AddResearchObjective: React.FC = () => {
                   className="aro-textarea"
                   rows={1}
                   disabled={isSubmitting || isLoading || !sessionData}
+                  placeholder={uploadedFile ? "Add a message about your file (optional)…" : undefined}
                 />
+
                 <button type="button" className="aro-input-icon-btn" disabled={isSubmitting || isLoading || !sessionData}>
                   <SpIcon name="sp-Other-Mic" />
                 </button>
+
                 <button
                   type="submit"
                   className="aro-send-btn"
@@ -1018,14 +1144,6 @@ const AddResearchObjective: React.FC = () => {
                   <SpIcon name="sp-Communication-Paper_Plane" size={16} />
                 </button>
               </form>
-
-              {uploadedFile && (
-                <div className="aro-file-pill">
-                  <TbPaperclip size={14} />
-                  <span className="aro-file-pill-name">{uploadedFile.name}</span>
-                  <button className="aro-file-pill-remove" onClick={() => setUploadedFile(null)} disabled={isSubmitting}>×</button>
-                </div>
-              )}
             </div>
           )}
         </div>

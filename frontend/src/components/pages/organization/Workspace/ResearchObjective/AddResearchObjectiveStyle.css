@@ -740,3 +740,132 @@
   color: #6b7280 !important;
   transform: none !important;
 }
+
+.aro-thinking-icon-wrap {
+  flex-shrink: 0;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  background: rgba(30, 41, 80, 0.8);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+ 
+.aro-thinking-brain {
+  color: #60a5fa;
+  /* Gentle pulse so it feels "alive" while waiting */
+  animation: aro-brain-pulse 2s ease-in-out infinite;
+}
+ 
+@keyframes aro-brain-pulse {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50%       { opacity: 1;   transform: scale(1.1); }
+}
+ 
+/* ── 2. File type badge inside the bubble attachment row ─────────────────── */
+/* Shows "PDF", "DOC", or "DOCX" next to the filename                        */
+ 
+.aro-bubble-file-type {
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.6);
+  flex-shrink: 0;
+  margin-left: auto;
+}
+ 
+/* ── 3. Updated file pill (above the input form) ─────────────────────────── */
+/* Replaces the old .aro-file-pill entirely — better layout, X button        */
+ 
+.aro-file-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px 5px 10px;
+  background: rgba(37, 99, 235, 0.1);
+  border: 1px solid rgba(37, 99, 235, 0.22);
+  border-radius: 8px;
+  color: #60a5fa;
+  margin-bottom: 6px;
+  max-width: 100%;
+}
+ 
+.aro-file-pill-name {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #93c5fd;
+}
+ 
+/* Small type badge inside the pill */
+.aro-file-pill-badge {
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(37, 99, 235, 0.18);
+  color: #60a5fa;
+  flex-shrink: 0;
+}
+ 
+/* X remove button inside the pill */
+.aro-file-pill-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: rgba(96, 165, 250, 0.6);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+  flex-shrink: 0;
+  margin-left: 2px;
+}
+ 
+.aro-file-pill-remove:hover:not(:disabled) {
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.1);
+}
+ 
+.aro-file-pill-remove:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+ 
+/* ── 4. File validation error banner ─────────────────────────────────────── */
+ 
+.aro-file-error {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 8px;
+  color: #f87171;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  margin-bottom: 6px;
+}
+ 
+/* ── 5. Clip icon disabled state when a file is already attached ─────────── */
+/* The label becomes non-interactive while uploadedFile is truthy             */
+ 
+.aro-input-file-label:has(input:disabled) {
+  opacity: 0.35;
+  cursor: not-allowed;
+  pointer-events: none;
+}

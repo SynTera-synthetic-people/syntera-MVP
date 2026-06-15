@@ -3,6 +3,7 @@ import {
     TbSend, TbLoader, TbFileText, TbClock, TbPlus, TbTrash, TbX,
     TbBrain, TbSparkles,
 } from 'react-icons/tb';
+import { motion, AnimatePresence } from 'framer-motion';
 import SpIcon from '../../../../SPIcon';
 import {
     useCreateDRSession,
@@ -63,6 +64,15 @@ const QUANT_PROMPTS = [
     'How do different personas compare on the top decision drivers?',
 ];
 
+// ── Thinking phrases (mirrors AddResearchObjective) ────────────────────────────
+
+const THINKING_PHRASES = [
+    'Working on a response',
+    'Thinking',
+    'Analyzing your input',
+    'Processing',
+];
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const groupSessionsByDate = (sessions: SessionSummary[]) => {
@@ -112,7 +122,13 @@ const DecisionRoom: React.FC<DecisionRoomProps> = ({
     const [isSending, setIsSending] = useState<boolean>(false);
     const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 
-    const chatEndRef = useRef<HTMLDivElement>(null);
+    // ── Thinking phrase cycling ────────────────────────────────────────────────
+    const [thinkingPhraseIndex, setThinkingPhraseIndex] = useState(0);
+
+    // Accumulate streamed text without triggering re-renders mid-stream
+    const streamBufferRef = useRef<string>('');
+
+    const messagesContainerRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const queryClient = useQueryClient();
     const suggestedPrompts = flow === 'qual' ? QUAL_PROMPTS : QUANT_PROMPTS;
@@ -123,11 +139,23 @@ const DecisionRoom: React.FC<DecisionRoomProps> = ({
     const deleteSession = useDeleteDRSession(workspaceId, objectiveId);
     const { data: sessionList = [] } = useDRSessions(workspaceId, objectiveId, flow);
 
+    // ── Smart auto-scroll ──────────────────────────────────────────────────────
+    // Only scrolls to bottom when the user is already within 120 px of it,
+    // so manual upward scrolling is never hijacked.
+    const scrollToBottomIfNear = useCallback(() => {
+        const el = messagesContainerRef.current;
+        if (!el) return;
+        const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+        if (distanceFromBottom < 120) {
+            el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+        }
+    }, []);
+
     // ── Effects ────────────────────────────────────────────────────────────────
 
     useEffect(() => {
-        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [messages]);
+        scrollToBottomIfNear();
+    }, [messages, isSending, scrollToBottomIfNear]);
 
     useEffect(() => {
         if (!isChatActive) {
@@ -144,24 +172,32 @@ const DecisionRoom: React.FC<DecisionRoomProps> = ({
         return () => clearTimeout(timer);
     }, [activeSessionId, workspaceId, objectiveId, flow, queryClient]);
 
+    // ── Thinking phrase cycling — runs while isSending ────────────────────────
+    useEffect(() => {
+        if (!isSending) return;
+        const interval = setInterval(() => {
+            setThinkingPhraseIndex((i) => (i + 1) % THINKING_PHRASES.length);
+        }, 2000);
+        return () => clearInterval(interval);
+    }, [isSending]);
+
     // ── Session management ─────────────────────────────────────────────────────
 
     const handleStartSession = useCallback(async () => {
         try {
-
             const res = await (createSession.mutateAsync as unknown as (v: string) => Promise<unknown>)(flow);
             const { session_id, greeting } = (res as any).data?.data ?? (res as any).data ?? {};
             setActiveSessionId(session_id ?? null);
             setMessages([{
                 sender: 'analyst',
-                text: greeting ?? 'Hi, I am your Strategy Partner for this exploration.I have read through the study and I am here to help you make sense of the signals, spot the opportunities, and decide what to do next',
+                text: greeting ?? 'Hi, I am your Strategy Partner for this exploration. I have read through the study and I am here to help you make sense of the signals, spot the opportunities, and decide what to do next.',
                 timestamp: new Date().toISOString(),
             }]);
             setIsChatActive(true);
         } catch {
             setMessages([{
                 sender: 'analyst',
-                text: 'Hi, I am your Strategy Partner for this exploration.I have read through the study and I am here to help you make sense of the signals, spot the opportunities, and decide what to do next',
+                text: 'Hi, I am your Strategy Partner for this exploration. I have read through the study and I am here to help you make sense of the signals, spot the opportunities, and decide what to do next.',
                 timestamp: new Date().toISOString(),
             }]);
             setIsChatActive(true);
@@ -195,7 +231,6 @@ const DecisionRoom: React.FC<DecisionRoomProps> = ({
     const handleDeleteThread = async (e: React.MouseEvent, sessionId: string) => {
         e.stopPropagation();
         try {
-
             await (deleteSession.mutateAsync as unknown as (v: string) => Promise<unknown>)(sessionId);
         } catch {
             // non-critical
@@ -207,7 +242,12 @@ const DecisionRoom: React.FC<DecisionRoomProps> = ({
         }
     };
 
-    // ── Messaging (streaming) ──────────────────────────────────────────────────
+    // ── Messaging (streaming under the hood, but shown all at once) ────────────
+    //
+    // The stream is still consumed in full — we just buffer deltas silently in
+    // a ref instead of pushing each chunk to state.  Once `onDone` fires we
+    // commit the complete text in a single setState call, so the message
+    // appears instantly and fully formed rather than character-by-character.
 
     const sendToAnalyst = useCallback(async (text: string) => {
         if (!activeSessionId || isSending) return;
@@ -216,14 +256,10 @@ const DecisionRoom: React.FC<DecisionRoomProps> = ({
         setMessages((prev) => [...prev, userMsg]);
         setInputValue('');
         setIsSending(true);
+        setThinkingPhraseIndex(0);
 
-        const streamingPlaceholder: ChatMessage = {
-            sender: 'analyst',
-            text: '',
-            timestamp: new Date().toISOString(),
-            isStreaming: true,
-        };
-        setMessages((prev) => [...prev, streamingPlaceholder]);
+        // Reset the stream buffer
+        streamBufferRef.current = '';
 
         await streamDRMessage(
             workspaceId,
@@ -232,35 +268,30 @@ const DecisionRoom: React.FC<DecisionRoomProps> = ({
             text,
             {
                 onDelta: (delta: string) => {
-                    setMessages((prev) => {
-                        const msgs = [...prev];
-                        const last = msgs[msgs.length - 1];
-                        if (last?.isStreaming) {
-                            msgs[msgs.length - 1] = { ...last, text: last.text + delta };
-                        }
-                        return msgs;
-                    });
+                    // Accumulate silently — no state update here
+                    streamBufferRef.current += delta;
                 },
                 onDone: () => {
-                    setMessages((prev) => {
-                        const msgs = [...prev];
-                        const last = msgs[msgs.length - 1];
-                        if (last?.isStreaming) {
-                            msgs[msgs.length - 1] = { ...last, isStreaming: false };
-                        }
-                        return msgs;
-                    });
+                    // Commit the full buffered response in one go
+                    const fullText = streamBufferRef.current;
+                    streamBufferRef.current = '';
+
+                    setMessages((prev) => [
+                        ...prev,
+                        {
+                            sender: 'analyst',
+                            text: fullText,
+                            timestamp: new Date().toISOString(),
+                        },
+                    ]);
+
                     queryClient.invalidateQueries({
                         queryKey: drKeys.sessions(workspaceId, objectiveId, flow),
                     });
                     setIsSending(false);
                 },
                 onError: (_err: string) => {
-                    setMessages((prev) => {
-                        const msgs = [...prev];
-                        if (msgs[msgs.length - 1]?.isStreaming) msgs.pop();
-                        return msgs;
-                    });
+                    streamBufferRef.current = '';
                     setIsSending(false);
                 },
             },
@@ -417,11 +448,14 @@ const DecisionRoom: React.FC<DecisionRoomProps> = ({
 
                 {/* Chat area */}
                 <div className="cs-chat">
-                    <div className="cs-messages cs-messages--dr">
+                    <div ref={messagesContainerRef} className="cs-messages cs-messages--dr">
 
                         {messages.map((msg, i) => (
-                            <div
+                            <motion.div
                                 key={i}
+                                initial={{ opacity: 0, y: 8 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ duration: 0.2 }}
                                 className={`cs-bubble-row ${msg.sender === 'user' ? 'cs-bubble-row--user' : ''}`}
                             >
                                 {msg.sender === 'analyst' && (
@@ -432,27 +466,14 @@ const DecisionRoom: React.FC<DecisionRoomProps> = ({
 
                                 <div className="cs-bubble-col">
                                     <div
-                                        className={`cs-bubble ${msg.sender === 'user' ? 'cs-bubble--user' : 'cs-bubble--analyst'
-                                            } ${msg.isThinking ? 'cs-bubble--thinking' : ''}`}
+                                        className={`cs-bubble ${msg.sender === 'user' ? 'cs-bubble--user' : 'cs-bubble--analyst'}`}
                                     >
-                                        {msg.isThinking ? (
-                                            <div className="cs-bubble__thinking">
-                                                <TbLoader size={14} className="cs-bubble__thinking-spinner" />
-                                                <span>{msg.text}</span>
-                                            </div>
-                                        ) : msg.isStreaming && msg.text === '' ? (
-                                            <div className="cs-bubble__thinking">
-                                                <TbLoader size={14} className="cs-bubble__thinking-spinner" />
-                                                <span>Analyzing…</span>
-                                            </div>
-                                        ) : (
-                                            msg.text.split('\n').map((line, li) => (
-                                                <React.Fragment key={li}>
-                                                    {line}
-                                                    {li < msg.text.split('\n').length - 1 && <br />}
-                                                </React.Fragment>
-                                            ))
-                                        )}
+                                        {msg.text.split('\n').map((line, li) => (
+                                            <React.Fragment key={li}>
+                                                {line}
+                                                {li < msg.text.split('\n').length - 1 && <br />}
+                                            </React.Fragment>
+                                        ))}
                                     </div>
                                     <div className={`cs-bubble-meta ${msg.sender === 'user' ? 'cs-bubble-meta--user' : ''}`}>
                                         {msg.sender === 'analyst' ? 'Research Analyst' : 'You'} • {formatTime(msg.timestamp)}
@@ -462,10 +483,47 @@ const DecisionRoom: React.FC<DecisionRoomProps> = ({
                                 {msg.sender === 'user' && (
                                     <div className="cs-bubble-avatar cs-bubble-avatar--user" />
                                 )}
-                            </div>
+                            </motion.div>
                         ))}
 
-                        <div ref={chatEndRef} />
+                        {/* ── Thinking indicator — shown while streaming ── */}
+                        <AnimatePresence>
+                            {isSending && (
+                                <motion.div
+                                    key="dr-thinking"
+                                    initial={{ opacity: 0, y: 8 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: 4 }}
+                                    transition={{ duration: 0.2 }}
+                                    className="cs-bubble-row"
+                                >
+                                    <div className="cs-bubble-avatar cs-bubble-avatar--dr cs-bubble-avatar--thinking">
+                                        <TbBrain size={16} />
+                                    </div>
+                                    <div className="cs-bubble-col">
+                                        <div className="cs-bubble cs-bubble--analyst cs-bubble--thinking-indicator">
+                                            <AnimatePresence mode="wait">
+                                                <motion.span
+                                                    key={thinkingPhraseIndex}
+                                                    initial={{ opacity: 0, y: 4 }}
+                                                    animate={{ opacity: 1, y: 0 }}
+                                                    exit={{ opacity: 0, y: -4 }}
+                                                    transition={{ duration: 0.25 }}
+                                                    className="cs-thinking-phrase"
+                                                >
+                                                    {THINKING_PHRASES[thinkingPhraseIndex]}
+                                                </motion.span>
+                                            </AnimatePresence>
+                                            <span className="cs-thinking-dots">
+                                                <span /><span /><span />
+                                            </span>
+                                        </div>
+                                        <div className="cs-bubble-meta">Research Analyst</div>
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+
                     </div>
 
                     {/* Suggested prompts */}
