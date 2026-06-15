@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { TbChevronDown, TbX, TbInfoCircle, TbPlus, TbArrowRight, TbLoader, TbChevronUp } from 'react-icons/tb';
-import OmiKeyboard from '../../../../../../assets/Omi Animations/OmiKeyboard.mp4';
+import { TbChevronDown, TbX, TbInfoCircle, TbPlus, TbArrowRight, TbChevronUp } from 'react-icons/tb';
 import './PopulationSetup.css';
 
 interface Persona {
@@ -29,13 +28,6 @@ interface PopulationSetupProps {
     isPending: boolean;
 }
 
-const SETUP_STEPS = [
-    { step: 1, label: 'Understanding your objective, context, and decision focus.' },
-    { step: 2, label: 'Mapping your personas to real-world behavioural profiles.' },
-    { step: 3, label: 'Calibrating sample distribution across the population.' },
-    { step: 4, label: 'Preparing your survey for deployment.' },
-];
-
 const MAX_PERSONAS = 8;
 const PREVIEW_COUNT = 4;
 
@@ -49,29 +41,16 @@ const PopulationSetup: React.FC<PopulationSetupProps> = ({
     onStartSurvey,
     isPending = false,
 }) => {
-    // const [currentStep, setCurrentStep] = useState(0);
     const [showAll, setShowAll] = useState(false);
-
-    // Dropdown open state: null = all closed, 'add' = add-new row, number = row index
     const [openDropdown, setOpenDropdown] = useState<'add' | number | null>(null);
 
     const rowDropdownRefs = useRef<(HTMLDivElement | null)[]>([]);
     const addDropdownRef = useRef<HTMLDivElement | null>(null);
-    // const videoRef = useRef<HTMLVideoElement>(null);
 
     const hasValidSelection =
         selectedPersonas.length > 0 &&
         selectedPersonas.every((p) => (sampleSizes[p.id] ?? 0) > 0);
 
-    // Step cycling
-    // useEffect(() => {
-    //     const interval = setInterval(() => {
-    //         setCurrentStep((prev) => (prev + 1) % SETUP_STEPS.length);
-    //     }, 3000);
-    //     return () => clearInterval(interval);
-    // }, []);
-
-    // Close dropdowns on outside click
     useEffect(() => {
         const handler = (e: MouseEvent) => {
             const target = e.target as Node;
@@ -88,12 +67,10 @@ const PopulationSetup: React.FC<PopulationSetupProps> = ({
     const hasMore = selectedPersonas.length > PREVIEW_COUNT;
     const badgeNum = selectedPersonas.length > 0 ? selectedPersonas.length : 1;
 
-    // Personas available for the "add new" row
     const availableForNew = personas.filter(
         (p) => !selectedPersonas.some((sp) => sp.id === p.id),
     );
 
-    // Personas available for an existing row (own + unselected)
     const getAvailableForRow = (rowPersonaId: string) =>
         personas.filter(
             (p) => p.id === rowPersonaId || !selectedPersonas.some((sp) => sp.id === p.id),
@@ -102,8 +79,13 @@ const PopulationSetup: React.FC<PopulationSetupProps> = ({
     const handleAddPersona = (persona: Persona) => {
         onSelectPersona(persona);
         setOpenDropdown(null);
-        // Auto-expand so newly added row is visible
         if (selectedPersonas.length >= PREVIEW_COUNT) setShowAll(true);
+    };
+
+    // Navigate immediately — don't wait for isPending
+    const handleStartSurvey = () => {
+        if (!hasValidSelection) return;
+        onStartSurvey();
     };
 
     return (
@@ -146,7 +128,7 @@ const PopulationSetup: React.FC<PopulationSetupProps> = ({
                     </div>
                 </div>
 
-                {/* ── Add-new row: always rendered — shown as empty state OR when "Add New Persona" clicked ── */}
+                {/* ── Add-new row ── */}
                 {(selectedPersonas.length === 0 || openDropdown === 'add') && (
                     <div className="ps-persona-entry">
                         <div className="ps-fields-row">
@@ -218,7 +200,6 @@ const PopulationSetup: React.FC<PopulationSetupProps> = ({
                                 transition={{ duration: 0.2 }}
                             >
                                 <div className="ps-fields-row">
-                                    {/* Per-row persona dropdown */}
                                     <div
                                         className="ps-dropdown"
                                         ref={(el) => { rowDropdownRefs.current[idx] = el; }}
@@ -266,7 +247,6 @@ const PopulationSetup: React.FC<PopulationSetupProps> = ({
                                         </AnimatePresence>
                                     </div>
 
-                                    {/* Sample size + remove */}
                                     <div className="ps-sample-row">
                                         <input
                                             className="ps-sample-input"
@@ -291,7 +271,7 @@ const PopulationSetup: React.FC<PopulationSetupProps> = ({
                     })}
                 </AnimatePresence>
 
-                {/* Footer: Add New Persona + View More/Less */}
+                {/* Footer */}
                 <div className="ps-card-footer">
                     {!atLimit && selectedPersonas.length > 0 && (
                         <button
@@ -321,47 +301,13 @@ const PopulationSetup: React.FC<PopulationSetupProps> = ({
             <div className="ps-action-row">
                 <button
                     className="ps-start-btn"
-                    disabled={!hasValidSelection || isPending}
-                    onClick={onStartSurvey}
+                    disabled={!hasValidSelection}
+                    onClick={handleStartSurvey}
                 >
-                    {isPending && <TbLoader className="ps-start-btn__spinner" />}
                     Start Survey
-                    {!isPending && <TbArrowRight size={16} />}
+                    <TbArrowRight size={16} />
                 </button>
             </div>
-
-            {/* ── Omi step card — hidden for now ────────────────────────────────── */}
-            {/* <div className="ps-omi-card">
-                <div className="ps-omi-card__left">
-                    <div className="ps-omi-arc-wrap">
-                        <video
-                            ref={videoRef}
-                            src={OmiKeyboard}
-                            autoPlay
-                            loop
-                            muted
-                            playsInline
-                            className="ps-omi-card__video"
-                        />
-                    </div>
-                </div>
-
-                <div className="ps-omi-card__content">
-                    <AnimatePresence mode="wait">
-                        <motion.div
-                            key={currentStep}
-                            initial={{ opacity: 0, y: 8 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -8 }}
-                            transition={{ duration: 0.35 }}
-                            className="ps-omi-card__step-text"
-                        >
-                            {SETUP_STEPS[currentStep]!.label}
-                        </motion.div>
-                    </AnimatePresence>
-                </div>
-            </div> */}
-
         </motion.div>
     );
 };

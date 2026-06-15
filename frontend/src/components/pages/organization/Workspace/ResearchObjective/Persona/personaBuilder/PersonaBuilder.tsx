@@ -1585,21 +1585,21 @@ const PersonaBuilder: React.FC = () => {
     }
   }, [navigate, workspaceId, objectiveId]);
 
-  const handleGridCreateNew = useCallback(() => {
-    if (isFreeUser && savedPersonasFromAPI.length >= FREE_PERSONA_LIMIT) return;
+const handleGridCreateNew = useCallback(() => {
+  if (isFreeUser && savedPersonasFromAPI.length >= FREE_PERSONA_LIMIT) return;
 
-    if (isTier1User && savedPersonasFromAPI.length >= personaLimitForTier) {
-      setShowAddPersonaModal(true);
-      return;
-    }
+  if (isTier1User && savedPersonasFromAPI.length >= personaLimitForTier) {
+    setShowAddPersonaModal(true);
+    return;
+  }
 
-    if (!isFreeOrTier1 && savedPersonasFromAPI.length >= personaLimitForTier) {
-      setShowAddNewPersonaModal(true);
-      return;
-    }
+  if (!isFreeOrTier1 && savedPersonasFromAPI.length >= personaLimitForTier) {
+    setShowAddPersonaModal(true);
+    return;
+  }
 
-    setShowMethodModal(true);
-  }, [isFreeUser, isTier1User, isEnterpriseUser, savedPersonasFromAPI.length]);
+  setShowMethodModal(true);
+}, [isFreeUser, isTier1User, isEnterpriseUser, savedPersonasFromAPI.length]);
 
   const handleCreateWithOmi = useCallback(() => {
     trigger({ stage: 'persona_builder', event: 'PERSONA_WORKFLOW_LOADED', payload: {} });

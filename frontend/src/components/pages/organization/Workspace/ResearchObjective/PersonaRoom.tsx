@@ -125,7 +125,6 @@ const PersonaRoom: React.FC<PersonaRoomProps> = ({
 
   const chatEndRef      = useRef<HTMLDivElement>(null);
   const dropdownRef     = useRef<HTMLDivElement>(null);
-  const skipAutoResume  = useRef(false);
   const queryClient     = useQueryClient();
 
   // ── Backend hooks ─────────────────────────────────────────────────────────
@@ -185,19 +184,6 @@ const PersonaRoom: React.FC<PersonaRoomProps> = ({
   }, [interviewData]);
 
   useEffect(() => {
-    if (!selectedPersona || isChatActive || interviewId || skipAutoResume.current) return;
-
-    const personaThreads = threads
-      .filter((t) => t.personaId === selectedPersona)
-      .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
-
-    const mostRecent = personaThreads[0];
-    if (!mostRecent) return;
-
-    handleLoadThread(mostRecent);
-  }, [selectedPersona, threads]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
@@ -214,7 +200,6 @@ const PersonaRoom: React.FC<PersonaRoomProps> = ({
   // ── Handlers ─────────────────────────────────────────────────────────────
 
   const handlePersonaSelect = (id: string, name: string) => {
-    skipAutoResume.current = false;
     setSelectedPersona(id);
     setSelectedPersonaName(name);
     setIsDropdownOpen(false);
@@ -227,7 +212,6 @@ const PersonaRoom: React.FC<PersonaRoomProps> = ({
 
   const handleStartConversation = async () => {
     if (!selectedPersona) return;
-    skipAutoResume.current = false;
     try {
       const result = await startInterviewMutation.mutateAsync({
         personaId:   selectedPersona,
@@ -279,7 +263,6 @@ const PersonaRoom: React.FC<PersonaRoomProps> = ({
   }, [workspaceId, objectiveId, queryClient, onSidebarClose]);
 
   const handleNewChat = () => {
-    skipAutoResume.current = true;
     setIsChatActive(false);
     setMessages([]);
     setInputValue('');

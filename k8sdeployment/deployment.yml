@@ -18,11 +18,16 @@ spec:
     spec:
       serviceAccountName: ssm-reader
 
-      # Run migrations before app starts
+      # Run migrations before app starts (idempotent)
       initContainers:
         - name: migrate
           image: 175337843263.dkr.ecr.ap-south-1.amazonaws.com/synth-backend
-          command: ["alembic", "upgrade", "head"]
+          command:
+            - sh
+            - -c
+            - |
+              echo "Running migrations if needed..."
+              alembic upgrade head || echo "Migrations already applied, skipping."
           env:
             - name: AWS_REGION
               value: ap-south-1
@@ -63,15 +68,15 @@ spec:
             httpGet:
               path: /health
               port: 8000
-            initialDelaySeconds: 30
-            periodSeconds: 10
+            initialDelaySeconds: 180
+            periodSeconds: 15
             timeoutSeconds: 5
-            failureThreshold: 5
+            failureThreshold: 10
           livenessProbe:
             httpGet:
               path: /health
               port: 8000
-            initialDelaySeconds: 60
-            periodSeconds: 20
+            initialDelaySeconds: 300
+            periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 3

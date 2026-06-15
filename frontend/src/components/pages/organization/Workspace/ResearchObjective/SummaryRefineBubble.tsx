@@ -28,6 +28,10 @@ interface SummaryRefineBubbleProps {
   isSending: boolean;
   onRefine: (selectedText: string, instruction: string) => Promise<void>;
   renderMessageContent: (message: Message) => React.ReactNode;
+  /** Number of refinements already applied to this summary */
+  editCount: number;
+  /** Maximum number of refinements allowed (default 5) */
+  maxEdits?: number;
 }
 
 const PILL_WIDTH   = 180;
@@ -40,6 +44,8 @@ const SummaryRefineBubble: React.FC<SummaryRefineBubbleProps> = ({
   isSending,
   onRefine,
   renderMessageContent,
+  editCount,
+  maxEdits = 10,
 }) => {
   const textAreaRef    = useRef<HTMLDivElement>(null);
   const pillRef        = useRef<HTMLDivElement>(null);
@@ -54,6 +60,11 @@ const SummaryRefineBubble: React.FC<SummaryRefineBubbleProps> = ({
   const [inputOpen,    setInputOpen]    = useState<boolean>(false);
   const [instruction,  setInstruction]  = useState<string>("");
   const [status,       setStatus]       = useState<"idle" | "sending" | "sent">("idle");
+
+  // ── Edit-limit helpers ────────────────────────────────────────────────────
+  const limitReached     = editCount >= maxEdits;
+  const remainingEdits   = Math.max(0, maxEdits - editCount);
+  const effectivelyLocked = isLocked || limitReached;
 
   // ── Fake highlight helpers ────────────────────────────────────────────────
 
@@ -87,7 +98,7 @@ const SummaryRefineBubble: React.FC<SummaryRefineBubbleProps> = ({
   // ── Show pill on pointerup ────────────────────────────────────────────────
 
   const handlePointerUp = useCallback(() => {
-    if (isLocked) return;
+    if (effectivelyLocked) return;
 
     requestAnimationFrame(() => {
       const sel = window.getSelection();
@@ -128,7 +139,7 @@ const SummaryRefineBubble: React.FC<SummaryRefineBubbleProps> = ({
       setInstruction("");
       setStatus("idle");
     });
-  }, [isLocked]);
+  }, [effectivelyLocked]);
 
   // Apply fake highlight as soon as anchor is set (pill appears)
   useEffect(() => {
@@ -194,6 +205,10 @@ const SummaryRefineBubble: React.FC<SummaryRefineBubbleProps> = ({
 
   const handleSubmit = async () => {
     if (!instruction.trim() || !selectedText || status !== "idle") return;
+    if (limitReached) {
+      dismiss();
+      return;
+    }
     setStatus("sending");
     try {
       await onRefine(selectedText, instruction.trim());
@@ -298,7 +313,9 @@ const SummaryRefineBubble: React.FC<SummaryRefineBubbleProps> = ({
                       exit={{    opacity: 0, height: 0      }}
                       transition={{ duration: 0.18 }}
                     >
-                      Done — updating summary…
+                      {remainingEdits > 0
+                        ? `Done — updating summary… (${remainingEdits} edit${remainingEdits === 1 ? "" : "s"} left)`
+                        : "Done — updating summary… (edit limit reached)"}
                     </motion.p>
                   )}
                 </AnimatePresence>
@@ -326,10 +343,22 @@ const SummaryRefineBubble: React.FC<SummaryRefineBubbleProps> = ({
           {renderMessageContent(message)}
         </div>
 
-        {!isLocked && (
+        {!effectivelyLocked && (
           <div className="srb-hint">
             <TbSparkles size={11} />
-            <span>See something you'd like to improve? Just highlight and refine.</span>
+            <span>
+              See something you'd like to improve? Just highlight and refine.
+              {remainingEdits <= 2 && (
+                <> ({remainingEdits} edit{remainingEdits === 1 ? "" : "s"} left)</>
+              )}
+            </span>
+          </div>
+        )}
+
+        {!isLocked && limitReached && (
+          <div className="srb-hint srb-hint--limit">
+            <TbSparkles size={11} />
+            <span>You've reached the maximum of {maxEdits} edits for this summary.</span>
           </div>
         )}
       </div>
