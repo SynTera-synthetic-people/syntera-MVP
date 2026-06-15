@@ -2,6 +2,6 @@
 .pb-root {
   position: relative;
   min-height: 100%;        
-  background:  var(--T-Base-B1, #0E0F12);
+  background:  var(--T-Base-B1, #060606);
   /* overflow:visible; */
 }

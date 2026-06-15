@@ -106,7 +106,7 @@ const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 
 const canBuildManually = (tier: string | undefined): boolean => {
   const t = (tier ?? '').toLowerCase().trim();
-  return t === 'enterprise' || t === 'enterprise_admin' || t === 'tier1';
+  return t === 'enterprise' || t === 'enterprise_admin';
 };
 
 const MAX_SUMMARY_EDITS = 5;
