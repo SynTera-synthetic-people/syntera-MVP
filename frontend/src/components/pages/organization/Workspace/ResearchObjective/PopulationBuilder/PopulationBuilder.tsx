@@ -597,6 +597,8 @@ const PopulationBuilder: React.FC = () => {
             }}
             workspaceId={workspaceId ?? ''}
             explorationId={explorationId ?? ''}
+            questionnaireReady={hasQuestionnaireQuestions}
+            surveySimComplete={!!surveySimulationId}
           />
         )}
 

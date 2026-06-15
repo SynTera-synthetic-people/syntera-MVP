@@ -19,6 +19,9 @@ interface SurveyInMotionProps {
   onModified: () => void;
   workspaceId: string;
   explorationId: string;
+  // Backend milestones — drive step transitions instead of a hardcoded timer
+  questionnaireReady: boolean;  // true when questionnaire generation is complete
+  surveySimComplete: boolean;   // true when survey simulation has finished
 }
 
 interface SurveyStepData {
@@ -26,6 +29,8 @@ interface SurveyStepData {
   items: string[];
   outcome: string;
 }
+
+// ── Step definitions ──────────────────────────────────────────────────────────
 
 const SURVEY_STEPS: SurveyStepData[] = [
   {
@@ -60,84 +65,91 @@ const SURVEY_STEPS: SurveyStepData[] = [
   },
 ];
 
-const TICK_MS     = 2_800;
+// Minimum time each step is shown before the UI advances (even if backend is faster).
+// Prevents jarring instant step-jumps if backend responds very quickly.
+const MIN_STEP_MS = 3_000;
+const TICK_MS     = 2_800; // how fast items cycle within a step (cosmetic)
 const RING_RADIUS = 43;
 const RING_CIRC   = 2 * Math.PI * RING_RADIUS;
 
+// ── Component ─────────────────────────────────────────────────────────────────
+
 const SurveyInMotion: React.FC<SurveyInMotionProps> = ({
-  questionnairesLoading,
   onSurveyComplete,
+  questionnaireReady,
+  surveySimComplete,
 }) => {
-  const [globalCheckedCount, setGlobalCheckedCount] = useState<number>(0);
-  const [isAnimationComplete, setIsAnimationComplete] = useState(false);
+  // currentStep: what the UI is currently showing (0 → 1 → 2, never backwards)
+  // Advances toward backendStage one step at a time, with MIN_STEP_MS minimum per step.
+  const [currentStep, setCurrentStep] = useState(0);
+  const stepShownAtRef = useRef(Date.now());
+
+  // itemIdx: which item within the current step is showing — cycles continuously
+  const [itemIdx, setItemIdx] = useState(0);
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const onSurveyCompleteRef = useRef(onSurveyComplete);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => { onSurveyCompleteRef.current = onSurveyComplete; }, [onSurveyComplete]);
+
+  // Derive backend stage from props:
+  // 0 = questionnaire still generating
+  // 1 = questionnaire done, survey simulation running
+  // 2 = survey simulation complete
+  const backendStage = !questionnaireReady ? 0 : !surveySimComplete ? 1 : 2;
+
+  // ── Advance UI step toward backendStage (one at a time, MIN_STEP_MS floor) ─
 
   useEffect(() => {
-    onSurveyCompleteRef.current = onSurveyComplete;
-  }, [onSurveyComplete]);
+    if (backendStage <= currentStep) return;
+    const elapsed  = Date.now() - stepShownAtRef.current;
+    const waitMore = Math.max(0, MIN_STEP_MS - elapsed);
+    const timer    = setTimeout(() => {
+      setCurrentStep((prev) => prev + 1); // advance one step at a time
+      stepShownAtRef.current = Date.now();
+    }, waitMore);
+    return () => clearTimeout(timer);
+  }, [backendStage, currentStep]);
 
-  const totalItems = SURVEY_STEPS.reduce((acc, s) => acc + s.items.length, 0);
+  // ── Reset item index when step changes ────────────────────────────────────
 
-  const currentStep = (() => {
-    let acc = 0;
-    for (let i = 0; i < SURVEY_STEPS.length; i++) {
-      acc += SURVEY_STEPS[i]!.items.length;
-      if (globalCheckedCount < acc) return i;
-    }
-    return SURVEY_STEPS.length - 1;
-  })();
-
-  const activeStep = SURVEY_STEPS[currentStep]!;
-
-  const itemsBeforeCurrentStep = SURVEY_STEPS
-    .slice(0, currentStep)
-    .reduce((acc, s) => acc + s.items.length, 0);
-
-  const currentStepItemsDone = globalCheckedCount - itemsBeforeCurrentStep;
-
-  const ringProgress = Math.min(
-    (currentStepItemsDone / activeStep.items.length) * 100,
-    100
-  );
-
-  const offset = RING_CIRC * (1 - ringProgress / 100);
-
-  // ── Auto-tick ─────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (intervalRef.current) clearInterval(intervalRef.current);
-    if (isAnimationComplete) return;
+    setItemIdx(0);
+  }, [currentStep]);
 
-    intervalRef.current = setInterval(() => {
-      setGlobalCheckedCount((prev) => {
-        const next = prev + 1;
-        if (next >= totalItems) {
-          if (intervalRef.current) clearInterval(intervalRef.current);
-          setTimeout(() => setIsAnimationComplete(true), 1_000);
-          return totalItems;
-        }
-        return next;
-      });
+  // ── Cycle items within the current step (purely cosmetic) ─────────────────
+
+  useEffect(() => {
+    const items = SURVEY_STEPS[currentStep]!.items;
+    const timer = setInterval(() => {
+      setItemIdx((prev) => (prev + 1) % items.length);
     }, TICK_MS);
+    return () => clearInterval(timer);
+  }, [currentStep]);
 
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [totalItems]);
+  // ── Navigate after showing step 2 briefly ────────────────────────────────
+  // By the time currentStep reaches 2, surveySimComplete is true, so
+  // onSurveyComplete (handleSurveyComplete) will return almost immediately.
 
-  // ── Navigate only when BOTH animation is done AND data has loaded ─────────
   useEffect(() => {
-    if (!isAnimationComplete) return;
-    if (questionnairesLoading) return; // wait for backend if still in flight
-    void onSurveyCompleteRef.current();
-  }, [isAnimationComplete, questionnairesLoading]);
+    if (currentStep !== 2) return;
+    const timer = setTimeout(() => {
+      void onSurveyCompleteRef.current();
+    }, 2_500);
+    return () => clearTimeout(timer);
+  }, [currentStep]);
 
-  const displayItemIdx   = Math.min(currentStepItemsDone, activeStep.items.length - 1);
-  const displayItem      = activeStep.items[displayItemIdx] ?? '';
-  const globalDisplayIdx = itemsBeforeCurrentStep + displayItemIdx;
-  const displayItemDone  = globalCheckedCount > globalDisplayIdx;
+  // ── Derived display values ────────────────────────────────────────────────
+
+  const activeStep  = SURVEY_STEPS[currentStep]!;
+  const displayItem = activeStep.items[itemIdx] ?? '';
+  const ringProgress = ((itemIdx + 1) / activeStep.items.length) * 100;
+  const offset       = RING_CIRC * (1 - ringProgress / 100);
+
+  // Show the outcome line when backend has completed this step but UI
+  // is still showing it (waiting for MIN_STEP_MS), or on the final step.
+  const showOutcome = backendStage > currentStep || currentStep === SURVEY_STEPS.length - 1;
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <motion.div
@@ -145,7 +157,6 @@ const SurveyInMotion: React.FC<SurveyInMotionProps> = ({
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       transition={{ duration: 0.45 }}
     >
-      {/* Header */}
       <div className="sim-header">
         <h1 className="sim-title">Survey In Motion</h1>
         <p className="sim-subtitle">
@@ -153,12 +164,10 @@ const SurveyInMotion: React.FC<SurveyInMotionProps> = ({
         </p>
       </div>
 
-      {/* Globe */}
       <div className="sim-globe-wrap">
         <FullGlobe />
       </div>
 
-      {/* Card area */}
       <div className="sim-card-area">
         <div className="sim-step-card">
 
@@ -193,13 +202,12 @@ const SurveyInMotion: React.FC<SurveyInMotionProps> = ({
                 />
               </div>
             </div>
-            <span className="sim-step-label">
-              Step {currentStep + 1}/{SURVEY_STEPS.length}
-            </span>
+            <span className="sim-step-label">Step {currentStep + 1}/{SURVEY_STEPS.length}</span>
           </div>
 
-          {/* Right: step title + single-item display */}
+          {/* Right: step title + cycling item */}
           <div className="sim-card-right">
+
             <AnimatePresence mode="wait">
               <motion.div
                 key={`step-title-${currentStep}`}
@@ -215,28 +223,22 @@ const SurveyInMotion: React.FC<SurveyInMotionProps> = ({
 
             <AnimatePresence mode="wait">
               <motion.div
-                key={`item-${currentStep}-${displayItemIdx}`}
+                key={`item-${currentStep}-${itemIdx}`}
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.25 }}
-                className={[
-                  'sim-check-item',
-                  displayItemDone ? 'sim-check-item--done' : 'sim-check-item--active',
-                ].join(' ')}
+                className="sim-check-item sim-check-item--active"
               >
                 <div className="sim-check-icon">
-                  <SpIcon
-                    name={displayItemDone ? 'sp-Warning-Circle_Check' : 'sp-Interface-Radio_Unchecked'}
-                    className={displayItemDone ? 'sim-icon-done' : 'sim-icon-default'}
-                  />
+                  <SpIcon name="sp-Interface-Radio_Unchecked" className="sim-icon-default" />
                 </div>
                 <span className="sim-check-text">{displayItem}</span>
               </motion.div>
             </AnimatePresence>
 
             <AnimatePresence>
-              {currentStepItemsDone >= activeStep.items.length && (
+              {showOutcome && (
                 <motion.p
                   className="sim-outcome"
                   initial={{ opacity: 0, y: 6 }}
@@ -248,8 +250,8 @@ const SurveyInMotion: React.FC<SurveyInMotionProps> = ({
                 </motion.p>
               )}
             </AnimatePresence>
-          </div>
 
+          </div>
         </div>
       </div>
     </motion.div>
