@@ -53,7 +53,7 @@ const STEPS: StepItem[] = [
     subSteps: [
       { number: 1, label: "Step 1", name: "Discussion Guide", path: "depth-interview" },
       { number: 2, label: "Step 2", name: "In-depth Interviews", path: "chatview" },
-      { number: 3, label: "Step 3", name: "Insights Generation", path: "chatview" },
+      { number: 3, label: "Step 3", name: "Insights Generation", path: "insights" },
     ],
   },
   {
@@ -64,7 +64,7 @@ const STEPS: StepItem[] = [
     subSteps: [
       { number: 1, label: "Step 1", name: "Questionnaire Design", path: "questionnaire" },
       { number: 2, label: "Step 2", name: "Population Calibration", path: "population-builder" },
-      { number: 3, label: "Step 3", name: "Survey Execution", path: "survey-results" },
+      { number: 3, label: "Step 3", name: "Survey Execution", path: "population-builder" },
       // Sub-step 4 navigates to population-builder — the insights phase is rendered
       // inside PopulationBuilder (phase='insights'), there is no separate route.
       { number: 4, label: "Step 4", name: "Insights Generation", path: "population-builder" },
@@ -225,7 +225,13 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
     if (!workspaceId || !currentId) return;
 
     if (step.number === 3) {
-      go(isQualSubStepCompleted(1) ? "chatview" : "depth-interview");
+      if (isQualSubStepCompleted(3)) {
+        go("chatview");          // completed — go to insights (chatview with sub3 state)
+      } else if (isQualSubStepCompleted(1)) {
+        go("chatview");          // past discussion guide — resume interviews
+      } else {
+        go("depth-interview");   // not started yet
+      }
       return;
     }
 
@@ -304,7 +310,12 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
             step.number === 1 ? true :
               step.number === 2 ? lsStep1Done :
                 step.number === 3
-                  ? (lsStep2Done || !!localStorage.getItem(`approach_${currentId}`) || activeStep >= 3)
+                  ? (
+                    lsStep2Done ||
+                    !!localStorage.getItem(`approach_${currentId}`) ||
+                    activeStep >= 3 ||
+                    isStepCompleted(3)   // ← ADD THIS: if qual is done, always unlocked
+                  )
                   : step.number === 4
                     ? (
                       activeStep >= 4 ||
