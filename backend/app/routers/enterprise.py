@@ -30,6 +30,7 @@ from app.schemas.enterprise import (
     EnterpriseOrgOut,
     EnterpriseUpdateLimitIn,
 )
+from typing import Literal
 from app.schemas.response import SuccessResponse
 from app.schemas.settings import OrgProfileIn, OrgProfileOut, OrgSettingsIn
 from app.services import enterprise_service
@@ -233,6 +234,50 @@ async def remove_enterprise_member(
         extra={"org_id": org_id, "user_id": user_id, "by": current_user.id},
     )
     return SuccessResponse(message="Member removed from enterprise organisation successfully")
+
+
+# ---------------------------------------------------------------------------
+# Organisation analytics (enterprise_admin + SP admin)
+# ---------------------------------------------------------------------------
+
+VALID_PERIODS = {"all_time", "1_year", "6_months", "1_month", "1_week"}
+
+@router.get("/organizations/{org_id}/analytics", response_model=SuccessResponse)
+async def get_org_analytics(
+    org_id: str,
+    period: str = "all_time",
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Return comprehensive, PostgreSQL-backed analytics for an enterprise org dashboard.
+
+    All metrics are derived from live database rows — no mock or hardcoded values.
+
+    period: all_time (default) | 1_year | 6_months | 1_month | 1_week
+    """
+    require_enterprise_admin_or_sp(current_user, org_id)
+
+    if period not in VALID_PERIODS:
+        period = "all_time"
+
+    # Validate org exists
+    await enterprise_service.get_enterprise_org(session, org_id)
+
+    data = await enterprise_service.get_org_analytics(
+        session=session,
+        org_id=org_id,
+        period=period,
+    )
+
+    logger.info(
+        "Org analytics fetched",
+        extra={"org_id": org_id, "period": period, "user_id": current_user.id},
+    )
+    return SuccessResponse(
+        message="Organisation analytics fetched successfully",
+        data=data,
+    )
 
 
 # ---------------------------------------------------------------------------

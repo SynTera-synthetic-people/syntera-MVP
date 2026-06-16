@@ -917,6 +917,8 @@ interface PersonaGridCardProps {
   onReplicatePersona?: (persona: SavedPersona) => void;
   onDeletePersona?: (persona: SavedPersona) => void;
   isViewOnly?: boolean;
+  // ── FIX: new prop to hide the create card when exploration is in progress ──
+  isPersonaCreationLocked?: boolean;
 }
 
 const PersonaGridCard: React.FC<PersonaGridCardProps> = ({
@@ -928,8 +930,12 @@ const PersonaGridCard: React.FC<PersonaGridCardProps> = ({
   onReplicatePersona,
   onDeletePersona,
   isViewOnly = false,
+  isPersonaCreationLocked = false,
 }) => {
+  // ── FIX: don't render the create card at all when locked ──
   if (isCreateNew) {
+    if (isPersonaCreationLocked) return null;
+
     return (
       <motion.div
         initial={{ opacity: 0, y: 12 }}
@@ -1062,6 +1068,8 @@ interface CountryGroupProps {
   showCreateNew: boolean;
   totalPersonaCount: number;
   isViewOnly?: boolean;
+  // ── FIX: passed down so PersonaGridCard can hide the create card ──
+  isPersonaCreationLocked?: boolean;
 }
 
 const CountryGroup: React.FC<CountryGroupProps> = ({
@@ -1076,6 +1084,7 @@ const CountryGroup: React.FC<CountryGroupProps> = ({
   showCreateNew,
   totalPersonaCount,
   isViewOnly = false,
+  isPersonaCreationLocked = false,
 }) => {
   const countryKebabItems = isViewOnly ? [] : [
     {
@@ -1111,13 +1120,18 @@ const CountryGroup: React.FC<CountryGroupProps> = ({
           </motion.div>
         ))}
 
+        {/* ── FIX: pass isPersonaCreationLocked so the card hides itself when locked ── */}
         {showCreateNew && (
           <motion.div
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.05 + personas.length * 0.055 }}
           >
-            <PersonaGridCard isCreateNew onCreateNew={onCreateNew} />
+            <PersonaGridCard
+              isCreateNew
+              onCreateNew={onCreateNew}
+              isPersonaCreationLocked={isPersonaCreationLocked}
+            />
           </motion.div>
         )}
       </div>
@@ -1140,6 +1154,8 @@ interface PersonasReadyGridProps {
   onDeletePersona: (persona: SavedPersona) => void;
   isFreeUser: boolean;
   isViewOnly?: boolean;
+  // ── FIX: passed down from PersonaBuilder ──
+  isPersonaCreationLocked?: boolean;
 }
 
 const PersonasReadyGrid: React.FC<PersonasReadyGridProps> = ({
@@ -1155,6 +1171,7 @@ const PersonasReadyGrid: React.FC<PersonasReadyGridProps> = ({
   onDeletePersona,
   isFreeUser,
   isViewOnly = false,
+  isPersonaCreationLocked = false,
 }) => {
   const getPersonaCountry = (persona: SavedPersona): string => {
     const rawCountry = persona.location_country ?? persona.geography ?? 'Other';
@@ -1232,7 +1249,8 @@ const PersonasReadyGrid: React.FC<PersonasReadyGridProps> = ({
       <div className="pb-groups-container">
         {countryKeys.map((country, groupIdx) => {
           const isLast = groupIdx === countryKeys.length - 1;
-          const showCreateNew = isLast && !freeAtLimit && !isViewOnly;
+          // ── FIX: also gate on isPersonaCreationLocked ──
+          const showCreateNew = isLast && !freeAtLimit && !isViewOnly && !isPersonaCreationLocked;
           return (
             <motion.div
               key={country}
@@ -1252,6 +1270,7 @@ const PersonasReadyGrid: React.FC<PersonasReadyGridProps> = ({
                 showCreateNew={showCreateNew}
                 totalPersonaCount={totalCount}
                 isViewOnly={isViewOnly}
+                isPersonaCreationLocked={isPersonaCreationLocked}
               />
             </motion.div>
           );
@@ -1263,7 +1282,8 @@ const PersonasReadyGrid: React.FC<PersonasReadyGridProps> = ({
             <p className="pb-empty-state__subtitle">
               Get started by creating your first persona — Omi can build one for you.
             </p>
-            {!isViewOnly && (
+            {/* ── FIX: also hide create card in empty state when locked ── */}
+            {!isViewOnly && !isPersonaCreationLocked && (
               <div className="pb-personas-grid">
                 <PersonaGridCard isCreateNew onCreateNew={onCreateNew} />
               </div>
@@ -1325,6 +1345,20 @@ const PersonaBuilder: React.FC = () => {
 
   // Modal for tier1 users who want to buy more personas ($49 each)
   const [showAddPersonaModal, setShowAddPersonaModal] = useState(false);
+
+  // ── useParams has explorationId only on routes that expose it;
+  //    fall back to objectiveId which is always present ──
+  const { explorationId: routeExplorationId } = useParams<{ explorationId: string }>();
+  const explorationId = routeExplorationId ?? objectiveId;
+
+  // ── FIX: lock persona creation once the user has moved into qual or quant ──
+  const isPersonaCreationLocked = React.useMemo(() => {
+    if (!explorationId) return false;
+    return (
+      !!localStorage.getItem(`qualitative_sub1_${explorationId}`) ||
+      !!localStorage.getItem(`quant_sub1_${explorationId}`)
+    );
+  }, [explorationId]);
 
   const {
     personas: fetchedPersonas,
@@ -2267,6 +2301,8 @@ const PersonaBuilder: React.FC = () => {
           onDeletePersona={handleDeletePersona}
           isFreeUser={isFreeUser}
           isViewOnly={isViewOnly}
+          // ── FIX: pass lock state down ──
+          isPersonaCreationLocked={isPersonaCreationLocked}
         />
 
         <CreatePersonaMethodModal
@@ -2322,7 +2358,7 @@ const PersonaBuilder: React.FC = () => {
               await refetchPersonaQuota();
               await queryClient.invalidateQueries({ queryKey: personaKeys.list(workspaceId, objectiveId) });
               await queryClient.invalidateQueries({ queryKey: personaKeys.listGenerated(workspaceId, objectiveId) });
-              setShowMethodModal(true);  // ← this is the key addition
+              setShowMethodModal(true);
             }}
             workspaceId={workspaceId}
             objectiveId={objectiveId}
