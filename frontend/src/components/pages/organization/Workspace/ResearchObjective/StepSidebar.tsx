@@ -65,8 +65,6 @@ const STEPS: StepItem[] = [
       { number: 1, label: "Step 1", name: "Questionnaire Design", path: "questionnaire" },
       { number: 2, label: "Step 2", name: "Population Calibration", path: "population-builder" },
       { number: 3, label: "Step 3", name: "Survey Execution", path: "population-builder" },
-      // Sub-step 4 navigates to population-builder — the insights phase is rendered
-      // inside PopulationBuilder (phase='insights'), there is no separate route.
       { number: 4, label: "Step 4", name: "Insights Generation", path: "population-builder" },
     ],
   },
@@ -107,14 +105,11 @@ const getActiveQualSubStep = (pathname: string, currentId?: string): number => {
 };
 
 const getActiveQuantSubStep = (pathname: string, currentId?: string): number => {
-  // Sub-step 4 (Insights Generation) lives inside population-builder as a phase.
-  // Since the URL stays at "population-builder", we detect it via localStorage
-  // key quant_sub4 which InsightsGeneration sets on mount.
   if (pathname.includes("population-builder")) {
     if (currentId && localStorage.getItem(`quant_sub4_${currentId}`)) return 4;
     if (currentId && localStorage.getItem(`quant_sub3_${currentId}`)) return 3;
     if (currentId && localStorage.getItem(`quant_sub2_${currentId}`)) return 2;
-    return 2; // population-builder is always at least sub-step 2
+    return 2;
   }
   if (pathname.includes("survey-results")) {
     if (currentId && localStorage.getItem(`quant_sub3_${currentId}`)) return 4;
@@ -148,7 +143,16 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
   const activeQuantSubStep = getActiveQuantSubStep(pathname, currentId);
 
   const lsStep1Done = !!currentId && !!localStorage.getItem(`step1_done_${currentId}`);
-  const lsStep2Done = !!currentId && !!localStorage.getItem(`step2_done_${currentId}`);
+
+  // ── FIX 3: Step 2 is done when EITHER the explicit step2_done key is set
+  //    OR the approach key is set (set by handleApproachSelect in PersonaBuilder).
+  //    The step2_done key is now also written by PersonaBuilder whenever a persona
+  //    is successfully saved (create or update), so the sidebar reacts immediately.
+  const lsStep2Done =
+    !!currentId && (
+      !!localStorage.getItem(`step2_done_${currentId}`) ||
+      !!localStorage.getItem(`approach_${currentId}`)
+    );
 
   let isBackEnabled = true;
 
@@ -163,22 +167,28 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
     return false;
   };
 
+  // ── FIX 4: quantitative sub-step 1 key must be "quantitative_sub1_" to match
+  //    what the questionnaire page writes AND what PersonaBuilder's lock check
+  //    now reads (after Fix 1). All other quant keys stay as "quant_sub*_".
   const isQuantSubStepCompleted = (n: number): boolean => {
     if (completedQuantSubSteps.includes(n)) return true;
     if (!currentId) return false;
     if (n === 1) return !!localStorage.getItem(`quantitative_sub1_${currentId}`);
     if (n === 2) return !!localStorage.getItem(`quant_sub2_${currentId}`);
     if (n === 3) return !!localStorage.getItem(`quant_sub3_${currentId}`);
-    if (n === 4) return !!localStorage.getItem(`quant_sub4_${currentId}`); // ← was missing
+    if (n === 4) return !!localStorage.getItem(`quant_sub4_${currentId}`);
     return false;
   };
 
   const isStepCompleted = (stepNumber: number): boolean => {
     if (stepNumber === 1) return lsStep1Done || completedSteps.includes(1);
+
     if (stepNumber === 2) {
-      const approachSet = !!currentId && !!localStorage.getItem(`approach_${currentId}`);
-      return lsStep2Done || approachSet || completedSteps.includes(2);
+      // ── FIX 3: lsStep2Done already incorporates the approach key check above,
+      //    so a single lsStep2Done check is sufficient here.
+      return lsStep2Done || completedSteps.includes(2);
     }
+
     if (stepNumber === 3) {
       return (
         isQualSubStepCompleted(1) &&
@@ -226,22 +236,18 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
 
     if (step.number === 3) {
       if (isQualSubStepCompleted(3)) {
-        go("chatview");          // completed — go to insights (chatview with sub3 state)
+        go("chatview");
       } else if (isQualSubStepCompleted(1)) {
-        go("chatview");          // past discussion guide — resume interviews
+        go("chatview");
       } else {
-        go("depth-interview");   // not started yet
+        go("depth-interview");
       }
       return;
     }
 
     if (step.number === 4) {
-      // Forward-first: navigate to the earliest incomplete sub-step.
-      // Sub-steps 2, 3 and 4 all live inside population-builder (as phases),
-      // so navigating there lets PopulationBuilder restore the correct phase
-      // from its own localStorage/server restoration logic.
       if (!isQuantSubStepCompleted(1)) go("questionnaire");
-      else go("population-builder"); // covers sub-steps 2, 3 and 4
+      else go("population-builder");
       return;
     }
 
@@ -306,23 +312,30 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
           const completed = isStepCompleted(step.number);
           const active = activeStep === step.number;
 
+          // ── FIX 3 & 4: Step unlock logic.
+          //    Step 2 unlocks as soon as step 1 is done (lsStep1Done).
+          //    Step 3 unlocks as soon as step 2 is done (lsStep2Done now includes
+          //      the approach key AND the new step2_done key written on persona save).
+          //    Step 4 unlocks when the user has completed qual sub-step 3 OR has
+          //      chosen a quantitative-only approach.
           const lsUnlocked =
-            step.number === 1 ? true :
-              step.number === 2 ? lsStep1Done :
-                step.number === 3
-                  ? (
-                    lsStep2Done ||
-                    !!localStorage.getItem(`approach_${currentId}`) ||
-                    activeStep >= 3 ||
-                    isStepCompleted(3)   // ← ADD THIS: if qual is done, always unlocked
-                  )
-                  : step.number === 4
-                    ? (
-                      activeStep >= 4 ||
-                      !!localStorage.getItem(`qualitative_sub3_${currentId}`) ||
-                      localStorage.getItem(`approach_${currentId}`) === 'quantitative'
-                    )
-                    : false;
+            step.number === 1
+              ? true
+              : step.number === 2
+              ? lsStep1Done
+              : step.number === 3
+              ? (
+                  lsStep2Done ||                                               // persona saved or approach chosen
+                  activeStep >= 3 ||                                           // currently on step 3 or beyond
+                  isStepCompleted(3)                                           // qual fully done
+                )
+              : step.number === 4
+              ? (
+                  activeStep >= 4 ||
+                  !!localStorage.getItem(`qualitative_sub3_${currentId}`) ||
+                  localStorage.getItem(`approach_${currentId}`) === 'quantitative'
+                )
+              : false;
 
           const locked = !isStepUnlocked(step.number) && !lsUnlocked;
           const showSubSteps = !!step.subSteps && active;
