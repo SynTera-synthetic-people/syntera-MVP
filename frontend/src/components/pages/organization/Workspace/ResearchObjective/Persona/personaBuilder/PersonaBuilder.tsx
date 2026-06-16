@@ -917,7 +917,6 @@ interface PersonaGridCardProps {
   onReplicatePersona?: (persona: SavedPersona) => void;
   onDeletePersona?: (persona: SavedPersona) => void;
   isViewOnly?: boolean;
-  // ── FIX: new prop to hide the create card when exploration is in progress ──
   isPersonaCreationLocked?: boolean;
 }
 
@@ -932,7 +931,6 @@ const PersonaGridCard: React.FC<PersonaGridCardProps> = ({
   isViewOnly = false,
   isPersonaCreationLocked = false,
 }) => {
-  // ── FIX: don't render the create card at all when locked ──
   if (isCreateNew) {
     if (isPersonaCreationLocked) return null;
 
@@ -968,8 +966,6 @@ const PersonaGridCard: React.FC<PersonaGridCardProps> = ({
     .filter(Boolean)
     .join(', ') || 'Location unavailable';
 
-  // Replicated personas are user-initiated (they have parent_persona_id set).
-  // Even though auto_generated_persona=true on them, the Omi badge is wrong.
   const isAI = persona.auto_generated_persona && !persona.parent_persona_id;
   const createdBy = persona.created_by_name ?? persona.created_by ?? 'You';
 
@@ -1002,20 +998,16 @@ const PersonaGridCard: React.FC<PersonaGridCardProps> = ({
       onClick={() => onCardClick?.(persona)}
       className="pb-card"
     >
-      {/* Card top row: name + kebab */}
       <div className="pb-card-top-row">
         <p className="pb-card-name">{persona.name ?? 'Unnamed Persona'}</p>
         <KebabMenu items={kebabItems} />
       </div>
 
-      {/* Location */}
       <p className="pb-card-location">{locationStr}</p>
 
       <div className="pb-card-spacer" />
 
-      {/* ── Card bottom: confidence left, created-by right ── */}
       <div className="pb-card-bottom">
-        {/* LEFT: confidence label + bar stacked */}
         <div className="pb-card-bottom-left">
           <div className="pb-bottom-top-row">
             <span className="pb-confidence-label">Calibration Confidence:</span>
@@ -1035,7 +1027,6 @@ const PersonaGridCard: React.FC<PersonaGridCardProps> = ({
           </div>
         </div>
 
-        {/* RIGHT: Created By */}
         <div className="pb-created-col">
           <span className="pb-created-label">Created By</span>
           {isAI ? (
@@ -1068,7 +1059,6 @@ interface CountryGroupProps {
   showCreateNew: boolean;
   totalPersonaCount: number;
   isViewOnly?: boolean;
-  // ── FIX: passed down so PersonaGridCard can hide the create card ──
   isPersonaCreationLocked?: boolean;
 }
 
@@ -1120,7 +1110,6 @@ const CountryGroup: React.FC<CountryGroupProps> = ({
           </motion.div>
         ))}
 
-        {/* ── FIX: pass isPersonaCreationLocked so the card hides itself when locked ── */}
         {showCreateNew && (
           <motion.div
             initial={{ opacity: 0, y: 16 }}
@@ -1154,7 +1143,6 @@ interface PersonasReadyGridProps {
   onDeletePersona: (persona: SavedPersona) => void;
   isFreeUser: boolean;
   isViewOnly?: boolean;
-  // ── FIX: passed down from PersonaBuilder ──
   isPersonaCreationLocked?: boolean;
 }
 
@@ -1249,7 +1237,7 @@ const PersonasReadyGrid: React.FC<PersonasReadyGridProps> = ({
       <div className="pb-groups-container">
         {countryKeys.map((country, groupIdx) => {
           const isLast = groupIdx === countryKeys.length - 1;
-          // ── FIX: also gate on isPersonaCreationLocked ──
+          // Only show create card on the last group, and only when not locked/view-only/at limit
           const showCreateNew = isLast && !freeAtLimit && !isViewOnly && !isPersonaCreationLocked;
           return (
             <motion.div
@@ -1282,7 +1270,6 @@ const PersonasReadyGrid: React.FC<PersonasReadyGridProps> = ({
             <p className="pb-empty-state__subtitle">
               Get started by creating your first persona — Omi can build one for you.
             </p>
-            {/* ── FIX: also hide create card in empty state when locked ── */}
             {!isViewOnly && !isPersonaCreationLocked && (
               <div className="pb-personas-grid">
                 <PersonaGridCard isCreateNew onCreateNew={onCreateNew} />
@@ -1340,24 +1327,37 @@ const PersonaBuilder: React.FC = () => {
   const isFreeOrTier1 = isFreeUser || isTier1User;
   const basePersonaLimitForTier = isFreeOrTier1 ? FREE_PERSONA_LIMIT : PERSONA_LIMIT;
 
-  // Enterprise users get the "Build Manually" option (mirrors AddResearchObjective)
   const isEnterpriseUser = userTier === 'enterprise' || userTier === 'enterprise_admin';
 
-  // Modal for tier1 users who want to buy more personas ($49 each)
   const [showAddPersonaModal, setShowAddPersonaModal] = useState(false);
 
-  // ── useParams has explorationId only on routes that expose it;
-  //    fall back to objectiveId which is always present ──
   const { explorationId: routeExplorationId } = useParams<{ explorationId: string }>();
   const explorationId = routeExplorationId ?? objectiveId;
 
-  // ── FIX: lock persona creation once the user has moved into qual or quant ──
-  const isPersonaCreationLocked = React.useMemo(() => {
-    if (!explorationId) return false;
-    return (
-      !!localStorage.getItem(`qualitative_sub1_${explorationId}`) ||
-      !!localStorage.getItem(`quant_sub1_${explorationId}`)
-    );
+  // ── FIX 1 & 2: Use useState + useEffect instead of useMemo so the lock state
+  //    is reactive (re-reads localStorage on mount and on window focus).
+  //    Also use the CORRECT key names that StepSidebar actually writes:
+  //      qualitative_sub1_  (discussion guide done)
+  //      quantitative_sub1_ (questionnaire done)   ← was wrongly "quant_sub1_"
+  // ─────────────────────────────────────────────────────────────────────────
+  const [isPersonaCreationLocked, setIsPersonaCreationLocked] = useState(false);
+
+  useEffect(() => {
+    const checkLock = () => {
+      if (!explorationId) {
+        setIsPersonaCreationLocked(false);
+        return;
+      }
+      const locked =
+        !!localStorage.getItem(`qualitative_sub1_${explorationId}`) ||
+        !!localStorage.getItem(`quantitative_sub1_${explorationId}`);
+      setIsPersonaCreationLocked(locked);
+    };
+
+    checkLock();
+    // Re-check whenever the tab regains focus (user navigates back from another step)
+    window.addEventListener('focus', checkLock);
+    return () => window.removeEventListener('focus', checkLock);
   }, [explorationId]);
 
   const {
@@ -1436,7 +1436,6 @@ const PersonaBuilder: React.FC = () => {
   const [pendingDeletePersona, setPendingDeletePersona] = useState<SavedPersona | null>(null);
   const [deletePersonaError, setDeletePersonaError] = useState('');
 
-  // ── NEW: method selection modal ────────────────────────────────────────────
   const [showMethodModal, setShowMethodModal] = useState(false);
 
   const processedPersonaRef = useRef(new Set<string>());
@@ -1629,7 +1628,7 @@ const PersonaBuilder: React.FC = () => {
     }
 
     setShowMethodModal(true);
-  }, [isFreeUser, isTier1User, isEnterpriseUser, savedPersonasFromAPI.length]);
+  }, [isFreeUser, isTier1User, isFreeOrTier1, savedPersonasFromAPI.length, personaLimitForTier]);
 
   const handleCreateWithOmi = useCallback(() => {
     trigger({ stage: 'persona_builder', event: 'PERSONA_WORKFLOW_LOADED', payload: {} });
@@ -2111,7 +2110,12 @@ const PersonaBuilder: React.FC = () => {
       };
       type UpdateFn = (args: { id: string | undefined; data: typeof methodData }) => Promise<unknown>;
       await (updateExplorationMethodMutation.mutateAsync as unknown as UpdateFn)({ id: objectiveId, data: methodData });
-      if (objectiveId) localStorage.setItem(`approach_${objectiveId}`, approach.toLowerCase().trim());
+      if (objectiveId) {
+        localStorage.setItem(`approach_${objectiveId}`, approach.toLowerCase().trim());
+        // ── FIX 3: Also mark step 2 done when approach is chosen, so the
+        //    sidebar Step 2 circle turns green immediately.
+        localStorage.setItem(`step2_done_${objectiveId}`, 'true');
+      }
 
       if (approach === 'quantitative') {
         navigate(
@@ -2199,8 +2203,17 @@ const PersonaBuilder: React.FC = () => {
         if (result && (result.data as Record<string, unknown>)?.id) {
           trigger({ stage: 'persona_builder', event: 'CREATE_PERSONA', payload: {} });
         }
+
         if (result && result.id) {
           const newId = result.id as string;
+
+          // ── FIX 3: Mark step 2 done as soon as the first persona is saved.
+          //    This lets StepSidebar show Step 2 as complete and unlock Step 3
+          //    even before the user explicitly picks an approach.
+          if (objectiveId) {
+            localStorage.setItem(`step2_done_${objectiveId}`, 'true');
+          }
+
           setPersonaDataById(prev => ({
             ...prev,
             [selectedPersonaId!]: {
@@ -2233,6 +2246,13 @@ const PersonaBuilder: React.FC = () => {
 
         if (result) {
           trigger({ stage: 'persona_builder', event: 'PERSONA_UPDATED', payload: { personaId: selectedPersonaId } });
+
+          // ── FIX 3: Also mark step 2 done on updates (covers Omi-generated
+          //    personas that get saved/updated without the create branch firing).
+          if (objectiveId) {
+            localStorage.setItem(`step2_done_${objectiveId}`, 'true');
+          }
+
           setPersonaDataById(prev => ({
             ...prev,
             [selectedPersonaId!]: {
@@ -2301,7 +2321,6 @@ const PersonaBuilder: React.FC = () => {
           onDeletePersona={handleDeletePersona}
           isFreeUser={isFreeUser}
           isViewOnly={isViewOnly}
-          // ── FIX: pass lock state down ──
           isPersonaCreationLocked={isPersonaCreationLocked}
         />
 
