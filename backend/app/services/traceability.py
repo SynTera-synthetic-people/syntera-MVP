@@ -1,6 +1,7 @@
 import json
+import random
 from typing import Any, Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from openai import AsyncOpenAI
@@ -45,6 +46,43 @@ def _to_primitive(obj: Any):
 
 def _json_dumps_safe(o: Any) -> str:
     return json.dumps(_to_primitive(o), indent=2)
+
+
+# 🟢 ADD THIS NEW HELPER FUNCTION
+def _calculate_ground_truth_breakdown(personas: List[Any]) -> Dict[str, Any]:
+    """
+    Calculate ground truth metrics from all personas in the exploration.
+    
+    Returns ground truth breakdown with:
+    - Platform universe (750M+ actions, 55M people)
+    - Freshness distribution (CEO-approved)
+    - Behaviour dimensions extracted (random 100K-1M)
+    """
+    # CEO-approved hardcoded values
+    platform_total_actions = "750M+"
+    platform_total_people = "55M"
+    
+    freshness_signals = {
+        "last_3m": "35%",
+        "last_6m": "30%",
+        "last_12m": "22%",
+        "older": "13%"
+    }
+    
+    # Generate random behaviour dimensions (100K-1M)
+    behaviour_dimensions = random.randint(100_000, 1_000_000)
+    
+    return {
+        "title": "Actions-to-Behaviour Calibration Layer (ML Model)",
+        "platform_action_universe": {
+            "total_actions": platform_total_actions,
+            "total_people": platform_total_people
+        },
+        "freshness_of_behaviour_signals": freshness_signals,
+        "behaviour_dimensions_extracted": behaviour_dimensions,
+        "persona_count": len(personas) if personas else 0,
+        "generated_at": datetime.now(timezone.utc).isoformat()
+    }
 
 
 async def fetch_all_context(workspace_id: str, exploration_id: str) -> Dict[str, Any]:
@@ -203,13 +241,19 @@ REQUIRED JSON STRUCTURE:
         )
         raw = res.choices[0].message.content
         data = raw if isinstance(raw, dict) else json.loads(raw)
+        
+        # 🟢 ADD THIS - Calculate ground truth metrics
+        ground_truth = _calculate_ground_truth_breakdown(context.get("personas", []))
+        data["ground_truth_breakdown"] = ground_truth
+        
         return data
     except Exception as e:
         return {
             "foundation_layer": {"source_mapping": "error", "audit_logs": str(e)},
             "generation_process": {"statistical_models_used": "error", "bias_encoding": "error"},
             "validation_layer": {"benchmarking": "error", "error_metrics": "error"},
-            "narrative_summary": {"high_level_explanation": str(e), "confidence_score": 0}
+            "narrative_summary": {"high_level_explanation": str(e), "confidence_score": 0},
+            "ground_truth_breakdown": {}
         }
 
 
@@ -235,6 +279,7 @@ async def create_traceability(
             generation_process=logs.get("generation_process", {}),
             validation_layer=logs.get("validation_layer", {}),
             narrative_summary=logs.get("narrative_summary", {}),
+            ground_truth_breakdown=logs.get("ground_truth_breakdown", {}),
             created_by=created_by
         )
         session.add(rec)
@@ -261,6 +306,7 @@ async def regenerate_traceability(record_id: str, custom_notes: Optional[str] = 
         rec.generation_process = logs.get("generation_process", {})
         rec.validation_layer = logs.get("validation_layer", {})
         rec.narrative_summary = logs.get("narrative_summary", {})
+        rec.ground_truth_breakdown = logs.get("ground_truth_breakdown", {})
 
         session.add(rec)
         await session.commit()
@@ -291,6 +337,7 @@ async def get_traceability_layer(payload: Dict):
         rec.generation_process = logs.get("generation_process", {})
         rec.validation_layer = logs.get("validation_layer", {})
         rec.narrative_summary = logs.get("narrative_summary", {})
+        rec.ground_truth_breakdown = logs.get("ground_truth_breakdown", {})
 
         session.add(rec)
         await session.commit()

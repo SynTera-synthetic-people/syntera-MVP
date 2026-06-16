@@ -17,8 +17,10 @@ class TraceabilityOut(BaseModel):
     foundation_layer: Dict[str, Any]
     generation_process: Dict[str, Any]
     validation_layer: Dict[str, Any]
-
     narrative_summary: Dict[str, Any]
+    
+    # NEW FIELD
+    ground_truth_breakdown: Dict[str, Any] = {}
 
     created_by: Optional[str]
     created_at: datetime
