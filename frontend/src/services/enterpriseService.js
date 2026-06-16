@@ -88,4 +88,17 @@ export const enterpriseService = {
       throw error.response?.data || error.message;
     }
   },
+
+  // Full analytics for the enterprise org dashboard — all live DB data
+  // period: "all_time" | "1_year" | "6_months" | "1_month" | "1_week"
+  getOrgAnalytics: async (orgId, period = 'all_time') => {
+    try {
+      const response = await axiosInstance.get(
+        `/enterprise/organizations/${orgId}/analytics?period=${period}`
+      );
+      return response.data?.data ?? response.data;
+    } catch (error) {
+      throw error.response?.data || error.message;
+    }
+  },
 };

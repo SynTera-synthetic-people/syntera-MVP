@@ -21,9 +21,8 @@ import {
   TbArrowRight,
   TbDownload,
 } from "react-icons/tb";
-import { HiUserGroup } from "react-icons/hi";
 import { initializeSessionStart } from "../../../redux/slices/omiSlice";
-import { adminService } from "../../../services/adminService";
+import { enterpriseService } from "../../../services/enterpriseService";
 import { getPostLoginPath } from "../../../utils/authRouting";
 import { useWorkspaces } from "../../../hooks/useWorkspaces";
 import { useExplorations } from "../../../hooks/useExplorations";
@@ -31,42 +30,24 @@ import {
   downloadLatestQuestionnaireCsvForExploration,
   alertQuestionnaireExportError,
 } from "../../../utils/questionnaireExportFlow";
-import {
-  calcAvgTimePerExploration,
-  calcCollaborationRate,
-  calcAvgPersonaConfidence,
-  calcAvgPopulationConfidence,
-  calcAvgRealPeopleActions,
-  calcAvgCredibleSources,
-  calcAvgMultiplatformConversation,
-  calcHumanStudiesReplaced,
-  calcHumanSampleReduced,
-  deptBarMock,
-  deptLineMock,
-  wsBarMock,
-  wsLineMock,
-  monthStackedMock,
-  type LinePoint,
-  type DeptPoint,
-  type StackedPoint,
-} from "./orgDashboardData";
+import type { LinePoint, DeptPoint, StackedPoint } from "./orgDashboardData";
 import styles from "./MyOrganization.module.css";
 
 // ─── Redux state shape ────────────────────────────────────────────────────────
 
 interface AuthState {
-  user?: { account_tier?: string } | null;
+  user?: {
+    account_tier?: string;
+    organization_id?: string | null;
+    org_id?: string | null;
+  } | null;
 }
 interface OmiState {
   isInitialized?: boolean;
 }
-interface OrganizationsState {
-  organizations?: { data?: { name?: string; id?: string } };
-}
 interface RootState {
   auth: AuthState;
   omi: OmiState;
-  organizations: OrganizationsState;
 }
 
 // ─── Domain types ─────────────────────────────────────────────────────────────
@@ -144,154 +125,186 @@ interface DashboardStats {
     humanStudiesReplaced: StackedPoint[];
     humanSampleReduced: StackedPoint[];
   };
-}
-
-// ─── API response shape ───────────────────────────────────────────────────────
-
-interface MonthlyCount { month: number; count: number; }
-interface WorkspaceQuality { workspace_name?: string; total_count?: number; avg_confidence?: number; }
-interface ApiResponse {
-  kpi_cards?: { total_workspaces?: number; total_explorations?: number; };
-  active_chart?: {
-    explorations_monthly?: MonthlyCount[];
-    workspaces_monthly?: MonthlyCount[];
-    report_downloads_monthly?: MonthlyCount[];
-  };
-  quality_logs?: {
-    avg_persona_confidence?: WorkspaceQuality[];
-    avg_population_confidence?: WorkspaceQuality[];
-  };
-  business_impact?: {
-    qualitative_count?: number;
-    quantitative_count?: number;
-    both_count?: number;
+  banner: {
+    totalExplorations: number;
+    decisionsInfluenced: number;
+    researchTimeUnlockedHrs: number;
+    researchSpendSavedUsd: number;
   };
 }
 
-interface Workspace  { id: string; name?: string; }
-interface Exploration { id: string; title?: string; }
+// ─── API response shape (from GET /enterprise/organizations/{id}/analytics) ───
 
-const MONTH_NAMES: string[] = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-// ─── Mock chart data ──────────────────────────────────────────────────────────
-
-const MOCK_CHARTS: DashboardStats["charts"] = {
-  workspacesCreated:         deptBarMock(3.1),
-  explorationsLaunched:      wsBarMock(5.3),
-  personasCalibrated:        monthStackedMock(2.9),
-  reportsDownloaded:         wsLineMock(7.1),
-  registeredUsers:           deptLineMock(4.2),
-  activeUsers:               deptLineMock(4.6),
-  avgTimePerExploration:     calcAvgTimePerExploration(),
-  collaborationRate:         calcCollaborationRate(),
-  avgPersonaConfidence:      calcAvgPersonaConfidence(),
-  populationConfidence:      calcAvgPopulationConfidence(),
-  realPeoplesActions:        calcAvgRealPeopleActions(),
-  multiplatformConversation: calcAvgMultiplatformConversation(),
-  credibleSources:           calcAvgCredibleSources(),
-  decisionInfluenced:        monthStackedMock(6.4),
-  timeSaved:                 deptLineMock(8.8),
-  researchSpendSaved:        deptLineMock(9.3),
-  humanStudiesReplaced:      calcHumanStudiesReplaced(),
-  humanSampleReduced:        calcHumanSampleReduced(),
-};
-
-const INITIAL_STATS: DashboardStats = {
-  usageMetrics: {
-    totalWorkspace:   { value: "000", trend: "up" },
-    totalExploration: { value: "000", trend: "down" },
-    totalUsers:       { value: "000", trend: "up" },
-  },
-  outcomeInfluenced: {
-    decisionsInfluenced:  { value: "000%", trend: "down" },
-    humanStudiesReplaced: { value: "000",  trend: "up" },
-    humanSampleReduced:   { value: "000",  trend: "up" },
-  },
-  economics: {
-    researchTimeUnlocked: { value: "000", unit: "hrs" },
-    researchSpendSaved:   { value: "$000" },
-  },
+interface OrgAnalyticsApi {
+  usage_metrics: { total_workspaces: number; total_explorations: number; total_users: number; };
+  outcome_influenced: {
+    decisions_influenced: number; decisions_influenced_pct: number;
+    human_studies_replaced: number; human_sample_reduced: number;
+  };
+  economics: { research_time_unlocked_hrs: number; research_spend_saved_usd: number; };
   adoption: {
-    workspacesCreated:    123,
-    explorationsLaunched: 234,
-    personasCalibrated:   234,
-    reportsDownloaded:    12,
-  },
-  userEngagement: {
-    registeredUsers:       { value: "000%" },
-    activeUsers:           { value: "000" },
-    avgTimePerExploration: { value: "000" },
-    collaborationRate:     { value: "000" },
-  },
+    workspaces_created: number; explorations_launched: number;
+    personas_calibrated: number; reports_downloaded: number;
+    chart_workspaces_created: DeptPoint[];
+    chart_explorations_launched: DeptPoint[];
+    chart_personas_calibrated: StackedPoint[];
+    chart_reports_downloaded: LinePoint[];
+  };
+  user_engagement: {
+    registered_users: number; active_users: number;
+    avg_time_per_exploration_hrs: number; collaboration_rate_pct: number;
+    chart_registered_users: LinePoint[];
+    chart_active_users: LinePoint[];
+    chart_avg_time_per_exploration: DeptPoint[];
+    chart_collaboration_rate: StackedPoint[];
+  };
   conviction: {
-    personaConfidence:        { value: "000%" },
-    populationConfidence:     0,
-    realPeoplesActions:       0,
-    multiplatformConversation:0,
-    credibleSources:          0,
-  },
-  valueDelivered: {
-    decisionInfluenced:   { value: "000%" },
-    timeSaved:            { value: "000", unit: "hrs" },
-    researchSpendSaved:   { value: "000" },
-    humanStudiesReplaced: 0,
-    humanSampleReduced:   0,
-  },
-  kpi: {
-    totalWorkflows:     "0",
-    totalExplorations:  "0",
-    totalUsers:         "81",
-    outcomeInfluenced:  "68%",
-    hoursSaved:         "487",
-    reportsDownloaded:  "0",
-    humanStudiesAvoided:"18",
-  },
-  charts: MOCK_CHARTS,
-};
+    avg_persona_confidence_pct: number; avg_population_confidence_pct: number;
+    total_rebuttal_sessions: number; total_interviews: number; total_traceability_records: number;
+    chart_persona_confidence: LinePoint[];
+    chart_population_confidence: LinePoint[];
+    chart_rebuttal_sessions: LinePoint[];
+    chart_interviews: LinePoint[];
+    chart_traceability_records: LinePoint[];
+  };
+  value_delivered: {
+    decisions_influenced_pct: number; time_saved_hrs: number;
+    research_spend_saved_usd: number; human_studies_replaced: number; human_sample_reduced: number;
+    chart_decisions_influenced: StackedPoint[];
+    chart_time_saved: LinePoint[];
+    chart_research_spend_saved: LinePoint[];
+    chart_human_studies_replaced: StackedPoint[];
+    chart_human_sample_reduced: StackedPoint[];
+  };
+  banner: {
+    total_explorations: number; decisions_influenced: number;
+    research_time_unlocked_hrs: number; research_spend_saved_usd: number;
+  };
+}
 
-function mergeApiData(api: ApiResponse, prev: DashboardStats): DashboardStats {
-  const mapMonthly = (arr?: MonthlyCount[]): LinePoint[] =>
-    (arr ?? []).map((d) => ({ name: MONTH_NAMES[d.month] ?? `M${d.month}`, value: d.count }));
+// ─── Map API → DashboardStats ─────────────────────────────────────────────────
 
-  const totalDownloads =
-    api.active_chart?.report_downloads_monthly?.reduce((s, d) => s + d.count, 0) ?? 0;
-
-  const personaConfData: LinePoint[] =
-    api.quality_logs?.avg_persona_confidence?.map((d) => ({
-      name: d.workspace_name ?? "Unknown",
-      value: d.avg_confidence ?? 0,
-    })) ?? prev.charts.avgPersonaConfidence;
-
-  const popConfData: LinePoint[] =
-    api.quality_logs?.avg_population_confidence?.map((d) => ({
-      name: d.workspace_name ?? "Unknown",
-      value: d.avg_confidence ?? 0,
-    })) ?? prev.charts.populationConfidence;
-
-  const exData = mapMonthly(api.active_chart?.explorations_monthly);
-  const wsData = mapMonthly(api.active_chart?.workspaces_monthly);
-  const dlData = mapMonthly(api.active_chart?.report_downloads_monthly);
-
+function mapApiToStats(api: OrgAnalyticsApi): DashboardStats {
+  const fmt = (n: number) => n.toLocaleString();
   return {
-    ...prev,
+    usageMetrics: {
+      totalWorkspace:   { value: api.usage_metrics.total_workspaces,  trend: "up"      },
+      totalExploration: { value: api.usage_metrics.total_explorations, trend: "up"      },
+      totalUsers:       { value: api.usage_metrics.total_users,        trend: "neutral" },
+    },
+    outcomeInfluenced: {
+      decisionsInfluenced:  { value: `${api.outcome_influenced.decisions_influenced_pct}%`, trend: "up" },
+      humanStudiesReplaced: { value: api.outcome_influenced.human_studies_replaced,         trend: "up" },
+      humanSampleReduced:   { value: api.outcome_influenced.human_sample_reduced,           trend: "up" },
+    },
+    economics: {
+      researchTimeUnlocked: { value: api.economics.research_time_unlocked_hrs, unit: "hrs" },
+      researchSpendSaved:   { value: `$${fmt(api.economics.research_spend_saved_usd)}`      },
+    },
+    adoption: {
+      workspacesCreated:    api.adoption.workspaces_created,
+      explorationsLaunched: api.adoption.explorations_launched,
+      personasCalibrated:   api.adoption.personas_calibrated,
+      reportsDownloaded:    api.adoption.reports_downloaded,
+    },
+    userEngagement: {
+      registeredUsers:       { value: api.user_engagement.registered_users                      },
+      activeUsers:           { value: api.user_engagement.active_users                          },
+      avgTimePerExploration: { value: api.user_engagement.avg_time_per_exploration_hrs          },
+      collaborationRate:     { value: `${api.user_engagement.collaboration_rate_pct}%`          },
+    },
+    conviction: {
+      personaConfidence:         { value: `${api.conviction.avg_persona_confidence_pct}%` },
+      populationConfidence:       api.conviction.avg_population_confidence_pct,
+      realPeoplesActions:         api.conviction.total_rebuttal_sessions,
+      multiplatformConversation:  api.conviction.total_interviews,
+      credibleSources:            api.conviction.total_traceability_records,
+    },
+    valueDelivered: {
+      decisionInfluenced: { value: `${api.value_delivered.decisions_influenced_pct}%`         },
+      timeSaved:          { value: api.value_delivered.time_saved_hrs,      unit: "hrs"       },
+      researchSpendSaved: { value: `$${fmt(api.value_delivered.research_spend_saved_usd)}`    },
+      humanStudiesReplaced: api.value_delivered.human_studies_replaced,
+      humanSampleReduced:   api.value_delivered.human_sample_reduced,
+    },
     kpi: {
-      ...prev.kpi,
-      totalWorkflows:    String(api.kpi_cards?.total_workspaces   ?? prev.kpi.totalWorkflows),
-      totalExplorations: String(api.kpi_cards?.total_explorations ?? prev.kpi.totalExplorations),
-      reportsDownloaded: String(totalDownloads),
+      totalWorkflows:     String(api.adoption.workspaces_created),
+      totalExplorations:  String(api.adoption.explorations_launched),
+      totalUsers:         String(api.user_engagement.registered_users),
+      outcomeInfluenced:  `${api.outcome_influenced.decisions_influenced_pct}%`,
+      hoursSaved:         String(api.economics.research_time_unlocked_hrs),
+      reportsDownloaded:  String(api.adoption.reports_downloaded),
+      humanStudiesAvoided: String(api.outcome_influenced.human_studies_replaced),
     },
     charts: {
-      ...prev.charts,
-      workspacesCreated:
-        wsData.length > 0 ? wsData.map((p) => ({ dept: p.name, value: p.value })) : prev.charts.workspacesCreated,
-      explorationsLaunched:
-        exData.length > 0 ? exData.map((p) => ({ dept: p.name, value: p.value })) : prev.charts.explorationsLaunched,
-      reportsDownloaded:    dlData.length > 0 ? dlData : prev.charts.reportsDownloaded,
-      avgPersonaConfidence: personaConfData,
-      populationConfidence: popConfData,
+      workspacesCreated:       api.adoption.chart_workspaces_created,
+      explorationsLaunched:    api.adoption.chart_explorations_launched,
+      personasCalibrated:      api.adoption.chart_personas_calibrated,
+      reportsDownloaded:       api.adoption.chart_reports_downloaded,
+      registeredUsers:         api.user_engagement.chart_registered_users,
+      activeUsers:             api.user_engagement.chart_active_users,
+      avgTimePerExploration:   api.user_engagement.chart_avg_time_per_exploration,
+      collaborationRate:       api.user_engagement.chart_collaboration_rate,
+      avgPersonaConfidence:    api.conviction.chart_persona_confidence,
+      populationConfidence:    api.conviction.chart_population_confidence,
+      realPeoplesActions:      api.conviction.chart_rebuttal_sessions,
+      multiplatformConversation: api.conviction.chart_interviews,
+      credibleSources:         api.conviction.chart_traceability_records,
+      decisionInfluenced:      api.value_delivered.chart_decisions_influenced,
+      timeSaved:               api.value_delivered.chart_time_saved,
+      researchSpendSaved:      api.value_delivered.chart_research_spend_saved,
+      humanStudiesReplaced:    api.value_delivered.chart_human_studies_replaced,
+      humanSampleReduced:      api.value_delivered.chart_human_sample_reduced,
+    },
+    banner: {
+      totalExplorations:        api.banner.total_explorations,
+      decisionsInfluenced:      api.banner.decisions_influenced,
+      researchTimeUnlockedHrs:  api.banner.research_time_unlocked_hrs,
+      researchSpendSavedUsd:    api.banner.research_spend_saved_usd,
     },
   };
 }
+
+// ─── Zero stats shown while loading ──────────────────────────────────────────
+
+const ZERO_STATS: DashboardStats = {
+  usageMetrics: {
+    totalWorkspace:   { value: "—" },
+    totalExploration: { value: "—" },
+    totalUsers:       { value: "—" },
+  },
+  outcomeInfluenced: {
+    decisionsInfluenced:  { value: "—" },
+    humanStudiesReplaced: { value: "—" },
+    humanSampleReduced:   { value: "—" },
+  },
+  economics: {
+    researchTimeUnlocked: { value: "—", unit: "hrs" },
+    researchSpendSaved:   { value: "—"              },
+  },
+  adoption: { workspacesCreated: 0, explorationsLaunched: 0, personasCalibrated: 0, reportsDownloaded: 0 },
+  userEngagement: {
+    registeredUsers: { value: "—" }, activeUsers: { value: "—" },
+    avgTimePerExploration: { value: "—" }, collaborationRate: { value: "—" },
+  },
+  conviction: {
+    personaConfidence: { value: "—" }, populationConfidence: 0,
+    realPeoplesActions: 0, multiplatformConversation: 0, credibleSources: 0,
+  },
+  valueDelivered: {
+    decisionInfluenced: { value: "—" }, timeSaved: { value: "—", unit: "hrs" },
+    researchSpendSaved: { value: "—" }, humanStudiesReplaced: 0, humanSampleReduced: 0,
+  },
+  kpi: { totalWorkflows: "0", totalExplorations: "0", totalUsers: "0", outcomeInfluenced: "0%", hoursSaved: "0", reportsDownloaded: "0", humanStudiesAvoided: "0" },
+  charts: {
+    workspacesCreated: [], explorationsLaunched: [], personasCalibrated: [], reportsDownloaded: [],
+    registeredUsers: [], activeUsers: [], avgTimePerExploration: [], collaborationRate: [],
+    avgPersonaConfidence: [], populationConfidence: [], realPeoplesActions: [],
+    multiplatformConversation: [], credibleSources: [], decisionInfluenced: [],
+    timeSaved: [], researchSpendSaved: [], humanStudiesReplaced: [], humanSampleReduced: [],
+  },
+  banner: { totalExplorations: 0, decisionsInfluenced: 0, researchTimeUnlockedHrs: 0, researchSpendSavedUsd: 0 },
+};
 
 // ─── Chart shared config ──────────────────────────────────────────────────────
 
@@ -315,50 +328,32 @@ const tickStyle      = { fontSize: 10, fill: "#5c6880" } as const;
 const axisLabelStyle = { fontSize: 10, fill: "#5c6880" } as const;
 const axisLabelStyleSm = { fontSize: 9, fill: "#5c6880" } as const;
 
-// ─── Shared chart margins ─────────────────────────────────────────────────────
-// FIX: Increased left margin so Y-axis label has room to render
-// without overlapping the tick values.
 const CHART_MARGIN         = { top: 10, right: 10, left: 36, bottom: 24 } as const;
 const CHART_MARGIN_NO_XLAB = { top: 10, right: 10, left: 36, bottom: 4  } as const;
-// Long Y-axis labels need a little more room
 const CHART_MARGIN_WIDE    = { top: 10, right: 10, left: 44, bottom: 4  } as const;
 
 // ─── Period option types ──────────────────────────────────────────────────────
 
 interface PeriodOption { value: string; label: string; }
 
-const ANNUAL_OPTS: PeriodOption[] = [
-  { value: "annually", label: "Annually" },
-  { value: "monthly",  label: "Monthly"  },
-  { value: "weekly",   label: "Weekly"   },
-];
-const ANNUAL_VARIANT_OPTS: PeriodOption[] = [
-  { value: "annually", label: "Annual"  },
-  { value: "monthly",  label: "Monthly" },
-  { value: "weekly",   label: "Weekly"  },
-];
-const HALF_YEAR_OPTS: PeriodOption[] = [
-  { value: "half_year", label: "Half Year" },
-  { value: "annually",  label: "Annually"  },
-  { value: "monthly",   label: "Monthly"   },
-];
-const ANNUAL_2026_OPTS: PeriodOption[] = [
-  { value: "annually_2026", label: "Annually (2026)" },
-  { value: "annually_2025", label: "Annually (2025)" },
-];
-const HOURS_OPTS: PeriodOption[] = [
-  { value: "hours", label: "Hours" },
-  { value: "days",  label: "Days"  },
-];
+// Period selects are UI-controlled; actual refetch uses a single global period.
+// These map to the API's period param: annually→1_year, half_year→6_months, etc.
+const PERIOD_MAP: Record<string, string> = {
+  annually: "1_year", half_year: "6_months", monthly: "1_month", weekly: "1_week",
+  annually_2026: "1_year", annually_2025: "1_year", hours: "all_time", days: "all_time",
+};
+
+const ANNUAL_OPTS: PeriodOption[]         = [{ value: "annually", label: "Annually" }, { value: "monthly", label: "Monthly" }, { value: "weekly", label: "Weekly" }];
+const ANNUAL_VARIANT_OPTS: PeriodOption[] = [{ value: "annually", label: "Annual"  }, { value: "monthly", label: "Monthly" }, { value: "weekly", label: "Weekly" }];
+const HALF_YEAR_OPTS: PeriodOption[]      = [{ value: "half_year", label: "Half Year" }, { value: "annually", label: "Annually" }, { value: "monthly", label: "Monthly" }];
+const ANNUAL_2026_OPTS: PeriodOption[]    = [{ value: "annually_2026", label: "Annually (2026)" }, { value: "annually_2025", label: "Annually (2025)" }];
+const HOURS_OPTS: PeriodOption[]          = [{ value: "hours", label: "Hours" }, { value: "days", label: "Days" }];
 
 // ─── Shared sub-components ────────────────────────────────────────────────────
 
 interface ChartCtrlProps {
-  title: string;
-  value: string;
-  onChange: (v: string) => void;
-  options?: PeriodOption[];
-  wide?: boolean;
+  title: string; value: string; onChange: (v: string) => void;
+  options?: PeriodOption[]; wide?: boolean;
 }
 
 const ChartCtrl: React.FC<ChartCtrlProps> = ({ title, value, onChange, options = ANNUAL_OPTS, wide }) => (
@@ -368,13 +363,10 @@ const ChartCtrl: React.FC<ChartCtrlProps> = ({ title, value, onChange, options =
     </span>
     <select
       className={`${styles.periodSelect} ${wide ? styles.periodSelectWide : ""}`}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
+      value={value} onChange={(e) => onChange(e.target.value)}
       aria-label={`Period for ${title}`}
     >
-      {options.map((o) => (
-        <option key={o.value} value={o.value}>{o.label}</option>
-      ))}
+      {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
     </select>
   </div>
 );
@@ -383,12 +375,14 @@ const StackedLegend: React.FC<{ a: string; b: string; colorA?: string; colorB?: 
   a, b, colorA = C.barBlue, colorB = C.barTeal,
 }) => (
   <div className={styles.chartLegend}>
-    <div className={styles.legendItem}>
-      <span className={styles.legendDot} style={{ background: colorA }} />{a}
-    </div>
-    <div className={styles.legendItem}>
-      <span className={styles.legendDot} style={{ background: colorB }} />{b}
-    </div>
+    <div className={styles.legendItem}><span className={styles.legendDot} style={{ background: colorA }} />{a}</div>
+    <div className={styles.legendItem}><span className={styles.legendDot} style={{ background: colorB }} />{b}</div>
+  </div>
+);
+
+const EmptyChart: React.FC = () => (
+  <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: "#5c6880", fontSize: 13 }}>
+    No data available yet
   </div>
 );
 
@@ -426,53 +420,25 @@ const NotifDropdown: React.FC = () => (
 // ─── Period state ─────────────────────────────────────────────────────────────
 
 interface Periods {
-  workspacesCreated: string;
-  explorationsLaunched: string;
-  personasCalibrated: string;
-  reportsDownloaded: string;
-  registeredUsers: string;
-  activeUsers: string;
-  avgTime: string;
-  collaboration: string;
-  avgPersonaConf: string;
-  populationConf: string;
-  realPeople: string;
-  multiplatform: string;
-  credible: string;
-  decisionInfluenced: string;
-  timeSaved: string;
-  researchSpend: string;
-  humanStudies: string;
-  humanSample: string;
+  workspacesCreated: string; explorationsLaunched: string; personasCalibrated: string;
+  reportsDownloaded: string; registeredUsers: string; activeUsers: string; avgTime: string;
+  collaboration: string; avgPersonaConf: string; populationConf: string; realPeople: string;
+  multiplatform: string; credible: string; decisionInfluenced: string; timeSaved: string;
+  researchSpend: string; humanStudies: string; humanSample: string;
 }
 
 const INIT_PERIODS: Periods = {
-  workspacesCreated:    "annually",
-  explorationsLaunched: "half_year",
-  personasCalibrated:   "half_year",
-  reportsDownloaded:    "annually_2026",
-  registeredUsers:      "annually",
-  activeUsers:          "annually",
-  avgTime:              "annually",
-  collaboration:        "annually",
-  avgPersonaConf:       "annually",
-  populationConf:       "annually",
-  realPeople:           "annually",
-  multiplatform:        "annually",
-  credible:             "annually",
-  decisionInfluenced:   "annually",
-  timeSaved:            "hours",
-  researchSpend:        "hours",
-  humanStudies:         "annually",
-  humanSample:          "annually",
+  workspacesCreated: "annually", explorationsLaunched: "half_year", personasCalibrated: "half_year",
+  reportsDownloaded: "annually_2026", registeredUsers: "annually", activeUsers: "annually",
+  avgTime: "annually", collaboration: "annually", avgPersonaConf: "annually",
+  populationConf: "annually", realPeople: "annually", multiplatform: "annually",
+  credible: "annually", decisionInfluenced: "annually", timeSaved: "hours",
+  researchSpend: "hours", humanStudies: "annually", humanSample: "annually",
 };
 
-interface ActiveTabs {
-  adoption:   number;
-  engagement: number;
-  conviction: number;
-  value:      number;
-}
+interface ActiveTabs { adoption: number; engagement: number; conviction: number; value: number; }
+interface Workspace  { id: string; name?: string; }
+interface Exploration { id: string; title?: string; }
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
@@ -480,11 +446,12 @@ const MyOrganization: React.FC = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
 
-  const auth              = useSelector((s: RootState) => s.auth);
-  const omi               = useSelector((s: RootState) => s.omi);
-  const { organizations } = useSelector((s: RootState) => s.organizations);
-  const orgName = organizations?.data?.name ?? "{Enterprise Name}";
-  const orgId   = organizations?.data?.id   ?? "default-org";
+  const auth = useSelector((s: RootState) => s.auth);
+  const omi  = useSelector((s: RootState) => s.omi);
+
+  // org_id lives on the logged-in user object (populated from /auth/me at login)
+  const orgId = auth?.user?.organization_id || auth?.user?.org_id || "";
+  const [orgName, setOrgName] = useState<string>("My Organisation");
 
   useEffect(() => {
     if (auth?.user && auth.user.account_tier !== "enterprise") {
@@ -496,13 +463,16 @@ const MyOrganization: React.FC = () => {
   const [moreOpen,   setMoreOpen]   = useState<boolean>(false);
   const [periods,    setPeriods]    = useState<Periods>(INIT_PERIODS);
   const [activeTabs, setActiveTabs] = useState<ActiveTabs>({ adoption: 0, engagement: 0, conviction: 0, value: 0 });
-  const [stats,      setStats]      = useState<DashboardStats>(INITIAL_STATS);
-  const [loading,    setLoading]    = useState<boolean>(true);
+  const [stats,      setStats]      = useState<DashboardStats>(ZERO_STATS);
+  const [loading,    setLoading]    = useState<boolean>(false);
   const [error,      setError]      = useState<string | null>(null);
   const [csvOpen,    setCsvOpen]    = useState<boolean>(false);
   const [csvWsId,    setCsvWsId]    = useState<string>("");
   const [csvExId,    setCsvExId]    = useState<string>("");
   const [csvBusy,    setCsvBusy]    = useState<boolean>(false);
+
+  // Global analytics period — changing this triggers a full refetch
+  const [analyticsPeriod, setAnalyticsPeriod] = useState<string>("all_time");
 
   const { data: wsRaw } = useWorkspaces() as { data: Workspace[] | { data: Workspace[] } | null };
   const workspaces = useMemo<Workspace[]>(() => {
@@ -526,23 +496,41 @@ const MyOrganization: React.FC = () => {
     if (orgId && !omi.isInitialized) dispatch(initializeSessionStart({ orgId }));
   }, [orgId, dispatch, omi.isInitialized]);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (period: string = "all_time") => {
+    if (!orgId) {
+      setLoading(false);
+      setError("Organisation ID not found. Please log out and log back in.");
+      return;
+    }
     try {
       setLoading(true);
       setError(null);
-      const api: ApiResponse = await adminService.getAdminDashboardData("all_time");
-      setStats((prev) => mergeApiData(api, prev));
+      const [orgData, analyticsData] = await Promise.all([
+        enterpriseService.getOrg(orgId),
+        enterpriseService.getOrgAnalytics(orgId, period),
+      ]);
+      // getOrg returns SuccessResponse — name is in data.name or data.data.name
+      const name = orgData?.data?.name ?? orgData?.name;
+      if (name) setOrgName(name);
+      setStats(mapApiToStats(analyticsData as OrgAnalyticsApi));
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to load dashboard");
+      const msg = (err as { detail?: string })?.detail
+        ?? (err instanceof Error ? err.message : "Failed to load dashboard data");
+      setError(msg);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [orgId]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => { fetchData(analyticsPeriod); }, [fetchData, analyticsPeriod]);
 
   const setPeriod = useCallback(
-    (key: keyof Periods) => (v: string) => setPeriods((p) => ({ ...p, [key]: v })),
+    (key: keyof Periods) => (v: string) => {
+      setPeriods((p) => ({ ...p, [key]: v }));
+      // Map UI period value to API period and refetch
+      const apiPeriod = PERIOD_MAP[v] ?? "all_time";
+      setAnalyticsPeriod(apiPeriod);
+    },
     []
   );
   const setTab = useCallback(
@@ -573,230 +561,103 @@ const MyOrganization: React.FC = () => {
   if (error) return (
     <div className={styles.errorState}>
       <span className={styles.errorText}>{error}</span>
-      <button className={styles.retryBtn} onClick={fetchData}>Retry</button>
+      <button className={styles.retryBtn} onClick={() => fetchData(analyticsPeriod)}>Retry</button>
     </div>
   );
 
   // ─── Adoption tab definitions ───────────────────────────────────────────────
 
   const adoptionTabs = [
-    { value: stats.adoption.workspacesCreated,                                label: "Workspaces Created"    },
-    { value: stats.adoption.explorationsLaunched,                             label: "Explorations Launched" },
-    { value: stats.adoption.personasCalibrated,                               label: "Personas Calibrated"   },
-    { value: String(stats.adoption.reportsDownloaded).padStart(3, "0"),       label: "Reports Downloaded"    },
+    { value: stats.adoption.workspacesCreated,                          label: "Workspaces Created"    },
+    { value: stats.adoption.explorationsLaunched,                       label: "Explorations Launched" },
+    { value: stats.adoption.personasCalibrated,                         label: "Personas Calibrated"   },
+    { value: String(stats.adoption.reportsDownloaded).padStart(3, "0"), label: "Reports Downloaded"    },
   ];
 
   const renderAdoptionChart = (): React.ReactNode => {
     const idx = activeTabs.adoption;
 
-    // ── Tab 0: Workspaces Created ────────────────────────────────────────────
     if (idx === 0) return (
       <>
-        <ChartCtrl
-          title="Workspaces Created"
-          value={periods.workspacesCreated}
-          onChange={setPeriod("workspacesCreated")}
-        />
-        <div className={styles.chartArea}>
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart
-              data={stats.charts.workspacesCreated}
-              barSize={28}
-              margin={CHART_MARGIN}
-            >
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
-              <XAxis
-                dataKey="dept"
-                tick={tickStyle}
-                axisLine={false}
-                tickLine={false}
-                interval={0}
-                label={{
-                  value: "Department Name",
-                  position: "insideBottom",
-                  offset: -12,
-                  style: axisLabelStyle,
-                }}
-              />
-              <YAxis
-                tick={tickStyle}
-                axisLine={false}
-                tickLine={false}
-                domain={[0, 100]}
-                ticks={[0, 20, 40, 60, 80, 100]}
-                width={40}
-                label={{
-                  value: "No. of workspaces",
-                  angle: -90,
-                  position: "insideLeft",
-                  offset: 0,
-                  dx: -10,
-                  style: axisLabelStyle,
-                }}
-              />
-              <Tooltip contentStyle={TTStyle} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
-              <Bar dataKey="value" name="Workspaces" fill={C.barBlue} radius={[3, 3, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        <ChartCtrl title="Workspaces Created" value={periods.workspacesCreated} onChange={setPeriod("workspacesCreated")} />
+        {stats.charts.workspacesCreated.length === 0 ? <EmptyChart /> : (
+          <div className={styles.chartArea}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={stats.charts.workspacesCreated} barSize={28} margin={CHART_MARGIN}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
+                <XAxis dataKey="dept" tick={tickStyle} axisLine={false} tickLine={false} interval={0}
+                  label={{ value: "Period", position: "insideBottom", offset: -12, style: axisLabelStyle }} />
+                <YAxis tick={tickStyle} axisLine={false} tickLine={false} width={40}
+                  label={{ value: "No. of workspaces", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }} />
+                <Tooltip contentStyle={TTStyle} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
+                <Bar dataKey="value" name="Workspaces" fill={C.barBlue} radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </>
     );
 
-    // ── Tab 1: Explorations Launched ─────────────────────────────────────────
     if (idx === 1) return (
       <>
-        <ChartCtrl
-          title="Explorations Launched"
-          value={periods.explorationsLaunched}
-          onChange={setPeriod("explorationsLaunched")}
-          options={HALF_YEAR_OPTS}
-        />
-        <div className={styles.chartArea}>
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart
-              data={stats.charts.explorationsLaunched}
-              barSize={28}
-              margin={CHART_MARGIN_NO_XLAB}
-            >
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
-              <XAxis
-                dataKey="dept"
-                tick={tickStyle}
-                axisLine={false}
-                tickLine={false}
-                interval={0}
-              />
-              <YAxis
-                tick={tickStyle}
-                axisLine={false}
-                tickLine={false}
-                domain={[0, 150]}
-                ticks={[0, 30, 60, 90, 120, 150]}
-                width={40}
-                label={{
-                  value: "Count of explorations",
-                  angle: -90,
-                  position: "insideLeft",
-                  offset: 0,
-                  dx: -10,
-                  style: axisLabelStyle,
-                }}
-              />
-              <Tooltip contentStyle={TTStyle} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
-              <Bar dataKey="value" name="Explorations" fill={C.barPurple} radius={[3, 3, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        <ChartCtrl title="Explorations Launched" value={periods.explorationsLaunched} onChange={setPeriod("explorationsLaunched")} options={HALF_YEAR_OPTS} />
+        {stats.charts.explorationsLaunched.length === 0 ? <EmptyChart /> : (
+          <div className={styles.chartArea}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={stats.charts.explorationsLaunched} barSize={28} margin={CHART_MARGIN_NO_XLAB}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
+                <XAxis dataKey="dept" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
+                <YAxis tick={tickStyle} axisLine={false} tickLine={false} width={40}
+                  label={{ value: "Count of explorations", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }} />
+                <Tooltip contentStyle={TTStyle} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
+                <Bar dataKey="value" name="Explorations" fill={C.barPurple} radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </>
     );
 
-    // ── Tab 2: Personas Calibrated ───────────────────────────────────────────
     if (idx === 2) return (
       <>
-        <ChartCtrl
-          title="Personas Calibrated"
-          value={periods.personasCalibrated}
-          onChange={setPeriod("personasCalibrated")}
-          options={[
-            { value: "half_year_range", label: "Half Year (Jan 2026 - Jun 2026)" },
-            ...HALF_YEAR_OPTS,
-          ]}
-          wide
-        />
-        <div className={styles.chartArea}>
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart
-              data={stats.charts.personasCalibrated}
-              barSize={28}
-              margin={CHART_MARGIN_NO_XLAB}
-            >
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
-              <XAxis
-                dataKey="month"
-                tick={tickStyle}
-                axisLine={false}
-                tickLine={false}
-                interval={0}
-              />
-              <YAxis
-                tick={tickStyle}
-                axisLine={false}
-                tickLine={false}
-                domain={[0, 150]}
-                ticks={[0, 30, 60, 90, 120, 150]}
-                width={40}
-                label={{
-                  value: "Number of Personas",
-                  angle: -90,
-                  position: "insideLeft",
-                  offset: 0,
-                  dx: -10,
-                  style: axisLabelStyle,
-                }}
-              />
-              <Tooltip contentStyle={TTStyle} />
-              <Bar dataKey="singleUser" name="Standard Personas"   stackId="a" fill={C.barPurple} />
-              <Bar dataKey="multiUser"  name="Additional Personas" stackId="a" fill={C.barTeal} radius={[3, 3, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-        <StackedLegend a="Standard Personas" b="Additional Personas" colorA={C.barPurple} colorB={C.barTeal} />
+        <ChartCtrl title="Personas Calibrated" value={periods.personasCalibrated} onChange={setPeriod("personasCalibrated")} options={HALF_YEAR_OPTS} />
+        {stats.charts.personasCalibrated.length === 0 ? <EmptyChart /> : (
+          <div className={styles.chartArea}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={stats.charts.personasCalibrated} barSize={28} margin={CHART_MARGIN_NO_XLAB}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
+                <XAxis dataKey="month" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
+                <YAxis tick={tickStyle} axisLine={false} tickLine={false} width={40}
+                  label={{ value: "Number of Personas", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }} />
+                <Tooltip contentStyle={TTStyle} />
+                <Bar dataKey="singleUser" name="OMI Personas"    stackId="a" fill={C.barPurple} />
+                <Bar dataKey="multiUser"  name="Manual Personas" stackId="a" fill={C.barTeal} radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+        <StackedLegend a="OMI Personas" b="Manual Personas" colorA={C.barPurple} colorB={C.barTeal} />
       </>
     );
 
-    // ── Tab 3: Reports Downloaded ────────────────────────────────────────────
     return (
       <>
-        <ChartCtrl
-          title="Reports Downloaded"
-          value={periods.reportsDownloaded}
-          onChange={setPeriod("reportsDownloaded")}
-          options={ANNUAL_2026_OPTS}
-          wide
-        />
-        <div className={styles.chartArea}>
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart
-              data={stats.charts.reportsDownloaded}
-              margin={CHART_MARGIN_NO_XLAB}
-            >
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
-              <XAxis
-                dataKey="name"
-                tick={tickStyle}
-                axisLine={false}
-                tickLine={false}
-                interval={0}
-              />
-              <YAxis
-                tick={tickStyle}
-                axisLine={false}
-                tickLine={false}
-                domain={[0, 100]}
-                ticks={[0, 20, 40, 60, 80, 100]}
-                width={40}
-                label={{
-                  value: "Reports Downloaded",
-                  angle: -90,
-                  position: "insideLeft",
-                  offset: 0,
-                  dx: -10,
-                  style: axisLabelStyle,
-                }}
-              />
-              <Tooltip contentStyle={TTStyle} />
-              <Line
-                type="monotone"
-                dataKey="value"
-                name="Reports Downloaded"
-                stroke={C.line}
-                strokeWidth={2}
-                dot={{ r: 4, fill: C.line, strokeWidth: 0 }}
-                activeDot={{ r: 5 }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+        <ChartCtrl title="Reports Downloaded" value={periods.reportsDownloaded} onChange={setPeriod("reportsDownloaded")} options={ANNUAL_2026_OPTS} wide />
+        {stats.charts.reportsDownloaded.length === 0 ? <EmptyChart /> : (
+          <div className={styles.chartArea}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={stats.charts.reportsDownloaded} margin={CHART_MARGIN_NO_XLAB}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
+                <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
+                <YAxis tick={tickStyle} axisLine={false} tickLine={false} width={40}
+                  label={{ value: "Reports Downloaded", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }} />
+                <Tooltip contentStyle={TTStyle} />
+                <Line type="monotone" dataKey="value" name="Reports Downloaded" stroke={C.line} strokeWidth={2}
+                  dot={{ r: 4, fill: C.line, strokeWidth: 0 }} activeDot={{ r: 5 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </>
     );
   };
@@ -816,92 +677,83 @@ const MyOrganization: React.FC = () => {
     if (idx === 0) return (
       <>
         <ChartCtrl title="Registered Users" value={periods.registeredUsers} onChange={setPeriod("registeredUsers")} options={ANNUAL_VARIANT_OPTS} />
-        <div className={styles.chartArea}>
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={stats.charts.registeredUsers} margin={CHART_MARGIN_NO_XLAB}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
-              <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
-              <YAxis
-                tick={tickStyle} axisLine={false} tickLine={false}
-                domain={[0, 100]} ticks={[0, 20, 40, 60, 80, 100]}
-                width={40}
-                label={{ value: "Registered Users", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }}
-              />
-              <Tooltip contentStyle={TTStyle} />
-              <Line type="monotone" dataKey="value" name="Registered Users" stroke={C.line} strokeWidth={2}
-                dot={{ r: 4, fill: C.line, strokeWidth: 0 }} activeDot={{ r: 5 }} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-        <StackedLegend a="Single User" b="Multiple Users" />
+        {stats.charts.registeredUsers.length === 0 ? <EmptyChart /> : (
+          <div className={styles.chartArea}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={stats.charts.registeredUsers} margin={CHART_MARGIN_NO_XLAB}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
+                <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
+                <YAxis tick={tickStyle} axisLine={false} tickLine={false} width={40}
+                  label={{ value: "Registered Users", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }} />
+                <Tooltip contentStyle={TTStyle} />
+                <Line type="monotone" dataKey="value" name="Registered Users" stroke={C.line} strokeWidth={2}
+                  dot={{ r: 4, fill: C.line, strokeWidth: 0 }} activeDot={{ r: 5 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </>
     );
 
     if (idx === 1) return (
       <>
         <ChartCtrl title="Active Users" value={periods.activeUsers} onChange={setPeriod("activeUsers")} options={ANNUAL_VARIANT_OPTS} />
-        <div className={styles.chartArea}>
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={stats.charts.activeUsers} margin={CHART_MARGIN_NO_XLAB}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
-              <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
-              <YAxis
-                tick={tickStyle} axisLine={false} tickLine={false}
-                domain={[0, 100]} ticks={[0, 20, 40, 60, 80, 100]}
-                width={40}
-                label={{ value: "Active Users", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }}
-              />
-              <Tooltip contentStyle={TTStyle} />
-              <Line type="monotone" dataKey="value" name="Active Users" stroke={C.line} strokeWidth={2}
-                dot={{ r: 4, fill: C.line, strokeWidth: 0 }} activeDot={{ r: 5 }} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+        {stats.charts.activeUsers.length === 0 ? <EmptyChart /> : (
+          <div className={styles.chartArea}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={stats.charts.activeUsers} margin={CHART_MARGIN_NO_XLAB}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
+                <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
+                <YAxis tick={tickStyle} axisLine={false} tickLine={false} width={40}
+                  label={{ value: "Active Users", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }} />
+                <Tooltip contentStyle={TTStyle} />
+                <Line type="monotone" dataKey="value" name="Active Users" stroke={C.line} strokeWidth={2}
+                  dot={{ r: 4, fill: C.line, strokeWidth: 0 }} activeDot={{ r: 5 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </>
     );
 
     if (idx === 2) return (
       <>
         <ChartCtrl title="Avg. Time per Exploration" value={periods.avgTime} onChange={setPeriod("avgTime")} options={ANNUAL_VARIANT_OPTS} />
-        <div className={styles.chartArea}>
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={stats.charts.avgTimePerExploration} barSize={28} margin={CHART_MARGIN_NO_XLAB}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
-              <XAxis dataKey="dept" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
-              <YAxis
-                tick={tickStyle} axisLine={false} tickLine={false}
-                domain={[0, 100]} ticks={[0, 20, 40, 60, 80, 100]}
-                width={40}
-                label={{ value: "Avg hrs / Exploration", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }}
-              />
-              <Tooltip contentStyle={TTStyle} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
-              <Bar dataKey="value" name="Avg hrs per Exploration" fill={C.barPurple} radius={[3, 3, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        {stats.charts.avgTimePerExploration.length === 0 ? <EmptyChart /> : (
+          <div className={styles.chartArea}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={stats.charts.avgTimePerExploration} barSize={28} margin={CHART_MARGIN_NO_XLAB}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
+                <XAxis dataKey="dept" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
+                <YAxis tick={tickStyle} axisLine={false} tickLine={false} width={40}
+                  label={{ value: "Avg hrs / Exploration", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }} />
+                <Tooltip contentStyle={TTStyle} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
+                <Bar dataKey="value" name="Avg hrs per Exploration" fill={C.barPurple} radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </>
     );
 
     return (
       <>
         <ChartCtrl title="Collaboration Rate" value={periods.collaboration} onChange={setPeriod("collaboration")} options={ANNUAL_VARIANT_OPTS} />
-        <div className={styles.chartArea}>
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={stats.charts.collaborationRate} barSize={28} margin={CHART_MARGIN_NO_XLAB}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
-              <XAxis dataKey="month" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
-              <YAxis
-                tick={tickStyle} axisLine={false} tickLine={false}
-                domain={[0, 150]} ticks={[0, 30, 60, 90, 120, 150]}
-                width={40}
-                label={{ value: "Number of Personas", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }}
-              />
-              <Tooltip contentStyle={TTStyle} />
-              <Bar dataKey="singleUser" name="Single User"    stackId="a" fill={C.barBlue} />
-              <Bar dataKey="multiUser"  name="Multiple Users" stackId="a" fill={C.barTeal} radius={[3, 3, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        {stats.charts.collaborationRate.length === 0 ? <EmptyChart /> : (
+          <div className={styles.chartArea}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={stats.charts.collaborationRate} barSize={28} margin={CHART_MARGIN_NO_XLAB}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
+                <XAxis dataKey="month" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
+                <YAxis tick={tickStyle} axisLine={false} tickLine={false} width={40}
+                  label={{ value: "Explorations", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }} />
+                <Tooltip contentStyle={TTStyle} />
+                <Bar dataKey="singleUser" name="Single User"    stackId="a" fill={C.barBlue} />
+                <Bar dataKey="multiUser"  name="Multiple Users" stackId="a" fill={C.barTeal} radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
         <StackedLegend a="Single User" b="Multiple Users" />
       </>
     );
@@ -910,11 +762,11 @@ const MyOrganization: React.FC = () => {
   // ─── Conviction tab definitions ─────────────────────────────────────────────
 
   const convictionTabs = [
-    { value: stats.conviction.personaConfidence.value,      label: "Persona Confidence"               },
-    { value: stats.conviction.populationConfidence,          label: "Population Confidence"            },
-    { value: stats.conviction.realPeoplesActions,            label: "Real People's Actions Calibrated" },
-    { value: stats.conviction.multiplatformConversation,     label: "Multi-platform Conversation"      },
-    { value: stats.conviction.credibleSources,               label: "Credible Sources Contextualised"  },
+    { value: stats.conviction.personaConfidence.value,     label: "Persona Confidence"               },
+    { value: stats.conviction.populationConfidence,         label: "Population Confidence"            },
+    { value: stats.conviction.realPeoplesActions,           label: "Real People's Actions Calibrated" },
+    { value: stats.conviction.multiplatformConversation,    label: "Multi-platform Conversation"      },
+    { value: stats.conviction.credibleSources,              label: "Credible Sources Contextualised"  },
   ];
 
   const renderConvictionChart = (): React.ReactNode => {
@@ -923,117 +775,107 @@ const MyOrganization: React.FC = () => {
     if (idx === 0) return (
       <>
         <ChartCtrl title="Avg. Persona Confidence" value={periods.avgPersonaConf} onChange={setPeriod("avgPersonaConf")} />
-        <div className={styles.chartArea}>
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={stats.charts.avgPersonaConfidence} margin={CHART_MARGIN_NO_XLAB}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
-              <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
-              <YAxis
-                tick={tickStyle} axisLine={false} tickLine={false}
-                domain={[0, 100]} ticks={[0, 20, 40, 60, 80, 100]}
-                tickFormatter={(v: number) => `${v}%`}
-                width={44}
-                label={{ value: "Persona Confidence (%)", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }}
-              />
-              <Tooltip contentStyle={TTStyle} />
-              <Line type="monotone" dataKey="value" name="Avg Persona Confidence (%)" stroke={C.line} strokeWidth={2}
-                dot={{ r: 4, fill: C.line, strokeWidth: 0 }} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+        {stats.charts.avgPersonaConfidence.length === 0 ? <EmptyChart /> : (
+          <div className={styles.chartArea}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={stats.charts.avgPersonaConfidence} margin={CHART_MARGIN_NO_XLAB}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
+                <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
+                <YAxis tick={tickStyle} axisLine={false} tickLine={false} domain={[0, 100]} ticks={[0,20,40,60,80,100]}
+                  tickFormatter={(v: number) => `${v}%`} width={44}
+                  label={{ value: "Persona Confidence (%)", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }} />
+                <Tooltip contentStyle={TTStyle} />
+                <Line type="monotone" dataKey="value" name="Avg Persona Confidence (%)" stroke={C.line} strokeWidth={2}
+                  dot={{ r: 4, fill: C.line, strokeWidth: 0 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </>
     );
 
     if (idx === 1) return (
       <>
         <ChartCtrl title="Population Confidence" value={periods.populationConf} onChange={setPeriod("populationConf")} />
-        <div className={styles.chartArea}>
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={stats.charts.populationConfidence} margin={CHART_MARGIN_NO_XLAB}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
-              <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
-              <YAxis
-                tick={tickStyle} axisLine={false} tickLine={false}
-                domain={[0, 100]} ticks={[0, 20, 40, 60, 80, 100]}
-                tickFormatter={(v: number) => `${v}%`}
-                width={44}
-                label={{ value: "Population Confidence (%)", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }}
-              />
-              <Tooltip contentStyle={TTStyle} />
-              <Line type="monotone" dataKey="value" name="Avg Population Confidence (%)" stroke={C.line} strokeWidth={2}
-                dot={{ r: 4, fill: C.line, strokeWidth: 0 }} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+        {stats.charts.populationConfidence.length === 0 ? <EmptyChart /> : (
+          <div className={styles.chartArea}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={stats.charts.populationConfidence} margin={CHART_MARGIN_NO_XLAB}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
+                <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
+                <YAxis tick={tickStyle} axisLine={false} tickLine={false} domain={[0, 100]} ticks={[0,20,40,60,80,100]}
+                  tickFormatter={(v: number) => `${v}%`} width={44}
+                  label={{ value: "Population Confidence (%)", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }} />
+                <Tooltip contentStyle={TTStyle} />
+                <Line type="monotone" dataKey="value" name="Avg Population Confidence (%)" stroke={C.line} strokeWidth={2}
+                  dot={{ r: 4, fill: C.line, strokeWidth: 0 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </>
     );
 
     if (idx === 2) return (
       <>
         <ChartCtrl title="Avg. Real People's Actions Calibrated" value={periods.realPeople} onChange={setPeriod("realPeople")} />
-        <div className={styles.chartArea}>
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={stats.charts.realPeoplesActions} margin={CHART_MARGIN_NO_XLAB}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
-              <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
-              <YAxis
-                tick={tickStyle} axisLine={false} tickLine={false}
-                domain={[0, 100]} ticks={[0, 20, 40, 60, 80, 100]}
-                width={40}
-                label={{ value: "Actions Calibrated", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }}
-              />
-              <Tooltip contentStyle={TTStyle} />
-              <Line type="monotone" dataKey="value" name="Real People's Actions Calibrated" stroke={C.line} strokeWidth={2}
-                dot={{ r: 4, fill: C.line, strokeWidth: 0 }} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+        {stats.charts.realPeoplesActions.length === 0 ? <EmptyChart /> : (
+          <div className={styles.chartArea}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={stats.charts.realPeoplesActions} margin={CHART_MARGIN_NO_XLAB}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
+                <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
+                <YAxis tick={tickStyle} axisLine={false} tickLine={false} width={40}
+                  label={{ value: "Actions Calibrated", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }} />
+                <Tooltip contentStyle={TTStyle} />
+                <Line type="monotone" dataKey="value" name="Real People's Actions" stroke={C.line} strokeWidth={2}
+                  dot={{ r: 4, fill: C.line, strokeWidth: 0 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </>
     );
 
     if (idx === 3) return (
       <>
         <ChartCtrl title="Avg. Multi-platform Conversation" value={periods.multiplatform} onChange={setPeriod("multiplatform")} />
-        <div className={styles.chartArea}>
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={stats.charts.multiplatformConversation} margin={CHART_MARGIN_NO_XLAB}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
-              <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
-              <YAxis
-                tick={tickStyle} axisLine={false} tickLine={false}
-                domain={[0, 100]} ticks={[0, 20, 40, 60, 80, 100]}
-                width={40}
-                label={{ value: "Conversations", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }}
-              />
-              <Tooltip contentStyle={TTStyle} />
-              <Line type="monotone" dataKey="value" name="Multi-platform Conversation" stroke={C.line} strokeWidth={2}
-                dot={{ r: 4, fill: C.line, strokeWidth: 0 }} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+        {stats.charts.multiplatformConversation.length === 0 ? <EmptyChart /> : (
+          <div className={styles.chartArea}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={stats.charts.multiplatformConversation} margin={CHART_MARGIN_NO_XLAB}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
+                <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
+                <YAxis tick={tickStyle} axisLine={false} tickLine={false} width={40}
+                  label={{ value: "Conversations", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }} />
+                <Tooltip contentStyle={TTStyle} />
+                <Line type="monotone" dataKey="value" name="Multi-platform Conversation" stroke={C.line} strokeWidth={2}
+                  dot={{ r: 4, fill: C.line, strokeWidth: 0 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </>
     );
 
     return (
       <>
         <ChartCtrl title="Avg. Credible Sources Contextualized" value={periods.credible} onChange={setPeriod("credible")} />
-        <div className={styles.chartArea}>
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={stats.charts.credibleSources} margin={CHART_MARGIN_NO_XLAB}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
-              <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
-              <YAxis
-                tick={tickStyle} axisLine={false} tickLine={false}
-                domain={[0, 100]} ticks={[0, 20, 40, 60, 80, 100]}
-                width={40}
-                label={{ value: "Credible Sources", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }}
-              />
-              <Tooltip contentStyle={TTStyle} />
-              <Line type="monotone" dataKey="value" name="Credible Sources Contextualized" stroke={C.line} strokeWidth={2}
-                dot={{ r: 4, fill: C.line, strokeWidth: 0 }} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+        {stats.charts.credibleSources.length === 0 ? <EmptyChart /> : (
+          <div className={styles.chartArea}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={stats.charts.credibleSources} margin={CHART_MARGIN_NO_XLAB}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
+                <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
+                <YAxis tick={tickStyle} axisLine={false} tickLine={false} width={40}
+                  label={{ value: "Credible Sources", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }} />
+                <Tooltip contentStyle={TTStyle} />
+                <Line type="monotone" dataKey="value" name="Credible Sources" stroke={C.line} strokeWidth={2}
+                  dot={{ r: 4, fill: C.line, strokeWidth: 0 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </>
     );
   };
@@ -1043,7 +885,7 @@ const MyOrganization: React.FC = () => {
   const valueTabs = [
     { value: stats.valueDelivered.decisionInfluenced.value,        label: "Decision Influenced"     },
     { value: `${stats.valueDelivered.timeSaved.value} hrs`,        label: "Time Saved"              },
-    { value: `$ ${stats.valueDelivered.researchSpendSaved.value}`, label: "Research Spend Saved"    },
+    { value: stats.valueDelivered.researchSpendSaved.value,        label: "Research Spend Saved"    },
     { value: stats.valueDelivered.humanStudiesReplaced,            label: "Human Studies Replaced"  },
     { value: stats.valueDelivered.humanSampleReduced,              label: "Human Sample Reduced"    },
   ];
@@ -1054,23 +896,21 @@ const MyOrganization: React.FC = () => {
     if (idx === 0) return (
       <>
         <ChartCtrl title="Decision Influenced" value={periods.decisionInfluenced} onChange={setPeriod("decisionInfluenced")} />
-        <div className={styles.chartArea}>
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={stats.charts.decisionInfluenced} barSize={28} margin={CHART_MARGIN_NO_XLAB}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
-              <XAxis dataKey="month" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
-              <YAxis
-                tick={tickStyle} axisLine={false} tickLine={false}
-                domain={[0, 150]} ticks={[0, 30, 60, 90, 120, 150]}
-                width={40}
-                label={{ value: "Decisions Influenced", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }}
-              />
-              <Tooltip contentStyle={TTStyle} />
-              <Bar dataKey="singleUser" name="Total Explorations"  stackId="a" fill={C.barBlue} />
-              <Bar dataKey="multiUser"  name="Decision Influenced" stackId="a" fill={C.barTeal} radius={[3, 3, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        {stats.charts.decisionInfluenced.length === 0 ? <EmptyChart /> : (
+          <div className={styles.chartArea}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={stats.charts.decisionInfluenced} barSize={28} margin={CHART_MARGIN_NO_XLAB}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
+                <XAxis dataKey="month" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
+                <YAxis tick={tickStyle} axisLine={false} tickLine={false} width={40}
+                  label={{ value: "Count of explorations", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }} />
+                <Tooltip contentStyle={TTStyle} />
+                <Bar dataKey="singleUser" name="Total Explorations"  stackId="a" fill={C.barBlue} />
+                <Bar dataKey="multiUser"  name="Decision Influenced" stackId="a" fill={C.barTeal} radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
         <StackedLegend a="Total Explorations" b="Decision Influenced" />
       </>
     );
@@ -1078,70 +918,64 @@ const MyOrganization: React.FC = () => {
     if (idx === 1) return (
       <>
         <ChartCtrl title="Time Saved" value={periods.timeSaved} onChange={setPeriod("timeSaved")} options={HOURS_OPTS} />
-        <div className={styles.chartArea}>
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={stats.charts.timeSaved} margin={CHART_MARGIN_NO_XLAB}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
-              <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
-              <YAxis
-                tick={tickStyle} axisLine={false} tickLine={false}
-                domain={[0, 100]} ticks={[0, 20, 40, 60, 80, 100]}
-                width={40}
-                label={{ value: "Time saved (hrs)", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }}
-              />
-              <Tooltip contentStyle={TTStyle} />
-              <Line type="monotone" dataKey="value" name="Time Saved (hrs)" stroke={C.line} strokeWidth={2}
-                dot={{ r: 4, fill: C.line, strokeWidth: 0 }} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+        {stats.charts.timeSaved.length === 0 ? <EmptyChart /> : (
+          <div className={styles.chartArea}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={stats.charts.timeSaved} margin={CHART_MARGIN_NO_XLAB}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
+                <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
+                <YAxis tick={tickStyle} axisLine={false} tickLine={false} width={40}
+                  label={{ value: "Time saved (hrs)", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }} />
+                <Tooltip contentStyle={TTStyle} />
+                <Line type="monotone" dataKey="value" name="Time Saved (hrs)" stroke={C.line} strokeWidth={2}
+                  dot={{ r: 4, fill: C.line, strokeWidth: 0 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </>
     );
 
     if (idx === 2) return (
       <>
         <ChartCtrl title="Research Spend Saved" value={periods.researchSpend} onChange={setPeriod("researchSpend")} options={HOURS_OPTS} />
-        <div className={styles.chartArea}>
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={stats.charts.researchSpendSaved} margin={CHART_MARGIN_NO_XLAB}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
-              <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
-              <YAxis
-                tick={tickStyle} axisLine={false} tickLine={false}
-                domain={[0, 100]} ticks={[0, 20, 40, 60, 80, 100]}
-                tickFormatter={(v: number) => `$${v}`}
-                width={44}
-                label={{ value: "Cost saved ($)", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }}
-              />
-              <Tooltip contentStyle={TTStyle} />
-              <Line type="monotone" dataKey="value" name="Research Spend Saved ($)" stroke={C.line} strokeWidth={2}
-                dot={{ r: 4, fill: C.line, strokeWidth: 0 }} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+        {stats.charts.researchSpendSaved.length === 0 ? <EmptyChart /> : (
+          <div className={styles.chartArea}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={stats.charts.researchSpendSaved} margin={CHART_MARGIN_NO_XLAB}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
+                <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
+                <YAxis tick={tickStyle} axisLine={false} tickLine={false}
+                  tickFormatter={(v: number) => `$${v}`} width={44}
+                  label={{ value: "Cost saved ($)", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }} />
+                <Tooltip contentStyle={TTStyle} />
+                <Line type="monotone" dataKey="value" name="Research Spend Saved ($)" stroke={C.line} strokeWidth={2}
+                  dot={{ r: 4, fill: C.line, strokeWidth: 0 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </>
     );
 
     if (idx === 3) return (
       <>
         <ChartCtrl title="Human Studies Replaced" value={periods.humanStudies} onChange={setPeriod("humanStudies")} />
-        <div className={styles.chartArea}>
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={stats.charts.humanStudiesReplaced} barSize={28} margin={CHART_MARGIN_WIDE}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
-              <XAxis dataKey="month" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
-              <YAxis
-                tick={tickStyle} axisLine={false} tickLine={false}
-                domain={[0, 150]} ticks={[0, 30, 60, 90, 120, 150]}
-                width={48}
-                label={{ value: "Explorations replacing studies", angle: -90, position: "insideLeft", offset: 0, dx: -12, style: axisLabelStyleSm }}
-              />
-              <Tooltip contentStyle={TTStyle} />
-              <Bar dataKey="singleUser" name="Total Explorations"     stackId="a" fill={C.barBlue} />
-              <Bar dataKey="multiUser"  name="Replaced Human Studies" stackId="a" fill={C.barTeal} radius={[3, 3, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        {stats.charts.humanStudiesReplaced.length === 0 ? <EmptyChart /> : (
+          <div className={styles.chartArea}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={stats.charts.humanStudiesReplaced} barSize={28} margin={CHART_MARGIN_WIDE}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
+                <XAxis dataKey="month" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
+                <YAxis tick={tickStyle} axisLine={false} tickLine={false} width={48}
+                  label={{ value: "Explorations replacing studies", angle: -90, position: "insideLeft", offset: 0, dx: -12, style: axisLabelStyleSm }} />
+                <Tooltip contentStyle={TTStyle} />
+                <Bar dataKey="singleUser" name="Total Explorations"     stackId="a" fill={C.barBlue} />
+                <Bar dataKey="multiUser"  name="Replaced Human Studies" stackId="a" fill={C.barTeal} radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
         <StackedLegend a="Total Explorations" b="Replaced Human Studies" />
       </>
     );
@@ -1149,29 +983,29 @@ const MyOrganization: React.FC = () => {
     return (
       <>
         <ChartCtrl title="Human Sample Reduced" value={periods.humanSample} onChange={setPeriod("humanSample")} />
-        <div className={styles.chartArea}>
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={stats.charts.humanSampleReduced} barSize={28} margin={CHART_MARGIN_WIDE}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
-              <XAxis dataKey="month" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
-              <YAxis
-                tick={tickStyle} axisLine={false} tickLine={false}
-                domain={[0, 150]} ticks={[0, 30, 60, 90, 120, 150]}
-                width={48}
-                label={{ value: "Explorations reducing sampling", angle: -90, position: "insideLeft", offset: 0, dx: -12, style: axisLabelStyleSm }}
-              />
-              <Tooltip contentStyle={TTStyle} />
-              <Bar dataKey="singleUser" name="Total Explorations"   stackId="a" fill={C.barBlue} />
-              <Bar dataKey="multiUser"  name="Reduced Human Sample" stackId="a" fill={C.barTeal} radius={[3, 3, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        {stats.charts.humanSampleReduced.length === 0 ? <EmptyChart /> : (
+          <div className={styles.chartArea}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={stats.charts.humanSampleReduced} barSize={28} margin={CHART_MARGIN_WIDE}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
+                <XAxis dataKey="month" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
+                <YAxis tick={tickStyle} axisLine={false} tickLine={false} width={48}
+                  label={{ value: "Explorations reducing sampling", angle: -90, position: "insideLeft", offset: 0, dx: -12, style: axisLabelStyleSm }} />
+                <Tooltip contentStyle={TTStyle} />
+                <Bar dataKey="singleUser" name="Total Explorations"   stackId="a" fill={C.barBlue} />
+                <Bar dataKey="multiUser"  name="Reduced Human Sample" stackId="a" fill={C.barTeal} radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
         <StackedLegend a="Total Explorations" b="Reduced Human Sample" />
       </>
     );
   };
 
   // ─── Render ───────────────────────────────────────────────────────────────
+
+  const { banner } = stats;
 
   return (
     <div className={styles.root}>
@@ -1213,8 +1047,11 @@ const MyOrganization: React.FC = () => {
       <div className={styles.banner}>
         <TbInfoCircle size={14} className={styles.bannerIcon} />
         <span>
-          Synthetic-People has powered ABC strategic explorations, influenced XYZ decisions,
-          and unlocked 1234 research hours while saving $1234 research spend across your organisation
+          Synthetic-People has powered{" "}
+          <strong>{banner.totalExplorations}</strong> strategic explorations, influenced{" "}
+          <strong>{banner.decisionsInfluenced}</strong> decisions, and unlocked{" "}
+          <strong>{banner.researchTimeUnlockedHrs.toLocaleString()}</strong> research hours while saving{" "}
+          <strong>${banner.researchSpendSavedUsd.toLocaleString()}</strong> research spend across your organisation
         </span>
       </div>
 
@@ -1233,11 +1070,11 @@ const MyOrganization: React.FC = () => {
                 <div className={styles.metricLabel}>Total Workspace</div>
               </div>
               <div className={styles.metricItem}>
-                <div className={styles.metricValue}>{stats.usageMetrics.totalExploration.value}<span className={styles.trendDown}>↘</span></div>
+                <div className={styles.metricValue}>{stats.usageMetrics.totalExploration.value}<span className={styles.trendUp}>↗</span></div>
                 <div className={styles.metricLabel}>Total Exploration</div>
               </div>
               <div className={styles.metricItem}>
-                <div className={styles.metricValue}>{stats.usageMetrics.totalUsers.value}<span className={styles.trendUp}>↗</span></div>
+                <div className={styles.metricValue}>{stats.usageMetrics.totalUsers.value}</div>
                 <div className={styles.metricLabel}>Total Users</div>
               </div>
             </div>
@@ -1248,7 +1085,7 @@ const MyOrganization: React.FC = () => {
             </div>
             <div className={styles.metricItems}>
               <div className={styles.metricItem}>
-                <div className={styles.metricValue}>{stats.outcomeInfluenced.decisionsInfluenced.value}<span className={styles.trendDown}>↘</span></div>
+                <div className={styles.metricValue}>{stats.outcomeInfluenced.decisionsInfluenced.value}<span className={styles.trendUp}>↗</span></div>
                 <div className={styles.metricLabel}>Decisions Influenced</div>
               </div>
               <div className={styles.metricItem}>
@@ -1271,7 +1108,7 @@ const MyOrganization: React.FC = () => {
                 <div className={styles.metricLabel}>Research Time Unlocked</div>
               </div>
               <div className={styles.metricItem}>
-                <div className={styles.metricValue}>{stats.economics.researchSpendSaved.value}<TbChevronDown size={12} className={styles.chevron} /></div>
+                <div className={styles.metricValue}>{stats.economics.researchSpendSaved.value}</div>
                 <div className={styles.metricLabel}>Research Spend Saved</div>
               </div>
             </div>
@@ -1285,11 +1122,9 @@ const MyOrganization: React.FC = () => {
             <div className={styles.sectionPanelTitle}>Adoption Dynamics</div>
             <div className={`${styles.tabStrip} ${styles.tabStrip4}`}>
               {adoptionTabs.map((tab, i) => (
-                <button
-                  key={i}
+                <button key={i}
                   className={`${styles.tabCard} ${activeTabs.adoption === i ? styles.tabCardActive : ""}`}
-                  onClick={() => setTab("adoption")(i)}
-                >
+                  onClick={() => setTab("adoption")(i)}>
                   <div className={styles.tabValue}>{tab.value}</div>
                   <div className={styles.tabLabel}>{tab.label}</div>
                 </button>
@@ -1302,11 +1137,9 @@ const MyOrganization: React.FC = () => {
             <div className={styles.sectionPanelTitle}>User Engagement</div>
             <div className={`${styles.tabStrip} ${styles.tabStrip4}`}>
               {engagementTabs.map((tab, i) => (
-                <button
-                  key={i}
+                <button key={i}
                   className={`${styles.tabCard} ${activeTabs.engagement === i ? styles.tabCardActive : ""}`}
-                  onClick={() => setTab("engagement")(i)}
-                >
+                  onClick={() => setTab("engagement")(i)}>
                   <div className={styles.tabValue}>{tab.value}</div>
                   <div className={styles.tabLabel}>{tab.label}</div>
                 </button>
@@ -1323,11 +1156,9 @@ const MyOrganization: React.FC = () => {
             <div className={styles.sectionPanelTitle}>Conviction Measurement</div>
             <div className={`${styles.tabStrip} ${styles.tabStrip5}`}>
               {convictionTabs.map((tab, i) => (
-                <button
-                  key={i}
+                <button key={i}
                   className={`${styles.tabCard} ${activeTabs.conviction === i ? styles.tabCardActive : ""}`}
-                  onClick={() => setTab("conviction")(i)}
-                >
+                  onClick={() => setTab("conviction")(i)}>
                   <div className={styles.tabValue}>{tab.value}</div>
                   <div className={styles.tabLabel}>{tab.label}</div>
                 </button>
@@ -1340,11 +1171,9 @@ const MyOrganization: React.FC = () => {
             <div className={styles.sectionPanelTitle}>Value Delivered</div>
             <div className={`${styles.tabStrip} ${styles.tabStrip5}`}>
               {valueTabs.map((tab, i) => (
-                <button
-                  key={i}
+                <button key={i}
                   className={`${styles.tabCard} ${activeTabs.value === i ? styles.tabCardActive : ""}`}
-                  onClick={() => setTab("value")(i)}
-                >
+                  onClick={() => setTab("value")(i)}>
                   <div className={styles.tabValue}>{tab.value}</div>
                   <div className={styles.tabLabel}>{tab.label}</div>
                 </button>
