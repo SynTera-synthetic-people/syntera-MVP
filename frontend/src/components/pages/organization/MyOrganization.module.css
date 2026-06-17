@@ -1,5 +1,3 @@
-/* MyOrganization.module.css
-   Enterprise Admin Dashboard — Figma-accurate dark theme. */
 
 /* ─── Root ───────────────────────────────────────────────── */
 .root {
@@ -338,8 +336,6 @@
 .tabStrip4 { grid-template-columns: repeat(4, 1fr); }
 .tabStrip5 { grid-template-columns: repeat(5, 1fr); }
 
-/* FIX: uniform card height — flex column so value sits top,
-   label sits bottom regardless of text length */
 .tabCard {
   background: #060606;
   border: 1px solid var(--T-GreyScale-Grey-800, #393C45);
@@ -350,7 +346,6 @@
   text-align: left;
   appearance: none;
   -webkit-appearance: none;
-  /* Uniform height across all tab cards */
   min-height: 76px;
   height: 76px;
   display: flex;
@@ -375,7 +370,6 @@
   display: flex;
   align-items: flex-start;
   gap: 3px;
-  /* Prevent long values from pushing label down */
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -384,7 +378,6 @@
   font-size: 10px;
   color: #5c6880;
   line-height: 1.35;
-  /* Allow wrapping but cap at 2 lines */
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -444,20 +437,28 @@
 }
 .periodSelectWide { min-width: 190px; }
 
-/* ─── Chart areas ────────────────────────────────────────────
-   FIX: Negative left margin compensates for Recharts' internal
-   padding so the Y-axis label never gets clipped.            */
-.chartArea {
-  height: 200px;
+/* ─── Chart wrapper ──────────────────────────────────────────
+   overflow: visible is critical — it lets the Recharts SVG
+   render the rotated Y-axis label outside the strict box
+   without being clipped. No negative margin-left needed.    */
+.chartWrapper {
   width: 100%;
-  /* Pull the chart left so the increased margin-left in each
-     chart's margin prop doesn't shrink the plot area */
-  margin-left: -10px;
+  overflow: visible;
+}
+
+/* ─── Chart areas ────────────────────────────────────────────
+   Height increased to 280px to match Figma proportions.
+   overflow: visible ensures the rotated Y-axis label is never
+   clipped by the container boundary.                        */
+.chartArea {
+  height: 280px;
+  width: 100%;
+  overflow: visible;
 }
 .chartAreaSm {
-  height: 180px;
+  height: 260px;
   width: 100%;
-  margin-left: -10px;
+  overflow: visible;
 }
 
 /* ─── Chart legend ───────────────────────────────────────── */

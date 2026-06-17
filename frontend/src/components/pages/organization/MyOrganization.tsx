@@ -133,7 +133,7 @@ interface DashboardStats {
   };
 }
 
-// ─── API response shape (from GET /enterprise/organizations/{id}/analytics) ───
+// ─── API response shape ───────────────────────────────────────────────────────
 
 interface OrgAnalyticsApi {
   usage_metrics: { total_workspaces: number; total_explorations: number; total_users: number; };
@@ -325,19 +325,24 @@ const TTStyle: React.CSSProperties = {
 };
 
 const tickStyle      = { fontSize: 10, fill: "#5c6880" } as const;
-const axisLabelStyle = { fontSize: 10, fill: "#5c6880" } as const;
-const axisLabelStyleSm = { fontSize: 9, fill: "#5c6880" } as const;
 
-const CHART_MARGIN         = { top: 10, right: 10, left: 36, bottom: 24 } as const;
-const CHART_MARGIN_NO_XLAB = { top: 10, right: 10, left: 36, bottom: 4  } as const;
-const CHART_MARGIN_WIDE    = { top: 10, right: 10, left: 44, bottom: 4  } as const;
+// ─── Axis label styles ────────────────────────────────────────────────────────
+// fontSize kept at 10/9 to match Figma; fill matches tick colour.
+const axisLabelStyle   = { fontSize: 10, fill: "#5c6880" } as const;
+const axisLabelStyleSm = { fontSize: 9,  fill: "#5c6880" } as const;
+
+// ─── Chart margins ─────────────────────────────────────────────────────────────
+// left: 60 gives the rotated Y-axis label enough SVG space to render fully.
+// YAxis width={56} allocates 56 px of that for tick numbers + rotated label.
+// No negative CSS margin-left needed — overflow: visible on .chartArea handles clipping.
+const CHART_MARGIN         = { top: 10, right: 10, left: 60, bottom: 28 } as const;
+const CHART_MARGIN_NO_XLAB = { top: 10, right: 10, left: 60, bottom: 4  } as const;
+const CHART_MARGIN_WIDE    = { top: 10, right: 10, left: 68, bottom: 4  } as const;
 
 // ─── Period option types ──────────────────────────────────────────────────────
 
 interface PeriodOption { value: string; label: string; }
 
-// Period selects are UI-controlled; actual refetch uses a single global period.
-// These map to the API's period param: annually→1_year, half_year→6_months, etc.
 const PERIOD_MAP: Record<string, string> = {
   annually: "1_year", half_year: "6_months", monthly: "1_month", weekly: "1_week",
   annually_2026: "1_year", annually_2025: "1_year", hours: "all_time", days: "all_time",
@@ -381,7 +386,7 @@ const StackedLegend: React.FC<{ a: string; b: string; colorA?: string; colorB?: 
 );
 
 const EmptyChart: React.FC = () => (
-  <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: "#5c6880", fontSize: 13 }}>
+  <div style={{ height: 280, display: "flex", alignItems: "center", justifyContent: "center", color: "#5c6880", fontSize: 13 }}>
     No data available yet
   </div>
 );
@@ -449,7 +454,6 @@ const MyOrganization: React.FC = () => {
   const auth = useSelector((s: RootState) => s.auth);
   const omi  = useSelector((s: RootState) => s.omi);
 
-  // org_id lives on the logged-in user object (populated from /auth/me at login)
   const orgId = auth?.user?.organization_id || auth?.user?.org_id || "";
   const [orgName, setOrgName] = useState<string>("My Organisation");
 
@@ -471,7 +475,6 @@ const MyOrganization: React.FC = () => {
   const [csvExId,    setCsvExId]    = useState<string>("");
   const [csvBusy,    setCsvBusy]    = useState<boolean>(false);
 
-  // Global analytics period — changing this triggers a full refetch
   const [analyticsPeriod, setAnalyticsPeriod] = useState<string>("all_time");
 
   const { data: wsRaw } = useWorkspaces() as { data: Workspace[] | { data: Workspace[] } | null };
@@ -509,7 +512,6 @@ const MyOrganization: React.FC = () => {
         enterpriseService.getOrg(orgId),
         enterpriseService.getOrgAnalytics(orgId, period),
       ]);
-      // getOrg returns SuccessResponse — name is in data.name or data.data.name
       const name = orgData?.data?.name ?? orgData?.name;
       if (name) setOrgName(name);
       setStats(mapApiToStats(analyticsData as OrgAnalyticsApi));
@@ -527,7 +529,6 @@ const MyOrganization: React.FC = () => {
   const setPeriod = useCallback(
     (key: keyof Periods) => (v: string) => {
       setPeriods((p) => ({ ...p, [key]: v }));
-      // Map UI period value to API period and refetch
       const apiPeriod = PERIOD_MAP[v] ?? "all_time";
       setAnalyticsPeriod(apiPeriod);
     },
@@ -585,10 +586,21 @@ const MyOrganization: React.FC = () => {
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={stats.charts.workspacesCreated} barSize={28} margin={CHART_MARGIN}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
-                <XAxis dataKey="dept" tick={tickStyle} axisLine={false} tickLine={false} interval={0}
-                  label={{ value: "Period", position: "insideBottom", offset: -12, style: axisLabelStyle }} />
-                <YAxis tick={tickStyle} axisLine={false} tickLine={false} width={40}
-                  label={{ value: "No. of workspaces", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }} />
+                <XAxis
+                  dataKey="dept"
+                  tick={tickStyle}
+                  axisLine={false}
+                  tickLine={false}
+                  interval={0}
+                  label={{ value: "Department Name", position: "insideBottom", offset: -14, style: axisLabelStyle }}
+                />
+                <YAxis
+                  tick={tickStyle}
+                  axisLine={false}
+                  tickLine={false}
+                  width={56}
+                  label={{ value: "Number of workspaces", angle: -90, position: "insideLeft", offset: 0, dx: -14, style: axisLabelStyle }}
+                />
                 <Tooltip contentStyle={TTStyle} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
                 <Bar dataKey="value" name="Workspaces" fill={C.barBlue} radius={[3, 3, 0, 0]} />
               </BarChart>
@@ -607,8 +619,13 @@ const MyOrganization: React.FC = () => {
               <BarChart data={stats.charts.explorationsLaunched} barSize={28} margin={CHART_MARGIN_NO_XLAB}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
                 <XAxis dataKey="dept" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
-                <YAxis tick={tickStyle} axisLine={false} tickLine={false} width={40}
-                  label={{ value: "Count of explorations", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }} />
+                <YAxis
+                  tick={tickStyle}
+                  axisLine={false}
+                  tickLine={false}
+                  width={56}
+                  label={{ value: "Count of explorations", angle: -90, position: "insideLeft", offset: 0, dx: -14, style: axisLabelStyle }}
+                />
                 <Tooltip contentStyle={TTStyle} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
                 <Bar dataKey="value" name="Explorations" fill={C.barPurple} radius={[3, 3, 0, 0]} />
               </BarChart>
@@ -627,8 +644,13 @@ const MyOrganization: React.FC = () => {
               <BarChart data={stats.charts.personasCalibrated} barSize={28} margin={CHART_MARGIN_NO_XLAB}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
                 <XAxis dataKey="month" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
-                <YAxis tick={tickStyle} axisLine={false} tickLine={false} width={40}
-                  label={{ value: "Number of Personas", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }} />
+                <YAxis
+                  tick={tickStyle}
+                  axisLine={false}
+                  tickLine={false}
+                  width={56}
+                  label={{ value: "Number of Personas", angle: -90, position: "insideLeft", offset: 0, dx: -14, style: axisLabelStyle }}
+                />
                 <Tooltip contentStyle={TTStyle} />
                 <Bar dataKey="singleUser" name="OMI Personas"    stackId="a" fill={C.barPurple} />
                 <Bar dataKey="multiUser"  name="Manual Personas" stackId="a" fill={C.barTeal} radius={[3, 3, 0, 0]} />
@@ -649,8 +671,13 @@ const MyOrganization: React.FC = () => {
               <LineChart data={stats.charts.reportsDownloaded} margin={CHART_MARGIN_NO_XLAB}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
                 <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
-                <YAxis tick={tickStyle} axisLine={false} tickLine={false} width={40}
-                  label={{ value: "Reports Downloaded", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }} />
+                <YAxis
+                  tick={tickStyle}
+                  axisLine={false}
+                  tickLine={false}
+                  width={56}
+                  label={{ value: "Reports Downloaded", angle: -90, position: "insideLeft", offset: 0, dx: -14, style: axisLabelStyle }}
+                />
                 <Tooltip contentStyle={TTStyle} />
                 <Line type="monotone" dataKey="value" name="Reports Downloaded" stroke={C.line} strokeWidth={2}
                   dot={{ r: 4, fill: C.line, strokeWidth: 0 }} activeDot={{ r: 5 }} />
@@ -683,8 +710,13 @@ const MyOrganization: React.FC = () => {
               <LineChart data={stats.charts.registeredUsers} margin={CHART_MARGIN_NO_XLAB}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
                 <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
-                <YAxis tick={tickStyle} axisLine={false} tickLine={false} width={40}
-                  label={{ value: "Registered Users", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }} />
+                <YAxis
+                  tick={tickStyle}
+                  axisLine={false}
+                  tickLine={false}
+                  width={56}
+                  label={{ value: "Registered Users", angle: -90, position: "insideLeft", offset: 0, dx: -14, style: axisLabelStyle }}
+                />
                 <Tooltip contentStyle={TTStyle} />
                 <Line type="monotone" dataKey="value" name="Registered Users" stroke={C.line} strokeWidth={2}
                   dot={{ r: 4, fill: C.line, strokeWidth: 0 }} activeDot={{ r: 5 }} />
@@ -704,8 +736,13 @@ const MyOrganization: React.FC = () => {
               <LineChart data={stats.charts.activeUsers} margin={CHART_MARGIN_NO_XLAB}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
                 <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
-                <YAxis tick={tickStyle} axisLine={false} tickLine={false} width={40}
-                  label={{ value: "Active Users", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }} />
+                <YAxis
+                  tick={tickStyle}
+                  axisLine={false}
+                  tickLine={false}
+                  width={56}
+                  label={{ value: "Active Users", angle: -90, position: "insideLeft", offset: 0, dx: -14, style: axisLabelStyle }}
+                />
                 <Tooltip contentStyle={TTStyle} />
                 <Line type="monotone" dataKey="value" name="Active Users" stroke={C.line} strokeWidth={2}
                   dot={{ r: 4, fill: C.line, strokeWidth: 0 }} activeDot={{ r: 5 }} />
@@ -725,8 +762,13 @@ const MyOrganization: React.FC = () => {
               <BarChart data={stats.charts.avgTimePerExploration} barSize={28} margin={CHART_MARGIN_NO_XLAB}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
                 <XAxis dataKey="dept" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
-                <YAxis tick={tickStyle} axisLine={false} tickLine={false} width={40}
-                  label={{ value: "Avg hrs / Exploration", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }} />
+                <YAxis
+                  tick={tickStyle}
+                  axisLine={false}
+                  tickLine={false}
+                  width={56}
+                  label={{ value: "Avg hrs / Exploration", angle: -90, position: "insideLeft", offset: 0, dx: -14, style: axisLabelStyle }}
+                />
                 <Tooltip contentStyle={TTStyle} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
                 <Bar dataKey="value" name="Avg hrs per Exploration" fill={C.barPurple} radius={[3, 3, 0, 0]} />
               </BarChart>
@@ -745,8 +787,13 @@ const MyOrganization: React.FC = () => {
               <BarChart data={stats.charts.collaborationRate} barSize={28} margin={CHART_MARGIN_NO_XLAB}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
                 <XAxis dataKey="month" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
-                <YAxis tick={tickStyle} axisLine={false} tickLine={false} width={40}
-                  label={{ value: "Explorations", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }} />
+                <YAxis
+                  tick={tickStyle}
+                  axisLine={false}
+                  tickLine={false}
+                  width={56}
+                  label={{ value: "Explorations", angle: -90, position: "insideLeft", offset: 0, dx: -14, style: axisLabelStyle }}
+                />
                 <Tooltip contentStyle={TTStyle} />
                 <Bar dataKey="singleUser" name="Single User"    stackId="a" fill={C.barBlue} />
                 <Bar dataKey="multiUser"  name="Multiple Users" stackId="a" fill={C.barTeal} radius={[3, 3, 0, 0]} />
@@ -781,9 +828,16 @@ const MyOrganization: React.FC = () => {
               <LineChart data={stats.charts.avgPersonaConfidence} margin={CHART_MARGIN_NO_XLAB}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
                 <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
-                <YAxis tick={tickStyle} axisLine={false} tickLine={false} domain={[0, 100]} ticks={[0,20,40,60,80,100]}
-                  tickFormatter={(v: number) => `${v}%`} width={44}
-                  label={{ value: "Persona Confidence (%)", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }} />
+                <YAxis
+                  tick={tickStyle}
+                  axisLine={false}
+                  tickLine={false}
+                  domain={[0, 100]}
+                  ticks={[0, 20, 40, 60, 80, 100]}
+                  tickFormatter={(v: number) => `${v}%`}
+                  width={60}
+                  label={{ value: "Persona Confidence (%)", angle: -90, position: "insideLeft", offset: 0, dx: -16, style: axisLabelStyle }}
+                />
                 <Tooltip contentStyle={TTStyle} />
                 <Line type="monotone" dataKey="value" name="Avg Persona Confidence (%)" stroke={C.line} strokeWidth={2}
                   dot={{ r: 4, fill: C.line, strokeWidth: 0 }} />
@@ -803,9 +857,16 @@ const MyOrganization: React.FC = () => {
               <LineChart data={stats.charts.populationConfidence} margin={CHART_MARGIN_NO_XLAB}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
                 <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
-                <YAxis tick={tickStyle} axisLine={false} tickLine={false} domain={[0, 100]} ticks={[0,20,40,60,80,100]}
-                  tickFormatter={(v: number) => `${v}%`} width={44}
-                  label={{ value: "Population Confidence (%)", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }} />
+                <YAxis
+                  tick={tickStyle}
+                  axisLine={false}
+                  tickLine={false}
+                  domain={[0, 100]}
+                  ticks={[0, 20, 40, 60, 80, 100]}
+                  tickFormatter={(v: number) => `${v}%`}
+                  width={60}
+                  label={{ value: "Population Confidence (%)", angle: -90, position: "insideLeft", offset: 0, dx: -16, style: axisLabelStyle }}
+                />
                 <Tooltip contentStyle={TTStyle} />
                 <Line type="monotone" dataKey="value" name="Avg Population Confidence (%)" stroke={C.line} strokeWidth={2}
                   dot={{ r: 4, fill: C.line, strokeWidth: 0 }} />
@@ -825,8 +886,13 @@ const MyOrganization: React.FC = () => {
               <LineChart data={stats.charts.realPeoplesActions} margin={CHART_MARGIN_NO_XLAB}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
                 <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
-                <YAxis tick={tickStyle} axisLine={false} tickLine={false} width={40}
-                  label={{ value: "Actions Calibrated", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }} />
+                <YAxis
+                  tick={tickStyle}
+                  axisLine={false}
+                  tickLine={false}
+                  width={56}
+                  label={{ value: "Actions Calibrated", angle: -90, position: "insideLeft", offset: 0, dx: -14, style: axisLabelStyle }}
+                />
                 <Tooltip contentStyle={TTStyle} />
                 <Line type="monotone" dataKey="value" name="Real People's Actions" stroke={C.line} strokeWidth={2}
                   dot={{ r: 4, fill: C.line, strokeWidth: 0 }} />
@@ -846,8 +912,13 @@ const MyOrganization: React.FC = () => {
               <LineChart data={stats.charts.multiplatformConversation} margin={CHART_MARGIN_NO_XLAB}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
                 <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
-                <YAxis tick={tickStyle} axisLine={false} tickLine={false} width={40}
-                  label={{ value: "Conversations", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }} />
+                <YAxis
+                  tick={tickStyle}
+                  axisLine={false}
+                  tickLine={false}
+                  width={56}
+                  label={{ value: "Conversations", angle: -90, position: "insideLeft", offset: 0, dx: -14, style: axisLabelStyle }}
+                />
                 <Tooltip contentStyle={TTStyle} />
                 <Line type="monotone" dataKey="value" name="Multi-platform Conversation" stroke={C.line} strokeWidth={2}
                   dot={{ r: 4, fill: C.line, strokeWidth: 0 }} />
@@ -867,8 +938,13 @@ const MyOrganization: React.FC = () => {
               <LineChart data={stats.charts.credibleSources} margin={CHART_MARGIN_NO_XLAB}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
                 <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
-                <YAxis tick={tickStyle} axisLine={false} tickLine={false} width={40}
-                  label={{ value: "Credible Sources", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }} />
+                <YAxis
+                  tick={tickStyle}
+                  axisLine={false}
+                  tickLine={false}
+                  width={56}
+                  label={{ value: "Credible Sources", angle: -90, position: "insideLeft", offset: 0, dx: -14, style: axisLabelStyle }}
+                />
                 <Tooltip contentStyle={TTStyle} />
                 <Line type="monotone" dataKey="value" name="Credible Sources" stroke={C.line} strokeWidth={2}
                   dot={{ r: 4, fill: C.line, strokeWidth: 0 }} />
@@ -902,8 +978,13 @@ const MyOrganization: React.FC = () => {
               <BarChart data={stats.charts.decisionInfluenced} barSize={28} margin={CHART_MARGIN_NO_XLAB}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
                 <XAxis dataKey="month" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
-                <YAxis tick={tickStyle} axisLine={false} tickLine={false} width={40}
-                  label={{ value: "Count of explorations", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }} />
+                <YAxis
+                  tick={tickStyle}
+                  axisLine={false}
+                  tickLine={false}
+                  width={56}
+                  label={{ value: "Count of explorations", angle: -90, position: "insideLeft", offset: 0, dx: -14, style: axisLabelStyle }}
+                />
                 <Tooltip contentStyle={TTStyle} />
                 <Bar dataKey="singleUser" name="Total Explorations"  stackId="a" fill={C.barBlue} />
                 <Bar dataKey="multiUser"  name="Decision Influenced" stackId="a" fill={C.barTeal} radius={[3, 3, 0, 0]} />
@@ -924,8 +1005,13 @@ const MyOrganization: React.FC = () => {
               <LineChart data={stats.charts.timeSaved} margin={CHART_MARGIN_NO_XLAB}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
                 <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
-                <YAxis tick={tickStyle} axisLine={false} tickLine={false} width={40}
-                  label={{ value: "Time saved (hrs)", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }} />
+                <YAxis
+                  tick={tickStyle}
+                  axisLine={false}
+                  tickLine={false}
+                  width={56}
+                  label={{ value: "Time saved (hrs)", angle: -90, position: "insideLeft", offset: 0, dx: -14, style: axisLabelStyle }}
+                />
                 <Tooltip contentStyle={TTStyle} />
                 <Line type="monotone" dataKey="value" name="Time Saved (hrs)" stroke={C.line} strokeWidth={2}
                   dot={{ r: 4, fill: C.line, strokeWidth: 0 }} />
@@ -945,9 +1031,14 @@ const MyOrganization: React.FC = () => {
               <LineChart data={stats.charts.researchSpendSaved} margin={CHART_MARGIN_NO_XLAB}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
                 <XAxis dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
-                <YAxis tick={tickStyle} axisLine={false} tickLine={false}
-                  tickFormatter={(v: number) => `$${v}`} width={44}
-                  label={{ value: "Cost saved ($)", angle: -90, position: "insideLeft", offset: 0, dx: -10, style: axisLabelStyle }} />
+                <YAxis
+                  tick={tickStyle}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={(v: number) => `$${v}`}
+                  width={60}
+                  label={{ value: "Cost saved ($)", angle: -90, position: "insideLeft", offset: 0, dx: -16, style: axisLabelStyle }}
+                />
                 <Tooltip contentStyle={TTStyle} />
                 <Line type="monotone" dataKey="value" name="Research Spend Saved ($)" stroke={C.line} strokeWidth={2}
                   dot={{ r: 4, fill: C.line, strokeWidth: 0 }} />
@@ -967,8 +1058,13 @@ const MyOrganization: React.FC = () => {
               <BarChart data={stats.charts.humanStudiesReplaced} barSize={28} margin={CHART_MARGIN_WIDE}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
                 <XAxis dataKey="month" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
-                <YAxis tick={tickStyle} axisLine={false} tickLine={false} width={48}
-                  label={{ value: "Explorations replacing studies", angle: -90, position: "insideLeft", offset: 0, dx: -12, style: axisLabelStyleSm }} />
+                <YAxis
+                  tick={tickStyle}
+                  axisLine={false}
+                  tickLine={false}
+                  width={64}
+                  label={{ value: "Explorations replacing studies", angle: -90, position: "insideLeft", offset: 0, dx: -16, style: axisLabelStyleSm }}
+                />
                 <Tooltip contentStyle={TTStyle} />
                 <Bar dataKey="singleUser" name="Total Explorations"     stackId="a" fill={C.barBlue} />
                 <Bar dataKey="multiUser"  name="Replaced Human Studies" stackId="a" fill={C.barTeal} radius={[3, 3, 0, 0]} />
@@ -989,8 +1085,13 @@ const MyOrganization: React.FC = () => {
               <BarChart data={stats.charts.humanSampleReduced} barSize={28} margin={CHART_MARGIN_WIDE}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.grid} />
                 <XAxis dataKey="month" tick={tickStyle} axisLine={false} tickLine={false} interval={0} />
-                <YAxis tick={tickStyle} axisLine={false} tickLine={false} width={48}
-                  label={{ value: "Explorations reducing sampling", angle: -90, position: "insideLeft", offset: 0, dx: -12, style: axisLabelStyleSm }} />
+                <YAxis
+                  tick={tickStyle}
+                  axisLine={false}
+                  tickLine={false}
+                  width={64}
+                  label={{ value: "Explorations reducing sampling", angle: -90, position: "insideLeft", offset: 0, dx: -16, style: axisLabelStyleSm }}
+                />
                 <Tooltip contentStyle={TTStyle} />
                 <Bar dataKey="singleUser" name="Total Explorations"   stackId="a" fill={C.barBlue} />
                 <Bar dataKey="multiUser"  name="Reduced Human Sample" stackId="a" fill={C.barTeal} radius={[3, 3, 0, 0]} />
