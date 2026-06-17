@@ -277,7 +277,7 @@ const MLActionsSection: React.FC<{ data: PersonaData }> = ({ data }) => {
       <div className="trc-ml-stat-row">
         <div className="trc-ml-stat-pill">
           <span className="trc-ml-stat-value">{totalActions}</span>
-          <span className="trc-ml-stat-label">Platform Actions</span>
+          <span className="trc-ml-stat-label">Real-World Actions</span>
         </div>
         <div className="trc-ml-stat-divider" />
         <div className="trc-ml-stat-pill">
@@ -304,7 +304,7 @@ const MLActionsSection: React.FC<{ data: PersonaData }> = ({ data }) => {
       <div className="trc-ml-freshness">
         <p className="trc-ml-freshness-title">
           Freshness of Behaviour Signals
-          <InfoTooltip text="Distribution of how recently the underlying behavioural actions were recorded across all people in the platform universe." />
+          <InfoTooltip text="Recent actions carry more weight in persona calibration." />
         </p>
         <div className="trc-ml-freshness-bars">
           {[
@@ -332,7 +332,7 @@ const MLActionsSection: React.FC<{ data: PersonaData }> = ({ data }) => {
       {/* 28 Feature table — client-facing label only, raw ML signal name hidden */}
       <div style={{ marginTop: 20 }}>
         <p className="trc-ml-feature-table-title">
-          Behaviour Signals Extracted
+          Behaviour Dimensions Extracted
           <InfoTooltip text="The ML-derived behavioural signals that shape each persona, expressed in human-readable terms." />
         </p>
         <div className="trc-table-wrap">
@@ -485,21 +485,21 @@ const EvidenceConversationsSection: React.FC<{ data: PersonaData }> = ({ data })
             <div className="trc-ml-stat-divider" />
             <div className="trc-ml-stat-pill">
               <span className="trc-ml-stat-value">{agg.platformsCount}</span>
-              <span className="trc-ml-stat-label">Platforms</span>
+              <span className="trc-ml-stat-label">Platforms Scanned</span>
             </div>
             <div className="trc-ml-stat-divider" />
             <div className="trc-ml-stat-pill">
               <span className="trc-ml-stat-value">
                 {agg.monthsAnalyzed != null ? `${agg.monthsAnalyzed}mo` : '—'}
               </span>
-              <span className="trc-ml-stat-label">Data Window</span>
+              <span className="trc-ml-stat-label">Evidence Window</span>
             </div>
             <div className="trc-ml-stat-divider" />
             <div className="trc-ml-stat-pill">
               <span className="trc-ml-stat-value trc-ml-stat-value--green">
                 {agg.recentPercentage != null ? `${agg.recentPercentage}%` : '—'}
               </span>
-              <span className="trc-ml-stat-label">Recent Data</span>
+              <span className="trc-ml-stat-label">Recent Signals</span>
             </div>
           </div>
 
@@ -606,7 +606,7 @@ const PersonaTraceability: React.FC<PersonaTraceabilityProps> = ({ data, isLoadi
       <div>
         <h2 className="trc-section-heading">Section 2: Ground Truth Foundation</h2>
         <p className="trc-section-heading-sub">
-          Four calibration layers that validate and enrich every persona — two live, two coming soon
+          See the behavioural evidence, context, and calibration signals that shaped this persona.
         </p>
 
         <div className="trc-gt-grid">
