@@ -181,7 +181,7 @@ const Login: React.FC = () => {
                   }`}
               >
                 {showError && emailStatus === "error" && "Please enter a valid email"}
-                {emailStatus === "success" && "Email is Valid"}
+                {emailStatus === "success" && "Email is valid"}
               </small>
             </div>
 

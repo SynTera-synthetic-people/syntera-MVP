@@ -10,9 +10,17 @@ interface QualityScore {
   justification: string;
 }
 
+interface SignalCalibration {
+  survey_responses?: number | string;
+  hypotheses_tested?: number | string;
+  segments_analysed?: number | string;
+  completion_rate?: number | string;
+}
+
 interface QuantData {
   quality_scores?: QualityScore[];
   overall_score?: number;
+  signal_calibration?: SignalCalibration;
   [key: string]: unknown;
 }
 
@@ -69,7 +77,88 @@ const DECISION_FRAMEWORK = [
   },
 ];
 
-// ── Sub-tables ────────────────────────────────────────────────
+// ── Signal Calibration Section ────────────────────────────────
+
+interface SignalCalibrationSectionProps {
+  calibration: SignalCalibration;
+}
+
+const SignalCalibrationSection: React.FC<SignalCalibrationSectionProps> = ({ calibration }) => {
+  const metrics: { label: string; sub: string; value: string | number; tooltip: string }[] = [
+    {
+      label:   'Survey Responses Simulated',
+      sub:     'Total synthetic respondent signals generated for this exploration',
+      value:   calibration.survey_responses ?? '—',
+      tooltip: 'Number of simulated survey responses used to derive quantitative patterns across segments.',
+    },
+    {
+      label:   'Hypotheses Tested',
+      sub:     'Distinct business questions validated through survey design',
+      value:   calibration.hypotheses_tested ?? '—',
+      tooltip: 'Each hypothesis maps to primary test questions and 2–3 validation questions in the survey.',
+    },
+    {
+      label:   'Segments Analysed',
+      sub:     'Demographic and behavioural cuts applied across responses',
+      value:   calibration.segments_analysed ?? '—',
+      tooltip: 'Number of distinct audience segments cross-tabulated to surface differential patterns.',
+    },
+    {
+      label:   'Completion Rate',
+      sub:     'Signal integrity across the full response set',
+      value:   calibration.completion_rate != null
+        ? `${calibration.completion_rate}%`
+        : '—',
+      tooltip: 'Percentage of simulated respondents who completed the full survey, indicating signal completeness.',
+    },
+  ];
+
+  return (
+    <div className="trc-quant-section">
+      <h2 className="trc-quant-section-title">Ground Truth: Survey Signal Calibration</h2>
+      <p className="trc-quant-section-sub">
+        How simulation inputs were constructed and validated for quantitative rigour
+      </p>
+      <div className="trc-gt-signal-grid">
+        {metrics.map((m, i) => (
+          <div key={i} className="trc-gt-signal-card">
+            <div className="trc-gt-signal-card-header">
+              <span className="trc-gt-signal-label">{m.label}</span>
+              <span className="trc-info-wrap" style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', marginLeft: 6 }}>
+                <SignalInfoTooltip text={m.tooltip} />
+              </span>
+            </div>
+            <span className="trc-gt-signal-value">{String(m.value)}</span>
+            <span className="trc-gt-signal-sub">{m.sub}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// Inline tooltip for signal cards (avoids importing full InfoTooltip state)
+const SignalInfoTooltip: React.FC<{ text: string }> = ({ text }) => {
+  const [show, setShow] = React.useState(false);
+  return (
+    <span
+      onMouseEnter={() => setShow(true)}
+      onMouseLeave={() => setShow(false)}
+      style={{ display: 'inline-flex', alignItems: 'center', cursor: 'default' }}
+    >
+      <span className="trc-info-icon">
+        <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+          <circle cx="7" cy="7" r="6.5" stroke="currentColor" strokeWidth="1.2" />
+          <path d="M7 6.5v4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+          <circle cx="7" cy="4.5" r="0.7" fill="currentColor" />
+        </svg>
+      </span>
+      {show && <span className="trc-tooltip">{text}</span>}
+    </span>
+  );
+};
+
+// ── Core Design Anchors ───────────────────────────────────────
 
 const CoreDesignAnchorsTable: React.FC = () => (
   <div className="trc-quant-section">
@@ -102,6 +191,8 @@ const CoreDesignAnchorsTable: React.FC = () => (
   </div>
 );
 
+// ── Decision Intelligence ─────────────────────────────────────
+
 const DecisionIntelligenceTable: React.FC = () => (
   <div className="trc-quant-section">
     <h2 className="trc-quant-section-title">Decision Intelligence Framework</h2>
@@ -133,11 +224,9 @@ const DecisionIntelligenceTable: React.FC = () => (
   </div>
 );
 
-interface QualityScoringTableProps {
-  scores: QualityScore[];
-}
+// ── Quality Scoring ───────────────────────────────────────────
 
-const QualityScoringTable: React.FC<QualityScoringTableProps> = ({ scores }) => (
+const QualityScoringTable: React.FC<{ scores: QualityScore[] }> = ({ scores }) => (
   <div className="trc-quant-section">
     <h2 className="trc-quant-section-title">Quality Scoring Framework</h2>
     <p className="trc-quant-section-sub">Multi-dimensional evaluation system for research excellence</p>
@@ -174,8 +263,9 @@ const QualityScoringTable: React.FC<QualityScoringTableProps> = ({ scores }) => 
 
 const QuantitativeTraceability: React.FC<QuantitativeTraceabilityProps> = ({ data, isLoading = false }) => {
   const quantData    = data as QuantData;
-  const scores       = quantData.quality_scores || [];
-  const overallScore = quantData.overall_score  || 0;
+  const scores       = quantData.quality_scores    || [];
+  const overallScore = quantData.overall_score     || 0;
+  const calibration  = (quantData.signal_calibration as SignalCalibration) || {};
 
   if (isLoading) {
     return (
@@ -185,6 +275,8 @@ const QuantitativeTraceability: React.FC<QuantitativeTraceabilityProps> = ({ dat
     );
   }
 
+  const hasCalibration = Object.values(calibration).some(v => v != null);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <CenteredScoreCard
@@ -192,6 +284,7 @@ const QuantitativeTraceability: React.FC<QuantitativeTraceabilityProps> = ({ dat
         description="Aggregated score based on all quality dimensions"
       />
       <div style={{ marginTop: 24 }}>
+        {hasCalibration && <SignalCalibrationSection calibration={calibration} />}
         <CoreDesignAnchorsTable />
         <DecisionIntelligenceTable />
         <QualityScoringTable scores={scores} />
