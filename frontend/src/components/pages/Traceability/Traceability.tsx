@@ -259,7 +259,7 @@ const Traceability: React.FC<TraceabilityProps> = ({
 
   const allTabs = [
     { id: 'research'     as const, label: 'Research Objectives' },
-    { id: 'persona'      as const, label: 'Persona Builder'     },
+    { id: 'persona'      as const, label: 'Persona Traceability'},
     { id: 'quantitative' as const, label: 'Quant Simulation'    },
     { id: 'qualitative'  as const, label: 'Qual Exploration'    },
   ];

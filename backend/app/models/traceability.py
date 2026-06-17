@@ -33,7 +33,6 @@ class TraceabilityReport(SQLModel, table=True):
     persona_traceability: dict = Field(sa_column=Column(JSON), default={})
     quant_traceability: dict = Field(sa_column=Column(JSON), default={})
     qual_traceability: dict = Field(sa_column=Column(JSON), default={})
-    # CORRECTED - Use timezone-aware datetime
     updated_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc)
+        default_factory=lambda: datetime.utcnow()  # ← naive UTC, matches TIMESTAMP WITHOUT TIME ZONE
     )
