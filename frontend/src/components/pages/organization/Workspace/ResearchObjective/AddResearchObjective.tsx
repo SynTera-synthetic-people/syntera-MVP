@@ -955,8 +955,12 @@ const AddResearchObjective: React.FC = () => {
                       <div className="aro-bubble-wrapper aro-bubble-wrapper--omi">
                         <div className="aro-typing-indicator">
                           {/* Brain icon replaces the video animation */}
-                          <div className="aro-thinking-icon-wrap">
-                            <TbBrain size={20} className="aro-thinking-brain" />
+                          <div className="aro-omi-avatar">
+                            <video
+                              className="aro-omi-video"
+                              src={OmiKeyboard}
+                              autoPlay loop muted playsInline
+                            />
                           </div>
                           <div className="aro-typing-text-wrap">
                             <AnimatePresence mode="wait">
