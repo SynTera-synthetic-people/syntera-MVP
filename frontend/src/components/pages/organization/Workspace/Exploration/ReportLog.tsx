@@ -129,8 +129,12 @@ const ReportLog: React.FC<ReportLogProps> = ({
         objectiveIdProp || explorationIdProp || objectiveIdParam || undefined;
 
     // ── Method visibility ─────────────────────────────────────────────────────
-    const showQual  = isQualitative  || (!isQualitative && !isQuantitative);
-    const showQuant = isQuantitative || (!isQualitative && !isQuantitative);
+    // If the parent hasn't explicitly opted into either method, show both as a
+    // safe fallback. If at least one is explicitly selected, show ONLY the
+    // selected ones — never show a section the user didn't opt into.
+    const neitherSelected = !isQualitative && !isQuantitative;
+    const showQual  = neitherSelected ? true : isQualitative;
+    const showQuant = neitherSelected ? true : isQuantitative;
 
     // ── Generated insight availability — re-read on every open ───────────────
     // We store these in state and re-evaluate when isOpen changes so that if
@@ -280,6 +284,8 @@ const ReportLog: React.FC<ReportLogProps> = ({
                                     )}
                                 </div>
                             )}
+
+                            {/* ══ QUANT ═══════════════════════════════════════════════════ */}
                             {quantSectionVisible && (
                                 <div className="rl-section">
                                     <div className="rl-section-hd"><span className="rl-section-label">QUANT</span></div>
