@@ -18,7 +18,7 @@ from app.db import async_engine
 from app.models.survey_simulation import SurveySimulation
 from app.services.auto_generated_persona import get_description
 from app.services.quant_report_cta_prompt import CTA_ROUTED_QUANT_REPORT_PROMPT_V2
-from app.services.report_generation_qual_claude import html_to_pdf
+from app.services.report_generation_qual_claude import html_to_pdf, sanitize_report_text
 from app.services.survey_simulation import parse_survey_results_field
 from app.utils.anthropic_client import get_async_anthropic_client
 
@@ -373,6 +373,7 @@ def _normalize_quant_tables(html_body: str) -> str:
 
 
 def _quant_md_to_pdf(md_content: str, output_pdf_path: str, css_path: str) -> str:
+    md_content = sanitize_report_text(md_content)
     html_body = markdown.markdown(
         md_content, extensions=["tables", "fenced_code", "toc", "attr_list"]
     )

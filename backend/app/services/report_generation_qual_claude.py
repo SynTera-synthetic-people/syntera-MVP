@@ -1388,6 +1388,103 @@ async def generate_report_markdown(
     return repaired_md
 
 
+# Matches an en/em dash sitting between two numbers (e.g. "15–25 lakh",
+# "90 – 120 days") so it can be normalized to an ASCII hyphen instead of
+# being deleted along with prose dashes.
+_NUMERIC_RANGE_DASH_RE = re.compile(r"(?<=[0-9%])\s*[–—]\s*(?=[0-9])")
+
+# Explicit replacements for Unicode symbols the LLM commonly emits but that
+# xhtml2pdf/reportlab cannot render with its default Latin fonts.  Ordered so
+# that multi-char sequences are replaced before their single-char subsets.
+_SYMBOL_REPLACEMENTS: list[tuple[str, str]] = [
+    # Currency
+    ("₹", ""),          # RUPEE SIGN       → remove (context makes it clear)
+    # Geometric shapes used as bullet / check markers
+    ("■", "-"),         # BLACK SQUARE
+    ("□", "-"),         # WHITE SQUARE
+    ("▪", "-"),         # BLACK SMALL SQUARE
+    ("▫", "-"),         # WHITE SMALL SQUARE
+    ("●", "-"),         # BLACK CIRCLE
+    ("○", "-"),         # WHITE CIRCLE
+    ("◆", "-"),         # BLACK DIAMOND
+    ("◇", "-"),         # WHITE DIAMOND
+    ("▶", "->"),        # BLACK RIGHT-POINTING TRIANGLE
+    ("◀", "<-"),        # BLACK LEFT-POINTING TRIANGLE
+    # Arrows
+    ("→", "->"),        # RIGHTWARDS ARROW
+    ("←", "<-"),        # LEFTWARDS ARROW
+    ("↑", "^"),         # UPWARDS ARROW
+    ("↓", "v"),         # DOWNWARDS ARROW
+    ("⇒", "=>"),        # RIGHTWARDS DOUBLE ARROW
+    # Ballot / check marks
+    ("✓", "-"),         # CHECK MARK
+    ("✔", "-"),         # HEAVY CHECK MARK
+    ("✗", "-"),         # BALLOT X
+    ("✘", "-"),         # HEAVY BALLOT X
+    ("☐", "[ ]"),       # BALLOT BOX
+    ("☑", "[x]"),       # BALLOT BOX WITH CHECK
+    ("☒", "[x]"),       # BALLOT BOX WITH X
+    # Math / comparison operators not in Latin-1
+    ("≥", ">="),        # GREATER-THAN OR EQUAL TO
+    ("≤", "<="),        # LESS-THAN OR EQUAL TO
+    ("≠", "!="),        # NOT EQUAL TO
+    ("×", "x"),         # MULTIPLICATION SIGN  (Latin-1 but sometimes causes issues)
+    ("÷", "/"),         # DIVISION SIGN
+    # Typography
+    ("…", "..."),       # HORIZONTAL ELLIPSIS
+    ("‘", "'"),    # LEFT SINGLE QUOTATION MARK
+    ("’", "'"),    # RIGHT SINGLE QUOTATION MARK
+    ("“", '"'),    # LEFT DOUBLE QUOTATION MARK
+    ("”", '"'),    # RIGHT DOUBLE QUOTATION MARK
+    # Invisible / zero-width characters
+    (" ", " "),    # NO-BREAK SPACE
+    ("​", ""),     # ZERO WIDTH SPACE
+    ("‌", ""),     # ZERO WIDTH NON-JOINER
+    ("‍", ""),     # ZERO WIDTH JOINER
+    ("﻿", ""),     # BOM / ZERO WIDTH NO-BREAK SPACE
+]
+
+
+def sanitize_report_text(text: str) -> str:
+    """Return text safe for xhtml2pdf/reportlab rendering.
+
+    xhtml2pdf uses reportlab's built-in Type-1 fonts (Helvetica / Times /
+    Courier) whose glyph coverage is roughly Windows-1252 (cp1252).  Any
+    Unicode character outside that range silently renders as a black tofu box.
+
+    This function applies three passes in order:
+    1. Named replacements – swap common LLM-generated Unicode symbols for
+       readable ASCII equivalents (e.g. "■" → "-", "₹" → "").
+    2. Numeric-range dash normalisation – en/em dashes between digits are
+       turned into plain ASCII hyphens so ranges stay readable
+       (e.g. "15–25 lakh" → "15-25 lakh").
+    3. Prose dash removal – any remaining en/em dash used as sentence
+       punctuation is deleted per brand style.
+    4. Safety-net pass – any character still outside cp1252 (i.e. not
+       renderable by the PDF font) is silently dropped, making the fix
+       permanent regardless of what the LLM generates in the future.
+    """
+    if not text:
+        return text
+
+    # Pass 1 – named symbol replacements
+    for char, replacement in _SYMBOL_REPLACEMENTS:
+        text = text.replace(char, replacement)
+
+    # Pass 2 – numeric range dashes → ASCII hyphen
+    text = _NUMERIC_RANGE_DASH_RE.sub("-", text)
+
+    # Pass 3 – prose em/en dashes → single space
+    text = re.sub(r"\s*[–—]\s*", " ", text)
+
+    # Pass 4 – safety net: drop anything the PDF font still can't encode
+    text = text.encode("cp1252", errors="ignore").decode("cp1252")
+
+    # Collapse any double-spaces left by removals
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    return text
+
+
 def html_to_pdf(
     html_body: str,
     output_pdf_path: str,
@@ -1449,6 +1546,7 @@ def llm_md_to_pdf(md_content: str, output_pdf_path: str, css_path: str) -> str:
     """
 
     # ---------- Markdown → HTML ----------
+    md_content = sanitize_report_text(md_content)
     html_body = markdown.markdown(
         md_content, extensions=["tables", "fenced_code", "toc", "attr_list"]
     )
