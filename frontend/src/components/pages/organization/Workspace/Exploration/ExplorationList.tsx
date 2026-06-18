@@ -378,10 +378,20 @@ const ReportLogContainer: React.FC<ReportLogContainerProps> = ({ exploration, wo
     else toast.info('View is not available for this report.');
   };
 
+  // ── FIX: derive method flags from the DB-backed exploration fields.
+  // We treat null/undefined as "not selected" — only an explicit true counts.
+  // This is the single source of truth; localStorage is only used for
+  // insight-ready flags, not for method selection.
+  const isQualitative  = exploration.is_qualitative  === true;
+  const isQuantitative = exploration.is_quantitative === true;
+
   return (
     <ReportLog
       isOpen={true}
       explorationName={exploration.title}
+      explorationId={explorationId}
+      isQualitative={isQualitative}
+      isQuantitative={isQuantitative}
       onClose={onClose}
       onDownload={handleDownload}
       onView={handleView}
