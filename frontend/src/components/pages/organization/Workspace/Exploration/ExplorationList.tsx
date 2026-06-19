@@ -35,6 +35,10 @@ import { interviewService } from '../../../../../services/interviewService';
 import { personaService } from '../../../../../services/personaService';
 import { listPopulationSimulations, downloadExplorationQuestionnaireCsv } from '../../../../../services/quantitativeServices';
 
+// ── Persona card download (client-side renderer — reuses the Persona Builder pipeline) ──
+import { downloadPersonaCardsFrontend } from "../ResearchObjective/Persona/personaBuilder/DownloadPersonaCard";
+import type { PersonaCardData } from "../ResearchObjective/Persona/personaBuilder/PersonaCardRenderer";
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 interface Exploration {
@@ -308,12 +312,36 @@ const ReportLogContainer: React.FC<ReportLogContainerProps> = ({ exploration, wo
 
         case 'persona-card': {
           const resp = await personaService.getPersonas(workspaceId, explorationId);
-          // getPersonas returns SuccessResponse { data: [...] } or plain array
           const personas: any[] = Array.isArray(resp) ? resp : (resp?.data ?? []);
           if (!personas.length) { toast.error('No personas found for this exploration.'); return; }
-          const ids = personas.map((p: any) => p.id);
-          const blob = await personaService.downloadPersonaCards(workspaceId, explorationId, ids);
-          _triggerBlobDownload(blob, `persona_cards_${explorationId}.pdf`);
+
+          const allIds = personas.map((p: any) => p.id).filter(Boolean);
+          const toastId = `persona-cards-${explorationId}`;
+          toast.loading(`Preparing ${allIds.length} persona card${allIds.length > 1 ? 's' : ''}…`, { toastId });
+
+          try {
+            await downloadPersonaCardsFrontend(
+              allIds,
+              personas as unknown as PersonaCardData[],
+              (done, total) => {
+                toast.update(toastId, { render: `Rendering persona cards… (${done}/${total})` });
+              },
+            );
+            toast.update(toastId, {
+              render: 'Persona cards downloaded.',
+              type: 'success',
+              isLoading: false,
+              autoClose: 2500,
+            });
+          } catch (e) {
+            console.error('[ReportLog] persona card render failed:', e);
+            toast.update(toastId, {
+              render: 'Failed to generate persona cards. Please try again.',
+              type: 'error',
+              isLoading: false,
+              autoClose: 4000,
+            });
+          }
           break;
         }
 
