@@ -598,7 +598,7 @@ const MultiPlatformCalibCard: React.FC<MultiPlatformCalibCardProps> = ({
                       cy="50%"
                       innerRadius={46}
                       outerRadius={70}
-                      paddingAngle={2}
+                      paddingAngle={0}
                       dataKey="value"
                       strokeWidth={0}
                       onMouseEnter={(_, index) => setHoveredSlice(donutData[index] ?? null)}
