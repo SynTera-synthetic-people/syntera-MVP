@@ -645,8 +645,8 @@
 }
 
 .pp-evidence {
-  background: rgba(59, 130, 246, 0.05);
-  border: 1px solid rgba(59, 130, 246, 0.15);
+  background: rgba(14, 99, 236, 0.05);
+  border: 1px solid rgba(14, 99, 236, 0.18);
   border-radius: 12px;
   padding: 16px;
 }
@@ -654,7 +654,7 @@
 .pp-evidence-title {
   font-size: 12px;
   font-weight: 700;
-  color: #60a5fa;
+  color: #65A0FF;
   margin: 0 0 10px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -675,7 +675,7 @@
 
 .pp-evidence-count {
   font-weight: 700;
-  color: #60a5fa;
+  color: #65A0FF;
   font-variant-numeric: tabular-nums;
 }
 
@@ -777,9 +777,11 @@
   letter-spacing: -0.05px;
 }
 
+/* Pills now lay out horizontally and wrap, instead of stacking vertically */
 .pp-calib-param-list {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  flex-wrap: wrap;
   align-items: flex-start;
   gap: 8px;
 }
@@ -815,7 +817,7 @@
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  border: 2.5px solid #3b82f6;
+  border: 2.5px solid #0E63EC;
   background: transparent;
   flex-shrink: 0;
   margin-left: 4px;
@@ -845,6 +847,86 @@
 .pp-calib-platform-icon:hover {
   background: rgba(255, 255, 255, 0.1);
   color: #e2e8f0;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   ML ACTIONS CARD (Real Actions Signal)
+   Mirrors the "ML Actions" ground-truth layer representation —
+   headline stat pills + freshness-of-signal bars — using the
+   Electric Blue / Soft Cyan brand palette.
+════════════════════════════════════════════════════════════════ */
+
+.pp-mlaction-stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.pp-mlaction-stat {
+  background: var(--T-Base-B4, #1E2126);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pp-mlaction-stat-value {
+  font-size: 22px;
+  font-weight: 800;
+  color: #0E63EC;
+  line-height: 1.1;
+  letter-spacing: -0.3px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pp-mlaction-stat-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.pp-mlaction-freshness-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px 20px;
+}
+
+.pp-mlaction-freshness-row {
+  display: flex;
+  flex-direction: column;
+}
+
+.pp-mlaction-freshness-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: #cbd5e1;
+}
+
+.pp-mlaction-freshness-header span:last-child {
+  font-weight: 700;
+  color: #f1f5f9;
+  font-variant-numeric: tabular-nums;
+}
+
+.pp-mlaction-freshness-track {
+  height: 4px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+
+.pp-mlaction-freshness-fill {
+  height: 100%;
+  border-radius: 99px;
+  background: linear-gradient(90deg, #0E63EC, #24E5B6);
+  transition: width 0.9s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* ── Empty state ─────────────────────────────────────────────── */
@@ -891,4 +973,194 @@
 .pp-nav-arrow:disabled {
   opacity: 0.3;
   cursor: not-allowed;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   MULTI-PLATFORM DONUT CARD
+   New layout for the bottom-right calibration card.
+════════════════════════════════════════════════════════════════ */
+
+/* Body: donut on the left, confidence bars on the right */
+.pp-multi-body {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+  margin-bottom: 0;
+}
+
+/* ── Left column: chart + legend ── */
+.pp-multi-donut-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex-shrink: 0;
+  width: 160px;
+}
+
+/* The recharts container + absolute centre label */
+.pp-multi-donut-chart {
+  position: relative;
+  width: 160px;
+  height: 160px;
+}
+
+/* Centre text inside the donut hole */
+.pp-multi-donut-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+
+.pp-multi-donut-center-num {
+  font-size: 20px;
+  font-weight: 800;
+  color: #f1f5f9;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.5px;
+}
+
+.pp-multi-donut-center-label {
+  font-size: 9.5px;
+  color: rgba(255, 255, 255, 0.38);
+  margin-top: 4px;
+  text-align: center;
+  line-height: 1.3;
+}
+
+/* Per-platform legend rows below the donut */
+.pp-multi-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.pp-multi-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pp-multi-legend-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+.pp-multi-legend-name {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pp-multi-legend-count {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.25);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+/* ── Right column: calibration confidence ── */
+.pp-multi-conf-side {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* Overall score pill */
+.pp-multi-conf-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 20px;
+  padding: 4px 10px;
+  margin-bottom: 14px;
+  width: fit-content;
+}
+
+.pp-multi-conf-pill-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.5);
+  white-space: nowrap;
+}
+
+.pp-multi-conf-pill-score {
+  font-size: 13px;
+  font-weight: 800;
+}
+
+/* Individual bar rows */
+.pp-multi-conf-bar-row {
+  margin-bottom: 10px;
+}
+
+.pp-multi-conf-bar-row:last-child {
+  margin-bottom: 0;
+}
+
+.pp-multi-conf-bar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 5px;
+}
+
+.pp-multi-conf-bar-label {
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.45);
+  font-weight: 500;
+}
+
+.pp-multi-conf-bar-score {
+  font-size: 11.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.pp-multi-conf-bar-track {
+  height: 3px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+
+.pp-multi-conf-bar-fill {
+  height: 100%;
+  border-radius: 99px;
+}
+
+/* Thin divider between body and platforms footer */
+.pp-multi-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.06);
+  margin: 20px 0 0;
+}
+.pp-coming-soon-pill {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  background: #1E2126;
+  border: 1px solid #1E2126;
+  color: #ececed;
+  margin-bottom: 22px;
 }
