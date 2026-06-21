@@ -2,6 +2,7 @@ import React from "react";
 import { useNavigate, useLocation, useParams } from "react-router-dom";
 import SpIcon from "../../../../SPIcon";
 import { useExplorations } from "../../../../../hooks/useExplorations";
+import { useStepCompletion } from "./UsestepCompletion"; 
 import "./StepSidebarStyle.css";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -22,8 +23,11 @@ interface StepItem {
 }
 
 interface StepSidebarProps {
-  completedSteps: number[];
-  isStepUnlocked: (step: number) => boolean;
+  // NOTE: completedSteps / isStepUnlocked props are kept for backward compat
+  // but the hook now derives these from server data. You can remove the props
+  // once all parent components are updated to not pass them.
+  completedSteps?: number[];
+  isStepUnlocked?: (step: number) => boolean;
   completedSubSteps?: number[];
   completedQuantSubSteps?: number[];
   isViewOnly?: boolean;
@@ -51,7 +55,7 @@ const STEPS: StepItem[] = [
     name: "Qualitative Exploration",
     path: "depth-interview",
     subSteps: [
-      { number: 1, label: "Step 1", name: "Discussion Guide", path: "depth-interview" },
+      { number: 1, label: "Step 1", name: "Discussion Guide",    path: "depth-interview" },
       { number: 2, label: "Step 2", name: "In-depth Interviews", path: "chatview" },
       { number: 3, label: "Step 3", name: "Insights Generation", path: "insights" },
     ],
@@ -62,10 +66,10 @@ const STEPS: StepItem[] = [
     name: "Quantitative Exploration",
     path: "questionnaire",
     subSteps: [
-      { number: 1, label: "Step 1", name: "Questionnaire Design", path: "questionnaire" },
-      { number: 2, label: "Step 2", name: "Population Calibration", path: "population-builder" },
-      { number: 3, label: "Step 3", name: "Survey Execution", path: "population-builder" },
-      { number: 4, label: "Step 4", name: "Insights Generation", path: "population-builder" },
+      { number: 1, label: "Step 1", name: "Questionnaire Design",    path: "questionnaire" },
+      { number: 2, label: "Step 2", name: "Population Calibration",  path: "population-builder" },
+      { number: 3, label: "Step 3", name: "Survey Execution",        path: "population-builder" },
+      { number: 4, label: "Step 4", name: "Insights Generation",     path: "population-builder" },
     ],
   },
 ];
@@ -96,8 +100,10 @@ const getActiveStep = (pathname: string): number => {
 
 const getActiveQualSubStep = (pathname: string, currentId?: string): number => {
   if (pathname.includes("chatview")) {
-    if (currentId && localStorage.getItem(`qualitative_sub3_${currentId}`)) return 3;
-    if (currentId && localStorage.getItem(`qualitative_sub2_${currentId}`)) return 3;
+    try {
+      if (currentId && localStorage.getItem(`qualitative_sub3_${currentId}`)) return 3;
+      if (currentId && localStorage.getItem(`qualitative_sub2_${currentId}`)) return 3;
+    } catch { /* ignore */ }
     return 2;
   }
   if (pathname.includes("depth-interview")) return 1;
@@ -106,13 +112,17 @@ const getActiveQualSubStep = (pathname: string, currentId?: string): number => {
 
 const getActiveQuantSubStep = (pathname: string, currentId?: string): number => {
   if (pathname.includes("population-builder")) {
-    if (currentId && localStorage.getItem(`quant_sub4_${currentId}`)) return 4;
-    if (currentId && localStorage.getItem(`quant_sub3_${currentId}`)) return 3;
-    if (currentId && localStorage.getItem(`quant_sub2_${currentId}`)) return 2;
+    try {
+      if (currentId && localStorage.getItem(`quant_sub4_${currentId}`)) return 4;
+      if (currentId && localStorage.getItem(`quant_sub3_${currentId}`)) return 3;
+      if (currentId && localStorage.getItem(`quant_sub2_${currentId}`)) return 2;
+    } catch { /* ignore */ }
     return 2;
   }
   if (pathname.includes("survey-results")) {
-    if (currentId && localStorage.getItem(`quant_sub3_${currentId}`)) return 4;
+    try {
+      if (currentId && localStorage.getItem(`quant_sub3_${currentId}`)) return 4;
+    } catch { /* ignore */ }
     return 3;
   }
   if (pathname.includes("questionnaire")) return 1;
@@ -122,10 +132,6 @@ const getActiveQuantSubStep = (pathname: string, currentId?: string): number => 
 // ── Component ─────────────────────────────────────────────────────────────────
 
 const StepSidebar: React.FC<StepSidebarProps> = ({
-  completedSteps,
-  isStepUnlocked,
-  completedSubSteps = [],
-  completedQuantSubSteps = [],
   isViewOnly = false,
   hideBack = false,
 }) => {
@@ -142,79 +148,39 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
   const activeQualSubStep = getActiveQualSubStep(pathname, currentId);
   const activeQuantSubStep = getActiveQuantSubStep(pathname, currentId);
 
-  const lsStep1Done = !!currentId && !!localStorage.getItem(`step1_done_${currentId}`);
+  // ── Fetch exploration data ────────────────────────────────────────────────
+  const { data: explorationsData } = useExplorations(workspaceId);
 
-  // ── FIX 3: Step 2 is done when EITHER the explicit step2_done key is set
-  //    OR the approach key is set (set by handleApproachSelect in PersonaBuilder).
-  //    The step2_done key is now also written by PersonaBuilder whenever a persona
-  //    is successfully saved (create or update), so the sidebar reacts immediately.
-  const lsStep2Done =
-    !!currentId && (
-      !!localStorage.getItem(`step2_done_${currentId}`) ||
-      !!localStorage.getItem(`approach_${currentId}`)
-    );
+  const exploration = React.useMemo(() => {
+    if (!explorationsData || !currentId) return null;
+    // explorationsData is your existing array — find the current one
+    return (explorationsData as Array<{ id: string; title: string; [key: string]: unknown }>)
+      .find((e) => e.id === currentId) ?? null;
+  }, [explorationsData, currentId]);
 
-  let isBackEnabled = true;
+  const explorationTitle = exploration?.title ?? null;
 
-  // ── Completion helpers ──────────────────────────────────────────────────────
-
-  const isQualSubStepCompleted = (n: number): boolean => {
-    if (completedSubSteps.includes(n)) return true;
-    if (!currentId) return false;
-    if (n === 1) return !!localStorage.getItem(`qualitative_sub1_${currentId}`);
-    if (n === 2) return !!localStorage.getItem(`qualitative_sub2_${currentId}`);
-    if (n === 3) return !!localStorage.getItem(`qualitative_sub3_${currentId}`);
-    return false;
-  };
-
-  // ── FIX 4: quantitative sub-step 1 key must be "quantitative_sub1_" to match
-  //    what the questionnaire page writes AND what PersonaBuilder's lock check
-  //    now reads (after Fix 1). All other quant keys stay as "quant_sub*_".
-  const isQuantSubStepCompleted = (n: number): boolean => {
-    if (completedQuantSubSteps.includes(n)) return true;
-    if (!currentId) return false;
-    if (n === 1) return !!localStorage.getItem(`quantitative_sub1_${currentId}`);
-    if (n === 2) return !!localStorage.getItem(`quant_sub2_${currentId}`);
-    if (n === 3) return !!localStorage.getItem(`quant_sub3_${currentId}`);
-    if (n === 4) return !!localStorage.getItem(`quant_sub4_${currentId}`);
-    return false;
-  };
-
-  const isStepCompleted = (stepNumber: number): boolean => {
-    if (stepNumber === 1) return lsStep1Done || completedSteps.includes(1);
-
-    if (stepNumber === 2) {
-      // ── FIX 3: lsStep2Done already incorporates the approach key check above,
-      //    so a single lsStep2Done check is sufficient here.
-      return lsStep2Done || completedSteps.includes(2);
-    }
-
-    if (stepNumber === 3) {
-      return (
-        isQualSubStepCompleted(1) &&
-        isQualSubStepCompleted(2) &&
-        isQualSubStepCompleted(3)
-      );
-    }
-    if (stepNumber === 4) {
-      return (
-        isQuantSubStepCompleted(1) &&
-        isQuantSubStepCompleted(2) &&
-        isQuantSubStepCompleted(3) &&
-        isQuantSubStepCompleted(4)
-      );
-    }
-    return completedSteps.includes(stepNumber);
-  };
-
-  isBackEnabled = isStepCompleted(activeStep);
+  // ── Step completion — single source of truth ──────────────────────────────
+  //
+  //    useStepCompletion checks server data (exploration object) first,
+  //    then falls back to localStorage for in-session optimism.
+  //    After logout/login the server data will be authoritative.
+  //
+  const {
+    isStepCompleted,
+    isQualSubStepCompleted,
+    isQuantSubStepCompleted,
+    isStepUnlocked,
+  } = useStepCompletion(exploration, currentId);
 
   // ── Detect route-based loader screens ────────────────────────────────────
+
+  let isBackEnabled = isStepCompleted(activeStep);
 
   const interviewsStillRunning =
     pathname.includes("chatview") &&
     !!currentId &&
-    !localStorage.getItem(`qualitative_sub2_${currentId}`);
+    !isQualSubStepCompleted(2);
 
   const isRouteLoader =
     pathname.includes("persona-generating") ||
@@ -235,9 +201,7 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
     if (!workspaceId || !currentId) return;
 
     if (step.number === 3) {
-      if (isQualSubStepCompleted(3)) {
-        go("chatview");
-      } else if (isQualSubStepCompleted(1)) {
+      if (isQualSubStepCompleted(3) || isQualSubStepCompleted(1)) {
         go("chatview");
       } else {
         go("depth-interview");
@@ -246,8 +210,7 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
     }
 
     if (step.number === 4) {
-      if (!isQuantSubStepCompleted(1)) go("questionnaire");
-      else go("population-builder");
+      go(isQuantSubStepCompleted(1) ? "population-builder" : "questionnaire");
       return;
     }
 
@@ -272,15 +235,6 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
     if (workspaceId) navigate(`/main/organization/workspace/explorations/${workspaceId}`);
     else navigate(-1);
   };
-
-  const { data: explorationsData } = useExplorations(workspaceId);
-
-  const explorationTitle = React.useMemo(() => {
-    if (!explorationsData || !currentId) return null;
-    const match = (explorationsData as Array<{ id: string; title: string }>)
-      .find((e) => e.id === currentId);
-    return match?.title ?? null;
-  }, [explorationsData, currentId]);
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
@@ -310,34 +264,8 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
       <nav className="step-sidebar__steps">
         {STEPS.map((step) => {
           const completed = isStepCompleted(step.number);
-          const active = activeStep === step.number;
-
-          // ── FIX 3 & 4: Step unlock logic.
-          //    Step 2 unlocks as soon as step 1 is done (lsStep1Done).
-          //    Step 3 unlocks as soon as step 2 is done (lsStep2Done now includes
-          //      the approach key AND the new step2_done key written on persona save).
-          //    Step 4 unlocks when the user has completed qual sub-step 3 OR has
-          //      chosen a quantitative-only approach.
-          const lsUnlocked =
-            step.number === 1
-              ? true
-              : step.number === 2
-              ? lsStep1Done
-              : step.number === 3
-              ? (
-                  lsStep2Done ||                                               // persona saved or approach chosen
-                  activeStep >= 3 ||                                           // currently on step 3 or beyond
-                  isStepCompleted(3)                                           // qual fully done
-                )
-              : step.number === 4
-              ? (
-                  activeStep >= 4 ||
-                  !!localStorage.getItem(`qualitative_sub3_${currentId}`) ||
-                  localStorage.getItem(`approach_${currentId}`) === 'quantitative'
-                )
-              : false;
-
-          const locked = !isStepUnlocked(step.number) && !lsUnlocked;
+          const active    = activeStep === step.number;
+          const locked    = !isStepUnlocked(step.number) && !completed;
           const showSubSteps = !!step.subSteps && active;
 
           return (
@@ -346,9 +274,9 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
               <button
                 className={[
                   "step-sidebar__step",
-                  active ? "step-sidebar__step--active" : "",
-                  completed ? "step-sidebar__step--completed" : "",
-                  locked ? "step-sidebar__step--locked" : "",
+                  active     ? "step-sidebar__step--active"    : "",
+                  completed  ? "step-sidebar__step--completed" : "",
+                  locked     ? "step-sidebar__step--locked"    : "",
                 ].join(" ")}
                 onClick={() => handleStepClick(step)}
                 disabled={locked}
@@ -356,9 +284,9 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
               >
                 <div className={[
                   "step-sidebar__circle",
-                  completed ? "step-sidebar__circle--completed" : "",
-                  active && !completed ? "step-sidebar__circle--active" : "",
-                  locked ? "step-sidebar__circle--locked" : "",
+                  completed            ? "step-sidebar__circle--completed" : "",
+                  active && !completed ? "step-sidebar__circle--active"    : "",
+                  locked               ? "step-sidebar__circle--locked"    : "",
                 ].join(" ")}>
                   {completed
                     ? <SpIcon name="sp-Interface-Check" size={14} />
@@ -377,12 +305,12 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
                   {step.subSteps.map((sub) => {
                     const isQual = step.number === 3;
 
-                    const subCompleted = isQual
+                    const subCompleted  = isQual
                       ? isQualSubStepCompleted(sub.number)
                       : isQuantSubStepCompleted(sub.number);
 
                     const activeSubStep = isQual ? activeQualSubStep : activeQuantSubStep;
-                    const subActive = activeSubStep === sub.number;
+                    const subActive     = activeSubStep === sub.number;
 
                     const subLocked =
                       sub.number > 1 &&
@@ -396,18 +324,18 @@ const StepSidebar: React.FC<StepSidebarProps> = ({
                         key={sub.number}
                         className={[
                           "step-sidebar__substep",
-                          subActive ? "step-sidebar__substep--active" : "",
-                          subCompleted ? "step-sidebar__substep--completed" : "",
-                          subLocked ? "step-sidebar__substep--locked" : "",
+                          subActive     ? "step-sidebar__substep--active"    : "",
+                          subCompleted  ? "step-sidebar__substep--completed" : "",
+                          subLocked     ? "step-sidebar__substep--locked"    : "",
                         ].join(" ")}
                         onClick={() => handleSubStepClick(step, sub)}
                         disabled={subLocked}
                       >
                         <div className={[
                           "step-sidebar__substep-circle",
-                          subCompleted ? "step-sidebar__substep-circle--completed" : "",
-                          subActive && !subCompleted ? "step-sidebar__substep-circle--active" : "",
-                          subLocked ? "step-sidebar__substep-circle--locked" : "",
+                          subCompleted               ? "step-sidebar__substep-circle--completed" : "",
+                          subActive && !subCompleted ? "step-sidebar__substep-circle--active"    : "",
+                          subLocked                  ? "step-sidebar__substep-circle--locked"    : "",
                         ].join(" ")}>
                           {subCompleted
                             ? <SpIcon name="sp-Interface-Check" size={10} />
