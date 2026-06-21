@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { Outlet, useParams, useLocation } from 'react-router-dom';
 import StepSidebar from './StepSidebar';
 import { useStepProgress } from '../../../../../hooks/useStepProgress';
@@ -16,34 +16,16 @@ const ResearchObjectiveLayoutInner: React.FC = () => {
   const location = useLocation();
   const isViewOnly = Boolean((location.state as any)?.viewOnly);
 
-  // Read whether any child page is currently showing a blocking loader overlay
   const { loaderActive } = useLoaderActive();
 
-  const { completedSteps: rawCompletedSteps, isStepUnlocked } = useStepProgress(
+  // completedSteps and isStepUnlocked are now fully derived inside useStepProgress.
+  // Steps 1 & 2 come from the backend (survive logout).
+  // Steps 3 & 4 come from localStorage sub-step keys (written by child pages).
+  // No filtering needed — useStepProgress now uses the correct completion signals.
+  const { completedSteps, isStepUnlocked } = useStepProgress(
     workspaceId,
     objectiveId
   );
-
-  // Strip step 3 from the hook's completedSteps — the backend marks step 3 as
-  // "started" (not truly done) the moment an approach is selected, which caused
-  // the Qualitative Exploration circle to show a premature green check.
-  // Strip step 4 for the same reason — completion is determined exclusively
-  // by the four quantitative sub-step localStorage keys inside StepSidebar.
-  const completedSteps = (rawCompletedSteps ?? []).filter(
-    (n: number) => n !== 3 && n !== 4
-  );
-
-  // ── One-time migration: clear stale sub-step keys ───────────────────────
-  useEffect(() => {
-    if (!objectiveId) return;
-    const versionKey = `sub_steps_v2_${objectiveId}`;
-    if (!localStorage.getItem(versionKey)) {
-      localStorage.removeItem(`qualitative_sub1_${objectiveId}`);
-      localStorage.removeItem(`qualitative_sub2_${objectiveId}`);
-      localStorage.removeItem(`qualitative_sub3_${objectiveId}`);
-      localStorage.setItem(versionKey, '1');
-    }
-  }, [objectiveId]);
 
   // ── Read completed qualitative sub-steps from localStorage ───────────────
   //
