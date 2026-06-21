@@ -1,3 +1,4 @@
+import json
 import logging
 import time
 import uuid
@@ -98,6 +99,54 @@ def _preview_confidence_from_stored_score(persona: dict) -> dict | None:
             "stored_calibration_score": score,
         },
     }
+
+def _preview_confidence_from_evidence_snapshot(persona: dict) -> dict | None:
+    """
+    Omi/legacy personas store their per-dimension confidence breakdown under
+    evidence_snapshot.confidence_calculation_detail.components (volume_score,
+    recency_score, ro_alignment_score, signal_clarity_score, source_diversity_score)
+    rather than under confidence_scoring (the Manual Build Mode field). Without this,
+    the preview's confidence check only looks for confidence_scoring, finds nothing,
+    and falls through to _preview_confidence_from_stored_score — which synthesizes a
+    single generic "stored_calibration_score" component and discards the real
+    breakdown that's sitting right there in persona_details.
+    """
+    evidence = persona.get("evidence_snapshot") or {}
+    if isinstance(evidence, str):
+        try:
+            evidence = json.loads(evidence)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            evidence = {}
+    if not isinstance(evidence, dict):
+        return None
+
+    detail = evidence.get("confidence_calculation_detail") or {}
+    if not isinstance(detail, dict):
+        return None
+    components = detail.get("components")
+    if not isinstance(components, dict) or not components:
+        return None
+
+    weighted_score = detail.get("value") or detail.get("weighted_total")
+    try:
+        weighted_score = float(weighted_score) if weighted_score is not None else None
+    except (TypeError, ValueError):
+        weighted_score = None
+
+    score_pct = round(weighted_score * 100) if weighted_score is not None else None
+    confidence_level = detail.get("level") or (
+        "High" if (score_pct or 0) >= 80 else "Medium" if (score_pct or 0) >= 60 else "Low"
+    )
+
+    return {
+        "score": f"{score_pct}%" if score_pct is not None else None,
+        "weighted_score": weighted_score,
+        "confidence_level": confidence_level,
+        "mode": "evidence_based_confidence",
+        "note": detail.get("method") or "",
+        "components": components,
+    }
+
 
 def _to_dict(maybe_obj):
     if maybe_obj is None:
@@ -1038,13 +1087,20 @@ async def preview_persona(
     persona_details = p.get("persona_details") or {}
     flat_fields = {
         k: v for k, v in p.items()
-        if k not in ("persona_details", "calibration_breakdown")
+        if k != "persona_details"
         and v is not None and v != "" and v != [] and v != {}
     }
+    # calibration_breakdown is always freshly computed by persona_to_dict (never
+    # persisted on persona_details), so it must come from flat_fields; persona_details
+    # still wins if it ever does carry its own copy, via normal dict-merge precedence.
     full_persona_info = {**flat_fields, **persona_details}
 
     confidence = full_persona_info.get("confidence_scoring", "") or p.get("confidence_scoring", "")
     confidence_source = "embedded" if confidence else ""
+    if not confidence:
+        confidence = _preview_confidence_from_evidence_snapshot(full_persona_info)
+        if confidence:
+            confidence_source = "evidence_snapshot"
     if not confidence:
         confidence = _preview_confidence_from_stored_score(p)
         if confidence:
