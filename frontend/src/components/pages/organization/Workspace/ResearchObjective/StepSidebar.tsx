@@ -2,7 +2,7 @@ import React from "react";
 import { useNavigate, useLocation, useParams } from "react-router-dom";
 import SpIcon from "../../../../SPIcon";
 import { useExplorations } from "../../../../../hooks/useExplorations";
-import { useStepCompletion } from "./UsestepCompletion"
+import { useStepCompletion } from "./useStepCompletion"
 import "./StepSidebarStyle.css";
 
 // ── Types ────────────────────────────────────────────────────────────────────
