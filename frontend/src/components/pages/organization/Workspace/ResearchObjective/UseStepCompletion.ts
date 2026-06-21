@@ -1,41 +1,3 @@
-/**
- * useStepCompletion.ts
- *
- * PROBLEM BEING SOLVED:
- * ---------------------
- * Step completion was stored only in localStorage, which is wiped on logout,
- * browser clear, or when a user switches devices. This caused completed steps
- * to appear incomplete after re-login, also blocking sidebar navigation.
- *
- * SOLUTION:
- * ---------
- * Derive completion from backend API data (the exploration object itself),
- * with localStorage as a WRITE-THROUGH CACHE only — never as the source of truth.
- *
- * HOW TO USE:
- * -----------
- * 1. Replace all the inline localStorage checks in StepSidebar with this hook.
- * 2. Pass the exploration object from your existing useExplorations() hook data.
- * 3. The hook returns isStepCompleted / isSubStepCompleted functions that check
- *    the server data first, falling back to localStorage for in-session optimism.
- *
- * BACKEND CONTRACT (adjust field names to match your actual API response):
- * -------------------------------------------------------------------------
- * Your exploration object should carry completion metadata. Minimal example:
- *
- *   {
- *     id: "abc123",
- *     title: "AI Automation...",
- *     completedSteps: [1, 2],                    // top-level steps done
- *     qualSubStepsCompleted: [1, 2, 3],          // qual sub-steps done
- *     quantSubStepsCompleted: [1, 2],            // quant sub-steps done
- *     approach: "qualitative" | "quantitative" | "both" | null,
- *     status: "draft" | "active" | "complete",
- *   }
- *
- * If your API doesn't return this yet, see MIGRATION PLAN at the bottom.
- */
-
 import { useMemo, useCallback } from "react";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -231,30 +193,3 @@ export function useStepCompletion(
     markComplete,
   }), [isStepCompleted, isQualSubStepCompleted, isQuantSubStepCompleted, isStepUnlocked, markComplete]);
 }
-
-/*
- * ════════════════════════════════════════════════════════════════════════════
- * MIGRATION PLAN — what to change when you don't control the API yet
- * ════════════════════════════════════════════════════════════════════════════
- *
- * PHASE 1 (today, zero backend changes):
- *   - Drop this hook into StepSidebar. It still reads localStorage as before,
- *     but now ALL reads go through one place instead of scattered inline checks.
- *   - This alone doesn't fix logout data loss, but it sets up Phase 2.
- *
- * PHASE 2 (add one API field):
- *   - Ask your backend to return `completedSteps: number[]` on the exploration
- *     object (e.g. stored as a JSONB column or a related table).
- *   - Update the ExplorationData interface here to match.
- *   - The hook will automatically prefer server data over localStorage.
- *   - Users who log out and back in will now see correct step state.
- *
- * PHASE 3 (full persistence):
- *   - Add qualSubStepsCompleted and quantSubStepsCompleted to the API too.
- *   - Call markComplete() wherever you currently call localStorage.setItem()
- *     in your step pages (ResearchMode, PersonaBuilder, depth-interview, etc).
- *   - localStorage becomes a pure in-session cache; server is ground truth.
- *   - Delete the localStorage fallbacks in this hook once confident.
- *
- * ════════════════════════════════════════════════════════════════════════════
- */
