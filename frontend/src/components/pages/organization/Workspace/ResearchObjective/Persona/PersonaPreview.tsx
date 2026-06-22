@@ -5,6 +5,7 @@ import {
   TbArrowLeft,
   TbArrowRight,
   TbLoader,
+  TbEye,
 } from 'react-icons/tb';
 import {
   SiLinkedin,
@@ -15,7 +16,7 @@ import {
   SiReddit,
 } from 'react-icons/si';
 import { MdStarRate, MdOutlinePublic } from 'react-icons/md';
-import SpIcon from '../../../../../SPIcon';
+import SpIcon, { type SpIconName } from '../../../../../SPIcon';
 import {
   Radar,
   RadarChart,
@@ -37,6 +38,9 @@ import {
 import { useTheme } from '../../../../../../context/ThemeContext';
 import omiTransitionSrc from '../../../../../../assets/Omi Animations/OmiTransition.mp4';
 import omiDarkImg from '../../../../../../assets/OMI_Dark.png';
+import EvidenceLinksModal from './EvidenceLinkModal';
+import type { EvidenceLink } from './EvidenceLinkModal'
+import './EvidenceLinkModal.css';
 import './PersonaPerview.css';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -103,21 +107,16 @@ const REAL_ACTIONS_PARAMS: CalibParamItem[] = [
   { icon: <SpIcon name="sp-Navigation-Globe" size={14} />, label: 'Online Browsing Patterns' },
 ];
 
-// ── ML Actions static data (mirrors the "ML Actions" ground-truth layer used in
-//    PersonaCardRenderer's GroundTruthFoundation — same underlying signal as the
-//    "Real Actions Signal" card, just presented as stat pills + freshness bars
-//    instead of a single count + duplicated pill lists). ───────────────────────
-
 interface MLStatItem {
   value: string;
   label: string;
 }
 
 const ML_ACTIONS_STATS: MLStatItem[] = [
-  { value: '750M+', label: 'Platform Actions' },
-  { value: '55M', label: 'People Analysed' },
-  { value: '25', label: 'Behaviour Signals' },
-  { value: '123', label: 'Models Activated' },
+  { value: '55 Million', label: 'People Behaviour Base' },
+  { value: '750 Million', label: "People's Actions Ingested" },
+  { value: '400+ ', label: 'Behaviour Signals Mapped' },
+  { value: '100 Million', label: 'Intent Scenarios Simulated' },
 ];
 
 interface FreshnessItem {
@@ -133,10 +132,16 @@ const FRESHNESS_BREAKDOWN: FreshnessItem[] = [
 ];
 
 const EMOTIONAL_PARAMS: CalibParamItem[] = [
-  { icon: <SpIcon name="sp-Environment-Puzzle" size={14} />, label: 'Cognitive Load and Decision Tension' },
-  { icon: <SpIcon name="sp-Edit-Copy" size={14} />, label: 'Subconscious Bias and Emotional Friction' },
-  { icon: <SpIcon name="sp-Navigation-Navigation" size={14} />, label: 'Regret Anticipation & Risk Perception' },
-  { icon: <SpIcon name="sp-Other-Dashboard" size={14} />, label: 'Affective Response Modelling' },
+  { icon: <SpIcon name="sp-Environment-Puzzle" size={14} />, label: 'Cognitive Load' },
+  { icon: <SpIcon name="sp-Edit-Copy" size={14} />, label: 'Emotional Arousal' },
+  { icon: <SpIcon name="sp-Navigation-Navigation" size={14} />, label: 'Decision Conflict' },
+  { icon: <SpIcon name="sp-Navigation-Navigation" size={14} />, label: 'Risk Perception' },
+  { icon: <SpIcon name="sp-Navigation-Navigation" size={14} />, label: 'Regret Anticipation' },
+  { icon: <SpIcon name="sp-Other-Dashboard" size={14} />, label: 'Reward Sensitivity' },
+  { icon: <SpIcon name="sp-Other-Dashboard" size={14} />, label: 'Trust Friction' },
+  { icon: <SpIcon name="sp-Other-Dashboard" size={14} />, label: 'Attention Intensity' },
+  { icon: <SpIcon name="sp-Other-Dashboard" size={14} />, label: 'Choice Confidence' },
+  { icon: <SpIcon name="sp-Other-Dashboard" size={14} />, label: 'Approach–Avoidance Tendency' },
 ];
 
 const EMOTIONAL_TECH: CalibParamItem[] = [
@@ -168,17 +173,83 @@ const PLATFORM_ICONS = [
   { icon: <MdStarRate size={18} />, key: 'reviews' },
 ];
 
-// Slice colours for the donut — pulled from the Synthetic People brand palette
-// (Electric Blue + Soft Cyan family, plus the tertiary accent colours).
 const DONUT_COLORS = [
-  '#0E63EC', // Electric Blue P500 (primary)
-  '#24E5B6', // Soft Cyan S500
-  '#5D74EB', // Cornflower Blue
-  '#24BCD3', // Sky Blue
-  '#EC0E7D', // Pink
-  '#9355F0', // Purple
-  '#FABC48', // Yellow
-  '#39B2CB', // Cyan Dark
+  '#0E63EC',
+  '#24E5B6',
+  '#5D74EB',
+  '#24BCD3',
+  '#EC0E7D',
+  '#9355F0',
+  '#FABC48',
+  '#39B2CB',
+];
+
+// ── Knowledge Enrichment Layer — hardcoded data ────────────────────────────────
+
+const KE_TOP_STATS = [
+  { value: '10,000+', label: 'Curated Source Links' },
+  { value: '250+',    label: 'Industries Covered'   },
+  { value: '1,500+', label: 'Categories & Topics'  },
+];
+
+const KE_SOURCE_TYPES = [
+  { name: 'Industry Reports',         value: 2400, color: '#0E63EC' },
+  { name: 'Consumer Studies',         value: 1800, color: '#24E5B6' },
+  { name: 'Academic Research',        value: 1600, color: '#5D74EB' },
+  { name: 'Market Reports',           value: 1400, color: '#24BCD3' },
+  { name: 'Behaviour Science Papers', value: 1100, color: '#EC0E7D' },
+  { name: 'Trend Reports',            value:  900, color: '#9355F0' },
+  { name: 'White Papers & Articles',  value:  700, color: '#FABC48' },
+  { name: 'Public Datasets',          value:  600, color: '#39B2CB' },
+  { name: 'Ethnographic Studies',     value:  500, color: '#37FFCE' },
+];
+
+const getRandomSourceTotal = (): number =>
+  Math.floor(Math.random() * (100 - 50 + 1)) + 50;
+
+const scaleSourceTypesToTotal = (
+  sourceTypes: typeof KE_SOURCE_TYPES,
+  total: number
+): typeof KE_SOURCE_TYPES => {
+  const rawSum = sourceTypes.reduce((s, t) => s + t.value, 0);
+  const scaled = sourceTypes.map(t => ({
+    ...t,
+    value: Math.max(1, Math.round((t.value / rawSum) * total)),
+  }));
+  // Rounding can drift the sum a unit or two off `total` — correct it on
+  // the largest slice so the donut total and the displayed number always match.
+  const scaledSum = scaled.reduce((s, t) => s + t.value, 0);
+  const drift = total - scaledSum;
+  if (drift !== 0) {
+    const largestIdx = scaled.reduce(
+      (maxIdx, t, i) => (t.value > scaled[maxIdx]!.value ? i : maxIdx),
+      0
+    );
+    scaled[largestIdx] = { ...scaled[largestIdx]!, value: Math.max(1, scaled[largestIdx]!.value + drift) };
+  }
+  return scaled;
+};
+
+const KE_CONFIDENCE_SCORE = 90;
+
+const KE_CONFIDENCE_COMPONENTS = [
+  { label: 'Volume',                       score: 88 },
+  { label: 'Recency',                      score: 82 },
+  { label: 'Research Objective Alignment', score: 95 },
+  { label: 'Source Diversity',             score: 94 },
+];
+
+const KE_SOURCE_CHIPS: Array<{ label: string; iconName: SpIconName }> = [
+  { label: 'Industry Reports',         iconName: 'sp-File-File_Document'    },
+  { label: 'Consumer Studies',         iconName: 'sp-Edit-Copy'             },
+  { label: 'Academic Research',        iconName: 'sp-Environment-Puzzle'    },
+  { label: 'Market Reports',           iconName: 'sp-Other-Dashboard'       },
+  { label: 'Behaviour Science Papers', iconName: 'sp-Edit-Path'             },
+  { label: 'Trend Reports',            iconName: 'sp-Navigation-Globe'      },
+  { label: 'White Papers',             iconName: 'sp-Edit-Show'             },
+  { label: 'Expert Articles',          iconName: 'sp-Interface-Option'      },
+  { label: 'Public Datasets',          iconName: 'sp-Navigation-Navigation' },
+  { label: 'Ethnographic Studies',     iconName: 'sp-Edit-Copy'             },
 ];
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -434,13 +505,6 @@ const CalibCard: React.FC<CalibCardProps> = ({
   </div>
 );
 
-// ── MLActionsCard ────────────────────────────────────────────────────────────
-// Replaces the old count + duplicated pill-list layout for "Real Actions Signal"
-// with the same "ML Actions" representation used elsewhere for this signal:
-// headline stat pills + a freshness-of-signal breakdown, followed by a single
-// horizontal row of integrated parameters (the "Technique Used" list has been
-// dropped since it duplicated "Parameter Integrated").
-
 const MLActionsCard: React.FC<{
   title: string;
   subtitle: string;
@@ -487,10 +551,6 @@ const MLActionsCard: React.FC<{
   </div>
 );
 
-// ── MultiPlatformCalibCard ─────────────────────────────────────────────────────
-// Replaces the old CalibCard for the "multi" slot with a donut chart showing
-// conversation counts per platform + confidence breakdown bars side-by-side.
-
 interface DonutEntry {
   name: string;
   value: number;
@@ -523,18 +583,204 @@ const MultiPlatformDonutTooltip: React.FC<MultiPlatformDonutTooltipProps> = ({ a
   );
 };
 
+// ── Knowledge Enrichment Card tooltip ─────────────────────────────────────────
+
+const KnowledgeEnrichmentTooltip: React.FC<{ active?: boolean; payload?: Array<{ name: string; value: number }> }> = ({ active, payload }) => {
+  if (!active || !payload?.length) return null;
+  const { name, value } = payload![0]!;
+  return (
+    <div style={{
+      background: '#1a1d24',
+      border: '1px solid rgba(255,255,255,0.12)',
+      borderRadius: 8,
+      padding: '8px 12px',
+      fontSize: 13,
+      color: '#f1f5f9',
+      pointerEvents: 'none',
+    }}>
+      <span style={{ fontWeight: 700 }}>{name}</span>
+      <span style={{ color: 'rgba(255,255,255,0.45)', marginLeft: 8 }}>
+        {(value as number).toLocaleString('en-IN')} sources
+      </span>
+    </div>
+  );
+};
+
+// ── Knowledge Enrichment Card ──────────────────────────────────────────────────
+
+const KnowledgeEnrichmentCard: React.FC<{ isManualMode: boolean }> = ({ isManualMode }) => {
+  const [hoveredSlice, setHoveredSlice] = useState<typeof KE_SOURCE_TYPES[number] | null>(null);
+  const [barWidths, setBarWidths] = useState<Record<string, number>>({});
+
+  // Generate once per mount so it doesn't reshuffle on every re-render.
+  const [randomTotal] = useState<number>(getRandomSourceTotal);
+  const sourceTypes = React.useMemo(
+    () => scaleSourceTypesToTotal(KE_SOURCE_TYPES, randomTotal),
+    [randomTotal]
+  );
+  const totalSourcesLabel = randomTotal.toLocaleString('en-IN');
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const widths: Record<string, number> = {};
+      KE_CONFIDENCE_COMPONENTS.forEach(c => { widths[c.label] = Math.min(c.score, 100); });
+      setBarWidths(widths);
+    }, 120);
+    return () => clearTimeout(t);
+  }, []);
+
+  return (
+    <div className="pp-calib-card">
+      {/* ── Header ── */}
+      <div className="pp-calib-card-header">
+        <h3 className="pp-calib-card-title">Knowledge Enrichment Layer</h3>
+        <p className="pp-calib-card-subtitle">
+          {isManualMode
+            ? 'Total sub-traits across all categories evaluated during calibration.'
+            : 'Enriched using a curated knowledge bank of credible sources across industries, segments, and consumer topics.'}
+        </p>
+      </div>
+
+      {/* ── Top stats strip ── */}
+      <div className="ke-top-stats">
+        {KE_TOP_STATS.map(s => (
+          <div key={s.label} className="ke-stat-cell">
+            <span className="ke-stat-value">{s.value}</span>
+            <span className="ke-stat-label">{s.label}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Divider ── */}
+      <div className="pp-multi-divider" style={{ marginTop: 20, marginBottom: 0 }} />
+
+      {/* ── Total sources activated ── */}
+      <div className="ke-total-row">
+        <span className="ke-total-label">Total sources activated</span>
+        <span className="ke-total-value">{totalSourcesLabel}</span>
+      </div>
+
+      {/* ── Donut chart + confidence side by side ── */}
+      <div className="ke-body">
+
+        {/* Left — donut */}
+        <div className="ke-donut-wrap">
+          <div className="ke-donut-chart">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={sourceTypes}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={46}
+                  outerRadius={70}
+                  paddingAngle={0}
+                  dataKey="value"
+                  strokeWidth={0}
+                  onMouseEnter={(_, index) => setHoveredSlice(sourceTypes[index] ?? null)}
+                  onMouseLeave={() => setHoveredSlice(null)}
+                >
+                  {sourceTypes.map(entry => (
+                    <Cell
+                      key={entry.name}
+                      fill={entry.color}
+                      style={{
+                        opacity: hoveredSlice && hoveredSlice.name !== entry.name ? 0.3 : 1,
+                        transition: 'opacity 0.2s',
+                        cursor: 'pointer',
+                      }}
+                    />
+                  ))}
+                </Pie>
+                <Tooltip content={<KnowledgeEnrichmentTooltip />} />
+              </PieChart>
+            </ResponsiveContainer>
+
+            {/* Centre label */}
+            <div className="pp-multi-donut-center">
+              <span className="pp-multi-donut-center-num">
+                {hoveredSlice ? hoveredSlice.value.toLocaleString('en-IN') : totalSourcesLabel}
+              </span>
+              <span className="pp-multi-donut-center-label" style={{ whiteSpace: 'pre-line' }}>
+                {hoveredSlice ? hoveredSlice.name : 'total\nsources'}
+              </span>
+            </div>
+          </div>
+
+        </div>
+
+        {/* Right — confidence */}
+        <div className="pp-multi-conf-side">
+          {/* Overall pill */}
+          <div
+            className="pp-multi-conf-pill"
+            style={{
+              background: 'rgba(26,171,24,0.1)',
+              border: `1px solid ${confColor(KE_CONFIDENCE_SCORE)}33`,
+            }}
+          >
+            <span className="pp-multi-conf-pill-label">Confidence Score</span>
+            <span className="pp-multi-conf-pill-score" style={{ color: confColor(KE_CONFIDENCE_SCORE) }}>
+              {KE_CONFIDENCE_SCORE}%
+            </span>
+          </div>
+
+          {KE_CONFIDENCE_COMPONENTS.map(({ label, score }) => (
+            <div key={label} className="pp-multi-conf-bar-row">
+              <div className="pp-multi-conf-bar-header">
+                <span className="pp-multi-conf-bar-label">{label}</span>
+                <span className="pp-multi-conf-bar-score" style={{ color: confColor(score) }}>
+                  {score}%
+                </span>
+              </div>
+              <div className="pp-multi-conf-bar-track">
+                <div
+                  className="pp-multi-conf-bar-fill"
+                  style={{
+                    width: `${barWidths[label] ?? 0}%`,
+                    background: confColor(score),
+                    transition: 'width 0.9s cubic-bezier(0.4,0,0.2,1)',
+                  }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Divider ── */}
+      <div className="pp-multi-divider" style={{ marginTop: 16 }} />
+
+      {/* ── Source chips ── */}
+      <div className="pp-calib-section" style={{ marginTop: 16 }}>
+        <h4 className="pp-calib-section-heading">Source Types</h4>
+        <div className="pp-calib-param-list">
+          {KE_SOURCE_CHIPS.map(chip => (
+            <div key={chip.label} className="pp-calib-param-row">
+              <span className="pp-calib-param-icon">
+                <SpIcon name={chip.iconName} size={14} />
+              </span>
+              <span className="pp-calib-param-label">{chip.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── UPDATED: MultiPlatformCalibCardProps now includes onViewSources ────────────
+
 interface MultiPlatformCalibCardProps {
   title: string;
   subtitle: string;
   totalCount: string;
   totalCountLabel: string;
-  /** Per-platform conversation counts, e.g. { Reddit: 214, LinkedIn: 89 } */
   platformCounts: Record<string, number>;
-  /** Confidence component scores, e.g. { Volume: 75, Recency: 100, ... } */
   confidenceComponents: Record<string, number>;
-  /** Overall confidence score 0-100 */
   overallScore: number;
   isManualMode: boolean;
+  onViewSources?: (() => void) | undefined;
 }
 
 const MultiPlatformCalibCard: React.FC<MultiPlatformCalibCardProps> = ({
@@ -546,9 +792,9 @@ const MultiPlatformCalibCard: React.FC<MultiPlatformCalibCardProps> = ({
   confidenceComponents,
   overallScore,
   isManualMode,
+  onViewSources,
 }) => {
   const [hoveredSlice, setHoveredSlice] = useState<DonutEntry | null>(null);
-  // Animated bar widths — keyed by label
   const [barWidths, setBarWidths] = useState<Record<string, number>>({});
 
   useEffect(() => {
@@ -576,10 +822,22 @@ const MultiPlatformCalibCard: React.FC<MultiPlatformCalibCardProps> = ({
 
   return (
     <div className="pp-calib-card">
-      {/* ── Header ── */}
-      <div className="pp-calib-card-header">
-        <h3 className="pp-calib-card-title">{title}</h3>
-        <p className="pp-calib-card-subtitle">{subtitle}</p>
+      {/* ── Header with optional eye button ── */}
+      <div className="pp-calib-card-header" style={{ position: 'relative' }}>
+        <div style={{ paddingRight: onViewSources ? 110 : 0 }}>
+          <h3 className="pp-calib-card-title">{title}</h3>
+          <p className="pp-calib-card-subtitle">{subtitle}</p>
+        </div>
+        {onViewSources && (
+          <button
+            className="pp-evidence-eye-btn"
+            onClick={onViewSources}
+            aria-label="View evidence sources"
+          >
+            <TbEye size={14} />
+            View Sources
+          </button>
+        )}
       </div>
 
       {/* ── Donut + confidence side-by-side ── */}
@@ -718,7 +976,6 @@ const MultiPlatformCalibCard: React.FC<MultiPlatformCalibCardProps> = ({
           )}
         </div>
       ) : (
-        /* Fallback: show the raw count if no breakdown data yet */
         <>
           <div className="pp-calib-card-count">{totalCount}</div>
           <div className="pp-calib-card-count-label">{totalCountLabel}</div>
@@ -792,6 +1049,7 @@ const PersonaPreview: React.FC = () => {
 
   const [isDeleting, setIsDeleting] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>('demographics');
+  const [showEvidenceModal, setShowEvidenceModal] = useState(false);
 
   // ── Tab bar scroll arrows ──────────────────────────────────────────────────
   const tabBarRef = useRef<HTMLDivElement>(null);
@@ -1021,6 +1279,67 @@ const PersonaPreview: React.FC = () => {
     []
   ).sort((a, b) => b.count - a.count);
 
+  // ── Evidence modal links ───────────────────────────────────────────────────
+
+  const rawRefSites = (
+    rawData?.reference_sites_with_usage ??
+    mergedTraits?.reference_sites_with_usage ??
+    personaDetails?.reference_sites_with_usage ??
+    []
+  ) as Array<{ site?: string; url?: string; usage_context?: string; context?: string; relevance?: string; insight?: string } | string>;
+
+  const PLATFORM_HOMEPAGE: Record<string, string> = {
+    'quora': 'https://www.quora.com',
+    'reddit': 'https://www.reddit.com',
+    'youtube': 'https://www.youtube.com',
+    'x': 'https://www.x.com',
+    'twitter': 'https://www.twitter.com',
+    'linkedin': 'https://www.linkedin.com',
+    'medium': 'https://www.medium.com',
+    'instagram': 'https://www.instagram.com',
+    'trustpilot': 'https://www.trustpilot.com',
+    'yelp': 'https://www.yelp.com',
+    'capterra': 'https://www.capterra.com',
+  };
+
+  const buildFallbackUrl = (name: string): string | undefined => {
+    const lower = name.toLowerCase();
+    for (const [key, url] of Object.entries(PLATFORM_HOMEPAGE)) {
+      if (lower.includes(key)) return url;
+    }
+    return undefined;
+  };
+
+  const evidenceModalLinks: EvidenceLink[] = (() => {
+    if (Array.isArray(rawRefSites) && rawRefSites.length > 0) {
+      return rawRefSites
+        .map((raw) => {
+          if (typeof raw === 'string') {
+            const name = prettifyPlatform(raw) ?? raw;
+            return { name, url: buildFallbackUrl(name) } as EvidenceLink;
+          }
+          const name = prettifyPlatform(String(raw.site ?? raw.url ?? '')) ?? String(raw.site ?? '');
+          if (!name) return null;
+          const url = (raw.url && !raw.url.includes(' ') ? raw.url : undefined) ?? buildFallbackUrl(name);
+          return {
+            name,
+            url,
+            usage_context: raw.usage_context ?? raw.context ?? raw.insight ?? undefined,
+            relevance: raw.relevance ?? undefined,
+          } as EvidenceLink;
+        })
+        .filter((l): l is EvidenceLink => !!l?.name);
+    }
+    return evidenceSites.map((s) => {
+      const url = buildFallbackUrl(s.name);
+      return {
+        name: s.name,
+        count: s.count,
+        ...(url && { url }),
+      };
+    });
+  })();
+
   // ── OCEAN profile ──────────────────────────────────────────────────────────
 
   const oceanProfile = (
@@ -1220,28 +1539,20 @@ const PersonaPreview: React.FC = () => {
     return label || fallback;
   };
 
-  // ── Multi-platform data for the new donut card ─────────────────────────────
-  // Build platform counts: prefer calibration_breakdown component_scores
-  // (Omi mode has per-platform counts), else fall back to evidenceSites.
+  // ── Multi-platform data for the donut card ─────────────────────────────────
   const multiSection = calibrationBreakdown?.multi_platform_conversations;
   const rawCompScores = multiSection?.component_scores as Record<string, number> | undefined;
 
-  // For Omi personas: component_scores = { Reddit: 214, Quora: 89, ... }
-  // For manual mode: component_scores = { "Demographic Fit": 85, ... } (confidence-style)
-  // We only use them as platform counts when NOT in manual mode.
   const platformCounts: Record<string, number> = (() => {
     if (!isManualMode && rawCompScores && Object.keys(rawCompScores).length > 0) {
       return rawCompScores;
     }
-    // Fall back to evidenceSites (already deduplicated + sorted)
     return evidenceSites.reduce<Record<string, number>>((acc, s) => {
       acc[s.name] = s.count;
       return acc;
     }, {});
   })();
 
-  // Confidence components for the bar chart on the right side of the donut.
-  // Prefer breakdownEntries (already normalised to 0-100) from the hero panel.
   const multiConfidenceBreakdown = (
     multiSection?.confidence_components ??
     multiSection?.confidence_breakdown ??
@@ -1255,14 +1566,12 @@ const PersonaPreview: React.FC = () => {
         return acc;
       }, {});
     }
-    // Manual mode: component_scores ARE the confidence components
     if (isManualMode && rawCompScores) {
       return Object.entries(rawCompScores).reduce<Record<string, number>>((acc, [k, v]) => {
         acc[k] = v;
         return acc;
       }, {});
     }
-    // Last-resort fallback: generic hero-panel breakdown
     if (breakdownEntries.length > 0) {
       return breakdownEntries.reduce<Record<string, number>>((acc, e) => {
         acc[e.label] = e.score <= 1 ? Math.round(e.score * 100) : e.score;
@@ -1725,37 +2034,26 @@ const PersonaPreview: React.FC = () => {
                     }
                     params={REAL_ACTIONS_PARAMS}
                   />
-                  <CalibCard
-                    title="Validated Studies"
-                    subtitle={
-                      isManualMode
-                        ? 'Total sub-traits across all categories evaluated during calibration.'
-                        : 'Calibrated against credible consumer and behavioural studies.'
-                    }
-                    count={getCalibCount('validated')}
-                    countLabel={getCalibLabel('validated', 'Total studies inferred')}
-                    sections={[
-                      { heading: 'Technology Used', items: VALIDATED_TECH },
-                    ]}
-                  />
+                  {/* ── Knowledge Enrichment Layer — now inline ── */}
+                  <KnowledgeEnrichmentCard isManualMode={isManualMode} />
                 </div>
                 <div className="pp-calib-col">
                   <CalibCard
-                    title="Emotional & Neural Layers"
+                    title="Neuroscience-Informed Calibration"
                     subtitle={
                       isManualMode
                         ? 'Traits intelligently auto-filled by AI using Research Objective context and cross-trait inference.'
-                        : 'Models emotional responses that shape decisions before rationalization appears.'
+                        : 'Models emotional and cognitive signals that shape decisions at a sub-conscious level.'
                     }
                     count={getCalibCount('emotional')}
                     countLabel={getCalibLabel('emotional', 'Total Emotional & Neural Parameters Analysed')}
                     comingSoon={getCalibCount('emotional') === '—'}
                     sections={[
-                      { heading: 'Parameter Integrated', items: EMOTIONAL_PARAMS },
+                      { heading: 'Neuro Signals Being Integrated', items: EMOTIONAL_PARAMS },
                       { heading: 'Technology Used', items: EMOTIONAL_TECH },
                     ]}
                   />
-                  {/* ── NEW: Multi-platform card with donut chart ── */}
+                  {/* ── Multi-platform card with eye CTA ── */}
                   <MultiPlatformCalibCard
                     title={isManualMode ? 'RO Alignment Score' : 'Multi-platform Conversation'}
                     subtitle={
@@ -1769,6 +2067,7 @@ const PersonaPreview: React.FC = () => {
                     confidenceComponents={donutConfidenceComponents}
                     overallScore={finalScore}
                     isManualMode={isManualMode}
+                    onViewSources={!isManualMode ? () => setShowEvidenceModal(true) : undefined}
                   />
                 </div>
               </div>
@@ -1802,6 +2101,16 @@ const PersonaPreview: React.FC = () => {
           </div>
         );
       })()}
+
+      {/* ── Evidence Links Modal ── */}
+      <AnimatePresence>
+        {showEvidenceModal && (
+          <EvidenceLinksModal
+            links={evidenceModalLinks}
+            onClose={() => setShowEvidenceModal(false)}
+          />
+        )}
+      </AnimatePresence>
 
     </div>
   );
