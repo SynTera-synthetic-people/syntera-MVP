@@ -35,6 +35,7 @@ import { useOmniWorkflow } from '../../../../../hooks/useOmiWorkflow';
 import { useAutoGeneratePersonas, usePersonas } from '../../../../../hooks/usePersonaBuilder';
 import UpgradeModal from "../../../Upgrade/UpgradeModal";
 import SummaryRefineBubble from "./SummaryRefineBubble";
+import { ROFramerTrigger } from "./ResearchObjectiveFramer";
 import OmiGreet from '../../../../../assets/Omi Animations/OmiIdle.mp4';
 import OmiPencil from '../../../../../assets/Omi Animations/OmiPencil.mp4';
 import OmiKeyboard from '../../../../../assets/Omi Animations/OmiKeyboard.mp4';
@@ -1105,6 +1106,7 @@ const AddResearchObjective: React.FC = () => {
                   </motion.div>
                 )}
               </AnimatePresence>
+              <ROFramerTrigger onInsert={(text) => setInputValue(text)} />
 
               <form onSubmit={handleSendMessage} className="aro-input-form">
                 {/* ── File upload trigger ── */}
