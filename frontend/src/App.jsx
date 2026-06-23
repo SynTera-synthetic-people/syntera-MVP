@@ -1,5 +1,7 @@
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 import Login from "./components/pages/Login/Login";
 import Signup from "./components/pages/Login/Signup";
 import ForgotPassword from "./components/pages/Login/ForgotPassword";
@@ -317,6 +319,7 @@ function App() {
             </Route>
           </Routes>
         </Router>
+        <ToastContainer position="top-right" autoClose={4000} newestOnTop theme="colored" />
       </ThemeProvider>
     </QueryClientProvider>
   );

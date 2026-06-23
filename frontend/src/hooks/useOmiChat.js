@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   createResearchObjective,
+  createResearchObjectiveFromFramer,
   initializeOmiSession,
   sendMessageToOmi,
   getConversationHistory,
@@ -107,4 +108,22 @@ export const useCreateResearchObjective = () => {
   });
 
   return mutation;
+};
+
+// Hook to save the Research Objective Framer's structured fields. The backend
+// writes the same Omi confirmation message the chat flow produces, so refetching
+// conversation history afterward is enough for the existing CTA gating to work.
+export const useCreateResearchObjectiveFromFramer = (workspaceId, explorationId) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (framerPayload) =>
+      createResearchObjectiveFromFramer(workspaceId, explorationId, framerPayload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: omiKeys.all });
+    },
+    onError: (error) => {
+      console.error('Error saving research objective from Framer:', error);
+    },
+  });
 };

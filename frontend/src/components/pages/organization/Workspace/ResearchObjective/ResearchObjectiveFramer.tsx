@@ -1,4 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
+import { toast } from "react-toastify";
+import { useCreateResearchObjectiveFromFramer } from "../../../../../hooks/useOmiChat";
 import "./ResearchObjectiveFramer.css";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -25,6 +27,9 @@ interface ResearchObjectiveFramerProps {
   isOpen: boolean;
   onClose: () => void;
   onInsert: (text: string) => void;
+  workspaceId?: string;
+  explorationId?: string;
+  onSaved?: () => void;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -120,6 +125,26 @@ const COMPONENTS: ROComponent[] = [
 const EMPTY_ANSWERS: ComponentAnswers = {
   f1: "", f2: "", f3: "", f4: "", f5: "", f6: "", f7: "", f8: "", f9: "", f10: ""
 };
+
+// Maps the wizard's f1..f10 shape to the backend's /from-framer payload field names.
+function buildFramerPayload(brand: BrandContext, answers: ComponentAnswers) {
+  return {
+    brand_name: brand.brandName || undefined,
+    industry: brand.industry || undefined,
+    website: brand.website || undefined,
+    competitors: brand.competitors.map(c => c.name),
+    business_context: answers.f1 || undefined,
+    decision_problem: answers.f2 || undefined,
+    information_gap: answers.f3 || undefined,
+    primary_hypothesis: answers.f4 || undefined,
+    secondary_hypotheses: answers.f5 || undefined,
+    target_audience: answers.f6 || undefined,
+    segmentation_logic: answers.f7 || undefined,
+    competitive_frame: answers.f8 || undefined,
+    behaviors_attitudes: answers.f9 || undefined,
+    geography: answers.f10 || undefined,
+  };
+}
 
 function buildRO(brand: BrandContext, answers: ComponentAnswers): string {
   const lines: string[] = [];
@@ -358,13 +383,35 @@ const LivePreview: React.FC<{ brand: BrandContext; answers: ComponentAnswers; fi
 const ReviewStep: React.FC<{
   brand: BrandContext; answers: ComponentAnswers;
   onInsert: (t: string) => void; onRestart: () => void; onJump: (s: number) => void;
-}> = ({ brand, answers, onInsert, onRestart, onJump }) => {
+  workspaceId?: string; explorationId?: string; onSaved?: () => void;
+}> = ({ brand, answers, onInsert, onRestart, onJump, workspaceId, explorationId, onSaved }) => {
   const [copied, setCopied] = useState(false);
   const filledCount = COMPONENTS.filter(c => answers[c.field]?.trim()).length;
   const roText = buildRO(brand, answers);
+  const canSave = !!(workspaceId && explorationId);
+
+  const { mutate: saveFramer, isPending: isSaving } = useCreateResearchObjectiveFromFramer(
+    workspaceId as string,
+    explorationId as string
+  ) as any;
 
   const handleCopy = async () => {
     try { await navigator.clipboard.writeText(roText); setCopied(true); setTimeout(() => setCopied(false), 2500); } catch {}
+  };
+
+  const handleSave = () => {
+    if (!canSave) return;
+    saveFramer(buildFramerPayload(brand, answers), {
+      onSuccess: () => {
+        toast.success("Research objective saved. Ready to build personas.");
+        onSaved?.();
+      },
+      onError: (error: any) => {
+        toast.error(
+          error?.response?.data?.detail ?? "Couldn't save the research objective. Please try again."
+        );
+      },
+    });
   };
 
   return (
@@ -390,14 +437,25 @@ const ReviewStep: React.FC<{
       <LivePreview brand={brand} answers={answers} filledCount={filledCount} />
 
       <div className="rof-review-actions">
-        <button
-          className={`rof-btn-insert ${filledCount === 0 ? "rof-btn-insert--disabled" : ""}`}
-          disabled={filledCount === 0}
-          onClick={() => onInsert(roText)}
-        >
-          <span className="rof-btn-insert-icon">→</span>
-          Use this objective
-        </button>
+        {canSave ? (
+          <button
+            className={`rof-btn-insert ${filledCount === 0 || isSaving ? "rof-btn-insert--disabled" : ""}`}
+            disabled={filledCount === 0 || isSaving}
+            onClick={handleSave}
+          >
+            <span className="rof-btn-insert-icon">→</span>
+            {isSaving ? "Saving…" : "Save Research Objective"}
+          </button>
+        ) : (
+          <button
+            className={`rof-btn-insert ${filledCount === 0 ? "rof-btn-insert--disabled" : ""}`}
+            disabled={filledCount === 0}
+            onClick={() => onInsert(roText)}
+          >
+            <span className="rof-btn-insert-icon">→</span>
+            Use this objective
+          </button>
+        )}
         <button
           className={`rof-btn-copy ${copied ? "rof-btn-copy--copied" : ""} ${filledCount === 0 ? "rof-btn-copy--disabled" : ""}`}
           disabled={filledCount === 0}
@@ -411,7 +469,7 @@ const ReviewStep: React.FC<{
 
 // ── Main Modal ────────────────────────────────────────────────────────────────
 
-const ResearchObjectiveFramer: React.FC<ResearchObjectiveFramerProps> = ({ isOpen, onClose, onInsert }) => {
+const ResearchObjectiveFramer: React.FC<ResearchObjectiveFramerProps> = ({ isOpen, onClose, onInsert, workspaceId, explorationId, onSaved }) => {
   const [step, setStep] = useState(0);
   const [brand, setBrand] = useState<BrandContext>({ brandName: "", industry: "", website: "", competitors: [] });
   const [answers, setAnswers] = useState<ComponentAnswers>({ ...EMPTY_ANSWERS });
@@ -519,6 +577,9 @@ const ResearchObjectiveFramer: React.FC<ResearchObjectiveFramerProps> = ({ isOpe
               onInsert={(text) => { onInsert(text); onClose(); }}
               onRestart={handleRestart}
               onJump={goTo}
+              workspaceId={workspaceId}
+              explorationId={explorationId}
+              onSaved={() => { onSaved?.(); onClose(); }}
             />
           )}
         </div>
@@ -556,9 +617,14 @@ export default ResearchObjectiveFramer;
 
 // ── Trigger button ────────────────────────────────────────────────────────────
 
-interface ROFramerTriggerProps { onInsert: (text: string) => void; }
+interface ROFramerTriggerProps {
+  onInsert: (text: string) => void;
+  workspaceId?: string;
+  explorationId?: string;
+  onSaved?: () => void;
+}
 
-export const ROFramerTrigger: React.FC<ROFramerTriggerProps> = ({ onInsert }) => {
+export const ROFramerTrigger: React.FC<ROFramerTriggerProps> = ({ onInsert, workspaceId, explorationId, onSaved }) => {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -566,7 +632,14 @@ export const ROFramerTrigger: React.FC<ROFramerTriggerProps> = ({ onInsert }) =>
         <span className="rof-trigger-icon">RO</span>
         Frame Objective
       </button>
-      <ResearchObjectiveFramer isOpen={open} onClose={() => setOpen(false)} onInsert={(text) => { onInsert(text); setOpen(false); }} />
+      <ResearchObjectiveFramer
+        isOpen={open}
+        onClose={() => setOpen(false)}
+        onInsert={(text) => { onInsert(text); setOpen(false); }}
+        workspaceId={workspaceId}
+        explorationId={explorationId}
+        onSaved={onSaved}
+      />
     </>
   );
 };

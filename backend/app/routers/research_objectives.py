@@ -12,7 +12,7 @@ from typing import Optional
 from app.db import get_session
 from app.models.exploration import Exploration
 from app.schemas.response import SuccessResponse, DeleteResponse, ErrorResponse
-from app.schemas.research_objectives import ResearchObjectivesCreate, ResearchObjectivesUpdate, ResearchObjectivesOut, ResearchObjectivesSummaryPatch
+from app.schemas.research_objectives import ResearchObjectivesCreate, ResearchObjectivesUpdate, ResearchObjectivesOut, ResearchObjectivesSummaryPatch, ResearchObjectiveFramerInput
 from app.services import research_objectives as exp_service
 from app.services import persona as persona_service
 from app.services import interview as interview_service
@@ -177,6 +177,98 @@ async def create_objective(
         }
     )
 
+
+
+@router.post("/from-framer", response_model=SuccessResponse, status_code=201)
+async def create_objective_from_framer(
+    exploration_id: str,
+    body: ResearchObjectiveFramerInput,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Synthesizes the Research Objective Framer's structured fields into a research
+    objective and saves it via the existing ResearchObjectives pipeline — no new
+    table, no schema migration. Downstream consumers (persona/questionnaire/
+    interview/report) read this exactly like any other research objective.
+    """
+    exploration = await get_exploration_by_id(session, exploration_id)
+    if not exploration:
+        raise HTTPException(status_code=404, detail="Exploration not found")
+
+    if not await ws_service.is_workspace_admin(
+        exploration.workspace_id, current_user.id
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Only workspace admins can create research objectives"
+        )
+
+    existing_check = await session.execute(
+        select(ResearchObjectives).where(
+            ResearchObjectives.exploration_id == exploration.id
+        )
+    )
+    is_update = existing_check.scalars().first() is not None
+
+    try:
+        research_objective = await exp_service.save_research_objective_from_framer(
+            session,
+            exploration_id=exploration.id,
+            created_by=current_user.id,
+            framer=body.model_dump(),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if is_update:
+        # Same invalidation as a manual description edit — downstream artifacts must regenerate.
+        await interview_service.clear_qualitative_outputs(exploration.workspace_id, exploration_id)
+        await persona_service.clear_personas_for_exploration(exploration.workspace_id, exploration_id)
+        await report_cache.invalidate_cache(exploration_id)
+
+    # --------------------------------------------------
+    # MIRROR THE OMI CONFIRMATION MESSAGE
+    # The frontend gates the "Create with Omi" / "Build Manually" CTAs on the
+    # last chat message containing this exact phrase — write it here so the
+    # Framer path surfaces those CTAs without any frontend special-casing.
+    # --------------------------------------------------
+    omi_result = await omi_service.get_or_create_session(exploration_id, current_user.id)
+    omi_session = omi_result[0] if isinstance(omi_result, tuple) else omi_result
+
+    confirmation_message = (
+        "Thanks! I’ve put everything together and we’re good to proceed.\n\n"
+        "📌 **Research Objective Summary:**\n"
+        f"{research_objective.description}\n\n"
+        "I’ll carry this forward into personas."
+    )
+    await omi_service.add_message(
+        session_id=omi_session.id,
+        role="omi",
+        content=confirmation_message,
+        message_type="chat",
+        workflow_stage=WorkflowStage.RESEARCH_OBJECTIVES,
+    )
+
+    if WorkflowStage.RESEARCH_OBJECTIVES not in omi_session.completed_stages:
+        omi_session.completed_stages.append(WorkflowStage.RESEARCH_OBJECTIVES)
+        session.add(omi_session)
+        await session.commit()
+
+    await get_omi_encouragement(
+        exploration.workspace_id,
+        current_user.id,
+        "Research objective saved! 🎉 Ready to build personas."
+    )
+
+    return SuccessResponse(
+        message="Research objective saved successfully",
+        data={
+            "exploration": research_objective,
+            "validation_status": research_objective.validation_status,
+            "confidence_level": research_objective.confidence_level,
+        }
+    )
 
 
 @router.put("/{objective_id}", response_model=SuccessResponse)

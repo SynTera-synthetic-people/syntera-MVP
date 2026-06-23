@@ -1106,7 +1106,12 @@ const AddResearchObjective: React.FC = () => {
                   </motion.div>
                 )}
               </AnimatePresence>
-              <ROFramerTrigger onInsert={(text) => setInputValue(text)} />
+              <ROFramerTrigger
+                onInsert={(text) => setInputValue(text)}
+                workspaceId={workspaceId}
+                explorationId={objectiveId}
+                onSaved={() => { refetchHistory(); }}
+              />
 
               <form onSubmit={handleSendMessage} className="aro-input-form">
                 {/* ── File upload trigger ── */}
