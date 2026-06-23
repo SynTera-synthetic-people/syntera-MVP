@@ -266,11 +266,18 @@ except Exception as e:
     check("Stage 5", False, str(e))
 
 # ── CACHE ─────────────────────────────────────────────────────
+# CACHE_ENABLED is False by default (real ROs are always unique in
+# production, so caching gives no benefit there). This check just
+# confirms the no-op behavior is consistent with that flag.
 print("\n[C] Cache check")
 try:
     cache_files = list(CACHE_DIR.glob("*.cache"))
-    check("Cache files written", len(cache_files) > 0,
-          f"{len(cache_files)} files in {CACHE_DIR.name}/")
+    if CACHE_ENABLED:
+        check("Cache files written", len(cache_files) > 0,
+              f"{len(cache_files)} files in {CACHE_DIR.name}/")
+    else:
+        check("Cache correctly disabled (no files written)", len(cache_files) == 0,
+              f"CACHE_ENABLED=False, {len(cache_files)} files in {CACHE_DIR.name}/")
 except Exception as e:
     check("Cache check", False, str(e))
 

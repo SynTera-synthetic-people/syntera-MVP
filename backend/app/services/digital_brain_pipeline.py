@@ -1120,7 +1120,41 @@ Generate a complete 10-layer persona. Give this persona:
 - A vivid archetype title only (e.g., "The Ingredient Decoder", "The Auto-Pilot Buyer") — NO personal name
 - All 10 layers populated with category-specific detail
 
+**DEMOGRAPHIC INFERENCE FROM ACTION DATA**
+
+The evidence signals above (Depth Layers) are derived from real action data: purchase
+frequency, spend levels, temporal patterns, geographic tier, brand switching, and loyalty
+behavior. Using ONLY these behavioral signals (not the RO, not assumptions), infer the
+five demographic fields below. These were NOT user-provided — they must be inferred from
+the behavioral patterns in the evidence signals.
+
+Inference guidance:
+- age_range: High-frequency premium purchases + career-coded signals → 26-40. Trial/novelty-seeking
+  + peer-influence signals → 20-35. Family/bulk co-purchase signals → 30-50. Default "26-34" if unclear.
+- gender: Only infer if a strong, specific category signal exists (e.g. clearly gendered product
+  categories). If signals are balanced or ambiguous, you MUST return "Not specified" with confidence < 0.60.
+  Never infer gender from occupation, income, or brain assignment alone.
+- education_level: Research-heavy, comparison-driven behavior (Optimizer-style signals) → "Post Graduate"
+  or "Graduate". Low information-processing signal → "High School". Default "Graduate" if unclear.
+- occupation: Use the generic label "Professional" unless evidence strongly implies a specific role.
+  Default "Professional".
+- income_range: Derive from spend level/price tier signals in the evidence (e.g. "premium tier",
+  "budget tier", average order value). Use buckets appropriate to {validated_ro.get('geography', 'India')}'s
+  currency (e.g. LPA for India, USD/year for US). Default to the mid-range bucket if signals are weak.
+
+Confidence calibration (be honest, do not inflate):
+- 0.90-1.00: multiple reinforcing signals point the same way
+- 0.75-0.89: one clear behavioral pattern supports this value
+- 0.60-0.74: plausible but not definitive
+- 0.45-0.59: weak/educated guess — for gender this means you must use "Not specified"
+
+Every inferred field needs: value (never null — use the stated default if signal is weak),
+confidence (float 0.0-1.0), reasoning (exactly 1 sentence citing the evidence signal used),
+source (always the literal string "inferred_from_action_data").
+
 Return a JSON object with:
+- demographics_inference: dict with keys age_range, gender, education_level, occupation, income_range,
+  each an object {{"value": str, "confidence": float, "reasoning": str, "source": "inferred_from_action_data"}}
 - persona_id: "P_{{today_date}}_{{slot_number:03d}}" (use {datetime.now().strftime('%Y%m%d')} and {persona_index:03d})
 - persona_title: "The Archetype Name" (e.g., "The Bold Switcher", "The Quiet Loyalist") — title only, no person name
 - persona_archetype: same as persona_title
@@ -1161,11 +1195,13 @@ Return ONLY the JSON object.
                 "neuroticism": ocean.get("N", 0.35),
             }
 
+        persona = _flatten_demographics_inference(persona)
+
         logger.info("Stage 5: Persona %d generated — %s", persona_index, persona.get("persona_title", ""))
         return persona
     except Exception as e:
         logger.error("Stage 5 persona %d failed: %s", persona_index, e)
-        return {
+        fallback = {
             "persona_id": f"P_{datetime.now().strftime('%Y%m%d')}_{persona_index:03d}",
             "persona_title": f"The {primary} Archetype",
             "persona_archetype": primary,
@@ -1177,6 +1213,64 @@ Return ONLY the JSON object.
             },
             "error": str(e),
         }
+        return _flatten_demographics_inference(fallback)
+
+
+_DEMOGRAPHIC_FIELDS = ("age_range", "gender", "education_level", "occupation", "income_range")
+_DEMOGRAPHIC_DEFAULTS = {
+    "age_range": "26-34",
+    "gender": "Not specified",
+    "education_level": "Graduate",
+    "occupation": "Professional",
+    "income_range": "5-10 LPA",
+}
+
+
+def _flatten_demographics_inference(persona: dict) -> dict:
+    """
+    Normalise persona["demographics_inference"] (per-field {value, confidence,
+    reasoning, source} objects) into both:
+      - flat top-level values (persona["age_range"] = "26-34", ...) for DB
+        storage / backward compatibility with the existing Omi persona shape
+      - the full inference objects preserved under demographics_inference for
+        API/UI transparency
+
+    Never mutates brain_assignment, OCEAN, or any of the 10 layers.
+    Always leaves age_range/occupation/income_range non-null. Forces gender
+    to "Not specified" whenever confidence is below 0.60.
+    """
+    inference = persona.get("demographics_inference")
+    if not isinstance(inference, dict):
+        inference = {}
+
+    normalised_inference: dict = {}
+    for field in _DEMOGRAPHIC_FIELDS:
+        entry = inference.get(field)
+        if not isinstance(entry, dict):
+            entry = {}
+
+        value = entry.get("value") or _DEMOGRAPHIC_DEFAULTS[field]
+        try:
+            confidence = float(entry.get("confidence", 0.5))
+        except (TypeError, ValueError):
+            confidence = 0.5
+        confidence = max(0.0, min(1.0, confidence))
+
+        if field == "gender" and confidence < 0.60:
+            value = "Not specified"
+
+        normalised_inference[field] = {
+            "value": value,
+            "confidence": round(confidence, 2),
+            "reasoning": entry.get("reasoning") or "Insufficient signal — default applied.",
+            "source": "inferred_from_action_data",
+        }
+
+    persona["demographics_inference"] = normalised_inference
+    for field in _DEMOGRAPHIC_FIELDS:
+        persona[field] = normalised_inference[field]["value"]
+
+    return persona
 
 
 def generate_personas_batch(
