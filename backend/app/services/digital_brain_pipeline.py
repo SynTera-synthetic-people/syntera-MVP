@@ -320,15 +320,29 @@ def _city_tier(city: str) -> str:
 
 
 def _decode_epoch(ts: Any) -> dict:
-    """Decode epoch ms/s to hour, day-of-week, month."""
+    """
+    Decode a timestamp to hour, day-of-week, month.
+
+    Handles both epoch ms/s (sample/test data) and ISO-like datetime strings
+    such as "2025-10-01 07:52:01" (real sync_action.record data).
+    """
+    dt = None
     try:
         ts_val = int(ts)
         if ts_val > 1e12:
             ts_val //= 1000
         dt = datetime.fromtimestamp(ts_val, tz=timezone.utc)
-        return {"hour": dt.hour, "weekday": dt.strftime("%A"), "month": dt.strftime("%B"), "dt": dt}
     except Exception:
+        try:
+            dt = pd.to_datetime(ts, errors="raise")
+            if hasattr(dt, "to_pydatetime"):
+                dt = dt.to_pydatetime()
+        except Exception:
+            dt = None
+
+    if dt is None:
         return {"hour": -1, "weekday": "Unknown", "month": "Unknown", "dt": None}
+    return {"hour": dt.hour, "weekday": dt.strftime("%A"), "month": dt.strftime("%B"), "dt": dt}
 
 
 # ---------------------------------------------------------------------------
@@ -446,6 +460,139 @@ def detect_relevant_dimensions(validated_ro: dict) -> dict:
     }
     logger.info("Stage 2: %d dimensions activated: %s", len(activated), sorted(activated.keys()))
     return result
+
+
+# ---------------------------------------------------------------------------
+# Stage 3A — Action Data Fetch (real, from staging DB)
+# ---------------------------------------------------------------------------
+
+_ACTION_DATA_PAGE_SIZE = 1000
+_ACTION_DATA_MAX_PAGES = 2  # cap ~2000 rows per run — plenty for pattern detection
+
+
+def _short_lived_engine():
+    """
+    A fresh asyncpg engine scoped to a single asyncio.run() call.
+
+    digital_brain_pipeline() runs Stage 3A and Stage 3C in separate
+    ThreadPoolExecutor worker threads, each calling asyncio.run() to bridge
+    into async DB code. asyncpg connections are bound to the event loop that
+    created them, so two threads sharing app.db.async_engine's pool corrupts
+    it (each asyncio.run() call spins up its own loop). Creating and disposing
+    a short-lived engine per call avoids this — same pattern already used by
+    auto_generated_persona.get_description() for the identical reason.
+    """
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from app.config import settings
+    return create_async_engine(settings.DATABASE_URL, echo=False)
+
+
+async def _fetch_action_data_async(
+    exploration_id: str,
+    dataset_id: str | None = None,
+) -> pd.DataFrame:
+    from sqlalchemy.ext.asyncio import AsyncSession
+    from app.services.syncdb_action import list_action_datasets, get_action_records
+
+    engine = _short_lived_engine()
+    try:
+        resolved_dataset_id = dataset_id
+        rows: list[dict] = []
+        async with AsyncSession(engine) as session:
+            if not resolved_dataset_id:
+                datasets = await list_action_datasets(session, exploration_id=exploration_id)
+                if not datasets:
+                    logger.info("Stage 3A: no action datasets found for exploration_id=%s", exploration_id)
+                    return pd.DataFrame()
+                resolved_dataset_id = datasets[0]["id"]  # most recently uploaded (ORDER BY uploaded_at DESC)
+
+            for page in range(1, _ACTION_DATA_MAX_PAGES + 1):
+                result = await get_action_records(
+                    session, resolved_dataset_id, page=page, page_size=_ACTION_DATA_PAGE_SIZE
+                )
+                items = result.get("items", [])
+                if not items:
+                    break
+                rows.extend(items)
+                if len(rows) >= result.get("total", 0):
+                    break
+    finally:
+        await engine.dispose()
+
+    if not rows:
+        logger.info("Stage 3A: dataset %s has no records.", resolved_dataset_id)
+        return pd.DataFrame()
+
+    records: list[dict] = []
+    for row in rows:
+        raw_data = row.get("data")
+        if isinstance(raw_data, str):
+            try:
+                envelope = json.loads(raw_data)
+            except Exception:
+                envelope = {}
+        elif isinstance(raw_data, dict):
+            envelope = raw_data
+        else:
+            envelope = {}
+
+        payload = envelope.get("payload")
+        if not isinstance(payload, dict):
+            continue
+
+        record = dict(payload)
+        # accountEmailId is stripped as PII at ingestion time; subject_key (a
+        # stable SHA-256 hash) is the real per-user grouping key now available
+        # on the record row itself. Restore it under the column name
+        # scan_action_data() already groups by, so no downstream logic changes.
+        if row.get("subject_key"):
+            record["accountEmailId"] = row["subject_key"]
+        records.append(record)
+
+    df = pd.DataFrame(records)
+    df = _normalise_action_column_names(df)
+    logger.info("Stage 3A: fetched %d real action records from dataset %s.", len(df), resolved_dataset_id)
+    return df
+
+
+# Real ingested data uses snake_case / alternate spellings for some columns
+# that scan_action_data() expects in camelCase. Only renames if the canonical
+# name is missing and an alias is present — never overwrites real data.
+_ACTION_COLUMN_ALIASES: dict[str, list[str]] = {
+    "orderTime": ["order_time", "orderTimestamp", "order_timestamp"],
+    "accountEmailId": ["account_email_id", "accountemailid"],
+    "totalCharged": ["total_charged"],
+    "paymentMethod": ["payment_method"],
+    "receivedDate": ["received_date"],
+    "productItems": ["product_items"],
+}
+
+
+def _normalise_action_column_names(df: pd.DataFrame) -> pd.DataFrame:
+    for canonical, aliases in _ACTION_COLUMN_ALIASES.items():
+        if canonical in df.columns:
+            continue
+        for alias in aliases:
+            if alias in df.columns:
+                df = df.rename(columns={alias: canonical})
+                break
+    return df
+
+
+def fetch_action_data_from_db(
+    exploration_id: str,
+    dataset_id: str | None = None,
+) -> pd.DataFrame:
+    """
+    Fetch real transaction records from sync_action.record for the given
+    exploration (or a specific dataset_id, if known). Always queries fresh —
+    no caller-supplied DataFrame required or expected.
+    """
+    try:
+        return asyncio.run(_fetch_action_data_async(exploration_id, dataset_id))
+    except Exception as e:
+        logger.error("Stage 3A: fetching action data from DB failed — %s", e, exc_info=True)
+        return pd.DataFrame()
 
 
 # ---------------------------------------------------------------------------
@@ -907,64 +1054,155 @@ Return ONLY the JSON array.
 # Stage 3C — HQ Database Search
 # ---------------------------------------------------------------------------
 
+# Confidence derived from real document governance fields — never invented.
+_AUTHORITY_TIER_CONFIDENCE = {
+    "academic": 0.92,
+    "peer_reviewed": 0.92,
+    "validated": 0.90,
+    "curated": 0.85,
+    "industry": 0.82,
+    "benchmark": 0.82,
+    "user_uploaded": 0.70,
+}
+_DEFAULT_AUTHORITY_CONFIDENCE = 0.65
+_UNAPPROVED_CONFIDENCE_PENALTY = 0.85  # multiplier applied if approval_status != "approved"
+_HQ_SNIPPET_MAX_CHARS = 400
+_HQ_MAX_RESULTS = 3
+
+
+def _hq_confidence_for(authority_tier: str | None, approval_status: str | None) -> float:
+    tier_key = (authority_tier or "").strip().lower()
+    base = _AUTHORITY_TIER_CONFIDENCE.get(tier_key, _DEFAULT_AUTHORITY_CONFIDENCE)
+    if (approval_status or "").strip().lower() != "approved":
+        base *= _UNAPPROVED_CONFIDENCE_PENALTY
+    return round(min(base, 0.96), 2)
+
+
+def _hq_source_type_for(authority_tier: str | None) -> str:
+    tier_key = (authority_tier or "").strip().lower()
+    if tier_key in ("academic", "peer_reviewed", "validated"):
+        return "academic_research"
+    if tier_key in ("industry", "benchmark"):
+        return "industry_benchmark"
+    if tier_key == "curated":
+        return "prior_study"
+    return "user_uploaded_source"
+
+
+def _hq_dimension_alignment(snippet: str, activated_dimensions: list[int]) -> int:
+    """Pick the best-matching activated dimension via keyword overlap (rule-based, no LLM)."""
+    text_lower = (snippet or "").lower()
+    best_dim, best_score = activated_dimensions[0] if activated_dimensions else 3, -1
+    for dim in activated_dimensions:
+        keywords = DIMENSION_KEYWORDS.get(dim, [])
+        score = sum(1 for kw in keywords if kw in text_lower)
+        if score > best_score:
+            best_dim, best_score = dim, score
+    return best_dim
+
+
+async def _search_hq_database_async(
+    validated_ro: dict,
+    activated_dimensions: list[int],
+) -> list[dict]:
+    from sqlalchemy.ext.asyncio import AsyncSession
+    from app.services.syncdb_source import search_source_chunks
+
+    queries = [
+        q for q in [
+            f"{validated_ro.get('category', '')} {validated_ro.get('sub_category', '')}".strip(),
+            f"{validated_ro.get('category', '')} {validated_ro.get('target_audience', '')}".strip(),
+            str(validated_ro.get("probes", "")).strip(),
+        ]
+        if q
+    ]
+
+    seen_chunk_ids: set = set()
+    raw_results: list[dict] = []
+    engine = _short_lived_engine()
+    try:
+        async with AsyncSession(engine) as session:
+            for query in queries:
+                try:
+                    results = await search_source_chunks(session, query, limit=_HQ_MAX_RESULTS)
+                except Exception as e:
+                    logger.warning("Stage 3C: search failed for query %r — %s", query, e)
+                    continue
+                for r in results:
+                    if r["chunk_id"] in seen_chunk_ids:
+                        continue
+                    seen_chunk_ids.add(r["chunk_id"])
+                    raw_results.append(r)
+    finally:
+        await engine.dispose()
+
+    raw_results = raw_results[:_HQ_MAX_RESULTS]
+
+    if not raw_results:
+        logger.info("Stage 3C: no HQ source coverage found for this RO — returning empty (no fabrication).")
+        return [{
+            "verdict_id": "HQ_NONE",
+            "source_type": "no_hq_coverage",
+            "study_reference": None,
+            "finding_summary": "No matching content found in the HQ source database for this research objective.",
+            "dimension_alignment": activated_dimensions[0] if activated_dimensions else 3,
+            "dimension_insight": "No HQ coverage — confidence reduced for this stream.",
+            "digital_brain_signal": None,
+            "confidence_score": 0.0,
+            "provenance_detail": {"type": "no_hq_coverage"},
+        }]
+
+    verdicts: list[dict] = []
+    for i, r in enumerate(raw_results, start=1):
+        snippet_raw = r.get("snippet") or ""
+        snippet = snippet_raw if isinstance(snippet_raw, str) else json.dumps(snippet_raw, default=str)
+        snippet = snippet[:_HQ_SNIPPET_MAX_CHARS]
+        confidence = _hq_confidence_for(r.get("authority_tier"), r.get("approval_status"))
+        verdicts.append({
+            "verdict_id": f"HQ_{i:03d}",
+            "source_type": _hq_source_type_for(r.get("authority_tier")),
+            "study_reference": r.get("document_title") or r.get("source_url") or "Untitled source",
+            "finding_summary": snippet,
+            "dimension_alignment": _hq_dimension_alignment(snippet, activated_dimensions),
+            "dimension_insight": f"Matched via full-text search against stored HQ source content.",
+            "digital_brain_signal": None,  # not fabricated — Stage 4 infers brain signal from the raw finding
+            "confidence_score": confidence,
+            "provenance_detail": {
+                "type": "real_hq_source",
+                "document_id": r.get("document_id"),
+                "chunk_id": r.get("chunk_id"),
+                "source_url": r.get("source_url"),
+                "domain": r.get("domain"),
+                "source_group": r.get("source_group"),
+                "authority_tier": r.get("authority_tier"),
+                "approval_status": r.get("approval_status"),
+            },
+        })
+
+    logger.info("Stage 3C: %d real HQ verdicts produced from sync_source.content_chunk.", len(verdicts))
+    return verdicts
+
+
 def search_hq_database(validated_ro: dict, activated_dimensions: list[int]) -> list[dict]:
     """
-    Query internal validated research patterns (simulated via LLM knowledge of
-    academic research and industry benchmarks).
+    Query REAL internal source content (sync_source.content_chunk / document) via
+    Postgres full-text search. No LLM fabrication — every verdict traces back to
+    an actual stored document and chunk_id.
     """
-    dim_names = [DIMENSION_NAMES[d] for d in activated_dimensions if d in DIMENSION_NAMES]
-
-    prompt = f"""
-You are an internal research database for Synthetic People AI, containing:
-- Prior consumer studies (India, 2020-2025)
-- Academic research: Schwartz Value Theory, OCEAN personality, Self-Determination Theory
-- Industry benchmarks for category-specific consumer behavior
-- Digital Brain behavioral baselines per category
-
-QUERY:
-- Category: {validated_ro.get('category')}
-- Sub-category: {validated_ro.get('sub_category')}
-- Audience: {validated_ro.get('target_audience')}
-- Geography: {validated_ro.get('geography')}
-- Business Objective: {validated_ro.get('business_objective')}
-- Dimensions of interest: {', '.join(dim_names)}
-
-Return exactly 3 HQ Verdicts from validated research.
-Each must have solid academic or empirical grounding.
-
-Return a JSON array of 3 objects, each with:
-- verdict_id: "HQ_001" etc.
-- source_type: one of ["academic_research", "industry_benchmark", "prior_study", "brain_baseline"]
-- study_reference: string (realistic reference like "Schwartz 1992", "Nielsen India 2024", etc.)
-- finding_summary: string (the validated finding in plain language, 1-2 sentences)
-- dimension_alignment: integer (ONE dimension number from {activated_dimensions})
-- dimension_insight: string (how this finding maps to the dimension)
-- digital_brain_signal: string (which Digital Brain this validates)
-- confidence_score: float 0.80–0.96
-- provenance_detail: dict with "type", "geography_tested", "sample_size", "study_date"
-
-Be specific and grounded. Reference real research frameworks where applicable.
-Return ONLY the JSON array.
-"""
     try:
-        raw = _llm(prompt, system="You are a consumer research database. Return only valid JSON.")
-        verdicts = _parse_json_from_llm(raw)
-        if not isinstance(verdicts, list):
-            verdicts = [verdicts]
-        logger.info("Stage 3C: %d HQ verdicts produced.", len(verdicts))
-        return verdicts
+        return asyncio.run(_search_hq_database_async(validated_ro, activated_dimensions))
     except Exception as e:
-        logger.error("Stage 3C failed: %s", e)
+        logger.error("Stage 3C failed: %s", e, exc_info=True)
         return [{
-            "verdict_id": "HQ_001",
-            "source_type": "brain_baseline",
-            "study_reference": "Synthetic People AI Internal Baseline",
-            "finding_summary": "HQ database unavailable — using default baseline.",
+            "verdict_id": "HQ_ERROR",
+            "source_type": "error",
+            "study_reference": None,
+            "finding_summary": f"HQ database query failed: {e}",
             "dimension_alignment": activated_dimensions[0] if activated_dimensions else 3,
-            "dimension_insight": "Default baseline applied.",
-            "digital_brain_signal": "Optimizer",
-            "confidence_score": 0.50,
-            "provenance_detail": {"type": "brain_baseline"},
+            "dimension_insight": "HQ search unavailable due to an error.",
+            "digital_brain_signal": None,
+            "confidence_score": 0.0,
+            "provenance_detail": {"type": "error"},
         }]
 
 
@@ -1450,6 +1688,8 @@ def digital_brain_pipeline(
     research_objective_dict: dict,
     action_data_df: pd.DataFrame | None = None,
     account_tier: str = "tier1",  # "free" | "tier1" | "enterprise"
+    exploration_id: str | None = None,
+    action_dataset_id: str | None = None,
 ) -> dict:
     """
     Full 5-stage pipeline: RO → Dimensions → [3A|3B|3C] → Synthesis → Personas.
@@ -1458,8 +1698,16 @@ def digital_brain_pipeline(
 
     Args:
         research_objective_dict: Dict with all 12 RO components.
-        action_data_df: Optional pandas DataFrame with transaction records.
+        action_data_df: Optional pandas DataFrame with transaction records. If
+            provided, this is used directly (e.g. for tests). If omitted and
+            exploration_id is given, action data is fetched fresh from
+            sync_action.record in the staging DB every run — never cached,
+            never manually supplied.
         account_tier: Controls persona count. "free" (2, locked) | "tier1" (2, expandable to 8) | "enterprise" (4, expandable to 8).
+        exploration_id: Used to fetch real action data from the DB when
+            action_data_df is not explicitly passed.
+        action_dataset_id: Optional — pin to a specific sync_action.dataset
+            row instead of the exploration's most recently uploaded one.
 
     Returns:
         Dict with pipeline metadata and list of personas for the given tier.
@@ -1476,13 +1724,24 @@ def digital_brain_pipeline(
     dim_result = detect_relevant_dimensions(validated_ro)
     activated = dim_result["activated_dimensions"]
 
+    # Resolve action data: an explicitly-passed DataFrame always wins (tests,
+    # ad-hoc runs). Otherwise fetch fresh from the staging DB for this
+    # exploration — every call re-queries sync_action.record, never reused.
+    if action_data_df is not None:
+        resolved_action_df = action_data_df
+    elif exploration_id:
+        logger.info("Stage 3A: fetching fresh action data from DB — exploration_id=%s", exploration_id)
+        resolved_action_df = fetch_action_data_from_db(exploration_id, action_dataset_id)
+    else:
+        resolved_action_df = pd.DataFrame()
+
     # --- Stages 3A, 3B, 3C in parallel ---
     logger.info("Stages 3A/3B/3C: Running three evidence streams in parallel…")
 
     async def _run_parallel():
         loop = asyncio.get_event_loop()
 
-        fut_3a = loop.run_in_executor(None, scan_action_data, action_data_df if action_data_df is not None else pd.DataFrame(), activated, validated_ro)
+        fut_3a = loop.run_in_executor(None, scan_action_data, resolved_action_df, activated, validated_ro)
         fut_3b = loop.run_in_executor(None, search_evidence_based_web, validated_ro, activated)
         fut_3c = loop.run_in_executor(None, search_hq_database, validated_ro, activated)
 
@@ -1494,7 +1753,7 @@ def digital_brain_pipeline(
         if loop.is_running():
             import concurrent.futures as cf
             with cf.ThreadPoolExecutor(max_workers=3) as executor:
-                fut_3a = executor.submit(scan_action_data, action_data_df if action_data_df is not None else pd.DataFrame(), activated, validated_ro)
+                fut_3a = executor.submit(scan_action_data, resolved_action_df, activated, validated_ro)
                 fut_3b = executor.submit(search_evidence_based_web, validated_ro, activated)
                 fut_3c = executor.submit(search_hq_database, validated_ro, activated)
                 depth_layers = fut_3a.result()
@@ -1505,7 +1764,7 @@ def digital_brain_pipeline(
     except RuntimeError:
         import concurrent.futures as cf
         with cf.ThreadPoolExecutor(max_workers=3) as executor:
-            fut_3a = executor.submit(scan_action_data, action_data_df if action_data_df is not None else pd.DataFrame(), activated, validated_ro)
+            fut_3a = executor.submit(scan_action_data, resolved_action_df, activated, validated_ro)
             fut_3b = executor.submit(search_evidence_based_web, validated_ro, activated)
             fut_3c = executor.submit(search_hq_database, validated_ro, activated)
             depth_layers = fut_3a.result()
