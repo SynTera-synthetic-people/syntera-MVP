@@ -3,7 +3,7 @@ import os
 
 parameters = {}
 
-def load_ssm_parameters(path="/app/staging/"):
+def load_ssm_parameters(path="/app/platform/"):
     ssm = boto3.client("ssm", region_name="ap-south-1")
     paginator = ssm.get_paginator("get_parameters_by_path")
 
