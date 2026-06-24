@@ -183,21 +183,33 @@ except Exception as e:
     eb_verdicts = []
 
 # ── STAGE 3C ──────────────────────────────────────────────────
-print("\n[3C] Stage 3C — HQ Database (LLM call)")
-print("     Calling Claude API...")
+# Real DB-backed full-text search against sync_source.content_chunk — no LLM,
+# no fabrication. Coverage depends entirely on what's actually stored, so an
+# RO with no matching content correctly returns a single "no_hq_coverage"
+# verdict (confidence 0.0) rather than invented citations.
+print("\n[3C] Stage 3C — HQ Database (real Postgres full-text search, no LLM)")
 t0 = time.time()
 try:
     hq_verdicts = search_hq_database(SAMPLE_RO, activated)
     elapsed = time.time() - t0
     check("Returns list", isinstance(hq_verdicts, list))
-    check("3 HQ verdicts returned", len(hq_verdicts) == 3, f"got {len(hq_verdicts)}")
-    check("Each has study_reference", all(v.get("study_reference") for v in hq_verdicts))
-    check("Confidence scores >= 0.80",
-          all(v.get("confidence_score", 0) >= 0.75 for v in hq_verdicts),
-          f"scores: {[v.get('confidence_score') for v in hq_verdicts]}")
-    check("Not using fallback",
-          not any("unavailable" in v.get("finding_summary", "") for v in hq_verdicts))
-    print(f"     Time: {elapsed:.1f}s | Sources: {[v.get('source_type') for v in hq_verdicts]}")
+    check("At least 1 verdict returned", len(hq_verdicts) >= 1, f"got {len(hq_verdicts)}")
+
+    no_coverage = len(hq_verdicts) == 1 and hq_verdicts[0].get("source_type") == "no_hq_coverage"
+    if no_coverage:
+        check("No-coverage verdict is honest (confidence 0.0, no fake citation)",
+              hq_verdicts[0].get("confidence_score") == 0.0 and not hq_verdicts[0].get("study_reference"))
+    else:
+        check("Each real verdict has a study_reference", all(v.get("study_reference") for v in hq_verdicts))
+        check("Each verdict traces to a real document_id/chunk_id",
+              all(v.get("provenance_detail", {}).get("document_id") for v in hq_verdicts))
+        check("Confidence scores in valid range (0.0-0.96)",
+              all(0.0 <= v.get("confidence_score", -1) <= 0.96 for v in hq_verdicts),
+              f"scores: {[v.get('confidence_score') for v in hq_verdicts]}")
+
+    check("No fabricated 'unavailable' fallback text",
+          not any("unavailable" in (v.get("finding_summary") or "") for v in hq_verdicts))
+    print(f"     Time: {elapsed:.1f}s | Coverage: {'NONE (honest)' if no_coverage else len(hq_verdicts)} | Sources: {[v.get('source_type') for v in hq_verdicts]}")
 except Exception as e:
     check("Stage 3C", False, str(e))
     hq_verdicts = []

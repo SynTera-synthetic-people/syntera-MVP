@@ -59,6 +59,14 @@ _SAMPLE_PERSONA = """
         "professional_traits": "Strong communicator, Facilitator of group activities",
         "digital_activity": "Active on social media, Uses dating apps designed for seniors",
         "preferences": "Prefers group dating experiences, Enjoys interactive events",
+        "brain_assignment": {{
+            "primary_brain": "Connector",
+            "primary_confidence": 0.86,
+            "primary_reasoning": "Highly social, relationship-driven motivations and outgoing personality signal Connector as the dominant brain.",
+            "secondary_brain": "Hedonist",
+            "secondary_confidence": 0.55,
+            "secondary_reasoning": "Enjoys interactive, pleasurable social experiences, adding a Hedonist dimension."
+        }},
         "ocean_profile":{{
         "scores": {{
             "openness": 0.75,
@@ -800,6 +808,40 @@ Return STRICT JSON ONLY in this EXACT format:
 }}
 
 NO text outside JSON. NO markdown. NO explanations.
+
+**BRAIN ASSIGNMENT (REQUIRED FOR EVERY PERSONA)**
+
+Using the completed persona profile, assign which of the 12 Digital Brains best describes this person.
+
+THE 12 DIGITAL BRAINS:
+1. Optimizer - Achievement-driven, efficiency-focused, systematic
+2. Nurturer - Care-focused, family-oriented, relationships matter
+3. Explorer - Curious, novelty-seeking, adventure-oriented
+4. Achiever - Goal-oriented, competitive, success-driven
+5. Rebel - Non-conformist, breaks rules, questions status quo
+6. Connector - Social, builds relationships, influence-seeking
+7. Guardian - Security-focused, risk-averse, tradition-valuing
+8. Traditionalist - Heritage-focused, history-respecting, conservative
+9. Visionary - Future-oriented, innovation-seeking, big-picture thinker
+10. Harmonizer - Balance-seeking, conflict-avoiding, peace-oriented
+11. Hedonist - Pleasure-seeking, experience-focused, present-oriented
+12. Pragmatist - Practical, results-oriented, no-nonsense approach
+
+ASSIGNMENT LOGIC:
+- Read the persona's personality, values, motivations, decision_making_style, lifestyle.
+- Read the Research Objective context: what is the research focus?
+- Identify PRIMARY BRAIN: the single best-matching brain.
+- Identify SECONDARY BRAIN: the second-best brain that adds dimension.
+- Both must be coherent with ALL persona traits — never contradict them.
+
+ASSIGNMENT RULES:
+- primary_confidence: must be between 0.70 and 1.00
+- secondary_confidence: must be between 0.40 and 0.80
+- primary_reasoning: 1-2 sentences explaining why this is the primary brain
+- secondary_reasoning: 1-2 sentences explaining why this is secondary
+
+Include this as a "brain_assignment" object on every persona, with keys:
+primary_brain, primary_confidence, primary_reasoning, secondary_brain, secondary_confidence, secondary_reasoning.
 
 **FINAL OUTPUT FORMAT (VERY IMPORTANT):**
 Return ONLY this format:
