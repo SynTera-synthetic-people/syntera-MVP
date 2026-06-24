@@ -41,7 +41,6 @@ import OmiGreet from '../../../../../assets/Omi Animations/OmiIdle.mp4';
 import OmiPencil from '../../../../../assets/Omi Animations/OmiPencil.mp4';
 import OmiKeyboard from '../../../../../assets/Omi Animations/OmiKeyboard.mp4';
 import OmiCaution from '../../../../../assets/Omi Animations/OmiCaution.mp4';
-import OmiMascot   from '../../../../../assets/OmiMascot.png';
 import "./AddResearchObjectiveStyle.css";
 import "./SummaryRefineBubble.css";
 
@@ -1103,9 +1102,6 @@ const AddResearchObjective: React.FC = () => {
                   onClick={handleOpenROFramer}
                   title="Frame your Research Objective step by step"
                 >
-                  <span className="aro-ro-framer-btn-icon">
-                    <img src={OmiMascot} alt="" />
-                  </span>
                   Guide me through research framing →
                 </button>
               )}

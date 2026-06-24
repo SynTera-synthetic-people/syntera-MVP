@@ -20,25 +20,32 @@
   position: relative;
 }
 
-/* Back navigation */
+/* Back navigation — top-right corner of the page */
 .rofp-back-btn {
-  align-self: flex-start;
-  margin-top: 28px;
-  background: none;
-  border: none;
-  color: rgba(255,255,255,0.4);
+  position: absolute;
+  top: 28px;
+  right: 20px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px;
+  color: rgba(255,255,255,0.6);
   font-size: 13px;
   font-weight: 500;
   font-family: inherit;
   cursor: pointer;
-  padding: 6px 0;
-  transition: color 0.15s;
+  padding: 7px 14px;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
   display: flex;
   align-items: center;
   gap: 6px;
+  z-index: 5;
 }
 
-.rofp-back-btn:hover { color: rgba(255,255,255,0.75); }
+.rofp-back-btn:hover {
+  color: #fff;
+  border-color: rgba(255,255,255,0.25);
+  background: rgba(255,255,255,0.08);
+}
 
 /* ═══════════════════════════════════════════════════════════════════
    HERO — Omi + master heading
@@ -244,17 +251,17 @@
   color: #0a0f14;
 }
 
-/* Completed tab — outlined teal, lower emphasis than the active solid fill */
+/* Completed tab — greyish fill, white text, lower emphasis than the active solid teal */
 .rofp-tab-btn--done {
-  border-color: rgba(36, 229, 182, 0.4);
-  color: #24E5B6;
-  background: rgba(36, 229, 182, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .rofp-tab-btn--done:hover {
-  border-color: rgba(36, 229, 182, 0.6);
-  background: rgba(36, 229, 182, 0.14);
-  color: #24E5B6;
+  border-color: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.13);
+  color: #fff;
 }
 
 /* Locked tab (not yet accessible) */
@@ -505,17 +512,20 @@
   color: #fff;
 }
 
-/* ─── Competitor list box ─── */
+/* ─── Competitor pill list ─── */
 .rofp-comp-list-box {
   margin-top: 10px;
   background: rgba(255,255,255,0.02);
   border: 1px solid rgba(255,255,255,0.08);
   border-radius: 13px;
-  padding: 8px;
+  padding: 10px;
   min-height: 56px;
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  align-content: flex-start;
+  gap: 8px;
 }
 
 .rofp-comp-list-empty {
@@ -524,53 +534,42 @@
   padding: 8px 8px;
   text-align: center;
   align-self: center;
-  margin: auto 0;
+  margin: auto;
 }
 
-.rofp-comp-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 9px 12px;
-  border-radius: 9px;
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.07);
-  transition: background 0.15s;
-  animation: rofp-row-in 0.18s ease;
-}
-
-@keyframes rofp-row-in {
-  from { opacity: 0; transform: translateX(-6px); }
-  to   { opacity: 1; transform: translateX(0); }
-}
-
-.rofp-comp-row:hover { background: rgba(255,255,255,0.07); }
-
-.rofp-comp-row-name {
-  font-size: 13.5px;
-  font-weight: 500;
-  color: rgba(255,255,255,0.85);
-  display: flex;
+.rofp-comp-pill {
+  display: inline-flex;
   align-items: center;
   gap: 8px;
-}
-
-.rofp-comp-row-name::before {
-  content: '';
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: rgba(14, 99, 236, 0.7);
-  flex-shrink: 0;
-}
-
-.rofp-comp-row-rm {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: rgba(255,255,255,0.06);
+  padding: 7px 8px 7px 14px;
+  border-radius: 9999px;
+  background: rgba(255,255,255,0.08);
   border: 1px solid rgba(255,255,255,0.1);
-  color: rgba(255,255,255,0.4);
+  transition: background 0.15s;
+  animation: rofp-pill-in 0.18s ease;
+}
+
+@keyframes rofp-pill-in {
+  from { opacity: 0; transform: scale(0.92); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.rofp-comp-pill:hover { background: rgba(255,255,255,0.12); }
+
+.rofp-comp-pill-name {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: #fff;
+  white-space: nowrap;
+}
+
+.rofp-comp-pill-rm {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.1);
+  border: none;
+  color: rgba(255,255,255,0.7);
   font-size: 14px;
   font-weight: 700;
   line-height: 1;
@@ -579,14 +578,13 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  transition: background 0.15s, color 0.15s;
   padding: 0;
   font-family: inherit;
 }
 
-.rofp-comp-row-rm:hover {
-  background: rgba(239, 68, 68, 0.15);
-  border-color: rgba(239, 68, 68, 0.3);
+.rofp-comp-pill-rm:hover {
+  background: rgba(239, 68, 68, 0.2);
   color: #f87171;
 }
 
@@ -762,6 +760,63 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════
+   PREVIEW — compiled read-only summary (final tab before submit)
+   ═══════════════════════════════════════════════════════════════════ */
+
+.rofp-preview-box {
+  background: #060606;
+  border: 1px solid #393C45;
+  border-radius: 13px;
+  padding: 22px 24px;
+  margin-bottom: 36px;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.rofp-preview-box::-webkit-scrollbar { width: 4px; }
+.rofp-preview-box::-webkit-scrollbar-track { background: transparent; }
+.rofp-preview-box::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+
+.rofp-preview-section { padding: 4px 0; }
+
+.rofp-preview-section-heading {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #24E5B6;
+  margin-bottom: 8px;
+}
+
+.rofp-preview-section-body {
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: rgba(255,255,255,0.75);
+  white-space: pre-line;
+}
+
+.rofp-preview-divider {
+  height: 1px;
+  background: rgba(255,255,255,0.06);
+  margin: 18px 0;
+}
+
+.rofp-preview-empty {
+  background: #060606;
+  border: 1px dashed #393C45;
+  border-radius: 13px;
+  padding: 48px 24px;
+  text-align: center;
+  margin-bottom: 36px;
+}
+
+.rofp-preview-empty-text {
+  font-size: 13.5px;
+  color: rgba(255,255,255,0.32);
+  line-height: 1.6;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
    COMING SOON PLACEHOLDER
    ═══════════════════════════════════════════════════════════════════ */
 
@@ -802,8 +857,15 @@
    ═══════════════════════════════════════════════════════════════════ */
 
 @media (max-width: 640px) {
+  .rofp-back-btn {
+    top: 16px;
+    right: 14px;
+    padding: 6px 11px;
+    font-size: 12px;
+  }
+
   .rofp-hero {
-    padding-top: 12px;
+    padding-top: 44px;
     padding-bottom: 16px;
   }
 
@@ -857,7 +919,7 @@
   .rofp-tab-content,
   .rofp-omi-orb--pulse,
   .rofp-omi-orb::before,
-  .rofp-comp-row {
+  .rofp-comp-pill {
     animation: none !important;
   }
   .rofp-btn-continue,

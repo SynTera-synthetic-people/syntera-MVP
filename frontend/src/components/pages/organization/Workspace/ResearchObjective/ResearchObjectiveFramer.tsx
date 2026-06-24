@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import "./ResearchObjectiveFramer.css";
 
 import OmiIdle from "../../../../../assets/Omi Animations/IdleStateMotion_Lite.mp4";
@@ -35,12 +36,17 @@ interface AudienceSegmentsData {
     audience: string;
 }
 
+interface OtherInformationData {
+    notes: string;
+}
+
 interface ROFramerData {
     context: ContextData;
     businessTrigger: BusinessTriggerData;
     customerUnknown: CustomerUnknownData;
     decisionMoment: DecisionMomentData;
     audienceSegments: AudienceSegmentsData;
+    otherInformation: OtherInformationData;
     // Future tabs extend this interface as they are built
 }
 
@@ -57,9 +63,10 @@ const TABS = [
     { id: "context" as const, label: "The Context" },
     { id: "problem" as const, label: "Business Trigger" },
     { id: "hypothesis" as const, label: "Customer Unknown" },
+    { id: "decision_moment" as const, label: "Decision Moment" },
     { id: "audience" as const, label: "Audience & Segments" },
-    //{ id: "geography" as const, label: "Geography" },
-    //{ id: "review" as const, label: "Review" },
+    { id: "other_info" as const, label: "Other Information" },
+    { id: "review" as const, label: "Preview" },
 ];
 
 // Derives the union type from whatever is currently in the array
@@ -167,7 +174,7 @@ const Tooltip: React.FC<{ text: string }> = ({ text }) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface TabNavArrowsProps {
-    scrollRef: React.RefObject<HTMLDivElement>;
+    scrollRef: React.RefObject<HTMLDivElement | null>;
 }
 
 const TAB_NAV_SCROLL_AMOUNT = 180;
@@ -423,7 +430,7 @@ const ContextTab: React.FC<ContextTabProps> = ({
                         </button>
                     </div>
 
-                    {/* Bottom list box — always visible, populates as competitors are added */}
+                    {/* Pill list — always visible, wraps horizontally as competitors are added */}
                     <div className="rofp-comp-list-box">
                         {data.competitors.length === 0 ? (
                             <span className="rofp-comp-list-empty">
@@ -431,17 +438,17 @@ const ContextTab: React.FC<ContextTabProps> = ({
                             </span>
                         ) : (
                             data.competitors.map(c => (
-                                <div key={c.id} className="rofp-comp-row">
-                                    <span className="rofp-comp-row-name">{c.name}</span>
+                                <span key={c.id} className="rofp-comp-pill">
+                                    <span className="rofp-comp-pill-name">{c.name}</span>
                                     <button
-                                        className="rofp-comp-row-rm"
+                                        className="rofp-comp-pill-rm"
                                         onClick={() => removeCompetitor(c.id)}
                                         type="button"
                                         aria-label={`Remove ${c.name}`}
                                     >
                                         ×
                                     </button>
-                                </div>
+                                </span>
                             ))
                         )}
                     </div>
@@ -918,6 +925,226 @@ const AudienceSegmentsTab: React.FC<AudienceSegmentsTabProps> = ({
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Other Information — "Something we missed? Add it here."
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface OtherInformationTabProps {
+    data: OtherInformationData;
+    onChange: (d: OtherInformationData) => void;
+    onOmiStateChange: (s: OmiState) => void;
+    onContinue: () => void;
+    onBack: () => void;
+}
+
+const OtherInformationTab: React.FC<OtherInformationTabProps> = ({
+    data,
+    onChange,
+    onOmiStateChange,
+    onContinue,
+    onBack,
+}) => {
+    // This field is optional — there is nothing to "miss" here, so the
+    // Preview button stays enabled regardless of whether anything was typed.
+    const handleFieldFocus = () => onOmiStateChange("typing");
+    const handleFieldBlur = () => {
+        if (!data.notes) onOmiStateChange("idle");
+    };
+
+    const handlePreviewClick = () => {
+        onOmiStateChange("navigating");
+        setTimeout(onContinue, 400);
+    };
+
+    const handleBackClick = () => {
+        onOmiStateChange("navigating");
+        setTimeout(onBack, 400);
+    };
+
+    return (
+        <div className="rofp-tab-content">
+            <div className="rofp-tab-head">
+                <h2 className="rofp-tab-title">Something we missed? Add it here.</h2>
+                <p className="rofp-tab-tagline">
+                    Anything Omi should know before building the final brief — a
+                    nuance, concern, constraint, hunch, or must-answer question?
+                </p>
+            </div>
+
+            <div className="rofp-fields">
+                <div className="rofp-field-group">
+                    <div className="rofp-field-label-row">
+                        <label className="rofp-label" htmlFor="rof-other-info">
+                            Other Information
+                            <span className="rofp-label-optional">Optional</span>
+                        </label>
+                        <Tooltip text="This is your free space for anything the structured steps missed." />
+                    </div>
+                    <textarea
+                        id="rof-other-info"
+                        className="rofp-textarea rofp-textarea--lg"
+                        placeholder="Add any extra context, constraints, watch-outs, internal hypotheses, must-include questions, or specific outputs you want from this exploration..."
+                        value={data.notes}
+                        onFocus={handleFieldFocus}
+                        onBlur={handleFieldBlur}
+                        onChange={e => onChange({ ...data, notes: e.target.value })}
+                        rows={6}
+                    />
+                </div>
+            </div>
+
+            {/* CTA — Back | Preview (no validation gate, field is optional) */}
+            <div className="rofp-tab-cta">
+                <button
+                    className="rofp-btn-back"
+                    onClick={handleBackClick}
+                    type="button"
+                >
+                    <span className="rofp-btn-arrow rofp-btn-arrow--back">←</span>
+                    Back
+                </button>
+                <div className="rofp-tab-cta-right">
+                    <button
+                        className="rofp-btn-continue"
+                        onClick={handlePreviewClick}
+                        type="button"
+                    >
+                        Preview
+                        <span className="rofp-btn-arrow">→</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Preview — compiled read-only summary of the full brief, with Submit
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface PreviewTabProps {
+    data: ROFramerData;
+    onSubmit: () => void;
+    onBack: () => void;
+}
+
+interface PreviewSection {
+    heading: string;
+    body: string;
+}
+
+const buildPreviewSections = (data: ROFramerData): PreviewSection[] => {
+    const sections: PreviewSection[] = [];
+
+    const { context } = data;
+    const hasContext =
+        context.companyName || context.industry || context.website ||
+        context.competitors.length > 0;
+    if (hasContext) {
+        const lines: string[] = [];
+        if (context.companyName) lines.push(`Brand: ${context.companyName}`);
+        if (context.industry) lines.push(`Industry: ${context.industry}`);
+        if (context.website) lines.push(`Website: ${context.website}`);
+        if (context.competitors.length) {
+            lines.push(`Competitors: ${context.competitors.map(c => c.name).join(", ")}`);
+        }
+        sections.push({ heading: "The Context", body: lines.join("\n") });
+    }
+
+    if (data.businessTrigger.trigger.trim()) {
+        sections.push({ heading: "Business Trigger", body: data.businessTrigger.trigger.trim() });
+    }
+    if (data.customerUnknown.unknown.trim()) {
+        sections.push({ heading: "Customer Unknown", body: data.customerUnknown.unknown.trim() });
+    }
+    if (data.decisionMoment.decision.trim()) {
+        sections.push({ heading: "Decision Moment", body: data.decisionMoment.decision.trim() });
+    }
+    if (data.audienceSegments.audience.trim()) {
+        sections.push({ heading: "Audience & Segments", body: data.audienceSegments.audience.trim() });
+    }
+    if (data.otherInformation.notes.trim()) {
+        sections.push({ heading: "Other Information", body: data.otherInformation.notes.trim() });
+    }
+
+    return sections;
+};
+
+const PreviewTab: React.FC<PreviewTabProps> = ({ data, onSubmit, onBack }) => {
+    const sections = buildPreviewSections(data);
+    const isEmpty = sections.length === 0;
+
+    const handleBackClick = () => onBack();
+    const handleSubmitClick = () => onSubmit();
+
+    return (
+        <div className="rofp-tab-content">
+            <div className="rofp-tab-head">
+                <h2 className="rofp-tab-title">Your research objective, compiled</h2>
+                <p className="rofp-tab-tagline">
+                    A quick look at everything Omi will use to build your brief.
+                    Go back to adjust anything before you submit.
+                </p>
+            </div>
+
+            {isEmpty ? (
+                <div className="rofp-preview-empty">
+                    <p className="rofp-preview-empty-text">
+                        Nothing's been filled in yet — go back and answer a few
+                        prompts to see your compiled objective here.
+                    </p>
+                </div>
+            ) : (
+                <div className="rofp-preview-box">
+                    {sections.map((section, i) => (
+                        <div className="rofp-preview-section" key={section.heading}>
+                            <div className="rofp-preview-section-heading">
+                                {section.heading}
+                            </div>
+                            <p className="rofp-preview-section-body">{section.body}</p>
+                            {i < sections.length - 1 && (
+                                <div className="rofp-preview-divider" />
+                            )}
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* CTA — Back | Submit */}
+            <div className="rofp-tab-cta">
+                <button
+                    className="rofp-btn-back"
+                    onClick={handleBackClick}
+                    type="button"
+                >
+                    <span className="rofp-btn-arrow rofp-btn-arrow--back">←</span>
+                    Back
+                </button>
+                <div className="rofp-tab-cta-right">
+                    <button
+                        className={[
+                            "rofp-btn-continue",
+                            isEmpty ? "rofp-btn-continue--disabled" : "",
+                        ]
+                            .filter(Boolean)
+                            .join(" ")}
+                        disabled={isEmpty}
+                        onClick={handleSubmitClick}
+                        type="button"
+                    >
+                        Submit
+                    </button>
+                    {isEmpty && (
+                        <p className="rofp-cta-hint">
+                            Fill in at least one section to submit
+                        </p>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Coming-soon placeholder for tabs not yet designed
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -941,6 +1168,26 @@ const ResearchObjectiveFramer: React.FC<ResearchObjectiveFramerProps> = ({
     onSubmit,
     onBack,
 }) => {
+    const navigate = useNavigate();
+    const location = useLocation();
+
+    // This page is reached via AddResearchObjective -> handleOpenROFramer,
+    // which passes { returnTo: <AddResearchObjective path> } in router state.
+    // Prefer an explicitly-passed onBack prop (if a parent ever renders this
+    // component inline rather than via the router); otherwise fall back to
+    // navigating to that returnTo path, or simple browser back as a last resort.
+    const returnTo = (location.state as { returnTo?: string } | null)?.returnTo;
+
+    const handleBackToObjective = useCallback(() => {
+        if (onBack) {
+            onBack();
+        } else if (returnTo) {
+            navigate(returnTo);
+        } else {
+            navigate(-1);
+        }
+    }, [onBack, returnTo, navigate]);
+
     const [activeTab, setActiveTab] = useState<TabId>("context");
     const [omiState, setOmiState] = useState<OmiState>("idle");
 
@@ -970,6 +1217,9 @@ const ResearchObjectiveFramer: React.FC<ResearchObjectiveFramerProps> = ({
         },
         audienceSegments: {
             audience: "",
+        },
+        otherInformation: {
+            notes: "",
         },
     });
 
@@ -1024,11 +1274,9 @@ const ResearchObjectiveFramer: React.FC<ResearchObjectiveFramerProps> = ({
     return (
         <div className="rofp-page">
 
-            {onBack && (
-                <button className="rofp-back-btn" onClick={onBack} type="button">
-                    ← Back
-                </button>
-            )}
+            <button className="rofp-back-btn" onClick={handleBackToObjective} type="button">
+                ← Back
+            </button>
 
             {/* Hero */}
             <div className="rofp-hero">
@@ -1123,6 +1371,15 @@ const ResearchObjectiveFramer: React.FC<ResearchObjectiveFramerProps> = ({
                         onBack={handleBack}
                     />
                 )}
+                {activeTab === "decision_moment" && (
+                    <DecisionMomentTab
+                        data={data.decisionMoment}
+                        onChange={dm => setData(d => ({ ...d, decisionMoment: dm }))}
+                        onOmiStateChange={setOmiState}
+                        onContinue={handleContinue}
+                        onBack={handleBack}
+                    />
+                )}
                 {activeTab === "audience" && (
                     <AudienceSegmentsTab
                         data={data.audienceSegments}
@@ -1132,28 +1389,20 @@ const ResearchObjectiveFramer: React.FC<ResearchObjectiveFramerProps> = ({
                         onBack={handleBack}
                     />
                 )}
-                {/*
-                 * DecisionMomentTab ("What decision are we unlocking?") is built and
-                 * ready, but not yet wired to a tab id — the final tab registry
-                 * (how many tabs, in what order) is still being decided. Once that's
-                 * settled, render it the same way as the tabs above, e.g.:
-                 *
-                 * {activeTab === "decision_moment" && (
-                 *     <DecisionMomentTab
-                 *         data={data.decisionMoment}
-                 *         onChange={dm => setData(d => ({ ...d, decisionMoment: dm }))}
-                 *         onOmiStateChange={setOmiState}
-                 *         onContinue={handleContinue}
-                 *         onBack={handleBack}
-                 *     />
-                 * )}
-                 */}
-                {activeTab !== "context" &&
-                    activeTab !== "problem" &&
-                    activeTab !== "hypothesis" &&
-                    activeTab !== "audience" && (
-                    <ComingSoonTab
-                        label={TABS.find(t => t.id === activeTab)?.label ?? ""}
+                {activeTab === "other_info" && (
+                    <OtherInformationTab
+                        data={data.otherInformation}
+                        onChange={oi => setData(d => ({ ...d, otherInformation: oi }))}
+                        onOmiStateChange={setOmiState}
+                        onContinue={handleContinue}
+                        onBack={handleBack}
+                    />
+                )}
+                {activeTab === "review" && (
+                    <PreviewTab
+                        data={data}
+                        onSubmit={handleContinue}
+                        onBack={handleBack}
                     />
                 )}
             </div>

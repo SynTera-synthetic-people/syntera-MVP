@@ -102,7 +102,7 @@ const INSIGHT_CARDS: InsightCard[] = [
     // It does NOT go through the generate/download flow.
     actionLabel: 'Start',
     hasViewer: false,
-    comingSoon: false,
+    comingSoon: true,
   },
 ];
 
