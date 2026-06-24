@@ -131,7 +131,7 @@ app.include_router(decision_room.router)
 #     "https://www.synthetic-people.ai",
 # ]
 
-cors = os.getenv("CORS_ORIGINS", "https://staging-ui.synthetic-people.ai")
+cors = os.getenv("CORS_ORIGINS", "https://platform.synthetic-people.ai://platform.api.synthetic-people.ai")
 allow_origins = [x.strip() for x in cors.split(",") if x.strip()]
 
 app.add_middleware(
