@@ -66,19 +66,19 @@ jobs:
           set -e
           
           # Frontend rollout
-          kubectl set image -f k8sdeployment/production/front-end-deployment.yml frontend=${{ steps.build-frontend.outputs.frontend_image }} -n $NAMESPACE
-          kubectl apply -f k8sdeployment/production/front-end-service.yml -n $NAMESPACE
-          kubectl apply -f k8sdeployment/production/front-ingress.yml -n $NAMESPACE
-          if ! kubectl rollout status -f k8sdeployment/production/front-end-deployment.yml -n $NAMESPACE; then
+          kubectl set image -f k8sdeployment/front-end-deployment.yml frontend=${{ steps.build-frontend.outputs.frontend_image }} -n $NAMESPACE
+          kubectl apply -f k8sdeployment/front-end-service.yml -n $NAMESPACE
+          kubectl apply -f k8sdeployment/front-ingress.yml -n $NAMESPACE
+          if ! kubectl rollout status -f k8sdeployment/front-end-deployment.yml -n $NAMESPACE; then
             echo "Frontend rollout failed, rolling back..."
-            kubectl rollout undo -f k8sdeployment/production/front-end-deployment.yml -n $NAMESPACE
+            kubectl rollout undo -f k8sdeployment/front-end-deployment.yml -n $NAMESPACE
           fi
           
           # Backend rollout
-          kubectl set image -f k8sdeployment/production/deployment.yml backend=${{ steps.build-backend.outputs.backend_image }} -n $NAMESPACE
-          kubectl apply -f k8sdeployment/production/service.yml -n $NAMESPACE
-          kubectl apply -f k8sdeployment/production/ingress.yml -n $NAMESPACE
-          if ! kubectl rollout status -f k8sdeployment/production/deployment.yml -n $NAMESPACE; then
+          kubectl set image -f k8sdeployment/deployment.yml backend=${{ steps.build-backend.outputs.backend_image }} -n $NAMESPACE
+          kubectl apply -f k8sdeployment/service.yml -n $NAMESPACE
+          kubectl apply -f k8sdeployment/ingress.yml -n $NAMESPACE
+          if ! kubectl rollout status -f k8sdeployment/deployment.yml -n $NAMESPACE; then
             echo "Backend rollout failed, rolling back..."
-            kubectl rollout undo -f k8sdeployment/production/deployment.yml -n $NAMESPACE
+            kubectl rollout undo -f k8sdeployment/deployment.yml -n $NAMESPACE
           fi
