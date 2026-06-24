@@ -1,27 +1,28 @@
+# =========================
+# Backend Deployment
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: synth-backend
-  namespace: syntera-mvp
+  name: synth-backend-production
+  namespace: syntera-prod
   labels:
-    app: synth-backend
+    app: synth-backend-production
 spec:
   replicas: 4
   progressDeadlineSeconds: 1800
   selector:
     matchLabels:
-      app: synth-backend
+      app: synth-backend-production
   template:
     metadata:
       labels:
-        app: synth-backend
+        app: synth-backend-production
     spec:
       serviceAccountName: ssm-reader
-
-      # Run migrations before app starts (idempotent)
       initContainers:
         - name: migrate
-          image: 175337843263.dkr.ecr.ap-south-1.amazonaws.com/synth-backend
+          image: 175337843263.dkr.ecr.ap-south-1.amazonaws.com/syntera-platfrom-backend:latest
           command:
             - sh
             - -c
@@ -32,12 +33,10 @@ spec:
             - name: AWS_REGION
               value: ap-south-1
             - name: SSM_PATH
-              value: "/app/staging/"
-          # DATABASE_URL is fetched inside the container from AWS SSM using these env vars
-
+              value: "/app/platform/"
       containers:
         - name: backend
-          image: 175337843263.dkr.ecr.ap-south-1.amazonaws.com/synth-backend
+          image: 175337843263.dkr.ecr.ap-south-1.amazonaws.com/syntera-platfrom-backend:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
@@ -54,9 +53,9 @@ spec:
             - name: AWS_REGION
               value: ap-south-1
             - name: SSM_PATH
-              value: "/app/staging/"
+              value: "/app/platform/"
             - name: CORS_ORIGINS
-              value: "https://staging-ui.synthetic-people.ai"
+              value: "https://platform.synthetic-people.ai"
           resources:
             requests:
               cpu: 250m
@@ -68,15 +67,40 @@ spec:
             httpGet:
               path: /health
               port: 8000
-            initialDelaySeconds: 180
-            periodSeconds: 15
+            initialDelaySeconds: 30
+            periodSeconds: 10
             timeoutSeconds: 5
-            failureThreshold: 10
+            failureThreshold: 5
           livenessProbe:
             httpGet:
               path: /health
               port: 8000
-            initialDelaySeconds: 300
-            periodSeconds: 30
+            initialDelaySeconds: 60
+            periodSeconds: 20
             timeoutSeconds: 5
             failureThreshold: 3
+
+---
+# =========================
+# Horizontal Pod Autoscaler
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: synth-backend-production-hpa
+  namespace: syntera-prod
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: synth-backend-production
+  minReplicas: 4
+  maxReplicas: 20
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+
