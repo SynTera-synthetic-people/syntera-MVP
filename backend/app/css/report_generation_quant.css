@@ -84,6 +84,18 @@ blockquote {
     font-size: 10px;
 }
 
+.report-toc-list {
+    margin: 8px 0 14px 0;
+    text-align: left;
+}
+
+.report-toc-item {
+    font-size: 10.5px;
+    line-height: 1.45;
+    margin: 0 0 8px 0;
+    text-align: left;
+}
+
 .quant-table-wrap {
     margin: 10px 0 14px 0;
     page-break-inside: avoid;
