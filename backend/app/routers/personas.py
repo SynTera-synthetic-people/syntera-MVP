@@ -3,8 +3,9 @@ import logging
 import time
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 from typing import List
 from app.schemas.persona import (
     PersonaCreate, PersonaOut, PersonaUpdate, PersonaPreview,
@@ -52,6 +53,15 @@ from app.models.omi import WorkflowStage
 from app.services import omi as omi_service
 from app.services.exploration import get_exploration
 from app.services.persona_plausibility import evaluate_from_schema
+from app.core.rate_limit import limiter
+from app.models.persona import Persona
+from app.services.digital_brain_pipeline import digital_brain_pipeline
+from app.services.action_data_retriever import get_action_data_df
+from app.services.ro_extractor import extract_ro_components_for_pipeline
+from app.services.manual_digital_brain_persona import (
+    create_manual_persona_draft as create_manual_persona_draft_with_brains,
+    calibrate_manual_persona_with_brains,
+)
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/explorations/{exploration_id}/personas",
@@ -295,7 +305,9 @@ async def get_persona_loader_context(
 
 
 @router.get("/auto-generate", response_model=SuccessResponse)
+@limiter.limit("10/hour")
 async def auto_generate_personas(
+    request: Request,
     workspace_id: str,
     exploration_id: str,
     current_user: User = Depends(get_current_active_user),
@@ -372,6 +384,149 @@ async def auto_generate_personas(
                 "type": e.__class__.__name__
             }
         )
+
+
+def _persona_kwargs_from_digital_brain(
+    persona: dict,
+    workspace_id: str,
+    exploration_id: str,
+    created_by: str,
+    geography: str | None = None,
+) -> dict:
+    """Map one stage_5_personas entry onto Persona's required columns.
+    age_range/gender/education_level/occupation/income_range are inferred
+    from action data by generate_persona() (digital_brain_pipeline.py's
+    _flatten_demographics_inference) and always non-null; "Not specified"
+    is only a defensive fallback if a field is somehow missing."""
+    layer1 = persona.get("layer_1_framework") or {}
+    layer2 = persona.get("layer_2_behavioral_dna") or {}
+    evidence = persona.get("evidence_traceability") or {}
+
+    overall_confidence = evidence.get("overall_confidence")
+    calibration_confidence = (
+        int(round(overall_confidence * 100)) if isinstance(overall_confidence, (int, float)) else None
+    )
+
+    name = persona.get("persona_title") or persona.get("persona_archetype") or "Untitled Persona"
+    backstory = (persona.get("layer_6_contradiction") or {}).get("example")
+
+    # Frontend reads consumer_personas[i].name / .backstory / .geography directly
+    # from persona_details (not the saved DB columns), so mirror them in here too.
+    persona_details = {
+        **persona,
+        "name": name,
+        "backstory": backstory,
+        "geography": geography,
+    }
+
+    return dict(
+        exploration_id=exploration_id,
+        workspace_id=workspace_id,
+        name=name,
+        age_range=persona.get("age_range") or "Not specified",
+        gender=persona.get("gender") or "Not specified",
+        location_country="Not specified",
+        education_level=persona.get("education_level") or "Not specified",
+        occupation=persona.get("occupation") or "Not specified",
+        income_range=persona.get("income_range") or "Not specified",
+        geography=geography,
+        personality=layer2.get("decision_making_style"),
+        values=(persona.get("layer_7_aspiration_fear") or {}).get("identity_driver"),
+        motivations=(persona.get("layer_7_aspiration_fear") or {}).get("hoped_for_self"),
+        brand_sensitivity=layer2.get("brand_relationship"),
+        price_sensitivity=layer2.get("risk_tolerance"),
+        backstory=backstory,
+        ocean_profile=layer1.get("ocean"),
+        persona_details=persona_details,
+        created_by=created_by,
+        auto_generated_persona=True,
+        calibration_confidence=calibration_confidence,
+        calibration_status="calibrated",
+    )
+
+
+@router.post("/generate/digital-brain", response_model=SuccessResponse)
+@limiter.limit("10/hour")
+async def generate_personas_digital_brain(
+    request: Request,
+    workspace_id: str,
+    exploration_id: str,
+    current_user: User = Depends(get_current_active_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Run the 5-stage Digital Brain Pipeline for this exploration's research
+    objective and persist the resulting personas."""
+    exp = await exploration_service.get_exploration(session, exploration_id)
+    if not exp:
+        raise HTTPException(status_code=404, detail="Exploration not found")
+
+    members = await ws_service.list_workspace_members(workspace_id)
+    if not any(m["user_id"] == current_user.id for m in members):
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    ro_result = await session.execute(
+        select(ResearchObjectives).where(ResearchObjectives.exploration_id == exploration_id)
+    )
+    ro = ro_result.scalars().first()
+    if not ro:
+        raise HTTPException(
+            status_code=400,
+            detail=ErrorResponse(status="error", message="Research objective not found for this exploration").dict(),
+        )
+
+    account_tier = _normalised_account_tier(current_user)
+
+    try:
+        ro_dict = await extract_ro_components_for_pipeline(ro.description, ro.ai_interpretation or {})
+    except Exception as e:
+        logger.error("Digital Brain RO extraction failed for exploration=%s: %s", exploration_id, e)
+        raise HTTPException(
+            status_code=502,
+            detail=ErrorResponse(status="error", message=f"Failed to interpret research objective: {e}").dict(),
+        )
+
+    action_data_df = await get_action_data_df(
+        session,
+        workspace_id=workspace_id,
+        category=ro_dict.get("category"),
+        geography=ro_dict.get("geography"),
+    )
+
+    try:
+        result = await run_in_threadpool(digital_brain_pipeline, ro_dict, action_data_df, account_tier)
+    except Exception as e:
+        logger.error("Digital Brain Pipeline failed for exploration=%s: %s", exploration_id, e)
+        raise HTTPException(
+            status_code=500,
+            detail=ErrorResponse(status="error", message=f"Digital Brain Pipeline failed: {e}").dict(),
+        )
+
+    stage_5_personas = result.get("stage_5_personas", [])
+    saved_personas = []
+    for persona_data in stage_5_personas:
+        kwargs = _persona_kwargs_from_digital_brain(
+            persona_data, workspace_id, exploration_id, current_user.id,
+            geography=ro_dict.get("geography"),
+        )
+        saved_personas.append(Persona(**kwargs))
+
+    for p in saved_personas:
+        session.add(p)
+    await session.commit()
+    for p in saved_personas:
+        await session.refresh(p)
+
+    return SuccessResponse(
+        message="Digital Brain personas generated",
+        data={
+            "persona_ids": [p.id for p in saved_personas],
+            "personas": [
+                {"id": p.id, "name": p.name, "persona_details": p.persona_details}
+                for p in saved_personas
+            ],
+            "pipeline_metadata": result.get("pipeline_metadata"),
+        },
+    )
 
 # added dymmy
 # @router.get("/templates", response_model=SuccessResponse)
@@ -692,18 +847,20 @@ async def create_manual_persona_draft(
     # Run plausibility checks before saving — zero DB cost, never blocks
     warnings = evaluate_from_schema(payload)
 
-    if not _is_enterprise_user(current_user):
-        raise _manual_personas_not_allowed_response()
-
-    persona_limit = _persona_limit_for(current_user, exp)
-    total_count, _ = await _count_primary_personas(session, workspace_id, exploration_id)
-    if total_count >= persona_limit:
-        raise _persona_limit_response(persona_limit)
-
-    draft = await persona_service.create_manual_persona_draft(
-        exploration_id, workspace_id, current_user.id, payload,
-        validation_warnings=warnings or None,
+    # Manual persona creation is now open to every tier — the Digital Brain
+    # service enforces tier-specific limits itself (free=2, tier1=8, enterprise=8).
+    result = await create_manual_persona_draft_with_brains(
+        exploration_id, workspace_id, current_user.id,
+        account_tier=current_user.account_tier or "free",
+        payload=payload,
     )
+    if result.get("status") == "error":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=ErrorResponse(status="error", message=result.get("error_message", "Failed to create persona draft")).dict(),
+        )
+    draft = result["persona"]
+
     # Draft traits are persona inputs; clear downstream generated qualitative data.
     await interview_service.clear_qualitative_outputs(workspace_id, exploration_id)
     await report_cache.invalidate_cache(exploration_id)
@@ -1016,17 +1173,22 @@ async def calibrate_persona(
         )
 
     try:
-        calibrated = await persona_service.calibrate_manual_persona(persona_id, exploration_id)
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=ErrorResponse(status="error", message=str(e)).dict()
-        )
+        result = await calibrate_manual_persona_with_brains(persona_id, exploration_id)
     except Exception as e:
         raise HTTPException(
             status_code=500,
             detail={"status": "error", "message": str(e), "type": e.__class__.__name__}
         )
+
+    if result.get("status") == "error":
+        error_message = result.get("error_message", "Failed to calibrate persona")
+        not_found = "not found" in error_message.lower()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND if not_found else status.HTTP_400_BAD_REQUEST,
+            detail=ErrorResponse(status="error", message=error_message).dict()
+        )
+
+    calibrated = result["persona"]
 
     if existing.get("calibration_status") != "calibrated":
         # Calibration changes persona content; generated qualitative outputs must be rebuilt.

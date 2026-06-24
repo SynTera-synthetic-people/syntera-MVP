@@ -2,14 +2,19 @@ import asyncio
 import json
 import logging
 import os
+from pathlib import Path
 from app.routers import insights
 from fastapi import FastAPI
 from fastapi import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.requests import Request
 from fastapi.responses import JSONResponse
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+from slowapi import _rate_limit_exceeded_handler
 
 from app.config import settings
+from app.core.rate_limit import limiter
 from app.db import async_session
 from app.migrations.startup import run_startup_migrations
 from app.routers import (auth, orgs, workspace, research_objectives, personas, interview,
@@ -21,6 +26,8 @@ from app.routers import reports as reports_router_module
 from app.schemas.response import ErrorResponse
 from app.services.billing_service import seed_subscription_plans
 from app.utils.create_superadmin import ensure_superadmin_exists
+
+LOG_DIR = Path(__file__).resolve().parent.parent / "logs"
 
 
 def _configure_logging() -> None:
@@ -36,10 +43,23 @@ def _configure_logging() -> None:
 
     logging.getLogger("app").setLevel(level)
 
+    # Pipeline failures (e.g. Digital Brain Pipeline LLM/parsing errors) are
+    # expensive to reproduce — persist them to a file in addition to console.
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    pipeline_logger = logging.getLogger("app.services.digital_brain_pipeline")
+    if not any(isinstance(h, logging.FileHandler) for h in pipeline_logger.handlers):
+        file_handler = logging.FileHandler(LOG_DIR / "digital_brain_pipeline.log", encoding="utf-8")
+        file_handler.setLevel(logging.ERROR)
+        file_handler.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s"))
+        pipeline_logger.addHandler(file_handler)
+
 
 _configure_logging()
 
 app = FastAPI(title="Synthetic People")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 
 
 @app.get("/health")
