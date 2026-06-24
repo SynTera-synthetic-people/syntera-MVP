@@ -15,6 +15,7 @@ import MyOrganization from "./components/pages/organization/MyOrganization";
 import WorkspaceList from "./components/pages/organization/WorkspaceList";
 import AddResearchObjective from "./components/pages/organization/Workspace/ResearchObjective/AddResearchObjective";
 import EditResearchObjective from "./components/pages/organization/Workspace/ResearchObjective/EditResearchObjective";
+import ResearchObjectiveFramer from "./components/pages/organization/Workspace/ResearchObjective/ResearchObjectiveFramer";
 import ExplorationList from "./components/pages/organization/Workspace/Exploration/ExplorationList";
 import CreateExploration from "./components/pages/organization/Workspace/Exploration/CreateExploration";
 
@@ -250,6 +251,10 @@ function App() {
               ──────────────────────────────────────────────────────────────── */}
               <Route path="organization/workspace/research-objectives/:workspaceId" element={<ResearchObjectiveLayout />}>
                 <Route path=":objectiveId/research-mode" element={<AddResearchObjective />} />
+                <Route
+                  path=":objectiveId/frame-objective"
+                  element={<ResearchObjectiveFramer />}
+                />
                 {/* <Route
                   path=":objectiveId/edit"
                   element={<EditResearchObjective />}
@@ -291,7 +296,7 @@ function App() {
                   path=":objectiveId/population-builder"
                   element={<PopulationBuilder />}
                 />
-                 <Route 
+                <Route
                   path=":objectiveId/insights"
                   element={<InsightGeneration />} />
                 <Route
