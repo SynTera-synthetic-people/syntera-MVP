@@ -1260,3 +1260,38 @@
   0%, 100% { opacity: 0.6; transform: scale(1); }
   50%       { opacity: 1;   transform: scale(1.3); }
 }
+.cs-dropdown-item--all {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(6, 161, 123, 0.04);
+}
+.cs-dropdown-item--all:hover {
+  background: rgba(6, 161, 123, 0.10);
+}
+ 
+/* Avatar for the All Personas option */
+.cs-dropdown-item__avatar--all {
+  background: rgba(6, 161, 123, 0.15);
+  border-color: rgba(6, 161, 123, 0.4);
+  color: #06A17B;
+}
+ 
+/* Label above bot bubble showing which persona is speaking (combined mode) */
+.cs-bubble-persona-label {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: #06A17B;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding-left: 2px;
+  margin-bottom: -2px;
+}
+ 
+/* Hint text on the empty/start screen */
+.cs-messages__empty-hint {
+  font-size: 0.8125rem;
+  color: rgba(255, 255, 255, 0.3);
+  margin: -4px 0 0;
+  max-width: 320px;
+  text-align: center;
+  line-height: 1.5;
+}
