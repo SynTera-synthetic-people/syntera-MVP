@@ -6,20 +6,20 @@ on:
     paths:
       - "frontend/**"
       - "backend/**"
-      - "k8sdeployment/production/**"
+      - "k8sdeployment/**"
       - ".github/workflows/**"
   pull_request:
     branches: [ "production" ]
     paths:
       - "frontend/**"
       - "backend/**"
-      - "k8sdeployment/production/**"
+      - "k8sdeployment/**"
       - ".github/workflows/**"
   workflow_dispatch:
 
 env:
   AWS_REGION: ap-south-1
-  EKS_CLUSTER: eks-staging
+  EKS_CLUSTER: eks-production
   NAMESPACE: syntera-prod
   ECR_FRONTEND_REPO: syntera-platfrom-frontend
   ECR_BACKEND_REPO: syntera-platfrom-backend
@@ -69,6 +69,7 @@ jobs:
           kubectl set image -f k8sdeployment/front-end-deployment.yml frontend=${{ steps.build-frontend.outputs.frontend_image }} -n $NAMESPACE
           kubectl apply -f k8sdeployment/front-end-service.yml -n $NAMESPACE
           kubectl apply -f k8sdeployment/front-ingress.yml -n $NAMESPACE
+          kubectl apply -f k8sdeployment/front-end-hpa.yml -n $NAMESPACE
           if ! kubectl rollout status -f k8sdeployment/front-end-deployment.yml -n $NAMESPACE; then
             echo "Frontend rollout failed, rolling back..."
             kubectl rollout undo -f k8sdeployment/front-end-deployment.yml -n $NAMESPACE
@@ -78,6 +79,7 @@ jobs:
           kubectl set image -f k8sdeployment/deployment.yml backend=${{ steps.build-backend.outputs.backend_image }} -n $NAMESPACE
           kubectl apply -f k8sdeployment/service.yml -n $NAMESPACE
           kubectl apply -f k8sdeployment/ingress.yml -n $NAMESPACE
+          kubectl apply -f k8sdeployment/backend-hpa.yml -n $NAMESPACE
           if ! kubectl rollout status -f k8sdeployment/deployment.yml -n $NAMESPACE; then
             echo "Backend rollout failed, rolling back..."
             kubectl rollout undo -f k8sdeployment/deployment.yml -n $NAMESPACE
