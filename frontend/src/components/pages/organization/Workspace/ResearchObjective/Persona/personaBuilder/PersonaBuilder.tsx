@@ -1633,13 +1633,20 @@ const PersonaBuilder: React.FC = () => {
   const handleCreateWithOmi = useCallback(() => {
     trigger({ stage: 'persona_builder', event: 'PERSONA_WORKFLOW_LOADED', payload: {} });
 
-    try { generatePersonas(); } catch (err) { console.error('Failed to kick off persona generation:', err); }
+    // Fire-and-forget so the loading page below can navigate to immediately;
+    // once generation actually finishes, invalidate the saved-personas list
+    // so the grid reflects the newly-saved personas without a manual refresh.
+    Promise.resolve(generatePersonas())
+      .then(() => {
+        queryClient.invalidateQueries({ queryKey: personaKeys.list(workspaceId, objectiveId) });
+      })
+      .catch((err) => console.error('Failed to kick off persona generation:', err));
 
     navigate(
       `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-generating`,
       { state: { flow: 'omi' } }
     );
-  }, [isFreeUser, isTier1User, isFreeOrTier1, personaLimitForTier, savedPersonasFromAPI.length, generatePersonas, navigate, workspaceId, objectiveId]);
+  }, [isFreeUser, isTier1User, isFreeOrTier1, personaLimitForTier, savedPersonasFromAPI.length, generatePersonas, navigate, workspaceId, objectiveId, queryClient]);
 
   const handleBuildManually = useCallback(() => {
     if (!isEnterpriseUser) {

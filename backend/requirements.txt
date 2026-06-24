@@ -43,6 +43,9 @@ anthropic==0.79.0
 openai>=1.52.0
 qdrant-client==1.18.0
 
+# Rate limiting
+slowapi>=0.1.9
+
 # AWS
 boto3
 
