@@ -17,10 +17,12 @@ from app.services import persona as persona_service
 from app.services import auto_generated_persona
 # manual_generated_persona import removed — the old one-shot GPT-5 + web-search flow
 # (manual_generated_persona.manual_persona) has been replaced by a two-phase system:
-#   Phase 1 → POST /personas/manual     → persona_service.create_manual_persona_draft()
-#   Phase 2 → POST /personas/{id}/calibrate → persona_service.calibrate_manual_persona()
-# The new calibration uses MANUAL_PERSONA_BUILDER_PROMPT (no web search, RO-alignment
-# confidence scoring, auto-fill report) defined in app/services/persona.py.
+#   Phase 1 → POST /personas/manual     → create_manual_persona_draft_with_brains()
+#   Phase 2 → POST /personas/{id}/calibrate → calibrate_manual_persona_with_brains()
+# Both now live in app/services/manual_digital_brain_persona.py — GPT-4o enrichment
+# plus a Digital Brain (primary/secondary archetype) assignment step, with
+# per-tier persona limits (free=2, tier1=8, enterprise=8) enforced inside
+# create_manual_persona_draft_with_brains() itself.
 from app.services import persona_loader_context
 from app.services import interview as interview_service
 from app.services import report_orchestrator as report_cache
@@ -56,7 +58,6 @@ from app.services.persona_plausibility import evaluate_from_schema
 from app.core.rate_limit import limiter
 from app.models.persona import Persona
 from app.services.digital_brain_pipeline import digital_brain_pipeline
-from app.services.action_data_retriever import get_action_data_df
 from app.services.ro_extractor import extract_ro_components_for_pipeline
 from app.services.manual_digital_brain_persona import (
     create_manual_persona_draft as create_manual_persona_draft_with_brains,
@@ -485,15 +486,15 @@ async def generate_personas_digital_brain(
             detail=ErrorResponse(status="error", message=f"Failed to interpret research objective: {e}").dict(),
         )
 
-    action_data_df = await get_action_data_df(
-        session,
-        workspace_id=workspace_id,
-        category=ro_dict.get("category"),
-        geography=ro_dict.get("geography"),
-    )
-
+    # action_data_df left as None on purpose — digital_brain_pipeline() now
+    # fetches it internally via fetch_action_data_all() (real payload-flattened
+    # rows from the whole sync_action.record table). The old get_action_data_df()
+    # path here never unwrapped the JSONB envelope's "payload" key, so
+    # scan_action_data() silently found nothing; passing a DataFrame here would
+    # also short-circuit fetch_action_data_all() entirely (it only runs when
+    # action_data_df is None).
     try:
-        result = await run_in_threadpool(digital_brain_pipeline, ro_dict, action_data_df, account_tier)
+        result = await run_in_threadpool(digital_brain_pipeline, ro_dict, None, account_tier)
     except Exception as e:
         logger.error("Digital Brain Pipeline failed for exploration=%s: %s", exploration_id, e)
         raise HTTPException(
