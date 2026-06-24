@@ -19,7 +19,7 @@ on:
 
 env:
   AWS_REGION: ap-south-1
-  EKS_CLUSTER: eks-production
+  EKS_CLUSTER: eks-staging
   NAMESPACE: syntera-prod
   ECR_FRONTEND_REPO: syntera-platfrom-frontend
   ECR_BACKEND_REPO: syntera-platfrom-backend
