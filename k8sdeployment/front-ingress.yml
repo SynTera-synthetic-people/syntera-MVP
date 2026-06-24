@@ -2,13 +2,13 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: syntera-front-mvp-ingress
-  namespace: syntera-mvp
+  namespace: syntera-prod
   annotations:
     kubernetes.io/ingress.class: alb
     alb.ingress.kubernetes.io/scheme: internet-facing
 spec:
   rules:
-    - host: staging-ui.synthetic.people.ai
+    - host: platform.synthetic-people.ai
       http:
         paths:
           - path: /
