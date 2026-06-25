@@ -38,6 +38,19 @@ interface AudienceSegmentsData {
     audience: string;
 }
 
+// "Add Material" — a single optional file upload plus a short instruction
+// telling Omi what the file is and what to do with it. uploadStatus tracks
+// the local upload lifecycle; the actual backend processing call is wired
+// in separately, this just models the UI states (idle -> processing -> done).
+type MaterialUploadStatus = "idle" | "processing" | "done";
+
+interface MaterialData {
+    instruction: string;
+    fileName: string | null;
+    fileSizeLabel: string | null;
+    uploadStatus: MaterialUploadStatus;
+}
+
 interface OtherInformationData {
     notes: string;
 }
@@ -48,6 +61,7 @@ interface ROFramerData {
     customerUnknown: CustomerUnknownData;
     decisionMoment: DecisionMomentData;
     audienceSegments: AudienceSegmentsData;
+    material: MaterialData;
     otherInformation: OtherInformationData;
     // Future tabs extend this interface as they are built
 }
@@ -71,6 +85,10 @@ function buildFramerPayload(data: ROFramerData) {
         information_gap: data.customerUnknown.unknown || undefined,
         decision_problem: data.decisionMoment.decision || undefined,
         target_audience: data.audienceSegments.audience || undefined,
+        // The uploaded file itself is handled by a separate upload/processing
+        // call (wired in later) — here we only pass along what the user typed
+        // about it, so Omi has the instruction even before that pipeline lands.
+        material_instruction: data.material.instruction || undefined,
         additional_notes: data.otherInformation.notes || undefined,
     };
 }
@@ -85,6 +103,7 @@ const TABS = [
     { id: "hypothesis" as const, label: "Customer Unknown" },
     { id: "decision_moment" as const, label: "Decision Moment" },
     { id: "audience" as const, label: "Audience & Segments" },
+    { id: "material" as const, label: "Add Material" },
     { id: "other_info" as const, label: "Other Information" },
     { id: "review" as const, label: "Preview" },
 ];
@@ -945,6 +964,360 @@ const AudienceSegmentsTab: React.FC<AudienceSegmentsTabProps> = ({
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Add Material — "Share your briefs and artifacts"
+// Single optional file upload + an instruction telling Omi what it is and
+// what to do with it. While the upload is "processing" (backend wiring to
+// be added later), Continue is blocked so the user doesn't navigate away
+// from an in-flight upload and lose track of it.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const MATERIAL_ACCEPTED_EXTENSIONS = [
+    ".pdf", ".docx", ".pptx", ".xlsx", ".csv", ".png", ".jpg", ".jpeg",
+];
+
+const MATERIAL_PROCESSING_MESSAGES = [
+    "Reading your uploaded context…",
+    "Pulling out key themes and claims…",
+    "Finding signals Omi should learn…",
+    "Almost ready ✨",
+];
+
+// Roughly how long each processing message stays on screen before the next
+// one rotates in. The actual completion is driven by the real upload/process
+// call once wired in — this is just the local placeholder cadence.
+const MATERIAL_PROCESSING_INTERVAL_MS = 1600;
+
+const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+const MaterialUploadIcon: React.FC = () => (
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path
+            d="M7 18a4 4 0 0 1-.6-7.96A5 5 0 0 1 16.6 8.06 4.5 4.5 0 0 1 17 17H16"
+            stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"
+        />
+        <path
+            d="M12 21v-7m0 0-2.5 2.5M12 14l2.5 2.5"
+            stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"
+        />
+    </svg>
+);
+
+const MaterialFileIcon: React.FC = () => (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path
+            d="M7 3h7l5 5v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"
+            stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"
+        />
+        <path d="M14 3v5h5" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+    </svg>
+);
+
+const MaterialCheckIcon: React.FC = () => (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+);
+
+interface MaterialTabProps {
+    data: MaterialData;
+    onChange: (d: MaterialData) => void;
+    onOmiStateChange: (s: OmiState) => void;
+    onContinue: () => void;
+    onBack: () => void;
+}
+
+const MaterialTab: React.FC<MaterialTabProps> = ({
+    data,
+    onChange,
+    onOmiStateChange,
+    onContinue,
+    onBack,
+}) => {
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const [isDragOver, setIsDragOver] = useState(false);
+    const [processingMsgIndex, setProcessingMsgIndex] = useState(0);
+    const [fileError, setFileError] = useState<string | null>(null);
+
+    const isProcessing = data.uploadStatus === "processing";
+    const isDone = data.uploadStatus === "done";
+    // Continue is blocked only while an upload is actively processing —
+    // the tab itself is optional, so zero files never blocks Continue.
+    const canContinue = !isProcessing;
+
+    const handleFieldFocus = () => onOmiStateChange("typing");
+    const handleFieldBlur = () => {
+        if (!data.instruction && !data.fileName) onOmiStateChange("idle");
+    };
+
+    // Cycle the processing message while a file is "processing". This is a
+    // local placeholder timer standing in for the real backend progress
+    // signal, which will replace this once that pipeline is wired in.
+    useEffect(() => {
+        if (!isProcessing) {
+            setProcessingMsgIndex(0);
+            return;
+        }
+        if (processingMsgIndex >= MATERIAL_PROCESSING_MESSAGES.length - 1) {
+            // Hold on the last message until the (future) real completion signal
+            // flips uploadStatus to "done" — this timer doesn't do that itself.
+            return;
+        }
+        const t = setTimeout(
+            () => setProcessingMsgIndex(i => i + 1),
+            MATERIAL_PROCESSING_INTERVAL_MS
+        );
+        return () => clearTimeout(t);
+    }, [isProcessing, processingMsgIndex]);
+
+    const acceptFile = (file: File) => {
+        const ext = "." + (file.name.split(".").pop()?.toLowerCase() ?? "");
+        if (!MATERIAL_ACCEPTED_EXTENSIONS.includes(ext)) {
+            setFileError("That file type isn't supported. Please use one of the formats listed below.");
+            return;
+        }
+        setFileError(null);
+        onChange({
+            ...data,
+            fileName: file.name,
+            fileSizeLabel: formatFileSize(file.size),
+            uploadStatus: "processing",
+        });
+        onOmiStateChange("typing");
+        // NOTE: actual upload + backend processing call is wired in separately.
+        // For now this only models the local UI state machine (idle -> processing).
+        // The transition from "processing" to "done" will be driven by that
+        // call's completion callback once it exists.
+    };
+
+    const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        e.target.value = "";
+        if (file) acceptFile(file);
+    };
+
+    const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        setIsDragOver(false);
+        if (isProcessing) return;
+        const file = e.dataTransfer.files?.[0];
+        if (file) acceptFile(file);
+    };
+
+    const handleRemoveFile = () => {
+        if (isProcessing) return;
+        setFileError(null);
+        onChange({
+            ...data,
+            fileName: null,
+            fileSizeLabel: null,
+            uploadStatus: "idle",
+        });
+    };
+
+    const handleContinueClick = () => {
+        if (!canContinue) return;
+        onOmiStateChange("navigating");
+        setTimeout(onContinue, 400);
+    };
+
+    const handleBackClick = () => {
+        if (isProcessing) return;
+        onOmiStateChange("navigating");
+        setTimeout(onBack, 400);
+    };
+
+    return (
+        <div className="rofp-tab-content">
+            <div className="rofp-tab-head">
+                <h2 className="rofp-tab-title">Share your briefs and artifacts</h2>
+                <p className="rofp-tab-tagline">
+                    Add research briefs, creatives, concepts, reports, or any artifact
+                    you want Omi to read, test, or use as context.
+                </p>
+            </div>
+
+            <div className="rofp-fields">
+
+                {/* Instruction */}
+                <div className="rofp-field-group">
+                    <div className="rofp-field-label-row">
+                        <label className="rofp-label" htmlFor="rof-material-instruction">
+                            What is this, and what should Omi do with it?
+                            <span className="rofp-label-optional">Optional</span>
+                        </label>
+                        <Tooltip text="Tell Omi what kind of artifact this is and what you want tested, decoded, or used as context." />
+                    </div>
+                    <textarea
+                        id="rof-material-instruction"
+                        className="rofp-textarea"
+                        placeholder={
+                            "Tell Omi if this is a creative, research brief, concept note or " +
+                            "anything else — and what you want tested, decoded, or used as " +
+                            "context...\n\n" +
+                            "e.g. This is a campaign creative we want to test for message " +
+                            "clarity and purchase intent... or This is a research brief. Use " +
+                            "it to understand the category, audience, and key unknowns…"
+                        }
+                        value={data.instruction}
+                        onFocus={handleFieldFocus}
+                        onBlur={handleFieldBlur}
+                        onChange={e => onChange({ ...data, instruction: e.target.value })}
+                        rows={4}
+                    />
+                </div>
+
+                {/* Upload zone / file card */}
+                <div className="rofp-field-group">
+                    <div className="rofp-field-label-row">
+                        <label className="rofp-label">File</label>
+                        <Tooltip text="Upload one file — a brief, creative, report, or any other artifact." />
+                    </div>
+
+                    {!data.fileName ? (
+                        <div
+                            className={[
+                                "rofp-upload-zone",
+                                isDragOver ? "rofp-upload-zone--dragover" : "",
+                            ].filter(Boolean).join(" ")}
+                            onClick={() => fileInputRef.current?.click()}
+                            onDragOver={e => { e.preventDefault(); setIsDragOver(true); }}
+                            onDragLeave={() => setIsDragOver(false)}
+                            onDrop={handleDrop}
+                            role="button"
+                            tabIndex={0}
+                            onKeyDown={e => {
+                                if (e.key === "Enter" || e.key === " ") fileInputRef.current?.click();
+                            }}
+                        >
+                            <span className="rofp-upload-zone-icon">
+                                <MaterialUploadIcon />
+                            </span>
+                            <span className="rofp-upload-zone-title">
+                                Drop your files here, or click to upload
+                            </span>
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                className="rofp-upload-zone-input"
+                                accept={MATERIAL_ACCEPTED_EXTENSIONS.join(",")}
+                                onChange={handleFileInputChange}
+                            />
+                        </div>
+                    ) : (
+                        <div className="rofp-upload-file-card">
+                            <span className="rofp-upload-file-icon">
+                                <MaterialFileIcon />
+                            </span>
+                            <div className="rofp-upload-file-info">
+                                <div className="rofp-upload-file-name">{data.fileName}</div>
+                                {data.fileSizeLabel && (
+                                    <div className="rofp-upload-file-meta">{data.fileSizeLabel}</div>
+                                )}
+                            </div>
+                            <button
+                                className="rofp-upload-file-remove"
+                                onClick={handleRemoveFile}
+                                disabled={isProcessing}
+                                type="button"
+                                aria-label="Remove file"
+                            >
+                                ×
+                            </button>
+                        </div>
+                    )}
+
+                    {fileError && (
+                        <p className="rofp-cta-hint" style={{ color: "#f87171", marginTop: 8 }}>
+                            {fileError}
+                        </p>
+                    )}
+
+                    {/* Processing bar — mirrors the report-generation Omi loader */}
+                    {isProcessing && (
+                        <div className="rofp-upload-omi-bar">
+                            <div className="rofp-upload-omi-avatar">
+                                <video src={OmiKeyboard} autoPlay loop muted playsInline />
+                            </div>
+                            <div className="rofp-upload-omi-msg-wrap">
+                                <span className="rofp-upload-omi-msg">
+                                    <span className="rofp-upload-omi-bullet" />
+                                    {MATERIAL_PROCESSING_MESSAGES[processingMsgIndex]}
+                                </span>
+                            </div>
+                            <div className="rofp-upload-omi-dots">
+                                <span /><span /><span />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Upload complete */}
+                    {isDone && (
+                        <div className="rofp-upload-complete">
+                            <span className="rofp-upload-complete-icon">
+                                <MaterialCheckIcon />
+                            </span>
+                            <div className="rofp-upload-complete-text">
+                                <div className="rofp-upload-complete-title">Upload Complete</div>
+                                <div className="rofp-upload-complete-sub">
+                                    Context loaded. Nice. Omi can now use these materials to
+                                    sharpen your exploration.
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    <p className="rofp-upload-formats">
+                        <strong>Supported formats</strong> · PDF, DOCX, PPTX, XLSX, CSV, PNG, JPG
+                    </p>
+                    <p className="rofp-upload-footnote">
+                        Your files are used only to support this exploration.
+                    </p>
+                </div>
+
+            </div>
+
+            {/* CTA */}
+            <div className="rofp-tab-cta">
+                <button
+                    className="rofp-btn-back"
+                    onClick={handleBackClick}
+                    type="button"
+                    disabled={isProcessing}
+                >
+                    <span className="rofp-btn-arrow rofp-btn-arrow--back">←</span>
+                    Back
+                </button>
+                <div className="rofp-tab-cta-right">
+                    <button
+                        className={[
+                            "rofp-btn-continue",
+                            !canContinue ? "rofp-btn-continue--disabled" : "",
+                        ]
+                            .filter(Boolean)
+                            .join(" ")}
+                        disabled={!canContinue}
+                        onClick={handleContinueClick}
+                        type="button"
+                    >
+                        Continue
+                        <span className="rofp-btn-arrow">→</span>
+                    </button>
+                    {isProcessing && (
+                        <p className="rofp-cta-hint">
+                            Hang tight while Omi reads through your upload
+                        </p>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Other Information — "Something we missed? Add it here."
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1250,6 +1623,12 @@ const ResearchObjectiveFramer: React.FC<ResearchObjectiveFramerProps> = ({
         audienceSegments: {
             audience: "",
         },
+        material: {
+            instruction: "",
+            fileName: null,
+            fileSizeLabel: null,
+            uploadStatus: "idle",
+        },
         otherInformation: {
             notes: "",
         },
@@ -1322,7 +1701,7 @@ const ResearchObjectiveFramer: React.FC<ResearchObjectiveFramerProps> = ({
                 setOmiState("idle");
                 toast.error(
                     error?.response?.data?.detail ??
-                        "Couldn't save the research objective. Please try again."
+                    "Couldn't save the research objective. Please try again."
                 );
             },
         });
@@ -1349,7 +1728,7 @@ const ResearchObjectiveFramer: React.FC<ResearchObjectiveFramerProps> = ({
     }, [activeTabIndex, goToTab]);
 
     // A tab is accessible if it has been reached during this session
-    const accessibleUpTo =  TABS.length - 1;
+    const accessibleUpTo = TABS.length - 1;
 
     return (
         <div className="rofp-page">
@@ -1464,6 +1843,20 @@ const ResearchObjectiveFramer: React.FC<ResearchObjectiveFramerProps> = ({
                     <AudienceSegmentsTab
                         data={data.audienceSegments}
                         onChange={as => setData(d => ({ ...d, audienceSegments: as }))}
+                        onOmiStateChange={setOmiState}
+                        onContinue={handleContinue}
+                        onBack={handleBack}
+                    />
+                )}
+                {activeTab === "material" && (
+                    <MaterialTab
+                        data={data.material}
+                        onChange={material =>
+                            setData(d => ({
+                                ...d,
+                                material,
+                            }))
+                        }
                         onOmiStateChange={setOmiState}
                         onContinue={handleContinue}
                         onBack={handleBack}
