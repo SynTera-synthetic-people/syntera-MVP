@@ -429,6 +429,12 @@ async def _repair_core_public_schema(conn: AsyncConnection) -> None:
     await ensure_column(conn, "interviewsection", "description TEXT NOT NULL DEFAULT ''")
     await ensure_column(conn, "interviewsection", "is_download BOOLEAN NOT NULL DEFAULT FALSE")
 
+    await ensure_column(conn, "interview", "session_group_id VARCHAR")
+    await ensure_index(
+        conn,
+        "CREATE INDEX IF NOT EXISTS ix_interview_session_group_id ON interview (session_group_id)",
+    )
+
     for column in (
         "persona_sample_sizes JSONB",
         "total_sample_size INTEGER NOT NULL DEFAULT 0",

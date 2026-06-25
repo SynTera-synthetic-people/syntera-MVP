@@ -38,6 +38,7 @@ def _map_interview_row_to_out(i: Interview) -> InterviewOut:
         workspace_id=str(i.workspace_id),
         exploration_id=str(i.exploration_id),
         persona_id=str(i.persona_id) if i.persona_id else None,
+        session_group_id=i.session_group_id,
         messages=i.messages or [],
         generated_answers=i.generated_answers or {},
         created_by=str(i.created_by),
@@ -445,11 +446,15 @@ async def create_conversation_session(
     exploration_id: str,
     persona_id: Optional[str],
     user_id: str,
+    session_group_id: Optional[str] = None,
 ) -> InterviewOut:
     """
     Create a lightweight interview record for Conversation Studio.
     No LLM batch generation — the session is empty and ready for
     free-form user messages handled by add_user_message_and_get_persona_reply.
+
+    session_group_id ties several per-persona interviews (one per persona)
+    into a single "All Personas" session for history grouping.
     """
     async with AsyncSession(async_engine) as session:
         iv = Interview(
@@ -457,6 +462,7 @@ async def create_conversation_session(
             workspace_id=workspace_id,
             exploration_id=exploration_id,
             persona_id=persona_id,
+            session_group_id=session_group_id,
             messages=[{"role": "system", "text": "Conversation Studio session", "ts": datetime.utcnow().isoformat()}],
             generated_answers={},
             created_by=user_id,

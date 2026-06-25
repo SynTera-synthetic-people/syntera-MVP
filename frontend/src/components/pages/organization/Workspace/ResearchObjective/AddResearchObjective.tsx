@@ -35,6 +35,8 @@ import { useOmniWorkflow } from '../../../../../hooks/useOmiWorkflow';
 import { useAutoGeneratePersonas, usePersonas } from '../../../../../hooks/usePersonaBuilder';
 import UpgradeModal from "../../../Upgrade/UpgradeModal";
 import SummaryRefineBubble from "./SummaryRefineBubble";
+// ─── ResearchObjectiveFramer is now a full page navigated to via router. ───
+// ROFramerTrigger (the old modal trigger) no longer exists — removed.
 import OmiGreet from '../../../../../assets/Omi Animations/OmiIdle.mp4';
 import OmiPencil from '../../../../../assets/Omi Animations/OmiPencil.mp4';
 import OmiKeyboard from '../../../../../assets/Omi Animations/OmiKeyboard.mp4';
@@ -116,42 +118,26 @@ const isInternalRefinePrompt = (text: unknown): boolean =>
   text.includes("Here is the current Research Objective Summary in full") &&
   text.includes("do NOT change any part of it except");
 
-/**
- * Convert a File to a base64 string (data-URI stripped).
- */
 const fileToBase64 = (file: File): Promise<string> =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result as string;
-      // Strip the "data:<mime>;base64," prefix — send raw base64 only
       resolve(result.split(',')[1] ?? '');
     };
     reader.onerror = () => reject(new Error('Failed to read file'));
     reader.readAsDataURL(file);
   });
 
-/**
- * Validate that the file is an accepted type and within size limits.
- * Returns an error string, or null if valid.
- */
 const validateFile = (file: File): string | null => {
   const ext = '.' + file.name.split('.').pop()?.toLowerCase();
   const mimeOk = ACCEPTED_MIME_TYPES.includes(file.type);
   const extOk = ACCEPTED_EXTENSIONS.includes(ext);
-
-  if (!mimeOk && !extOk) {
-    return `Only PDF, DOC, DOCX, XLS, and XLSX files are supported.`;
-  }
-  if (file.size > MAX_FILE_SIZE_BYTES) {
-    return `File is too large. Maximum size is ${MAX_FILE_SIZE_MB} MB.`;
-  }
+  if (!mimeOk && !extOk) return `Only PDF, DOC, DOCX, XLS, and XLSX files are supported.`;
+  if (file.size > MAX_FILE_SIZE_BYTES) return `File is too large. Maximum size is ${MAX_FILE_SIZE_MB} MB.`;
   return null;
 };
 
-/**
- * Return a short human-readable label for a file's type.
- */
 const getFileTypeLabel = (file: File): string => {
   if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) return 'PDF';
   if (file.name.toLowerCase().endsWith('.docx')) return 'DOCX';
@@ -174,6 +160,7 @@ const AddResearchObjective: React.FC = () => {
     objectiveId: string;
   }>();
   const dispatch = useDispatch();
+
   const chatEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -187,7 +174,7 @@ const AddResearchObjective: React.FC = () => {
   // ── Upgrade modal ──────────────────────────────────────────────────────────
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
-  // ── Animation state ────────────────────────────────────────────────────────
+  // ── Omi animation ──────────────────────────────────────────────────────────
   const [omiAnimation, setOmiAnimation] = useState<"greeting" | "writing" | "error">("greeting");
 
   const getOmiVideo = (forError = false) => {
@@ -199,7 +186,7 @@ const AddResearchObjective: React.FC = () => {
     }
   };
 
-  // ── File upload state ──────────────────────────────────────────────────────
+  // ── File upload ────────────────────────────────────────────────────────────
   const [fileError, setFileError] = useState<string | null>(null);
 
   // ── Persona flow lock ──────────────────────────────────────────────────────
@@ -228,31 +215,26 @@ const AddResearchObjective: React.FC = () => {
     data: sessionData,
     isLoading: sessionLoading,
     error: sessionError,
-    refetch: refetchSession
+    refetch: refetchSession,
   } = useInitializeOmiSession(objectiveId);
 
   const {
     data: conversationHistoryData,
     isLoading: isLoadingHistory,
-    error: historyError,
-    refetch: refetchHistory
+    refetch: refetchHistory,
   } = useConversationHistory(workspaceId, objectiveId);
 
   const sessionId = (sessionData as any)?.data?.session_id;
-  const {
-    mutate: sendMessage,
-    isLoading: isSendingMessage
-  } = useSendMessageToOmi(objectiveId, sessionId) as any;
+  const { mutate: sendMessage, isLoading: isSendingMessage } =
+    useSendMessageToOmi(objectiveId, sessionId) as any;
 
   const { mutate: createResearchObjective } = useCreateResearchObjective() as any;
   const { mutate: persistSummaryEdit } = usePatchResearchObjectiveSummary(workspaceId, objectiveId) as any;
   const { mutate: persistOmiMessage } = usePatchOmiMessageContent() as any;
 
   const { refetch: triggerPersonaGeneration } = useAutoGeneratePersonas(workspaceId, objectiveId, { enabled: false });
-  const {
-    data: existingPersonasData,
-    refetch: refetchExistingPersonas,
-  } = usePersonas(workspaceId, objectiveId);
+  const { data: existingPersonasData, refetch: refetchExistingPersonas } =
+    usePersonas(workspaceId, objectiveId);
 
   const personasExist = (() => {
     const data = (existingPersonasData as any)?.data;
@@ -264,14 +246,14 @@ const AddResearchObjective: React.FC = () => {
     return arr.length > 0;
   })();
 
-  // ── Redux state ────────────────────────────────────────────────────────────
+  // ── Redux ──────────────────────────────────────────────────────────────────
   const {
     templates,
     selectedTemplate,
     selectedObjective,
     objectives,
     loading: templatesLoading,
-    error: templatesError
+    error: templatesError,
   } = useSelector((state: RootState) => state.researchObjective);
 
   // ── Chat state ─────────────────────────────────────────────────────────────
@@ -283,6 +265,12 @@ const AddResearchObjective: React.FC = () => {
   const [showTemplates, setShowTemplates] = useState<boolean>(false);
   const [prevMessagesLength, setPrevMessagesLength] = useState<number>(0);
   const [hasTriggeredInitialEvent, setHasTriggeredInitialEvent] = useState<boolean>(false);
+  const isFreshFirstInteraction =
+    !isViewOnly &&
+    messages.length <= 1 &&
+    inputValue.trim() === "" &&
+    !uploadedFile &&
+    !messages.some(m => m.sender === 'user');
 
   // ── Thinking phrase cycling ────────────────────────────────────────────────
   const thinkingPhrases = ["Working on a response", "Thinking", "Analyzing your input", "Processing"];
@@ -296,6 +284,29 @@ const AddResearchObjective: React.FC = () => {
     return () => clearInterval(interval);
   }, [isSendingMessage, isSubmitting]);
 
+  // ── Pick up drafted objective text returned from the RO Framer page ────────
+  // ResearchObjectiveFramer navigates back here with location.state.roFramerObjective
+  // when the user clicks "Use This Objective". We read it once on mount, apply it
+  // to the textarea, then clear it from history so a refresh doesn't re-apply it.
+  useEffect(() => {
+    const drafted = (location.state as any)?.roFramerObjective as string | undefined;
+    if (drafted?.trim()) {
+      setInputValue(drafted.trim());
+      // Replace current history entry without the framer state so it doesn't
+      // persist across refreshes or back-navigation.
+      navigate(location.pathname, {
+        replace: true,
+        state: {
+          // Preserve any other state flags (e.g. viewOnly) that may exist
+          ...((location.state as any) ?? {}),
+          roFramerObjective: undefined,
+        },
+      });
+    }
+    // Intentionally empty deps — this must only run once on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const transformMessages = useCallback((apiMessages: any[]): Message[] => {
     if (!apiMessages || !Array.isArray(apiMessages)) return [];
     return apiMessages
@@ -308,7 +319,7 @@ const AddResearchObjective: React.FC = () => {
         omiState: msg.omi_state,
         workflowStage: msg.workflow_stage,
         messageType: msg.message_type,
-        originalData: msg
+        originalData: msg,
       }));
   }, []);
 
@@ -331,13 +342,13 @@ const AddResearchObjective: React.FC = () => {
 
   useEffect(() => {
     if ((conversationHistoryData as any)?.status === "success" && (conversationHistoryData as any).data?.messages) {
-      const transformedMessages = transformMessages((conversationHistoryData as any).data.messages);
-      setMessages(transformedMessages);
-      setPrevMessagesLength(transformedMessages.length);
-      if (transformedMessages.length > 0) {
-        const lastMessage = transformedMessages[transformedMessages.length - 1] as Message | undefined;
-        if (lastMessage?.sender === 'omi') {
-          setOmiStatus(lastMessage?.omiState === 'thinking' ? "Omi is processing..." : "Omi is ready");
+      const transformed = transformMessages((conversationHistoryData as any).data.messages);
+      setMessages(transformed);
+      setPrevMessagesLength(transformed.length);
+      if (transformed.length > 0) {
+        const last = transformed[transformed.length - 1] as Message | undefined;
+        if (last?.sender === 'omi') {
+          setOmiStatus(last?.omiState === 'thinking' ? "Omi is processing..." : "Omi is ready");
         } else {
           setOmiStatus("Waiting for Omi's response...");
         }
@@ -352,7 +363,7 @@ const AddResearchObjective: React.FC = () => {
         sender: 'omi',
         text: (sessionData as any).data.greeting,
         timestamp: new Date(),
-        sessionId: (sessionData as any).data.session_id
+        sessionId: (sessionData as any).data.session_id,
       };
       setMessages([initialMessage]);
       setPrevMessagesLength(1);
@@ -361,7 +372,8 @@ const AddResearchObjective: React.FC = () => {
   }, [sessionData, messages.length, isLoadingHistory]);
 
   const lastMessage = messages[messages.length - 1] as Message | undefined;
-  const isObjectiveConfirmed = messages.length > 0 &&
+  const isObjectiveConfirmed =
+    messages.length > 0 &&
     lastMessage?.sender === "omi" &&
     lastMessage?.text?.includes("carry this forward into personas");
 
@@ -373,12 +385,10 @@ const AddResearchObjective: React.FC = () => {
   }, [inputValue]);
 
   useEffect(() => {
-    if (messagesContainerRef.current) {
-      if (messages.length > prevMessagesLength) {
-        messagesContainerRef.current.scrollTo({ top: messagesContainerRef.current.scrollHeight, behavior: 'smooth' });
-      }
-      setPrevMessagesLength(messages.length);
+    if (messagesContainerRef.current && messages.length > prevMessagesLength) {
+      messagesContainerRef.current.scrollTo({ top: messagesContainerRef.current.scrollHeight, behavior: 'smooth' });
     }
+    setPrevMessagesLength(messages.length);
   }, [messages, prevMessagesLength]);
 
   useEffect(() => {
@@ -387,9 +397,7 @@ const AddResearchObjective: React.FC = () => {
     }
   }, [isSendingMessage, isSubmitting]);
 
-  const handleTemplateSelect = (template: Template) => {
-    setShowTemplates(false);
-  };
+  const handleTemplateSelect = (template: Template) => { setShowTemplates(false); };
 
   useEffect(() => {
     if (selectedTemplate) {
@@ -400,17 +408,17 @@ const AddResearchObjective: React.FC = () => {
   }, [selectedTemplate]);
 
   useEffect(() => {
-    const lastMessage = messages[messages.length - 1] as Message | undefined;
-    if (lastMessage?.sender === 'omi' && lastMessage?.text?.includes("carry this forward into personas")) {
+    const last = messages[messages.length - 1] as Message | undefined;
+    if (last?.sender === 'omi' && last?.text?.includes("carry this forward into personas")) {
       setOmiStatus("Research objective defined! Ready to create personas...");
       trigger({ stage: 'research_objective', event: 'RESEARCH_OBJECTIVE_SUMMARY_SHOWCASE', payload: {} });
     }
   }, [messages, objectiveId, workspaceId]);
 
-  // ── Summary refinement handler ────────────────────────────────────────────
+  // ── Summary refinement handler ─────────────────────────────────────────────
   const handleRefineRequest = async (
     selectedText: string,
-    instruction: string
+    instruction: string,
   ): Promise<void> => {
     if (!sessionId) throw new Error("No active session");
 
@@ -431,20 +439,17 @@ const AddResearchObjective: React.FC = () => {
     const trimmedInstruction = instruction.trim();
     const changeToPattern = /^(?:change|replace)\s+["']?(.+?)["']?\s+(?:to|with)\s+["']?(.+?)["']?$/i;
     const useInsteadPattern = /^use\s+["']?(.+?)["']?(?:\s+instead(?:\s+of\s+["']?.+?["']?)?)?$/i;
+    const changeThisToPattern = /^i\s+(?:want\s+to\s+)?(?:change|update|replace)\s+(?:this|it)\s+(?:to|with)\s+(.+)$/i;
 
     let replacement: string | null = null;
-    const changeThisToPattern = /^i\s+(?:want\s+to\s+)?(?:change|update|replace)\s+(?:this|it)\s+(?:to|with)\s+(.+)$/i;
     const changeMatch = trimmedInstruction.match(changeToPattern);
     const useMatch = trimmedInstruction.match(useInsteadPattern);
     const changeThisMatch = trimmedInstruction.match(changeThisToPattern);
 
-    if (changeMatch) {
-      replacement = changeMatch[2]!.trim();
-    } else if (useMatch) {
-      replacement = useMatch[1]!.trim();
-    } else if (changeThisMatch) {
-      replacement = changeThisMatch[1]!.trim();
-    } else if (
+    if (changeMatch) replacement = changeMatch[2]!.trim();
+    else if (useMatch) replacement = useMatch[1]!.trim();
+    else if (changeThisMatch) replacement = changeThisMatch[1]!.trim();
+    else if (
       !/\b(rephrase|rewrite|expand|...)\b/i.test(trimmedInstruction) &&
       trimmedInstruction.split(/\s+/).length <= 6
     ) {
@@ -462,9 +467,7 @@ const AddResearchObjective: React.FC = () => {
           { onError: () => setOmiStatus("Save failed — please retry") }
         );
       }
-      persistSummaryEdit(updatedText, {
-        onError: () => setOmiStatus("Save failed — please retry"),
-      });
+      persistSummaryEdit(updatedText, { onError: () => setOmiStatus("Save failed — please retry") });
       setOmiStatus("Summary updated");
       incrementSummaryEditCount();
       return;
@@ -496,17 +499,13 @@ const AddResearchObjective: React.FC = () => {
                     : m
                 )
               );
-            }
-            setOmiStatus("Summary updated");
-            if (summaryMessage) {
               persistOmiMessage(
                 { messageId: summaryMessage.id, content: updatedText },
                 { onError: () => setOmiStatus("Save failed — please retry") }
               );
             }
-            persistSummaryEdit(updatedText, {
-              onError: () => setOmiStatus("Save failed — please retry"),
-            });
+            persistSummaryEdit(updatedText, { onError: () => setOmiStatus("Save failed — please retry") });
+            setOmiStatus("Summary updated");
             incrementSummaryEditCount();
             resolve();
           } else {
@@ -521,7 +520,7 @@ const AddResearchObjective: React.FC = () => {
     });
   };
 
-  // ── CTA Handlers ────────────────────────────────────────────────────────────
+  // ── CTA Handlers ───────────────────────────────────────────────────────────
 
   const handleCreateWithOmi = async () => {
     setPersonaFlowStarted(true);
@@ -563,10 +562,7 @@ const AddResearchObjective: React.FC = () => {
   };
 
   const handleBuildManually = () => {
-    if (!manualAllowed) {
-      setShowUpgradeModal(true);
-      return;
-    }
+    if (!manualAllowed) { setShowUpgradeModal(true); return; }
     setPersonaFlowStarted(true);
     trigger({ stage: 'persona_builder', event: 'PERSONA_WORKFLOW_LOADED', payload: {} });
     if (objectiveId) localStorage.setItem(`step1_done_${objectiveId}`, '1');
@@ -575,23 +571,27 @@ const AddResearchObjective: React.FC = () => {
       { state: { flow: "manual", viewOnly: isViewOnly } }
     );
   };
+  const handleOpenROFramer = () => {
+    navigate(
+      `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/frame-objective`,
+      {
+        state: {
+          // Tell the framer page where to return so it can navigate(-1) correctly
+          returnTo: location.pathname,
+        },
+      }
+    );
+  };
 
-  // ── File handling ─────────────────────────────────────────────────────────
+  // ── File handling ──────────────────────────────────────────────────────────
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFileError(null);
     const file = e.target.files?.[0] ?? null;
-    // Reset input so the same file can be re-selected after removal
     e.target.value = '';
-
     if (!file) return;
-
     const error = validateFile(file);
-    if (error) {
-      setFileError(error);
-      return;
-    }
-
+    if (error) { setFileError(error); return; }
     setUploadedFile(file);
   };
 
@@ -601,7 +601,7 @@ const AddResearchObjective: React.FC = () => {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // ── Message sending ──────────────────────────────────────────────────────────
+  // ── Message sending ────────────────────────────────────────────────────────
 
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -609,7 +609,6 @@ const AddResearchObjective: React.FC = () => {
     const hasFile = uploadedFile !== null;
     if (!hasText && !hasFile) return;
 
-    // Optimistically add the user message to the thread
     const userMessage: Message = {
       id: `user-${Date.now()}`,
       sender: 'user',
@@ -634,19 +633,15 @@ const AddResearchObjective: React.FC = () => {
 
     if (!sessionId) {
       setOmiAnimation("error");
-      console.error('No session ID available');
       setMessages(prev => [...prev, {
-        id: `error-${Date.now()}`,
-        sender: 'omi',
+        id: `error-${Date.now()}`, sender: 'omi',
         text: "Session not initialized. Please try again.",
-        timestamp: new Date(),
-        isError: true
+        timestamp: new Date(), isError: true,
       }]);
       setOmiStatus("Session error");
       return;
     }
 
-    // ── Build the payload: text + optional file as base64 ──────────────────
     let payload: any = messageToSend;
 
     if (fileToSend) {
@@ -654,21 +649,14 @@ const AddResearchObjective: React.FC = () => {
         const base64Data = await fileToBase64(fileToSend);
         payload = {
           message: messageToSend,
-          file: {
-            name: fileToSend.name,
-            type: fileToSend.type,
-            size: fileToSend.size,
-            data: base64Data,
-          },
+          file: { name: fileToSend.name, type: fileToSend.type, size: fileToSend.size, data: base64Data },
         };
       } catch {
         setOmiAnimation("error");
         setMessages(prev => [...prev, {
-          id: `error-${Date.now()}`,
-          sender: 'omi',
+          id: `error-${Date.now()}`, sender: 'omi',
           text: "Failed to read the uploaded file. Please try again.",
-          timestamp: new Date(),
-          isError: true
+          timestamp: new Date(), isError: true,
         }]);
         setOmiStatus("File read error");
         return;
@@ -688,7 +676,7 @@ const AddResearchObjective: React.FC = () => {
             responseData: response.data,
             omiState: response.data.omi_state,
             suggestions: response.data.suggestions,
-            nextSteps: response.data.next_steps
+            nextSteps: response.data.next_steps,
           };
           setMessages(prev => [...prev, omiMessage]);
           trigger({ stage: 'research_objective', event: 'RESEARCH_OBJECTIVE_REFINING', payload: {} });
@@ -701,11 +689,9 @@ const AddResearchObjective: React.FC = () => {
         } else {
           setOmiAnimation("error");
           setMessages(prev => [...prev, {
-            id: `error-${Date.now()}`,
-            sender: 'omi',
+            id: `error-${Date.now()}`, sender: 'omi',
             text: "Sorry, I encountered an error. Please try again.",
-            timestamp: new Date(),
-            isError: true
+            timestamp: new Date(), isError: true,
           }]);
           setOmiStatus("Error occurred");
         }
@@ -713,21 +699,16 @@ const AddResearchObjective: React.FC = () => {
       },
       onError: (error: any) => {
         setOmiAnimation("error");
-        console.error('Failed to send message:', error);
         setMessages(prev => [...prev, {
-          id: `error-${Date.now()}`,
-          sender: 'omi',
+          id: `error-${Date.now()}`, sender: 'omi',
           text: "Sorry, I'm having trouble connecting. Please check your connection and try again.",
-          timestamp: new Date(),
-          isError: true
+          timestamp: new Date(), isError: true,
         }]);
         setOmiStatus("Connection error");
         setIsSubmitting(false);
-      }
+      },
     });
   };
-
-  const handleRefreshHistory = () => { refetchHistory(); };
 
   useEffect(() => {
     if (sessionLoading) setOmiStatus("Initializing Omi session...");
@@ -736,23 +717,21 @@ const AddResearchObjective: React.FC = () => {
 
   const isLoading = sessionLoading || isLoadingHistory;
 
-  const lastOmiMessageIndex = messages.reduce((lastIdx, msg, idx) =>
-    msg.sender === 'omi' ? idx : lastIdx, -1
+  const lastOmiMessageIndex = messages.reduce(
+    (lastIdx, msg, idx) => (msg.sender === 'omi' ? idx : lastIdx), -1
   );
 
-  // ── Text formatting ──────────────────────────────────────────────────────────
+  // ── Text formatting ────────────────────────────────────────────────────────
 
   const formatText = (text: string): React.ReactNode => {
     if (!text) return null;
 
-    const processBold = (str: string): React.ReactNode[] => {
-      const parts = str.split(/(\*\*.*?\*\*)/g);
-      return parts.map((part, i) => {
+    const processBold = (str: string): React.ReactNode[] =>
+      str.split(/(\*\*.*?\*\*)/g).map((part, i) => {
         if (part.startsWith('**') && part.endsWith('**'))
           return <strong key={i} className="font-bold aro-chat-text-bold">{part.slice(2, -2)}</strong>;
         return part;
       });
-    };
 
     const preparedText = text.replace(/(📌 Research Objective Summary:)/g, '\n$1\n');
     const lines = preparedText.split('\n');
@@ -769,7 +748,9 @@ const AddResearchObjective: React.FC = () => {
         elements.push(<div key={`br-${index}`} className="h-4" />);
         return;
       }
-      const isListItem = trimmed.startsWith('- ') || trimmed.startsWith('* ') || trimmed.startsWith('• ') || /^\d+\.\s/.test(trimmed);
+      const isListItem =
+        trimmed.startsWith('- ') || trimmed.startsWith('* ') ||
+        trimmed.startsWith('• ') || /^\d+\.\s/.test(trimmed);
       if (isListItem) {
         const content = trimmed.replace(/^([-*•]|\d+\.)\s+/, '');
         currentList.push(
@@ -802,7 +783,8 @@ const AddResearchObjective: React.FC = () => {
       }
     });
 
-    if (currentList.length > 0) elements.push(<ul key="ul-final" className="my-3 space-y-1">{currentList}</ul>);
+    if (currentList.length > 0)
+      elements.push(<ul key="ul-final" className="my-3 space-y-1">{currentList}</ul>);
     return elements;
   };
 
@@ -827,14 +809,14 @@ const AddResearchObjective: React.FC = () => {
   const isSummaryMessage = (message: Message): boolean =>
     message.sender === 'omi' && message.text?.includes("carry this forward into personas");
 
-  // ── Render ───────────────────────────────────────────────────────────────────
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <>
       <div className="aro-container">
         <div className="aro-chat-wrapper">
 
-          {/* Messages List */}
+          {/* Messages */}
           <div ref={messagesContainerRef} className="aro-messages">
             {isLoading && !isViewOnly ? (
               <div className="aro-state-center">
@@ -862,11 +844,12 @@ const AddResearchObjective: React.FC = () => {
             ) : (
               <>
                 {messages
-                  .filter((message) => !isInternalRefinePrompt(message.text))
+                  .filter(message => !isInternalRefinePrompt(message.text))
                   .map((message, index, filteredMessages) => {
-                    const isLatestOmi = message.sender === 'omi' &&
-                      index === filteredMessages.reduce((lastIdx, msg, idx) =>
-                        msg.sender === 'omi' ? idx : lastIdx, -1
+                    const isLatestOmi =
+                      message.sender === 'omi' &&
+                      index === filteredMessages.reduce(
+                        (lastIdx, msg, idx) => (msg.sender === 'omi' ? idx : lastIdx), -1
                       );
                     const isSummary = isSummaryMessage(message);
 
@@ -878,7 +861,6 @@ const AddResearchObjective: React.FC = () => {
                         className={`aro-message-row ${message.sender === 'user' ? 'aro-message-row--user' : 'aro-message-row--omi'}`}
                       >
                         <div className={`aro-bubble-wrapper ${message.sender === 'user' ? 'aro-bubble-wrapper--user' : 'aro-bubble-wrapper--omi'}`}>
-
                           {isSummary ? (
                             <SummaryRefineBubble
                               message={message}
@@ -891,10 +873,8 @@ const AddResearchObjective: React.FC = () => {
                             />
                           ) : (
                             <div className={`aro-bubble ${message.sender === 'omi'
-                              ? message.isError
-                                ? 'aro-bubble--omi-error'
-                                : 'aro-bubble--omi'
-                              : 'aro-bubble--user'
+                                ? message.isError ? 'aro-bubble--omi-error' : 'aro-bubble--omi'
+                                : 'aro-bubble--user'
                               }`}>
                               {message.sender === 'omi' && (
                                 <div className="aro-omi-avatar">
@@ -916,12 +896,12 @@ const AddResearchObjective: React.FC = () => {
                               )}
                               <div className="aro-bubble-text">
                                 {renderMessageWithPersonaButton(message)}
-                                {/* File attachment badge on user messages */}
                                 {message.file && (
                                   <div className="aro-bubble-file">
                                     {(message.file as File).name.toLowerCase().endsWith('.pdf')
                                       ? <TbFileTypePdf size={15} />
-                                      : ((message.file as File).name.toLowerCase().endsWith('.xls') || (message.file as File).name.toLowerCase().endsWith('.xlsx'))
+                                      : (message.file as File).name.toLowerCase().endsWith('.xls') ||
+                                        (message.file as File).name.toLowerCase().endsWith('.xlsx')
                                         ? <TbFileTypeXls size={15} />
                                         : <TbFileTypeDoc size={15} />
                                     }
@@ -932,16 +912,16 @@ const AddResearchObjective: React.FC = () => {
                               </div>
                             </div>
                           )}
-
                           <span className="aro-timestamp">
-                            {message.sender === 'omi' ? 'Omi' : 'You'} • {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            {message.sender === 'omi' ? 'Omi' : 'You'} •{' '}
+                            {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </span>
                         </div>
                       </motion.div>
                     );
                   })}
 
-                {/* ── Thinking indicator (brain icon + cycling phrases) ── */}
+                {/* Thinking indicator */}
                 <AnimatePresence>
                   {(isSendingMessage || isSubmitting) && (
                     <motion.div
@@ -954,13 +934,8 @@ const AddResearchObjective: React.FC = () => {
                     >
                       <div className="aro-bubble-wrapper aro-bubble-wrapper--omi">
                         <div className="aro-typing-indicator">
-                          {/* Brain icon replaces the video animation */}
                           <div className="aro-omi-avatar">
-                            <video
-                              className="aro-omi-video"
-                              src={OmiKeyboard}
-                              autoPlay loop muted playsInline
-                            />
+                            <video className="aro-omi-video" src={OmiKeyboard} autoPlay loop muted playsInline />
                           </div>
                           <div className="aro-typing-text-wrap">
                             <AnimatePresence mode="wait">
@@ -990,7 +965,7 @@ const AddResearchObjective: React.FC = () => {
             )}
           </div>
 
-          {/* ── CTA section / input bar ── */}
+          {/* CTA / input bar */}
           {isViewOnly ? (
             <motion.div
               className="aro-cta-section"
@@ -1021,6 +996,7 @@ const AddResearchObjective: React.FC = () => {
                 </motion.button>
               </div>
             </motion.div>
+
           ) : isObjectiveConfirmed ? (
             <motion.div
               className="aro-cta-section"
@@ -1058,9 +1034,11 @@ const AddResearchObjective: React.FC = () => {
                 </motion.div>
               </div>
             </motion.div>
+
           ) : (
             <div className="aro-input-bar">
-              {/* ── File preview pill (above the input) ── */}
+
+              {/* File preview pill */}
               <AnimatePresence>
                 {uploadedFile && (
                   <motion.div
@@ -1072,7 +1050,8 @@ const AddResearchObjective: React.FC = () => {
                   >
                     {uploadedFile.name.toLowerCase().endsWith('.pdf')
                       ? <TbFileTypePdf size={14} />
-                      : (uploadedFile.name.toLowerCase().endsWith('.xls') || uploadedFile.name.toLowerCase().endsWith('.xlsx'))
+                      : uploadedFile.name.toLowerCase().endsWith('.xls') ||
+                        uploadedFile.name.toLowerCase().endsWith('.xlsx')
                         ? <TbFileTypeXls size={14} />
                         : <TbFileTypeDoc size={14} />
                     }
@@ -1090,7 +1069,7 @@ const AddResearchObjective: React.FC = () => {
                 )}
               </AnimatePresence>
 
-              {/* ── File error ── */}
+              {/* File error */}
               <AnimatePresence>
                 {fileError && (
                   <motion.div
@@ -1106,8 +1085,29 @@ const AddResearchObjective: React.FC = () => {
                 )}
               </AnimatePresence>
 
+              {/*
+               * ── RO Framer trigger ─────────────────────────────────────────
+               * Navigates to the full-page ResearchObjectiveFramer.
+               * When the user completes the framer and clicks "Use This
+               * Objective", ResearchObjectiveFramer calls:
+               *   navigate(-1, { state: { roFramerObjective: builtText } })
+               * The useEffect at the top of this component catches that and
+               * populates the textarea automatically.
+               * Hidden in view-only mode and after the objective is confirmed.
+               */}
+              {isFreshFirstInteraction && (
+                <button
+                  className="aro-ro-framer-btn"
+                  type="button"
+                  onClick={handleOpenROFramer}
+                  title="Frame your Research Objective step by step"
+                >
+                  Guide me through research framing →
+                </button>
+              )}
+
               <form onSubmit={handleSendMessage} className="aro-input-form">
-                {/* ── File upload trigger ── */}
+                {/* File upload trigger */}
                 <label
                   className="aro-input-file-label"
                   title="Attach a PDF, DOC, DOCX, XLS, or XLSX file"
@@ -1126,8 +1126,8 @@ const AddResearchObjective: React.FC = () => {
                 <textarea
                   ref={textareaRef}
                   value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  onKeyDown={(e) => {
+                  onChange={e => setInputValue(e.target.value)}
+                  onKeyDown={e => {
                     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); }
                   }}
                   className="aro-textarea"
@@ -1136,7 +1136,11 @@ const AddResearchObjective: React.FC = () => {
                   placeholder={uploadedFile ? "Add a message about your file (optional)…" : undefined}
                 />
 
-                <button type="button" className="aro-input-icon-btn" disabled={isSubmitting || isLoading || !sessionData}>
+                <button
+                  type="button"
+                  className="aro-input-icon-btn"
+                  disabled={isSubmitting || isLoading || !sessionData}
+                >
                   <SpIcon name="sp-Other-Mic" />
                 </button>
 

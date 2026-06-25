@@ -346,6 +346,219 @@ You are a research strategist. Your task is to create a detailed and clear resea
 
 
 
+FRAMER_COMPONENT_LABELS = {
+    "business_context": "Business Context",
+    "decision_problem": "Decision Problem",
+    "information_gap": "Information Gap",
+    "primary_hypothesis": "Primary Hypothesis",
+    "secondary_hypotheses": "Secondary Hypotheses",
+    "target_audience": "Target Audience",
+    "segmentation_logic": "Segmentation Logic",
+    "competitive_frame": "Category & Competitive Frame",
+    "behaviors_attitudes": "Behaviors & Attitudes to Explore",
+    "geography": "Geography / Markets",
+}
+
+
+def _build_framer_structured_block(framer: dict) -> tuple[str, list[str]]:
+    """Builds the labeled structured-input text block and returns (text, filled_component_labels)."""
+    lines = []
+    filled = []
+
+    brand_bits = []
+    if framer.get("brand_name"):
+        brand_bits.append(f"Brand: {framer['brand_name']}")
+    if framer.get("industry"):
+        brand_bits.append(f"Industry: {framer['industry']}")
+    if framer.get("website"):
+        brand_bits.append(f"Website: {framer['website']}")
+    if framer.get("competitors"):
+        brand_bits.append(f"Competitors: {', '.join(framer['competitors'])}")
+    if brand_bits:
+        lines.append("Brand Context:\n" + "\n".join(brand_bits))
+
+    for field, label in FRAMER_COMPONENT_LABELS.items():
+        value = (framer.get(field) or "").strip()
+        if value:
+            lines.append(f"{label}:\n{value}")
+            filled.append(label)
+
+    # Free-text catch-all from the Framer's "Other Information" step. Not one
+    # of the 10 tracked components — just extra context for the LLM to weave in.
+    notes = (framer.get("additional_notes") or "").strip()
+    if notes:
+        lines.append(f"Additional Notes:\n{notes}")
+
+    return "\n\n".join(lines), filled
+
+
+async def synthesize_research_objective_from_framer(framer: dict) -> dict:
+    """
+    Turns the Research Objective Framer's structured fields into one finalized
+    research objective paragraph, reusing the same component framework and output
+    contract as the conversation-based summarizer so downstream consumers
+    (persona/questionnaire/interview/report) see no difference in shape.
+    """
+    structured_block, filled_components = _build_framer_structured_block(framer)
+
+    if not structured_block:
+        return {
+            "final_objective": "",
+            "available_research_components": [],
+            "missing_research_components": list(FRAMER_COMPONENT_LABELS.values()),
+        }
+
+    prompt = f"""
+<ROLE>
+You are a research strategist. Your task is to create a detailed and clear research objective based on structured inputs a user filled in via a guided form.
+</ROLE>
+
+<RESEARCH COMPONENTS>
+1. Business Context — explains why the research is needed: what problem or situation triggered it and what the business is currently facing.
+2. Decision Problem — defines the exact choice the research will help decide, always framed as a question such as "Should we do X?"
+3. Information Gap — explains what we don't know right now that is stopping us from making the decision.
+4. Primary Hypothesis — states what we believe will happen and needs to be tested before deciding.
+5. Secondary Hypotheses — other possible reasons or factors that might affect the outcome of the decision.
+6. Target Audience — defines exactly who the research is about: their basic details, behavior, and mindset.
+7. Segmentation Logic — explains how the audience is divided into smaller groups for separate analysis.
+8. Category & Competitive Frame — describes the market we are operating in and who the main competitors are.
+9. Behaviors & Attitudes to Explore — defines what people do and what they think about the product or category.
+10. Geography / Markets — defines where the research will be conducted, at city or region level.
+</RESEARCH COMPONENTS>
+
+<INSTRUCTIONS>
+- NEVER skip or paraphrase away specifics the user provided (brand names, competitor names, cities, numbers).
+- Write ONE clear, concise research objective in a single paragraph based on the structured input below.
+- If Additional Notes are present, weave any relevant constraints, nuances, or must-answer questions into the objective — they are not a separate component, just extra context.
+- Do NOT ask questions. Do NOT invent facts the input doesn't support. Do NOT mention that this came from a form.
+- Return ONLY the final research objective as plain text, 7 to 10 sentences.
+- List which of the 10 research components above are present in the final objective and which are missing.
+</INSTRUCTIONS>
+
+<STRUCTURED_INPUT>
+{structured_block}
+</STRUCTURED_INPUT>
+
+<OUTPUT STRUCTURE>
+{{
+  "final_objective": "The final research objective in one single paragraph.",
+  "available_research_components": "list of research component names present in the final objective",
+  "missing_research_components": "list of research component names missing from the final objective"
+}}
+</OUTPUT STRUCTURE>
+"""
+
+    response = await client.responses.create(
+        model="gpt-4.1",
+        temperature=0.5,
+        input=prompt,
+    )
+    raw_text = response.output[0].content[0].text
+
+    try:
+        data = json.loads(raw_text)
+    except Exception as e:
+        print(f"Error in synthesize_research_objective_from_framer: {e}")
+        data = {
+            "final_objective": structured_block,
+            "available_research_components": filled_components,
+            "missing_research_components": [],
+        }
+
+    return {
+        "final_objective": data.get("final_objective", ""),
+        "available_research_components": data.get("available_research_components", filled_components),
+        "missing_research_components": data.get("missing_research_components", []),
+    }
+
+
+def framer_confidence(synthesis: dict) -> int:
+    """Fraction of the 10 tracked components present in the synthesized objective."""
+    filled_count = len(synthesis.get("available_research_components", []))
+    return min(100, int((filled_count / len(FRAMER_COMPONENT_LABELS)) * 100))
+
+
+async def persist_framer_research_objective(
+    session: AsyncSession,
+    *,
+    exploration_id: str,
+    created_by: str,
+    framer: dict,
+    synthesis: dict,
+) -> ResearchObjectives:
+    """
+    Persists an already-synthesized Framer objective onto the existing
+    ResearchObjectives row (creating one if absent). Raw structured fields are
+    kept in ai_interpretation["framer_input"] for traceability/re-editing — no
+    separate table or migration required. Takes precomputed `synthesis` so
+    callers that need the confidence score before deciding whether to finalize
+    (see the router's low-confidence follow-up branch) don't pay for a second
+    LLM call.
+    """
+    final_objective = synthesis["final_objective"]
+
+    if not final_objective:
+        raise ValueError("Could not synthesize a research objective from the provided Framer fields")
+
+    confidence = framer_confidence(synthesis)
+    validation_status = "validated" if confidence >= 70 else "needs_review"
+
+    ai_interpretation = {
+        "source": "research_objective_framer",
+        "framer_input": framer,
+        "available_research_components": synthesis["available_research_components"],
+        "missing_research_components": synthesis["missing_research_components"],
+    }
+
+    result = await session.execute(
+        select(ResearchObjectives).where(
+            ResearchObjectives.exploration_id == exploration_id
+        )
+    )
+    existing = result.scalars().first()
+
+    if existing:
+        existing.description = final_objective
+        existing.validation_status = validation_status
+        existing.ai_interpretation = ai_interpretation
+        existing.confidence_level = confidence
+        session.add(existing)
+        await session.commit()
+        await session.refresh(existing)
+        return existing
+
+    research_objective = ResearchObjectives(
+        exploration_id=exploration_id,
+        description=final_objective,
+        created_by=created_by,
+        validation_status=validation_status,
+        ai_interpretation=ai_interpretation,
+        confidence_level=confidence,
+    )
+    session.add(research_objective)
+    await session.commit()
+    await session.refresh(research_objective)
+    return research_objective
+
+
+async def save_research_objective_from_framer(
+    session: AsyncSession,
+    *,
+    exploration_id: str,
+    created_by: str,
+    framer: dict,
+) -> ResearchObjectives:
+    """Synthesizes and persists in one call — kept for callers that don't need the confidence score first."""
+    synthesis = await synthesize_research_objective_from_framer(framer)
+    return await persist_framer_research_objective(
+        session,
+        exploration_id=exploration_id,
+        created_by=created_by,
+        framer=framer,
+        synthesis=synthesis,
+    )
+
+
 async def validate_description_with_llm(description: str, conversation: list[str] | None = None) -> dict:
     """
     Validates:

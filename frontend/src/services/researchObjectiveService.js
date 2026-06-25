@@ -54,6 +54,22 @@ export const createResearchObjective = async (explorationId) => {
   }
 };
 
+// Save the Research Objective Framer's structured fields — backend synthesizes
+// them into the research objective description via the existing RO pipeline.
+export const createResearchObjectiveFromFramer = async (workspaceId, explorationId, framerPayload) => {
+  try {
+    const response = await axiosInstance.post(
+      `/workspaces/${workspaceId}/research/objectives/from-framer`,
+      framerPayload,
+      { params: { exploration_id: explorationId } }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error saving research objective from Framer:', error);
+    throw error;
+  }
+};
+
 export const getConversationHistory = async (workspaceId, explorationId) => {
   try {
     const response = await axiosInstance.get(`/workspaces/omi/conversation`, {
