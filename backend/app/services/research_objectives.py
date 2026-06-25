@@ -383,6 +383,12 @@ def _build_framer_structured_block(framer: dict) -> tuple[str, list[str]]:
             lines.append(f"{label}:\n{value}")
             filled.append(label)
 
+    # Free-text catch-all from the Framer's "Other Information" step. Not one
+    # of the 10 tracked components — just extra context for the LLM to weave in.
+    notes = (framer.get("additional_notes") or "").strip()
+    if notes:
+        lines.append(f"Additional Notes:\n{notes}")
+
     return "\n\n".join(lines), filled
 
 
@@ -423,6 +429,7 @@ You are a research strategist. Your task is to create a detailed and clear resea
 <INSTRUCTIONS>
 - NEVER skip or paraphrase away specifics the user provided (brand names, competitor names, cities, numbers).
 - Write ONE clear, concise research objective in a single paragraph based on the structured input below.
+- If Additional Notes are present, weave any relevant constraints, nuances, or must-answer questions into the objective — they are not a separate component, just extra context.
 - Do NOT ask questions. Do NOT invent facts the input doesn't support. Do NOT mention that this came from a form.
 - Return ONLY the final research objective as plain text, 7 to 10 sentences.
 - List which of the 10 research components above are present in the final objective and which are missing.
@@ -465,27 +472,35 @@ You are a research strategist. Your task is to create a detailed and clear resea
     }
 
 
-async def save_research_objective_from_framer(
+def framer_confidence(synthesis: dict) -> int:
+    """Fraction of the 10 tracked components present in the synthesized objective."""
+    filled_count = len(synthesis.get("available_research_components", []))
+    return min(100, int((filled_count / len(FRAMER_COMPONENT_LABELS)) * 100))
+
+
+async def persist_framer_research_objective(
     session: AsyncSession,
     *,
     exploration_id: str,
     created_by: str,
     framer: dict,
+    synthesis: dict,
 ) -> ResearchObjectives:
     """
-    Synthesizes the Framer's structured fields into a research objective and persists
-    it on the existing ResearchObjectives row (creating one if absent). Raw structured
-    fields are kept in ai_interpretation["framer_input"] for traceability/re-editing —
-    no separate table or migration required.
+    Persists an already-synthesized Framer objective onto the existing
+    ResearchObjectives row (creating one if absent). Raw structured fields are
+    kept in ai_interpretation["framer_input"] for traceability/re-editing — no
+    separate table or migration required. Takes precomputed `synthesis` so
+    callers that need the confidence score before deciding whether to finalize
+    (see the router's low-confidence follow-up branch) don't pay for a second
+    LLM call.
     """
-    synthesis = await synthesize_research_objective_from_framer(framer)
     final_objective = synthesis["final_objective"]
 
     if not final_objective:
         raise ValueError("Could not synthesize a research objective from the provided Framer fields")
 
-    filled_count = len(synthesis["available_research_components"])
-    confidence = min(100, int((filled_count / len(FRAMER_COMPONENT_LABELS)) * 100))
+    confidence = framer_confidence(synthesis)
     validation_status = "validated" if confidence >= 70 else "needs_review"
 
     ai_interpretation = {
@@ -524,6 +539,24 @@ async def save_research_objective_from_framer(
     await session.commit()
     await session.refresh(research_objective)
     return research_objective
+
+
+async def save_research_objective_from_framer(
+    session: AsyncSession,
+    *,
+    exploration_id: str,
+    created_by: str,
+    framer: dict,
+) -> ResearchObjectives:
+    """Synthesizes and persists in one call — kept for callers that don't need the confidence score first."""
+    synthesis = await synthesize_research_objective_from_framer(framer)
+    return await persist_framer_research_objective(
+        session,
+        exploration_id=exploration_id,
+        created_by=created_by,
+        framer=framer,
+        synthesis=synthesis,
+    )
 
 
 async def validate_description_with_llm(description: str, conversation: list[str] | None = None) -> dict:

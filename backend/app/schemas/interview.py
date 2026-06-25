@@ -6,6 +6,7 @@ class InterviewCreate(BaseModel):
     persona_id: Optional[str] = None
     force_new: bool = False    # Bypass idempotency — always create a new record
     lightweight: bool = False  # Skip batch LLM generation (Conversation Studio mode)
+    session_group_id: Optional[str] = None  # Ties multiple per-persona interviews into one "All Personas" session
 
 class MessageIn(BaseModel):
     role: str = Field(..., pattern=r"^(user|persona|system|other)$")
@@ -25,6 +26,7 @@ class InterviewOut(BaseModel):
     workspace_id: str
     exploration_id: str
     persona_id: Optional[str] = None
+    session_group_id: Optional[str] = None
     messages: List[Dict[str, Any]] = Field(default_factory=list)
     generated_answers: Dict[str, Any] = Field(default_factory=dict)
     created_by: str

@@ -31,8 +31,9 @@ from app.utils.omi_helpers import (
     get_omi_encouragement,
     get_omi_concern
 )
-from app.models.omi import WorkflowStage
+from app.models.omi import WorkflowStage, OmiState
 from app.services import omi as omi_service
+from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import select
 from app.models.research_objectives import ResearchObjectives, ResearchObjectivesFile
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -188,9 +189,11 @@ async def create_objective_from_framer(
 ):
     """
     Synthesizes the Research Objective Framer's structured fields into a research
-    objective and saves it via the existing ResearchObjectives pipeline — no new
-    table, no schema migration. Downstream consumers (persona/questionnaire/
-    interview/report) read this exactly like any other research objective.
+    objective. If the Framer was filled in thinly (confidence < 70), this does NOT
+    finalize — it hands off to the same follow-up-question logic the chat flow uses
+    (validate_description_with_llm), so Omi keeps refining instead of silently
+    accepting a weak objective. Only a confident synthesis gets persisted via the
+    existing ResearchObjectives pipeline — no new table, no schema migration.
     """
     exploration = await get_exploration_by_id(session, exploration_id)
     if not exploration:
@@ -204,6 +207,73 @@ async def create_objective_from_framer(
             detail="Only workspace admins can create research objectives"
         )
 
+    framer = body.model_dump()
+    synthesis = await exp_service.synthesize_research_objective_from_framer(framer)
+    if not synthesis.get("final_objective"):
+        raise HTTPException(
+            status_code=400,
+            detail="Fill in at least one section before submitting"
+        )
+
+    confidence = exp_service.framer_confidence(synthesis)
+
+    omi_result = await omi_service.get_or_create_session(exploration_id, current_user.id)
+    omi_session = omi_result[0] if isinstance(omi_result, tuple) else omi_result
+
+    # --------------------------------------------------
+    # LOW CONFIDENCE — let Omi ask a follow-up before finalizing, same as the
+    # chat-driven flow, instead of declaring an underfilled objective "done".
+    # --------------------------------------------------
+    if confidence < 70:
+        analysis = await exp_service.validate_description_with_llm(
+            description=synthesis["final_objective"],
+            conversation=[],
+        )
+        questions = analysis.get("questions", "")
+        if isinstance(questions, list):
+            questions = " ".join(questions)
+
+        if questions:
+            session_context = omi_session.context or {}
+            session_context["research_objectives"] = {
+                "probe_round": 1,
+                "asked_components": analysis.get("missing", []),
+                "raw_inputs": [synthesis["final_objective"]],
+                "current_draft": synthesis["final_objective"],
+                "final_analysis": analysis,
+                "confidence_level": confidence,
+                "ready_to_save": False,
+                "final_synthesized_text": synthesis["final_objective"],
+                "conversation": analysis.get("conversation"),
+                "final_objective": analysis.get("final_objective"),
+                "information_gathered": analysis.get("information_gathered"),
+            }
+            omi_session.context = session_context
+            flag_modified(omi_session, "context")
+            session.add(omi_session)
+            await session.commit()
+
+            await exp_service.increment_clarification_attempts(exploration_id)
+
+            await omi_service.add_message(
+                session_id=omi_session.id,
+                role="omi",
+                content=questions,
+                message_type="chat",
+                workflow_stage=WorkflowStage.RESEARCH_OBJECTIVES,
+                omi_state=OmiState.THINKING,
+            )
+
+            return SuccessResponse(
+                message="A few things are still fuzzy — Omi has a quick follow-up for you.",
+                data={"needs_followup": True, "confidence_level": confidence},
+            )
+        # No follow-up question came back despite low confidence — nothing more
+        # to ask, so fall through and finalize with what we have.
+
+    # --------------------------------------------------
+    # FINALIZE — confident enough (or no further question to ask).
+    # --------------------------------------------------
     existing_check = await session.execute(
         select(ResearchObjectives).where(
             ResearchObjectives.exploration_id == exploration.id
@@ -212,11 +282,12 @@ async def create_objective_from_framer(
     is_update = existing_check.scalars().first() is not None
 
     try:
-        research_objective = await exp_service.save_research_objective_from_framer(
+        research_objective = await exp_service.persist_framer_research_objective(
             session,
             exploration_id=exploration.id,
             created_by=current_user.id,
-            framer=body.model_dump(),
+            framer=framer,
+            synthesis=synthesis,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -233,9 +304,6 @@ async def create_objective_from_framer(
     # last chat message containing this exact phrase — write it here so the
     # Framer path surfaces those CTAs without any frontend special-casing.
     # --------------------------------------------------
-    omi_result = await omi_service.get_or_create_session(exploration_id, current_user.id)
-    omi_session = omi_result[0] if isinstance(omi_result, tuple) else omi_result
-
     confirmation_message = (
         "Thanks! I’ve put everything together and we’re good to proceed.\n\n"
         "📌 **Research Objective Summary:**\n"

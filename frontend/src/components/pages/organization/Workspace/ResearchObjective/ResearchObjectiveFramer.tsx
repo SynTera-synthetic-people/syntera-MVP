@@ -1,5 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation, useParams } from "react-router-dom";
+import { toast } from "react-toastify";
+import { useCreateResearchObjectiveFromFramer } from "../../../../../hooks/useOmiChat";
 import "./ResearchObjectiveFramer.css";
 
 import OmiIdle from "../../../../../assets/Omi Animations/IdleStateMotion_Lite.mp4";
@@ -53,6 +55,24 @@ interface ROFramerData {
 interface ResearchObjectiveFramerProps {
     onSubmit?: (data: ROFramerData) => void;
     onBack?: () => void;
+}
+
+// Maps this wizard's tab shape to the backend's /from-framer payload.
+// "Other Information" has no dedicated research component on the backend —
+// it's passed through as additional_notes and woven into the synthesized
+// objective as extra context rather than a tracked component.
+function buildFramerPayload(data: ROFramerData) {
+    return {
+        brand_name: data.context.companyName || undefined,
+        industry: data.context.industry || undefined,
+        website: data.context.website || undefined,
+        competitors: data.context.competitors.map(c => c.name),
+        business_context: data.businessTrigger.trigger || undefined,
+        information_gap: data.customerUnknown.unknown || undefined,
+        decision_problem: data.decisionMoment.decision || undefined,
+        target_audience: data.audienceSegments.audience || undefined,
+        additional_notes: data.otherInformation.notes || undefined,
+    };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1025,6 +1045,7 @@ interface PreviewTabProps {
     data: ROFramerData;
     onSubmit: () => void;
     onBack: () => void;
+    isSubmitting?: boolean;
 }
 
 interface PreviewSection {
@@ -1069,12 +1090,15 @@ const buildPreviewSections = (data: ROFramerData): PreviewSection[] => {
     return sections;
 };
 
-const PreviewTab: React.FC<PreviewTabProps> = ({ data, onSubmit, onBack }) => {
+const PreviewTab: React.FC<PreviewTabProps> = ({ data, onSubmit, onBack, isSubmitting }) => {
     const sections = buildPreviewSections(data);
     const isEmpty = sections.length === 0;
 
     const handleBackClick = () => onBack();
-    const handleSubmitClick = () => onSubmit();
+    const handleSubmitClick = () => {
+        if (isSubmitting) return;
+        onSubmit();
+    };
 
     return (
         <div className="rofp-tab-content">
@@ -1115,6 +1139,7 @@ const PreviewTab: React.FC<PreviewTabProps> = ({ data, onSubmit, onBack }) => {
                     className="rofp-btn-back"
                     onClick={handleBackClick}
                     type="button"
+                    disabled={isSubmitting}
                 >
                     <span className="rofp-btn-arrow rofp-btn-arrow--back">←</span>
                     Back
@@ -1123,17 +1148,17 @@ const PreviewTab: React.FC<PreviewTabProps> = ({ data, onSubmit, onBack }) => {
                     <button
                         className={[
                             "rofp-btn-continue",
-                            isEmpty ? "rofp-btn-continue--disabled" : "",
+                            isEmpty || isSubmitting ? "rofp-btn-continue--disabled" : "",
                         ]
                             .filter(Boolean)
                             .join(" ")}
-                        disabled={isEmpty}
+                        disabled={isEmpty || isSubmitting}
                         onClick={handleSubmitClick}
                         type="button"
                     >
-                        Submit
+                        {isSubmitting ? "Saving…" : "Submit"}
                     </button>
-                    {isEmpty && (
+                    {isEmpty && !isSubmitting && (
                         <p className="rofp-cta-hint">
                             Fill in at least one section to submit
                         </p>
@@ -1170,6 +1195,13 @@ const ResearchObjectiveFramer: React.FC<ResearchObjectiveFramerProps> = ({
 }) => {
     const navigate = useNavigate();
     const location = useLocation();
+    const { workspaceId, objectiveId } = useParams<{
+        workspaceId: string;
+        objectiveId: string;
+    }>();
+
+    const { mutate: saveFramer, isPending: isSaving } =
+        useCreateResearchObjectiveFromFramer(workspaceId, objectiveId) as any;
 
     // This page is reached via AddResearchObjective -> handleOpenROFramer,
     // which passes { returnTo: <AddResearchObjective path> } in router state.
@@ -1253,12 +1285,60 @@ const ResearchObjectiveFramer: React.FC<ResearchObjectiveFramerProps> = ({
         const nextTab = getTab(nextIndex);
         if (nextTab) {
             goToTab(nextTab.id);
-        } else {
-            // No more tabs — the brief is complete
-            setOmiState("success");
-            onSubmit?.(data);
+            return;
         }
-    }, [activeTabIndex, data, goToTab, onSubmit]);
+
+        // No more tabs (Preview's Submit was clicked) — save the brief via the
+        // existing RO pipeline. This synthesizes these fields into
+        // ResearchObjectives.description, same as the chat-driven flow, so
+        // persona/questionnaire/interview/report all pick it up unchanged.
+        if (isSaving) return;
+        setOmiState("success");
+
+        saveFramer(buildFramerPayload(data), {
+            onSuccess: (response: any) => {
+                // Low-confidence submissions don't finalize — the backend hands off
+                // to Omi's normal follow-up-question flow instead (same as chat).
+                // Either way, the right place to land is the chat page: it'll show
+                // either Omi's question or the confirmed summary + persona CTAs.
+                const needsFollowup = response?.data?.needs_followup === true;
+                toast.success(
+                    needsFollowup
+                        ? "Got it — Omi has a quick follow-up for you before this is ready."
+                        : "Research objective saved. Ready to build personas."
+                );
+                onSubmit?.(data);
+                if (returnTo) {
+                    navigate(returnTo);
+                } else if (workspaceId && objectiveId) {
+                    navigate(
+                        `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/research-mode`
+                    );
+                } else {
+                    handleBackToObjective();
+                }
+            },
+            onError: (error: any) => {
+                setOmiState("idle");
+                toast.error(
+                    error?.response?.data?.detail ??
+                        "Couldn't save the research objective. Please try again."
+                );
+            },
+        });
+    }, [
+        activeTabIndex,
+        data,
+        goToTab,
+        handleBackToObjective,
+        isSaving,
+        navigate,
+        objectiveId,
+        onSubmit,
+        returnTo,
+        saveFramer,
+        workspaceId,
+    ]);
 
     const handleBack = useCallback(() => {
         const prevIndex = activeTabIndex - 1;
@@ -1403,6 +1483,7 @@ const ResearchObjectiveFramer: React.FC<ResearchObjectiveFramerProps> = ({
                         data={data}
                         onSubmit={handleContinue}
                         onBack={handleBack}
+                        isSubmitting={isSaving}
                     />
                 )}
             </div>

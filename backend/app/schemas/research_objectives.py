@@ -48,3 +48,4 @@ class ResearchObjectiveFramerInput(BaseModel):
     competitive_frame: Optional[str] = None
     behaviors_attitudes: Optional[str] = None
     geography: Optional[str] = None
+    additional_notes: Optional[str] = None
