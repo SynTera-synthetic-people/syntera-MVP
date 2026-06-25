@@ -79,8 +79,7 @@ async def get_or_create_session(exploration_id: str, user_id: str) -> OmiSession
         await add_message(
             omi_session.id,
             "omi",
-            "Hey, I'm Omi - your research co-pilot! 👋 Ready to define your research objectives? Let's start by understanding what you want to explore. What's the question or curiosity that brought you here today?",
-            "greeting",
+            "Hey, I’m Omi  Let’s uncover how people really think, feel, and make decisions.What are we diving into today?",
             WorkflowStage.RESEARCH_OBJECTIVES,
             OmiState.GREETING
         )

@@ -251,10 +251,53 @@ One row per detected behavioral signal.
 **Rule 5: Multi-Select and Ranking Encoding** — Multi-select: semicolon-separated. Ranking: pipe-separated. NPS: single integer 0-10.
 **Rule 6: CSV Technical Standards** — UTF-8 encoding. Comma delimiter. Double-quote text fields containing commas. First row = headers.
 ---
+# 3.5 SHARED REPORT SHELL (DECISION_INTELLIGENCE and BEHAVIORAL_ARCHAEOLOGY ONLY)
+These sections wrap every narrative report so quant reports use the exact same shell, heading hierarchy, and TOC format as the qualitative reports on this platform. Generate them identically regardless of which of the two CTAs is selected. They are NOT generated for CSV_DATA.
+
+## STUDY DETAILS
+Report header / cover page. Same field set, order, and labels as the qualitative report's Study Details block on this platform, so quant and qual covers are visually identical. Render as plain label-value lines (one per line), in this exact order:
+[REPORT TITLE]: Derived from the research objective's decision problem. Strategic, not generic.
+[SUBTITLE]: 1 line capturing the research angle, <=10 words.
+Prepared for: [Client name from the payload if present, else "Client Research Team"]
+Date: {REPORT_DATE}. Always use this exact date. Ignore any other date in the payload.
+Prepared by: Synthetic People AI (https://synthetic-people.ai/)
+Category: [Inferred from research objective]
+Geography: [Inferred from research objective]
+Quant ID: [simulation_id from the payload]
+Ground Truth (Actions Data): [metadata.ground_truth_consumers_analyzed from the payload] relevant consumers analyzed. This number is pre-resolved upstream, display it exactly as given, do not recalculate.
+Enrichment Layer: [Derived from metadata.sourcebank_sources / metadata.sourcebank_context from the payload]. Render as the source count analyzed, with a platform breakdown if the sourcebank sources indicate platforms (for example: "12 sources analyzed across Reddit, Medium, and LinkedIn"). If no sourcebank data is present, output "Not Available".
+HQ Sources: [metadata.sourcebank_sources_count from the payload] sources. This number is pre-resolved upstream, display it exactly as given, do not recalculate.
+Neuroscience Inference: [metadata.neuroscience_inference from the payload, Yes/No]
+Research Objective Score: [metadata.research_objective_score from the payload]%. If null, output "Not Available".
+Persona Calibration Score: [metadata.persona_calibration_score from the payload]%. If null, output "Not Available".
+Personas Considered: [persona names from the payload's `personas` array]
+Quant Coverage Score: [metadata.quant_coverage_score from the payload]%. If null, output "Not Available".
+Total Sample Size: [total_sample_size from the payload] respondents simulated
+Persona Sample Breakdown: [persona_sample_sizes from the payload, rendered as "[Persona]: N" per persona]
+If a value is not present in the payload, output "Not Available". Never omit a line and never invent a value not present in the input.
+
+## TABLE OF CONTENTS
+List, in order: Research Objective, Studied Personas, then every CTA section title for the selected CTA (DI-1 through DI-7, or BA-1 through BA-11), then Research Methodology, Limitations and Transparency. Render as a "## TABLE OF CONTENTS" heading.
+
+## RESEARCH OBJECTIVE
+One comprehensive paragraph (120-200 words) synthesizing the research objective into a fluid narrative: what is being studied, why, and what success looks like. Do not copy-paste the raw research objective text verbatim; restate it.
+
+## STUDIED PERSONAS
+Render as a TABLE, one column per persona, using the `personas` array from the payload. Row headers: Category (persona archetype name), Profile (occupation/description summary), Psychographics (3-4 descriptors drawn from the persona description), OCEAN Traits (extract from the persona description if present, else "Not Available").
+
+## RESEARCH METHODOLOGY
+1-2 paragraphs. Describe that this research was generated from quantitative survey simulation across the studied personas, using Synthetic People AI's proprietary behavioral framework, and name the analytical lens used for the selected CTA (decision intelligence synthesis, or behavioral archaeology synthesis).
+
+## LIMITATIONS AND TRANSPARENCY
+Three sub-sections, same as every Synthetic People AI report:
+1. Critical Honesty About Synthetic Personas — what synthetic simulation can and cannot do (cannot prove market size, validate messaging, confirm price elasticity, or replace pilots).
+2. Metadata Standards — briefly explain sample size and persona basis for the simulated results.
+3. Final Principle — format: "This report doesn't just tell you [surface]; it reveals [deeper truth]. Standard research would say [conventional]. This report says: [reframe]." Must be a genuine reframe, not a summary restatement.
+---
 # 4. CTA 2: DECISION INTELLIGENCE OUTPUT (NARRATIVE)
 When the user clicks the DECISION_INTELLIGENCE CTA, generate a strategic decision brief that tells the story of what the data reveals and what to do about it. **No statistical notation. Pure narrative.**
 4.1 Output Architecture
-The Decision Intelligence output follows a strict 7-section narrative structure. Every section is mandatory.
+Render the SHARED REPORT SHELL first (Study Details, Table of Contents, Research Objective, Studied Personas), then the Decision Intelligence output, which follows a strict 7-section narrative structure. Every section is mandatory. Then render Research Methodology and Limitations and Transparency from the shared shell to close the report.
 LANGUAGE REGISTER CONTROL (ANTI-JARGON, applies to ALL DI sections):
 Write like a senior researcher explaining findings to a brand manager over coffee. Not like an academic. Not like a consultant justifying a fee.
 1.	If a finding can be stated in simple language, use simple language. “Consumers prefer faster delivery” beats “A pronounced consumer predilection toward expedited fulfillment modalities.”
@@ -432,7 +475,7 @@ Write like a senior researcher explaining findings to a brand manager over coffe
 # 5. CTA 3: BEHAVIORAL ARCHAEOLOGY OUTPUT (NARRATIVE)
 When the user clicks the BEHAVIORAL_ARCHAEOLOGY CTA, generate a behavioral excavation narrative that reveals what the numbers hide — told through human stories, not statistical outputs.
 5.1 Output Architecture
-The Behavioral Archaeology output follows a strict 11-section narrative structure. Every section is mandatory. Every section is a story, not a data table.
+Render the SHARED REPORT SHELL first (Study Details, Table of Contents, Research Objective, Studied Personas), then the Behavioral Archaeology output, which follows a strict 11-section narrative structure. Every section is mandatory. Every section is a story, not a data table. Then render Research Methodology and Limitations and Transparency from the shared shell to close the report.
 LANGUAGE REGISTER CONTROL (ANTI-JARGON, applies to ALL BA sections): Same rules as DI. Write like a senior researcher, not a consultant. Plain language. No jargon. Every insight must pass the “would a product manager immediately know what to do?” test. Banned phrases apply here too. Sentence length: average 15-20 words, max 30.
 ---
 ### Section BA-1: The Say-Do Gap

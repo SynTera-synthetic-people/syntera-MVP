@@ -32,6 +32,7 @@ class Interview(SQLModel, table=True):
     workspace_id: str = Field(foreign_key="workspace.id")
     exploration_id: str = Field(foreign_key="explorations.id")
     persona_id: Optional[str] = Field(foreign_key="persona.id", default=None)
+    session_group_id: Optional[str] = Field(default=None, index=True)
     messages: List[dict] = Field(sa_column=Column(JSON), default_factory=list)
     generated_answers: Dict[str, dict] = Field(sa_column=Column(JSON), default_factory=dict)
     created_by: str = Field(foreign_key="user.id")
