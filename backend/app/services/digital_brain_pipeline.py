@@ -698,6 +698,35 @@ def fetch_action_data_all(limit: int = _ACTION_DATA_ALL_DEFAULT_LIMIT) -> pd.Dat
 # Stage 3A — Action Data Scan
 # ---------------------------------------------------------------------------
 
+_QUERY_REFERENCE_MAX_KEYS = 50  # cap so the filter string stays readable
+
+
+def _build_query_reference(
+    verdict_type: str,
+    subject_keys: list[str] | None = None,
+    extra_filter: str | None = None,
+) -> dict:
+    """
+    A pointer back to the exact rows in sync_action.record that produced a
+    depth layer verdict — not a copy of the rows themselves. The
+    traceability module re-runs this filter against the live table when it
+    needs proof, so verdicts never go stale and nothing is duplicated.
+    """
+    if subject_keys:
+        keys_str = ", ".join(f"'{k}'" for k in subject_keys[:_QUERY_REFERENCE_MAX_KEYS])
+        filter_str = f"subject_key IN ({keys_str})"
+    elif extra_filter:
+        filter_str = extra_filter
+    else:
+        filter_str = "1=1"
+    return {
+        "table": "sync_action.record",
+        "filter": filter_str,
+        "order_by": "created_at DESC",
+        "verdict_type": verdict_type,
+    }
+
+
 def scan_action_data(
     action_data_df: pd.DataFrame,
     activated_dimensions: list[int],
@@ -810,6 +839,7 @@ def scan_action_data(
                     "situational_context": _build_situational_context(row_sample, df_rel),
                     "digital_brain_signal": "Explorer (novelty drive) or Connector (peer influence)",
                     "confidence_score": min(0.55 + len(switchers) / 100, 0.95),
+                    "query_reference": _build_query_reference("brand_switching", subject_keys=list(switchers.keys())),
                 })
 
         # Dim 1 & 8: Frequency / Loyalty
@@ -835,6 +865,7 @@ def scan_action_data(
                     "situational_context": {},
                     "digital_brain_signal": "Guardian (trust-based) or Pragmatist (habitual)",
                     "confidence_score": 0.80,
+                    "query_reference": _build_query_reference("loyalty", subject_keys=list(loyal_users.keys())),
                 })
 
         # Dim 3: Price sensitivity
@@ -861,6 +892,7 @@ def scan_action_data(
                     "situational_context": {"financial": f"Typical spend Rs {avg_price:.0f}"},
                     "digital_brain_signal": "Optimizer (compares value) or Pragmatist (buys cheapest reliable)",
                     "confidence_score": 0.85,
+                    "query_reference": _build_query_reference("price_sensitivity", subject_keys=list(user_price_sequences.keys())),
                 })
 
         # Dim 4: Temporal patterns
@@ -894,6 +926,16 @@ def scan_action_data(
                     "situational_context": {"temporal": f"{time_slot}, peak {top_weekday}"},
                     "digital_brain_signal": "Hedonist (late-night impulse) or Optimizer (deliberate morning/evening)",
                     "confidence_score": 0.78,
+                    # created_at is ingestion time, not the real order timestamp — the
+                    # actual order_time lives inside the JSONB payload, so the filter
+                    # must read it from there, not from the flat created_at column.
+                    "query_reference": _build_query_reference(
+                        "temporal_patterns",
+                        extra_filter=(
+                            f"EXTRACT(HOUR FROM (data->'payload'->>'order_time')::timestamp) = {peak_hour} "
+                            f"AND TRIM(TO_CHAR((data->'payload'->>'order_time')::timestamp, 'Day')) = '{top_weekday}'"
+                        ),
+                    ),
                 })
 
         # Dim 5: Geographic patterns
@@ -915,6 +957,10 @@ def scan_action_data(
                 "situational_context": {"geographic": f"Cities: {', '.join(cities[:4])}"},
                 "digital_brain_signal": "Achiever/Explorer (Tier-1 premium) vs Pragmatist (Tier-2 value)",
                 "confidence_score": 0.72,
+                "query_reference": _build_query_reference(
+                    "geographic_patterns",
+                    extra_filter="data->'payload'->>'city' IN (" + ", ".join(f"'{c}'" for c in cities[:_QUERY_REFERENCE_MAX_KEYS]) + ")",
+                ),
             })
 
         # Dim 10: Social/peer (inferred from cluster)
@@ -945,29 +991,34 @@ def scan_action_data(
                     "situational_context": {"social": "Co-purchase clusters suggest social spread"},
                     "digital_brain_signal": "Connector (peer-driven) or Explorer (trend-following)",
                     "confidence_score": 0.70,
+                    "query_reference": _build_query_reference(
+                        "peer_clustering",
+                        extra_filter="data->'payload'->>'city' IN (" + ", ".join(f"'{c['city']}'" for c in peer_clusters[:_QUERY_REFERENCE_MAX_KEYS]) + ")",
+                    ),
                 })
 
         # Dim 11: Lifestyle / cross-category
         if dim == 11 and "accountEmailId" in df_rel.columns:
-            multi_cat_users = 0
-            for _, sub in df_rel.groupby("accountEmailId"):
+            multi_cat_user_ids: list[str] = []
+            for uid, sub in df_rel.groupby("accountEmailId"):
                 cat_set: set[str] = set()
                 for _, row in sub.iterrows():
                     items = _parse_product_items(row.get("productItems", []))
                     for item in items:
                         cat_set.add(_rough_category(item.get("priceName", "")))
                 if len(cat_set) > 1:
-                    multi_cat_users += 1
+                    multi_cat_user_ids.append(str(uid))
             depth_layers.append({
                 "verdict_id": _next_id(),
-                "pattern_detected": f"{multi_cat_users} users show cross-category purchasing",
+                "pattern_detected": f"{len(multi_cat_user_ids)} users show cross-category purchasing",
                 "dimension_mapped_to": 11,
                 "dimension_name": DIMENSION_NAMES[11],
                 "behavioral_signal": "Cross-category coherence indicates lifestyle persona signals",
-                "evidence": {"multi_category_users": multi_cat_users},
+                "evidence": {"multi_category_users": len(multi_cat_user_ids)},
                 "situational_context": {"lifestyle": "Cross-category purchasing detected"},
                 "digital_brain_signal": "Visionary (values-aligned) or Achiever (premium across categories)",
                 "confidence_score": 0.68,
+                "query_reference": _build_query_reference("lifestyle_cross_category", subject_keys=multi_cat_user_ids),
             })
 
     # Final LLM enrichment: generate a synthesised depth layer from patterns
@@ -1001,6 +1052,16 @@ Return ONLY a JSON object with these fields:
         try:
             raw = _llm(summary_prompt, system="You are a consumer psychologist. Return only valid JSON.")
             synth = _parse_json_from_llm(raw)
+            # query_reference is built in code from the real rows that informed
+            # this synthesis — the LLM never sees real subject_keys, so it
+            # cannot (and must not) be asked to generate this field itself.
+            all_subject_keys = (
+                df_rel["accountEmailId"].dropna().astype(str).unique().tolist()
+                if "accountEmailId" in df_rel.columns else []
+            )
+            synth["query_reference"] = _build_query_reference(
+                "synthesized_cross_dimension", subject_keys=all_subject_keys
+            )
             depth_layers.append(synth)
         except Exception as e:
             logger.warning("Stage 3A: LLM synthesis failed — %s", e)
@@ -1185,6 +1246,7 @@ def _eb_empty_verdict(platform: str, note: str, confidence: float = 0.0) -> dict
         "digital_brain_signal": None,
         "confidence_score": confidence,
         "representative_quote": None,
+        "all_citations": [],
         "source_urls": [],
         "source_note": note,
     }
@@ -1275,6 +1337,10 @@ Return ONLY a JSON object with keys: key_discussion_themes, sentiment_distributi
     # Confidence is rule-based from the real, countable evidence volume —
     # never an invented number.
     confidence = round(min(0.55 + 0.07 * len(distinct_urls), 0.92), 2)
+    all_citations = [
+        {"quote": s["quote"], "url": s["url"], "confidence": confidence}
+        for s in cited_snippets
+    ]
 
     return {
         "verdict_id": f"EB_{platform.upper().replace('/', '_')}",
@@ -1287,6 +1353,7 @@ Return ONLY a JSON object with keys: key_discussion_themes, sentiment_distributi
         "digital_brain_signal": synth.get("digital_brain_signal"),
         "confidence_score": confidence,
         "representative_quote": cited_snippets[0]["quote"],
+        "all_citations": all_citations,
         "source_urls": distinct_urls[:5],
         "source_note": "real_citation_backed",
     }
@@ -1502,6 +1569,15 @@ key_discussion_themes, sentiment_distribution, digital_brain_signal.
         ] or activated_dimensions[:1]
         confidence = round(min(0.55 + 0.07 * len(distinct_urls), 0.92), 2)
 
+        # Full audit trail — every real, citation-backed quote fetched for
+        # this platform (not just the one shown as representative_quote).
+        # Confidence is the same rule-based, volume-derived score used at the
+        # platform level — never invented per-quote.
+        all_citations = [
+            {"quote": s["quote"], "url": s["url"], "confidence": confidence}
+            for s in snippets
+        ]
+
         verdicts.append({
             "verdict_id": f"EB_{platform.upper().replace('/', '_')}",
             "source_platform": platform,
@@ -1513,6 +1589,7 @@ key_discussion_themes, sentiment_distribution, digital_brain_signal.
             "digital_brain_signal": synth.get("digital_brain_signal"),
             "confidence_score": confidence,
             "representative_quote": snippets[0]["quote"],
+            "all_citations": all_citations,
             "source_urls": distinct_urls[:5],
             "source_note": "real_citation_backed",
         })
