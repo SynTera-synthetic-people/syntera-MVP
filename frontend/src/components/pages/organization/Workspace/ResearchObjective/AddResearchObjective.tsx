@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useDispatch, useSelector } from 'react-redux';
 import { motion, AnimatePresence } from "framer-motion";
+import FileUploadModal from "./FileUploadModal";
+import type { FileUploadModalValue } from "./FileUploadModal";
 import {
   TbPaperclip,
   TbMicrophone,
@@ -160,6 +162,8 @@ const AddResearchObjective: React.FC = () => {
     objectiveId: string;
   }>();
   const dispatch = useDispatch();
+  const [showFileModal, setShowFileModal] = useState(false);
+  const [uploadedMaterial, setUploadedMaterial] = useState<FileUploadModalValue | null>(null);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -594,6 +598,12 @@ const AddResearchObjective: React.FC = () => {
     if (error) { setFileError(error); return; }
     setUploadedFile(file);
   };
+  const handleMaterialDone = (value: FileUploadModalValue) => {
+  setUploadedMaterial(value);
+  if (value.briefFile) {
+    setUploadedFile(value.briefFile);
+  }
+};
 
   const handleRemoveFile = () => {
     setUploadedFile(null);
@@ -873,8 +883,8 @@ const AddResearchObjective: React.FC = () => {
                             />
                           ) : (
                             <div className={`aro-bubble ${message.sender === 'omi'
-                                ? message.isError ? 'aro-bubble--omi-error' : 'aro-bubble--omi'
-                                : 'aro-bubble--user'
+                              ? message.isError ? 'aro-bubble--omi-error' : 'aro-bubble--omi'
+                              : 'aro-bubble--user'
                               }`}>
                               {message.sender === 'omi' && (
                                 <div className="aro-omi-avatar">
@@ -1108,20 +1118,16 @@ const AddResearchObjective: React.FC = () => {
 
               <form onSubmit={handleSendMessage} className="aro-input-form">
                 {/* File upload trigger */}
-                <label
+                {/* File upload trigger — opens the material modal */}
+                <button
+                  type="button"
                   className="aro-input-file-label"
-                  title="Attach a PDF, DOC, DOCX, XLS, or XLSX file"
+                  title="Add supporting material"
+                  onClick={() => setShowFileModal(true)}
+                  disabled={isSubmitting || isLoading || !sessionData}
                 >
                   <SpIcon name="sp-Edit-Paperclip_Attechment_Tilt" />
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    className="hidden"
-                    accept=".pdf,.doc,.docx,.xls,.xlsx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    onChange={handleFileChange}
-                    disabled={isSubmitting || isLoading || !sessionData || !!uploadedFile}
-                  />
-                </label>
+                </button>
 
                 <textarea
                   ref={textareaRef}
@@ -1156,6 +1162,12 @@ const AddResearchObjective: React.FC = () => {
           )}
         </div>
       </div>
+      <FileUploadModal
+        isOpen={showFileModal}
+        onClose={() => setShowFileModal(false)}
+        onDone={handleMaterialDone}
+        initialValue={uploadedMaterial ?? {}}
+      />
 
       <UpgradeModal
         isOpen={showUpgradeModal}
