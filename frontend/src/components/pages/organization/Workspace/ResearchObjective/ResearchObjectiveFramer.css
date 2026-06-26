@@ -2,9 +2,6 @@
 
 /* ═══════════════════════════════════════════════════════════════════
    PAGE SHELL
-   rol-page-inner is: flex column, overflow-y auto, flex:1, min-height:0
-   We must NOT use min-height:100vh (fights the fixed-height parent).
-   We sit as a flex child and let natural content height drive scroll.
    ═══════════════════════════════════════════════════════════════════ */
 
 .rofp-page {
@@ -152,10 +149,9 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   TAB NAVIGATION — pill-style, matching the app's tab pattern
+   TAB NAVIGATION
    ═══════════════════════════════════════════════════════════════════ */
 
-/* ─── Outer row: [left arrow] [scrollable tab strip] [right arrow] ──────── */
 .rofp-tab-nav-outer {
   width: 100%;
   max-width: 760px;
@@ -172,9 +168,6 @@
   justify-content: flex-start;
   overflow-x: auto;
   scroll-behavior: smooth;
-  /* NOTE: mask-image causes visible rendering artefacts (white bars)
-     when composited inside a flex chain with overflow:hidden ancestors.
-     Removed — the tab nav scrolls cleanly without it at typical widths. */
 }
 
 .rofp-tab-nav-wrap::-webkit-scrollbar { display: none; }
@@ -186,7 +179,6 @@
   padding: 0 4px;
 }
 
-/* ─── Arrow buttons either side of the tab strip ─────────────────────────── */
 .rofp-tab-nav-arrow {
   flex-shrink: 0;
   display: flex;
@@ -237,7 +229,6 @@
   color: #fff;
 }
 
-/* Active tab — solid teal fill, dark text, brand-accurate */
 .rofp-tab-btn--active {
   background: #24E5B6;
   border-color: #24E5B6;
@@ -251,7 +242,6 @@
   color: #0a0f14;
 }
 
-/* Completed tab — greyish fill, white text, lower emphasis than the active solid teal */
 .rofp-tab-btn--done {
   border-color: rgba(255, 255, 255, 0.18);
   color: #fff;
@@ -264,7 +254,6 @@
   color: #fff;
 }
 
-/* Locked tab (not yet accessible) */
 .rofp-tab-btn--locked {
   opacity: 0.45;
   cursor: not-allowed;
@@ -304,7 +293,6 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* Tab heading */
 .rofp-tab-head {
   margin-bottom: 32px;
   padding-bottom: 28px;
@@ -367,7 +355,6 @@
   margin-left: 4px;
 }
 
-/* Helper text under label */
 .rofp-field-helper {
   font-size: 12px;
   color: rgba(255,255,255,0.28);
@@ -375,7 +362,6 @@
   line-height: 1.5;
 }
 
-/* Text inputs */
 .rofp-input {
   width: 100%;
   height: 48px;
@@ -394,14 +380,12 @@
 .rofp-input:focus {
   border-color: #0E63EC;
   background: rgba(14, 99, 236, 0.05);
-
 }
 
 .rofp-input::placeholder {
   color: rgba(255,255,255,0.22);
 }
 
-/* Row with input + action button side by side */
 .rofp-input-row {
   display: flex;
   gap: 10px;
@@ -411,7 +395,6 @@
   flex: 1;
 }
 
-/* ─── Textarea variant of .rofp-input (Decision & Unknowns, etc.) ───────── */
 .rofp-textarea {
   width: 100%;
   min-height: 92px;
@@ -444,13 +427,10 @@
   cursor: not-allowed;
 }
 
-/* ─── Single large textarea variant (Business Trigger, Customer Unknown,   */
-/* Decision Moment, Audience & Segments — one open field per tab) ──────── */
 .rofp-textarea--lg {
   min-height: 140px;
 }
 
-/* ─── Static directional note (italic, e.g. under Audience & Segments) ── */
 .rofp-tab-note {
   font-size: 12.5px;
   color: rgba(255,255,255,0.32);
@@ -460,8 +440,6 @@
   margin-bottom: 4px;
 }
 
-/* ─── Static helper line pinned under a field (e.g. "You'll define        */
-/* detailed personas..." on Audience & Segments) ───────────────────────── */
 .rofp-field-static-note {
   font-size: 12px;
   color: rgba(255,255,255,0.28);
@@ -469,13 +447,10 @@
   margin-top: 8px;
 }
 
-/* Italic variant — used under the Artifact link field to recommend links
-   over uploads for video/social/landing-page material. */
 .rofp-field-static-note--italic {
   font-style: italic;
 }
 
-/* Character counter under the 500-char instruction textareas in Add Material */
 .rofp-field-charcount {
   font-size: 11px;
   color: rgba(255,255,255,0.25);
@@ -483,7 +458,6 @@
   margin-top: 6px;
 }
 
-/* Visit link */
 .rofp-visit-btn {
   display: flex;
   align-items: center;
@@ -506,7 +480,6 @@
   border-color: rgba(14, 99, 236, 0.5);
 }
 
-/* Add button */
 .rofp-btn-add {
   display: flex;
   align-items: center;
@@ -643,7 +616,6 @@
 
 .rofp-tooltip-bubble {
   position: fixed;
-  /* horizontal centering is handled by transform below */
   transform: translateX(-50%) translateY(-100%);
   width: 220px;
   background: #1E2026;
@@ -659,7 +631,6 @@
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 
-/* Arrow below bubble */
 .rofp-tooltip-bubble::after {
   content: '';
   position: absolute;
@@ -683,10 +654,6 @@
   padding-top: 28px;
 }
 
-/* ─── CTA row variant: Back (left) + Continue (right) ───────────────────── */
-/* Activates automatically whenever a tab renders a Back button alongside   */
-/* Continue (e.g. Tab 2 onward). Tab 1 has no .rofp-btn-back, so its CTA    */
-/* row keeps the original right-aligned-only layout untouched.              */
 .rofp-tab-cta:has(.rofp-btn-back) {
   flex-direction: row;
   align-items: center;
@@ -745,12 +712,10 @@
   cursor: pointer;
   letter-spacing: 0.01em;
   transition: opacity 0.15s, transform 0.15s;
-
 }
 
 .rofp-btn-continue:hover:not(.rofp-btn-continue--disabled) {
   transform: translateY(-2px);
-
 }
 
 .rofp-btn-continue:active:not(.rofp-btn-continue--disabled) {
@@ -778,32 +743,35 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   ADD MATERIAL — instruction textarea + two independent sections
-   (Research Brief / Artifacts), each with its own link field(s),
-   file upload, Omi processing state, and Submit button.
+   ADD MATERIAL — two sections side-by-side in a grid row
    ═══════════════════════════════════════════════════════════════════ */
 
-/* ─── Sections row — Research Brief + Artifact side-by-side on screens    */
-/* with room for it; stacks back to a single column on narrower viewports  */
-/* (matches the existing 640px mobile breakpoint used elsewhere on this    */
-/* page, so the switch lines up with every other responsive change here). ─ */
+/*
+ * KEY CHANGE: .rofp-material-sections-row wraps both section cards in a
+ * 2-column grid so they sit side by side. Each column is equal width.
+ * The panel is max-width 760px; at that width each column is ~360px —
+ * enough room for all the inputs without cramping. The row collapses to
+ * a single column only on screens narrower than 640px (the existing
+ * mobile breakpoint used everywhere else on this page).
+ */
 .rofp-material-sections-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 18px;
+  gap: 16px;
   align-items: start;
 }
 
-/* ─── Section card — wraps each of "Research Brief" and "Artifacts" ────── */
+/* ─── Section card ─────────────────────────────────────────────── */
 .rofp-material-section {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  min-width: 0; /* lets the card shrink inside its grid column instead of overflowing */
+  gap: 14px;
+  min-width: 0;
   background: rgba(255,255,255,0.015);
   border: 1px solid rgba(255,255,255,0.08);
   border-radius: 16px;
-  padding: 22px 22px 20px;
+  padding: 20px 18px 18px;
+  box-sizing: border-box;
 }
 
 .rofp-material-section-head {
@@ -822,7 +790,7 @@
 }
 
 .rofp-material-section-sub {
-  font-size: 12.5px;
+  font-size: 12px;
   color: rgba(255,255,255,0.38);
   line-height: 1.5;
   margin: 0;
@@ -834,7 +802,6 @@
   gap: 10px;
 }
 
-/* Row holding the Submit button for a section — bottom-right, per spec */
 .rofp-material-section-cta {
   display: flex;
   justify-content: flex-end;
@@ -867,7 +834,6 @@
   cursor: not-allowed;
 }
 
-/* "Add another link" — quiet text button under the Artifacts link rows */
 .rofp-material-add-link-btn {
   display: inline-flex;
   align-items: center;
@@ -888,7 +854,6 @@
   opacity: 0.75;
 }
 
-/* "Edit" button surfaced inside the done banner once a section is submitted */
 .rofp-material-edit-btn {
   flex-shrink: 0;
   display: inline-flex;
@@ -913,10 +878,10 @@
   color: #fff;
 }
 
-/* ─── Upload dropzone — dashed teal border, cloud icon ──────────────────── */
+/* ─── Upload dropzone ────────────────────────────────────────────── */
 .rofp-upload-zone {
   width: 100%;
-  min-height: 140px;
+  min-height: 120px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -925,10 +890,11 @@
   background: #060606;
   border: 1.5px dashed rgba(36, 229, 182, 0.45);
   border-radius: 13px;
-  padding: 28px 20px;
+  padding: 22px 16px;
   cursor: pointer;
   transition: border-color 0.18s, background 0.18s;
   text-align: center;
+  box-sizing: border-box;
 }
 
 .rofp-upload-zone:hover,
@@ -942,8 +908,6 @@
   opacity: 0.5;
 }
 
-/* Compact variant — used for the Artifacts file upload, since we don't want
-   to visually compete with (or encourage over) the link inputs above it. */
 .rofp-upload-zone--compact {
   min-height: 0;
   flex-direction: row;
@@ -971,7 +935,7 @@
 }
 
 .rofp-upload-zone-title {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   color: #24E5B6;
 }
@@ -980,7 +944,6 @@
   display: none;
 }
 
-/* ─── Supported-formats line under the dropzone ─────────────────────── */
 .rofp-upload-formats {
   font-size: 11.5px;
   color: rgba(255,255,255,0.3);
@@ -993,13 +956,11 @@
   font-weight: 600;
 }
 
-/* Compact slot keeps the formats line but tucks it in tighter */
 .rofp-upload-slot--compact .rofp-upload-formats {
   margin-top: 6px;
   text-align: center;
 }
 
-/* ─── Footnote — "Your files are used only to..." ───────────────────── */
 .rofp-upload-footnote {
   font-size: 11.5px;
   color: rgba(255,255,255,0.28);
@@ -1008,20 +969,19 @@
   line-height: 1.5;
 }
 
-/* ─── Uploaded file pill — shown once a file is selected, replaces the */
-/* dropzone while processing/complete ────────────────────────────────── */
+/* ─── Uploaded file card ─────────────────────────────────────────── */
 .rofp-upload-file-card {
   width: 100%;
-  min-width: 0;          /* allow card to shrink within grid column */
-  max-width: 100%;       /* never grow past its column */
+  min-width: 0;
+  max-width: 100%;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   background: #060606;
   border: 1px solid #393C45;
   border-radius: 13px;
-  padding: 14px 16px;
-  box-sizing: border-box; /* padding included in width calc */
+  padding: 12px 14px;
+  box-sizing: border-box;
 }
 
 .rofp-upload-slot--compact .rofp-upload-file-card {
@@ -1031,8 +991,8 @@
 
 .rofp-upload-file-icon {
   flex-shrink: 0;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   border-radius: 9px;
   background: rgba(36, 229, 182, 0.08);
   border: 1px solid rgba(36, 229, 182, 0.2);
@@ -1053,13 +1013,13 @@
 }
 
 .rofp-upload-file-name {
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 500;
   color: #fff;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  display: block;         /* ensures ellipsis truncation engages reliably */
+  display: block;
   max-width: 100%;
 }
 
@@ -1096,16 +1056,13 @@
   cursor: not-allowed;
 }
 
-/* ─── Processing bar — same Omi keyboard video + cycling-message rhythm,  */
-/* now rendered beneath whichever section ("Research Brief" or            */
-/* "Artifacts") was just submitted, rather than tied to a single shared    */
-/* tab-level processing state. ─────────────────────────────────────────── */
+/* ─── Processing bar ─────────────────────────────────────────────── */
 .rofp-upload-omi-bar {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   width: 100%;
-  padding: 14px 18px;
+  padding: 12px 14px;
   background: #060606;
   border: 1px solid #393C45;
   border-radius: 13px;
@@ -1114,8 +1071,8 @@
 }
 
 .rofp-upload-omi-avatar {
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   overflow: hidden;
   flex-shrink: 0;
@@ -1148,7 +1105,7 @@
   align-items: center;
   gap: 8px;
   color: rgba(255,255,255,0.75);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
   position: absolute;
@@ -1187,14 +1144,13 @@
   40%           { opacity: 1;    transform: scale(1.2); }
 }
 
-/* ─── Upload complete banner — now also hosts the "Edit" action that      */
-/* reopens a submitted section for changes. ─────────────────────────────── */
+/* ─── Upload complete banner ──────────────────────────────────────── */
 .rofp-upload-complete {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   width: 100%;
-  padding: 14px 16px;
+  padding: 12px 14px;
   background: rgba(36, 229, 182, 0.06);
   border: 1px solid rgba(36, 229, 182, 0.25);
   border-radius: 13px;
@@ -1203,8 +1159,8 @@
 
 .rofp-upload-complete-icon {
   flex-shrink: 0;
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   background: rgba(36, 229, 182, 0.15);
   color: #24E5B6;
@@ -1219,20 +1175,28 @@
 }
 
 .rofp-upload-complete-title {
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 600;
   color: #fff;
   margin-bottom: 2px;
 }
 
 .rofp-upload-complete-sub {
-  font-size: 12.5px;
+  font-size: 11.5px;
   color: rgba(255,255,255,0.5);
   line-height: 1.5;
 }
 
+/* ─── Error text under upload slot or link row ───────────────────── */
+.rofp-upload-slot-error {
+  font-size: 12px;
+  color: #f87171;
+  margin-top: 6px;
+  line-height: 1.5;
+}
+
 /* ═══════════════════════════════════════════════════════════════════
-   PREVIEW — compiled read-only summary (final tab before submit)
+   PREVIEW
    ═══════════════════════════════════════════════════════════════════ */
 
 .rofp-preview-box {
@@ -1267,7 +1231,6 @@
   white-space: pre-line;
 }
 
-/* Small filename badge — shown in the Preview tab's "Add Material" section */
 .rofp-preview-file-badge {
   display: inline-flex;
   align-items: center;
@@ -1340,20 +1303,104 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════
+   VIDEO / GENERIC LINK ROW
+   ═══════════════════════════════════════════════════════════════════ */
+
+.rofp-video-link-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #060606;
+  border: 1.5px solid rgba(36, 229, 182, 0.25);
+  border-radius: 13px;
+  padding: 0 14px;
+  height: 44px;
+  box-sizing: border-box;
+  transition: border-color 0.18s, background 0.18s;
+}
+
+.rofp-video-link-row:focus-within {
+  border-color: rgba(36, 229, 182, 0.65);
+  background: rgba(36, 229, 182, 0.04);
+}
+
+.rofp-video-link-row--error {
+  border-color: rgba(239, 68, 68, 0.55);
+}
+
+.rofp-video-link-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #24E5B6;
+}
+
+.rofp-video-link-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #fff;
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.rofp-video-link-input::placeholder {
+  color: rgba(255, 255, 255, 0.28);
+}
+
+.rofp-video-link-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.rofp-video-link-clear {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+  padding: 0;
+  font-family: inherit;
+}
+
+.rofp-video-link-clear:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+
+.rofp-video-link-clear:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
    RESPONSIVE
    ═══════════════════════════════════════════════════════════════════ */
 
-/* The two-section row needs real room per column (textarea + link input +   */
-/* upload box) — the panel only approaches its 760px max-width on screens    */
-/* like this, so the side-by-side layout switches off here too, not just at  */
-/* the 640px mobile line below, to avoid a cramped middle zone.              */
-@media (max-width: 860px) {
+/*
+ * Stack the two material sections back to a single column on mobile.
+ * We use 640px — the same breakpoint used for all other mobile
+ * adaptations on this page — so the layout switch is consistent.
+ */
+@media (max-width: 640px) {
   .rofp-material-sections-row {
     grid-template-columns: 1fr;
   }
-}
 
-@media (max-width: 640px) {
   .rofp-back-btn {
     top: 16px;
     right: 14px;
@@ -1439,89 +1486,4 @@
   .rofp-progress-fill {
     transition: none !important;
   }
-}
-
-/* ─── Video / generic link row — a standalone, additive field styled with */
-/* a teal accent so it still feels like part of the "give Omi material"    */
-/* family, just as a solid-border input rather than a dashed dropzone,     */
-/* since nothing is being dropped here. Reused by both sections' LinkRow. ─ */
-.rofp-video-link-row {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: #060606;
-  border: 1.5px solid rgba(36, 229, 182, 0.25);
-  border-radius: 13px;
-  padding: 0 14px;
-  height: 48px;
-  box-sizing: border-box;
-  transition: border-color 0.18s, background 0.18s;
-}
-
-.rofp-video-link-row:focus-within {
-  border-color: rgba(36, 229, 182, 0.65);
-  background: rgba(36, 229, 182, 0.04);
-}
-
-.rofp-video-link-row--error {
-  border-color: rgba(239, 68, 68, 0.55);
-}
-
-.rofp-video-link-icon {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #24E5B6;
-}
-
-.rofp-video-link-input {
-  flex: 1;
-  min-width: 0;
-  height: 100%;
-  background: transparent;
-  border: none;
-  outline: none;
-  color: #fff;
-  font-size: 13.5px;
-  font-family: inherit;
-}
-
-.rofp-video-link-input::placeholder {
-  color: rgba(255, 255, 255, 0.28);
-}
-
-.rofp-video-link-input:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.rofp-video-link-clear {
-  flex-shrink: 0;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.5);
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.15s, color 0.15s;
-  padding: 0;
-  font-family: inherit;
-}
-
-.rofp-video-link-clear:hover:not(:disabled) {
-  background: rgba(239, 68, 68, 0.15);
-  color: #f87171;
-}
-
-.rofp-video-link-clear:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
 }

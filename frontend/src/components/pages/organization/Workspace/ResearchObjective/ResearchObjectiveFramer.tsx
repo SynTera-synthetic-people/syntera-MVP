@@ -741,28 +741,21 @@ const AudienceSegmentsTab: React.FC<AudienceSegmentsTabProps> = ({
 // Add Material — two independent sections: Research Brief & Artifacts
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Research Brief: documents only, max 5 MB
 const BRIEF_EXTENSIONS  = [".pdf", ".pptx", ".ppt", ".docx", ".doc", ".xlsx", ".xls"];
-const BRIEF_MAX_BYTES   = 5 * 1024 * 1024; // 5 MB
+const BRIEF_MAX_BYTES   = 5 * 1024 * 1024;
 
-// Artifacts: images only, max 10 MB.
-// NOTE: video FILE uploads are intentionally not supported — there's no
-// backend video parser yet. Instead, users point Omi at a video via a link
-// (e.g. a YouTube URL) in the section's URL field(s) below.
 const ARTIFACT_EXTENSIONS = [
     ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg",
 ];
-const ARTIFACT_MAX_BYTES  = 10 * 1024 * 1024; // 10 MB
+const ARTIFACT_MAX_BYTES  = 10 * 1024 * 1024;
 
 const ARTIFACT_MAX_LINKS = 3;
 
 const MATERIAL_INSTRUCTION_MAX_LENGTH = 500;
 
-// Very permissive check — just enough to catch empty/garbage input client-side.
-// Final validation of reachability/platform support happens server-side.
 const isLikelyValidUrl = (value: string): boolean => {
     const trimmed = value.trim();
-    if (!trimmed) return true; // empty is fine, it's optional
+    if (!trimmed) return true;
     try {
         const url = new URL(trimmed.startsWith("http") ? trimmed : `https://${trimmed}`);
         return Boolean(url.hostname && url.hostname.includes("."));
@@ -829,9 +822,6 @@ const MaterialCheckIcon: React.FC = () => (
     </svg>
 );
 
-// Single upload slot — reused for both Brief and Artifact boxes.
-// `compact` shrinks it down for the Artifacts section, where we don't want to
-// visually encourage file uploads over links.
 interface UploadSlotProps {
     label: string;
     acceptExtensions: string[];
@@ -937,8 +927,6 @@ const UploadSlot: React.FC<UploadSlotProps> = ({
     );
 };
 
-// Omi processing bar — shared visual for both sections, shown beneath whichever
-// section was just submitted.
 const OmiProcessingBar: React.FC<{ messageIndex: number }> = ({ messageIndex }) => (
     <div className="rofp-upload-omi-bar">
         <div className="rofp-upload-omi-avatar">
@@ -956,10 +944,6 @@ const OmiProcessingBar: React.FC<{ messageIndex: number }> = ({ messageIndex }) 
     </div>
 );
 
-// One repeatable URL row. Takes a plain string value (not a MaterialLink
-// object) so callers — Brief (single string field) and Artifact (array of
-// MaterialLink) — can both use it without ever indexing into a possibly-empty
-// array or spreading a possibly-undefined object.
 interface LinkRowProps {
     value: string;
     placeholder: string;
@@ -1038,7 +1022,6 @@ const MaterialTab: React.FC<MaterialTabProps> = ({
     const handleFieldFocus = () => onOmiStateChange("typing");
     const handleFieldBlur = () => { if (!anyFieldFilled) onOmiStateChange("idle"); };
 
-    // Cycle processing messages for a section while it's processing
     useEffect(() => {
         if (!briefProcessing) { setBriefMsgIndex(0); return; }
         if (briefMsgIndex >= MATERIAL_PROCESSING_MESSAGES.length - 1) return;
@@ -1053,7 +1036,6 @@ const MaterialTab: React.FC<MaterialTabProps> = ({
         return () => clearTimeout(t);
     }, [artifactProcessing, artifactMsgIndex]);
 
-    // ── Brief section helpers ──────────────────────────────────────────────
     const briefHasContent = data.brief.link.trim().length > 0 || !!data.brief.file.fileName;
     const briefLinkValid = isLikelyValidUrl(data.brief.link);
     const canSubmitBrief = briefHasContent && briefLinkValid && !briefProcessing && !data.brief.submitted;
@@ -1064,8 +1046,6 @@ const MaterialTab: React.FC<MaterialTabProps> = ({
     const handleSubmitBrief = () => {
         if (!canSubmitBrief) return;
         setBriefProcessing(true);
-        // NOTE: actual upload + backend processing wired in separately.
-        // This timeout stands in for that call completing.
         setTimeout(() => {
             setBriefProcessing(false);
             updateBrief({ submitted: true, file: { ...data.brief.file, uploadStatus: "done" } });
@@ -1074,7 +1054,6 @@ const MaterialTab: React.FC<MaterialTabProps> = ({
 
     const handleEditBrief = () => updateBrief({ submitted: false, file: { ...data.brief.file, uploadStatus: "idle" } });
 
-    // ── Artifact section helpers ────────────────────────────────────────────
     const artifactHasContent = data.artifact.links.some(l => l.value.trim()) || !!data.artifact.file.fileName;
     const artifactLinksValid = data.artifact.links.every(l => isLikelyValidUrl(l.value));
     const canSubmitArtifact = artifactHasContent && artifactLinksValid && !artifactProcessing && !data.artifact.submitted;
@@ -1109,190 +1088,195 @@ const MaterialTab: React.FC<MaterialTabProps> = ({
 
             <div className="rofp-fields">
 
-                {/* ── Section 1: Research Brief ───────────────────────────── */}
-                <div className="rofp-material-section">
-                    <div className="rofp-material-section-head">
-                        <h3 className="rofp-material-section-title">Research Brief</h3>
-                        <p className="rofp-material-section-sub">
-                            Share documents that help Omi understand the business problem,
-                            category, audience, key unknowns, or research scope.
-                        </p>
-                    </div>
+                {/* ── TWO SECTIONS SIDE BY SIDE ─────────────────────────── */}
+                <div className="rofp-material-sections-row">
 
-                    <div className="rofp-material-section-body">
-                        <div className="rofp-field-group">
-                            <div className="rofp-field-label-row">
-                                <label className="rofp-label" htmlFor="rof-brief-instruction">
-                                    What should Omi understand about this document?
-                                    <span className="rofp-label-optional">Optional</span>
-                                </label>
-                                <Tooltip text="Tell Omi what to take from this document and how to use it." />
+                    {/* ── Section 1: Research Brief ───────────────────────── */}
+                    <div className="rofp-material-section">
+                        <div className="rofp-material-section-head">
+                            <h3 className="rofp-material-section-title">Research Brief</h3>
+                            <p className="rofp-material-section-sub">
+                                Share documents that help Omi understand the business problem,
+                                category, audience, key unknowns, or research scope.
+                            </p>
+                        </div>
+
+                        <div className="rofp-material-section-body">
+                            <div className="rofp-field-group">
+                                <div className="rofp-field-label-row">
+                                    <label className="rofp-label" htmlFor="rof-brief-instruction">
+                                        What should Omi understand about this document?
+                                        <span className="rofp-label-optional">Optional</span>
+                                    </label>
+                                    <Tooltip text="Tell Omi what to take from this document and how to use it." />
+                                </div>
+                                <textarea
+                                    id="rof-brief-instruction"
+                                    className="rofp-textarea rofp-textarea--lg"
+                                    placeholder="This is a research brief. Use it to understand the category, audience, key unknowns, hypotheses, and decisions this exploration should support…"
+                                    value={data.brief.instruction}
+                                    maxLength={MATERIAL_INSTRUCTION_MAX_LENGTH}
+                                    onFocus={handleFieldFocus}
+                                    onBlur={handleFieldBlur}
+                                    onChange={e => updateBrief({ instruction: e.target.value.slice(0, MATERIAL_INSTRUCTION_MAX_LENGTH) })}
+                                    rows={3}
+                                    disabled={data.brief.submitted}
+                                />
+                                <p className="rofp-field-charcount">{data.brief.instruction.length}/{MATERIAL_INSTRUCTION_MAX_LENGTH}</p>
                             </div>
-                            <textarea
-                                id="rof-brief-instruction"
-                                className="rofp-textarea rofp-textarea--lg"
-                                placeholder="This is a research brief. Use it to understand the category, audience, key unknowns, hypotheses, and decisions this exploration should support…"
-                                value={data.brief.instruction}
-                                maxLength={MATERIAL_INSTRUCTION_MAX_LENGTH}
+
+                            <LinkRow
+                                value={data.brief.link}
+                                placeholder="Paste a document, drive, report, or reference link"
+                                onChange={value => updateBrief({ link: value })}
                                 onFocus={handleFieldFocus}
                                 onBlur={handleFieldBlur}
-                                onChange={e => updateBrief({ instruction: e.target.value.slice(0, MATERIAL_INSTRUCTION_MAX_LENGTH) })}
-                                rows={4}
                                 disabled={data.brief.submitted}
                             />
-                            <p className="rofp-field-charcount">{data.brief.instruction.length}/{MATERIAL_INSTRUCTION_MAX_LENGTH}</p>
-                        </div>
 
-                        <LinkRow
-                            value={data.brief.link}
-                            placeholder="Paste a document, drive, report, or reference link"
-                            onChange={value => updateBrief({ link: value })}
-                            onFocus={handleFieldFocus}
-                            onBlur={handleFieldBlur}
-                            disabled={data.brief.submitted}
-                        />
-
-                        <UploadSlot
-                            label="Research Brief"
-                            acceptExtensions={BRIEF_EXTENSIONS}
-                            maxBytes={BRIEF_MAX_BYTES}
-                            formatsLabel="PDF, PPTX, DOCX, XLSX"
-                            slot={data.brief.file}
-                            onSlotChange={file => updateBrief({ file })}
-                            disabled={data.brief.submitted}
-                        />
-                    </div>
-
-                    {briefProcessing && <OmiProcessingBar messageIndex={briefMsgIndex} />}
-
-                    {data.brief.submitted && !briefProcessing && (
-                        <div className="rofp-upload-complete">
-                            <span className="rofp-upload-complete-icon"><MaterialCheckIcon /></span>
-                            <div className="rofp-upload-complete-text">
-                                <div className="rofp-upload-complete-title">Research Brief saved</div>
-                                <div className="rofp-upload-complete-sub">Omi has this context for the exploration.</div>
-                            </div>
-                            <button className="rofp-material-edit-btn" onClick={handleEditBrief} type="button">
-                                <EditIcon /> Edit
-                            </button>
-                        </div>
-                    )}
-
-                    <div className="rofp-material-section-cta">
-                        <button
-                            className={["rofp-btn-section-submit", !canSubmitBrief ? "rofp-btn-section-submit--disabled" : ""].filter(Boolean).join(" ")}
-                            disabled={!canSubmitBrief}
-                            onClick={handleSubmitBrief}
-                            type="button"
-                        >
-                            {briefProcessing ? "Saving…" : data.brief.submitted ? "Saved" : "Submit"}
-                        </button>
-                    </div>
-                </div>
-
-                {/* ── Section 2: Artifact ─────────────────────────────────── */}
-                <div className="rofp-material-section">
-                    <div className="rofp-material-section-head">
-                        <h3 className="rofp-material-section-title">Artifact</h3>
-                        <p className="rofp-material-section-sub">
-                            Share creatives, videos, images, landing pages, claims,
-                            storyboards, prototypes, product flows, or anything you want
-                            Omi to test with personas.
-                        </p>
-                    </div>
-
-                    <div className="rofp-material-section-body">
-                        <div className="rofp-field-group">
-                            <div className="rofp-field-label-row">
-                                <label className="rofp-label" htmlFor="rof-artifact-instruction">
-                                    What should Omi do with this artifact?
-                                    <span className="rofp-label-optional">Optional</span>
-                                </label>
-                                <Tooltip text="Tell Omi what to test, decode, or react to in this artifact." />
-                            </div>
-                            <textarea
-                                id="rof-artifact-instruction"
-                                className="rofp-textarea rofp-textarea--lg"
-                                placeholder="This is a campaign creative. Test whether the message is clear, believable, distinctive, and likely to drive interest or purchase intent…."
-                                value={data.artifact.instruction}
-                                maxLength={MATERIAL_INSTRUCTION_MAX_LENGTH}
-                                onFocus={handleFieldFocus}
-                                onBlur={handleFieldBlur}
-                                onChange={e => updateArtifact({ instruction: e.target.value.slice(0, MATERIAL_INSTRUCTION_MAX_LENGTH) })}
-                                rows={4}
-                                disabled={data.artifact.submitted}
+                            <UploadSlot
+                                label="Research Brief"
+                                acceptExtensions={BRIEF_EXTENSIONS}
+                                maxBytes={BRIEF_MAX_BYTES}
+                                formatsLabel="PDF, PPTX, DOCX, XLSX"
+                                slot={data.brief.file}
+                                onSlotChange={file => updateBrief({ file })}
+                                disabled={data.brief.submitted}
                             />
-                            <p className="rofp-field-charcount">{data.artifact.instruction.length}/{MATERIAL_INSTRUCTION_MAX_LENGTH}</p>
                         </div>
 
-                        {data.artifact.links.map((link, idx) => (
-                            <LinkRow
-                                key={link.id}
-                                value={link.value}
-                                placeholder="Paste a YouTube, video, image, landing page, product page, or creative URL"
-                                onChange={value => updateArtifact({
-                                    links: data.artifact.links.map(l => l.id === link.id ? { ...l, value } : l),
-                                })}
-                                removable={data.artifact.links.length > 1 || idx > 0}
-                                onRemove={() => updateArtifact({ links: data.artifact.links.filter(l => l.id !== link.id) })}
-                                onFocus={handleFieldFocus}
-                                onBlur={handleFieldBlur}
-                                disabled={data.artifact.submitted}
-                            />
-                        ))}
+                        {briefProcessing && <OmiProcessingBar messageIndex={briefMsgIndex} />}
 
-                        <p className="rofp-field-static-note rofp-field-static-note--italic">
-                            Links are recommended for videos, social creatives, landing pages, hosted images, and product pages.
-                        </p>
-
-                        {canAddArtifactLink && !data.artifact.submitted && (
-                            <button
-                                type="button"
-                                className="rofp-material-add-link-btn"
-                                onClick={() => updateArtifact({ links: [...data.artifact.links, emptyLink()] })}
-                            >
-                                <PlusIcon /> Add another link
-                            </button>
+                        {data.brief.submitted && !briefProcessing && (
+                            <div className="rofp-upload-complete">
+                                <span className="rofp-upload-complete-icon"><MaterialCheckIcon /></span>
+                                <div className="rofp-upload-complete-text">
+                                    <div className="rofp-upload-complete-title">Research Brief saved</div>
+                                    <div className="rofp-upload-complete-sub">Omi has this context for the exploration.</div>
+                                </div>
+                                <button className="rofp-material-edit-btn" onClick={handleEditBrief} type="button">
+                                    <EditIcon /> Edit
+                                </button>
+                            </div>
                         )}
 
-                        <UploadSlot
-                            label="Image"
-                            acceptExtensions={ARTIFACT_EXTENSIONS}
-                            maxBytes={ARTIFACT_MAX_BYTES}
-                            formatsLabel="PNG, JPG, GIF, WEBP"
-                            slot={data.artifact.file}
-                            onSlotChange={file => updateArtifact({ file })}
-                            disabled={data.artifact.submitted}
-                            compact
-                        />
-                    </div>
-
-                    {artifactProcessing && <OmiProcessingBar messageIndex={artifactMsgIndex} />}
-
-                    {data.artifact.submitted && !artifactProcessing && (
-                        <div className="rofp-upload-complete">
-                            <span className="rofp-upload-complete-icon"><MaterialCheckIcon /></span>
-                            <div className="rofp-upload-complete-text">
-                                <div className="rofp-upload-complete-title">Artifact saved</div>
-                                <div className="rofp-upload-complete-sub">Omi can now test this against your personas.</div>
-                            </div>
-                            <button className="rofp-material-edit-btn" onClick={handleEditArtifact} type="button">
-                                <EditIcon /> Edit
+                        <div className="rofp-material-section-cta">
+                            <button
+                                className={["rofp-btn-section-submit", !canSubmitBrief ? "rofp-btn-section-submit--disabled" : ""].filter(Boolean).join(" ")}
+                                disabled={!canSubmitBrief}
+                                onClick={handleSubmitBrief}
+                                type="button"
+                            >
+                                {briefProcessing ? "Saving…" : data.brief.submitted ? "Saved" : "Submit"}
                             </button>
                         </div>
-                    )}
-
-                    <div className="rofp-material-section-cta">
-                        <button
-                            className={["rofp-btn-section-submit", !canSubmitArtifact ? "rofp-btn-section-submit--disabled" : ""].filter(Boolean).join(" ")}
-                            disabled={!canSubmitArtifact}
-                            onClick={handleSubmitArtifact}
-                            type="button"
-                        >
-                            {artifactProcessing ? "Saving…" : data.artifact.submitted ? "Saved" : "Submit"}
-                        </button>
                     </div>
-                </div>
+
+                    {/* ── Section 2: Artifact ─────────────────────────────── */}
+                    <div className="rofp-material-section">
+                        <div className="rofp-material-section-head">
+                            <h3 className="rofp-material-section-title">Artifact</h3>
+                            <p className="rofp-material-section-sub">
+                                Share creatives, videos, images, landing pages, claims,
+                                storyboards, prototypes, product flows, or anything you want
+                                Omi to test with personas.
+                            </p>
+                        </div>
+
+                        <div className="rofp-material-section-body">
+                            <div className="rofp-field-group">
+                                <div className="rofp-field-label-row">
+                                    <label className="rofp-label" htmlFor="rof-artifact-instruction">
+                                        What should Omi do with this artifact?
+                                        <span className="rofp-label-optional">Optional</span>
+                                    </label>
+                                    <Tooltip text="Tell Omi what to test, decode, or react to in this artifact." />
+                                </div>
+                                <textarea
+                                    id="rof-artifact-instruction"
+                                    className="rofp-textarea rofp-textarea--lg"
+                                    placeholder="This is a campaign creative. Test whether the message is clear, believable, distinctive, and likely to drive interest or purchase intent…."
+                                    value={data.artifact.instruction}
+                                    maxLength={MATERIAL_INSTRUCTION_MAX_LENGTH}
+                                    onFocus={handleFieldFocus}
+                                    onBlur={handleFieldBlur}
+                                    onChange={e => updateArtifact({ instruction: e.target.value.slice(0, MATERIAL_INSTRUCTION_MAX_LENGTH) })}
+                                    rows={3}
+                                    disabled={data.artifact.submitted}
+                                />
+                                <p className="rofp-field-charcount">{data.artifact.instruction.length}/{MATERIAL_INSTRUCTION_MAX_LENGTH}</p>
+                            </div>
+
+                            {data.artifact.links.map((link, idx) => (
+                                <LinkRow
+                                    key={link.id}
+                                    value={link.value}
+                                    placeholder="Paste a YouTube, video, image, landing page, product page, or creative URL"
+                                    onChange={value => updateArtifact({
+                                        links: data.artifact.links.map(l => l.id === link.id ? { ...l, value } : l),
+                                    })}
+                                    removable={data.artifact.links.length > 1 || idx > 0}
+                                    onRemove={() => updateArtifact({ links: data.artifact.links.filter(l => l.id !== link.id) })}
+                                    onFocus={handleFieldFocus}
+                                    onBlur={handleFieldBlur}
+                                    disabled={data.artifact.submitted}
+                                />
+                            ))}
+
+                            <p className="rofp-field-static-note rofp-field-static-note--italic">
+                                Links are recommended for videos, social creatives, landing pages, hosted images, and product pages.
+                            </p>
+
+                            {canAddArtifactLink && !data.artifact.submitted && (
+                                <button
+                                    type="button"
+                                    className="rofp-material-add-link-btn"
+                                    onClick={() => updateArtifact({ links: [...data.artifact.links, emptyLink()] })}
+                                >
+                                    <PlusIcon /> Add another link
+                                </button>
+                            )}
+
+                            <UploadSlot
+                                label="Image"
+                                acceptExtensions={ARTIFACT_EXTENSIONS}
+                                maxBytes={ARTIFACT_MAX_BYTES}
+                                formatsLabel="PNG, JPG, GIF, WEBP"
+                                slot={data.artifact.file}
+                                onSlotChange={file => updateArtifact({ file })}
+                                disabled={data.artifact.submitted}
+                                compact
+                            />
+                        </div>
+
+                        {artifactProcessing && <OmiProcessingBar messageIndex={artifactMsgIndex} />}
+
+                        {data.artifact.submitted && !artifactProcessing && (
+                            <div className="rofp-upload-complete">
+                                <span className="rofp-upload-complete-icon"><MaterialCheckIcon /></span>
+                                <div className="rofp-upload-complete-text">
+                                    <div className="rofp-upload-complete-title">Artifact saved</div>
+                                    <div className="rofp-upload-complete-sub">Omi can now test this against your personas.</div>
+                                </div>
+                                <button className="rofp-material-edit-btn" onClick={handleEditArtifact} type="button">
+                                    <EditIcon /> Edit
+                                </button>
+                            </div>
+                        )}
+
+                        <div className="rofp-material-section-cta">
+                            <button
+                                className={["rofp-btn-section-submit", !canSubmitArtifact ? "rofp-btn-section-submit--disabled" : ""].filter(Boolean).join(" ")}
+                                disabled={!canSubmitArtifact}
+                                onClick={handleSubmitArtifact}
+                                type="button"
+                            >
+                                {artifactProcessing ? "Saving…" : data.artifact.submitted ? "Saved" : "Submit"}
+                            </button>
+                        </div>
+                    </div>
+
+                </div>{/* END .rofp-material-sections-row */}
 
                 <p className="rofp-upload-footnote">
                     Your materials are used only to support and sharpen this exploration.
@@ -1398,7 +1382,6 @@ const buildPreviewSections = (data: ROFramerData): PreviewSection[] => {
     if (data.decisionMoment.decision.trim()) sections.push({ heading: "Decision Moment", body: data.decisionMoment.decision.trim() });
     if (data.audienceSegments.audience.trim()) sections.push({ heading: "Audience & Segments", body: data.audienceSegments.audience.trim() });
 
-    // Add Material — show each section's instruction + any links/filenames
     const briefLink = data.material.brief.link.trim();
     const artifactLinks = data.material.artifact.links.map(l => l.value.trim()).filter(Boolean);
     const hasMaterial =
