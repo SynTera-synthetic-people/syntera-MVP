@@ -719,7 +719,7 @@ const KnowledgeEnrichmentCard: React.FC<{ isManualMode: boolean }> = ({ isManual
               border: `1px solid ${confColor(KE_CONFIDENCE_SCORE)}33`,
             }}
           >
-            <span className="pp-multi-conf-pill-label">Confidence Score</span>
+            <span className="pp-multi-conf-pill-label">Calibration Confidence</span>
             <span className="pp-multi-conf-pill-score" style={{ color: confColor(KE_CONFIDENCE_SCORE) }}>
               {KE_CONFIDENCE_SCORE}%
             </span>
@@ -2004,19 +2004,6 @@ const PersonaPreview: React.FC = () => {
                   </div>
                 ) : (
                   <p className="pp-empty">Psychometric data not available for this persona.</p>
-                )}
-                {evidenceSites.length > 0 && (
-                  <div className="pp-evidence">
-                    <h4 className="pp-evidence-title">Evidence Base</h4>
-                    <div className="pp-evidence-grid">
-                      {evidenceSites.map((s, i) => (
-                        <div key={i} className="pp-evidence-item">
-                          <span>{s.name}</span>
-                          <span className="pp-evidence-count">{s.count.toLocaleString('en-IN')}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
                 )}
               </div>
             )}

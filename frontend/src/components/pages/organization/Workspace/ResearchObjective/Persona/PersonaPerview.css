@@ -418,14 +418,14 @@
 }
 
 .pp-trait-label {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   color: #64748b;
 }
 
 .pp-trait-value {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 200;
   color: #f1f5f9;
   line-height: 1.5;
 }
