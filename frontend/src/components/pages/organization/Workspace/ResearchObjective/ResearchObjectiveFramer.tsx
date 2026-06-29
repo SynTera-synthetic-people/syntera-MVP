@@ -1,7 +1,10 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import { useNavigate, useLocation, useParams } from "react-router-dom";
 import { toast } from "react-toastify";
-import { useCreateResearchObjectiveFromFramer } from "../../../../../hooks/useOmiChat";
+import {
+    useCreateResearchObjectiveFromFramer,
+    useSubmitFramerMaterialSection,
+} from "../../../../../hooks/useOmiChat";
 import "./ResearchObjectiveFramer.css";
 
 import OmiIdle from "../../../../../assets/Omi Animations/IdleStateMotion_Lite.mp4";
@@ -45,6 +48,9 @@ interface MaterialSlot {
     fileName: string | null;
     fileSizeLabel: string | null;
     uploadStatus: MaterialUploadStatus;
+    // The actual selected File — kept so Submit can send the real bytes.
+    // (fileName/fileSizeLabel alone were display-only and discarded the file.)
+    file: File | null;
 }
 
 // A single URL entry (used within the Artifact section's link list)
@@ -104,10 +110,11 @@ function buildFramerPayload(data: ROFramerData) {
         information_gap: data.customerUnknown.unknown || undefined,
         decision_problem: data.decisionMoment.decision || undefined,
         target_audience: data.audienceSegments.audience || undefined,
-        brief_instruction: data.material.brief.instruction || undefined,
-        artifact_instruction: data.material.artifact.instruction || undefined,
-        brief_link: data.material.brief.link.trim() || undefined,
-        artifact_links: data.material.artifact.links.map(l => l.value).filter(Boolean),
+        // Materials are NOT sent here — each section (Research Brief/Artifact)
+        // is already submitted, extracted, and persisted against exploration_id
+        // independently via its own "Submit" button (see MaterialTab). The
+        // backend pulls them in itself at /from-framer time, keyed by
+        // exploration_id, alongside this payload.
         additional_notes: data.otherInformation.notes || undefined,
     };
 }
@@ -770,14 +777,14 @@ const emptyLink = (): MaterialLink => ({ id: makeLinkId(), value: "" });
 const emptyBriefSection = (): BriefSectionData => ({
     instruction: "",
     link: "",
-    file: { fileName: null, fileSizeLabel: null, uploadStatus: "idle" },
+    file: { fileName: null, fileSizeLabel: null, uploadStatus: "idle", file: null },
     submitted: false,
 });
 
 const emptyArtifactSection = (): ArtifactSectionData => ({
     instruction: "",
     links: [emptyLink()],
-    file: { fileName: null, fileSizeLabel: null, uploadStatus: "idle" },
+    file: { fileName: null, fileSizeLabel: null, uploadStatus: "idle", file: null },
     submitted: false,
 });
 
@@ -852,7 +859,7 @@ const UploadSlot: React.FC<UploadSlotProps> = ({
             return;
         }
         setFileError(null);
-        onSlotChange({ fileName: file.name, fileSizeLabel: formatFileSize(file.size), uploadStatus: "idle" });
+        onSlotChange({ fileName: file.name, fileSizeLabel: formatFileSize(file.size), uploadStatus: "idle", file });
     };
 
     const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -872,7 +879,7 @@ const UploadSlot: React.FC<UploadSlotProps> = ({
     const handleRemove = () => {
         if (disabled) return;
         setFileError(null);
-        onSlotChange({ fileName: null, fileSizeLabel: null, uploadStatus: "idle" });
+        onSlotChange({ fileName: null, fileSizeLabel: null, uploadStatus: "idle", file: null });
     };
 
     return (
@@ -1009,10 +1016,19 @@ interface MaterialTabProps {
 const MaterialTab: React.FC<MaterialTabProps> = ({
     data, onChange, onOmiStateChange, onContinue, onBack,
 }) => {
+    const { workspaceId, objectiveId } = useParams<{
+        workspaceId: string;
+        objectiveId: string;
+    }>();
+    const { mutateAsync: submitBriefSection } = useSubmitFramerMaterialSection(workspaceId, objectiveId) as any;
+    const { mutateAsync: submitArtifactSection } = useSubmitFramerMaterialSection(workspaceId, objectiveId) as any;
+
     const [briefProcessing, setBriefProcessing] = useState(false);
     const [artifactProcessing, setArtifactProcessing] = useState(false);
     const [briefMsgIndex, setBriefMsgIndex] = useState(0);
     const [artifactMsgIndex, setArtifactMsgIndex] = useState(0);
+    const [briefError, setBriefError] = useState<string | null>(null);
+    const [artifactError, setArtifactError] = useState<string | null>(null);
 
     const anyFieldFilled =
         !!data.brief.instruction || !!data.artifact.instruction ||
@@ -1038,37 +1054,66 @@ const MaterialTab: React.FC<MaterialTabProps> = ({
 
     const briefHasContent = data.brief.link.trim().length > 0 || !!data.brief.file.fileName;
     const briefLinkValid = isLikelyValidUrl(data.brief.link);
-    const canSubmitBrief = briefHasContent && briefLinkValid && !briefProcessing && !data.brief.submitted;
+    // Deliberately NOT gated on briefHasContent: a previously-submitted section
+    // with everything since removed must still be submittable, so that submit
+    // (with an empty file+link) reaches the backend and actually clears it —
+    // otherwise there'd be no way to undo a saved Research Brief/Artifact.
+    const canSubmitBrief = briefLinkValid && !briefProcessing && !data.brief.submitted;
 
     const updateBrief = (patch: Partial<BriefSectionData>) =>
         onChange({ ...data, brief: { ...data.brief, ...patch } });
 
-    const handleSubmitBrief = () => {
+    const handleSubmitBrief = async () => {
         if (!canSubmitBrief) return;
+        setBriefError(null);
         setBriefProcessing(true);
-        setTimeout(() => {
-            setBriefProcessing(false);
+        try {
+            await submitBriefSection({
+                kind: "brief",
+                instruction: data.brief.instruction,
+                file: data.brief.file.file,
+                links: data.brief.link.trim() ? [data.brief.link.trim()] : [],
+            });
             updateBrief({ submitted: true, file: { ...data.brief.file, uploadStatus: "done" } });
-        }, MATERIAL_PROCESSING_INTERVAL_MS * MATERIAL_PROCESSING_MESSAGES.length);
+        } catch (error: any) {
+            setBriefError(
+                error?.response?.data?.detail ?? "Couldn't save this section. Please try again."
+            );
+        } finally {
+            setBriefProcessing(false);
+        }
     };
 
     const handleEditBrief = () => updateBrief({ submitted: false, file: { ...data.brief.file, uploadStatus: "idle" } });
 
     const artifactHasContent = data.artifact.links.some(l => l.value.trim()) || !!data.artifact.file.fileName;
     const artifactLinksValid = data.artifact.links.every(l => isLikelyValidUrl(l.value));
-    const canSubmitArtifact = artifactHasContent && artifactLinksValid && !artifactProcessing && !data.artifact.submitted;
+    // Same reasoning as canSubmitBrief — not gated on artifactHasContent.
+    const canSubmitArtifact = artifactLinksValid && !artifactProcessing && !data.artifact.submitted;
     const canAddArtifactLink = data.artifact.links.length < ARTIFACT_MAX_LINKS;
 
     const updateArtifact = (patch: Partial<ArtifactSectionData>) =>
         onChange({ ...data, artifact: { ...data.artifact, ...patch } });
 
-    const handleSubmitArtifact = () => {
+    const handleSubmitArtifact = async () => {
         if (!canSubmitArtifact) return;
+        setArtifactError(null);
         setArtifactProcessing(true);
-        setTimeout(() => {
-            setArtifactProcessing(false);
+        try {
+            await submitArtifactSection({
+                kind: "artifact",
+                instruction: data.artifact.instruction,
+                file: data.artifact.file.file,
+                links: data.artifact.links.map(l => l.value).filter(Boolean),
+            });
             updateArtifact({ submitted: true, file: { ...data.artifact.file, uploadStatus: "done" } });
-        }, MATERIAL_PROCESSING_INTERVAL_MS * MATERIAL_PROCESSING_MESSAGES.length);
+        } catch (error: any) {
+            setArtifactError(
+                error?.response?.data?.detail ?? "Couldn't save this section. Please try again."
+            );
+        } finally {
+            setArtifactProcessing(false);
+        }
     };
 
     const handleEditArtifact = () => updateArtifact({ submitted: false, file: { ...data.artifact.file, uploadStatus: "idle" } });
@@ -1146,6 +1191,10 @@ const MaterialTab: React.FC<MaterialTabProps> = ({
                         </div>
 
                         {briefProcessing && <OmiProcessingBar messageIndex={briefMsgIndex} />}
+
+                        {briefError && !briefProcessing && (
+                            <p className="rofp-upload-slot-error">{briefError}</p>
+                        )}
 
                         {data.brief.submitted && !briefProcessing && (
                             <div className="rofp-upload-complete">
@@ -1250,6 +1299,10 @@ const MaterialTab: React.FC<MaterialTabProps> = ({
                         </div>
 
                         {artifactProcessing && <OmiProcessingBar messageIndex={artifactMsgIndex} />}
+
+                        {artifactError && !artifactProcessing && (
+                            <p className="rofp-upload-slot-error">{artifactError}</p>
+                        )}
 
                         {data.artifact.submitted && !artifactProcessing && (
                             <div className="rofp-upload-complete">

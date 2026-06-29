@@ -25,6 +25,7 @@ import {
 } from "react-icons/tb";
 import SpIcon from "../../../../SPIcon";
 import { useTheme } from "../../../../../context/ThemeContext";
+import { toast } from "react-toastify";
 import {
   useInitializeOmiSession,
   useSendMessageToOmi,
@@ -32,6 +33,7 @@ import {
   useConversationHistory,
   usePatchResearchObjectiveSummary,
   usePatchOmiMessageContent,
+  useSubmitFramerMaterialSection,
 } from "../../../../../hooks/useOmiChat";
 import { useOmniWorkflow } from '../../../../../hooks/useOmiWorkflow';
 import { useAutoGeneratePersonas, usePersonas } from '../../../../../hooks/usePersonaBuilder';
@@ -235,6 +237,7 @@ const AddResearchObjective: React.FC = () => {
   const { mutate: createResearchObjective } = useCreateResearchObjective() as any;
   const { mutate: persistSummaryEdit } = usePatchResearchObjectiveSummary(workspaceId, objectiveId) as any;
   const { mutate: persistOmiMessage } = usePatchOmiMessageContent() as any;
+  const { mutateAsync: submitMaterialSection } = useSubmitFramerMaterialSection(workspaceId, objectiveId) as any;
 
   const { refetch: triggerPersonaGeneration } = useAutoGeneratePersonas(workspaceId, objectiveId, { enabled: false });
   const { data: existingPersonasData, refetch: refetchExistingPersonas } =
@@ -598,12 +601,45 @@ const AddResearchObjective: React.FC = () => {
     if (error) { setFileError(error); return; }
     setUploadedFile(file);
   };
-  const handleMaterialDone = (value: FileUploadModalValue) => {
-  setUploadedMaterial(value);
-  if (value.briefFile) {
-    setUploadedFile(value.briefFile);
-  }
-};
+  const handleMaterialDone = async (value: FileUploadModalValue) => {
+    // Each section is submitted to the backend directly (extracted/summarized
+    // synchronously, same pipeline as the Research Objective Framer's Add
+    // Material tab) and persisted against this exploration — Omi's next chat
+    // turn picks it up automatically via get_unlinked_materials. This used to
+    // just stash the brief file into the chat's file-attach state, but the
+    // chat endpoint never actually reads a "file" field — it was silently
+    // dropped either way.
+    const tasks: Promise<any>[] = [];
+    if (value.briefFile || value.briefLink) {
+      tasks.push(submitMaterialSection({
+        kind: "brief",
+        file: value.briefFile,
+        links: value.briefLink ? [value.briefLink] : [],
+      }));
+    }
+    if (value.artifactFile || value.artifactLinks.length > 0) {
+      tasks.push(submitMaterialSection({
+        kind: "artifact",
+        file: value.artifactFile,
+        links: value.artifactLinks,
+      }));
+    }
+
+    if (tasks.length === 0) {
+      setUploadedMaterial(value);
+      return;
+    }
+
+    try {
+      await Promise.all(tasks);
+      setUploadedMaterial(value);
+      toast.success("Material added — Omi will use this as context.");
+    } catch (error: any) {
+      toast.error(
+        error?.response?.data?.detail ?? "Couldn't save your material. Please try again."
+      );
+    }
+  };
 
   const handleRemoveFile = () => {
     setUploadedFile(null);
