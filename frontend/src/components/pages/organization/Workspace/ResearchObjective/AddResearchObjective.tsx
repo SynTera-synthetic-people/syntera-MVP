@@ -1242,13 +1242,14 @@ const AddResearchObjective: React.FC = () => {
                   placeholder={uploadedFile ? "Add a message about your file (optional)…" : undefined}
                 />
 
-                <button
+                {/* mic to be added later */}
+                {/* <button
                   type="button"
                   className="aro-input-icon-btn"
                   disabled={isSubmitting || isLoading || !sessionData}
                 >
                   <SpIcon name="sp-Other-Mic" />
-                </button>
+                </button> */}
 
                 <button
                   type="submit"

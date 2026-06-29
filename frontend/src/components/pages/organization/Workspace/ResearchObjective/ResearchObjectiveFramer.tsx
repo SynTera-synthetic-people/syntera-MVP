@@ -24,6 +24,7 @@ interface ContextData {
     industry: string;
     website: string;
     competitors: Competitor[];
+    extraContext: string;
 }
 
 interface BusinessTriggerData {
@@ -106,6 +107,7 @@ function buildFramerPayload(data: ROFramerData) {
         industry: data.context.industry || undefined,
         website: data.context.website || undefined,
         competitors: data.context.competitors.map(c => c.name),
+        extra_context: data.context.extraContext || undefined,
         business_context: data.businessTrigger.trigger || undefined,
         information_gap: data.customerUnknown.unknown || undefined,
         decision_problem: data.decisionMoment.decision || undefined,
@@ -468,6 +470,28 @@ const ContextTab: React.FC<ContextTabProps> = ({
                         )}
                     </div>
                 </div>
+                {/* Extra Context */}
+                <div className="rofp-field-group">
+                    <div className="rofp-field-label-row">
+                        <label className="rofp-label" htmlFor="rof-extra-context">
+                            Extra Context
+                            <span className="rofp-label-optional">Optional</span>
+                        </label>
+                        <Tooltip text="Tell Omi anything useful about your brand, category, products, or market." />
+                    </div>
+                    <textarea
+                        id="rof-extra-context"
+                        className="rofp-textarea rofp-textarea--lg"
+                        placeholder="Tell Omi what your brand does, which products matter, and what category context should be considered..."
+                        value={data.extraContext}
+                        maxLength={1000}
+                        onFocus={handleFieldFocus}
+                        onBlur={handleFieldBlur}
+                        onChange={e => onChange({ ...data, extraContext: e.target.value.slice(0, 1000) })}
+                        rows={4}
+                    />
+                    <p className="rofp-field-charcount">{data.extraContext.length}/1000</p>
+                </div>
 
                 {/* Competitors */}
                 <div className="rofp-field-group">
@@ -748,13 +772,13 @@ const AudienceSegmentsTab: React.FC<AudienceSegmentsTabProps> = ({
 // Add Material — two independent sections: Research Brief & Artifacts
 // ─────────────────────────────────────────────────────────────────────────────
 
-const BRIEF_EXTENSIONS  = [".pdf", ".pptx", ".ppt", ".docx", ".doc", ".xlsx", ".xls"];
-const BRIEF_MAX_BYTES   = 5 * 1024 * 1024;
+const BRIEF_EXTENSIONS = [".pdf", ".pptx", ".ppt", ".docx", ".doc", ".xlsx", ".xls"];
+const BRIEF_MAX_BYTES = 5 * 1024 * 1024;
 
 const ARTIFACT_EXTENSIONS = [
     ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg",
 ];
-const ARTIFACT_MAX_BYTES  = 10 * 1024 * 1024;
+const ARTIFACT_MAX_BYTES = 10 * 1024 * 1024;
 
 const ARTIFACT_MAX_LINKS = 3;
 
@@ -901,7 +925,7 @@ const UploadSlot: React.FC<UploadSlotProps> = ({
                     aria-disabled={disabled}
                     onKeyDown={e => { if (!disabled && (e.key === "Enter" || e.key === " ")) fileInputRef.current?.click(); }}
                 >
-                    <span className="rofp-upload-zone-icon"><SpIcon name="sp-File-Cloud_Upload"/></span>
+                    <span className="rofp-upload-zone-icon"><SpIcon name="sp-File-Cloud_Upload" /></span>
                     <span className="rofp-upload-zone-title">
                         {compact ? <>Click to upload {label.toLowerCase()}</> : <>Drop your files here,<br />or click to upload</>}
                     </span>
@@ -1222,110 +1246,115 @@ const MaterialTab: React.FC<MaterialTabProps> = ({
                     </div>
 
                     {/* ── Section 2: Artifact ─────────────────────────────── */}
-                    <div className="rofp-material-section">
-                        <div className="rofp-material-section-head">
-                            <h3 className="rofp-material-section-title">Artifact</h3>
-                            <p className="rofp-material-section-sub">
-                                Share creatives, videos, images, landing pages, claims,
-                                storyboards, prototypes, product flows, or anything you want
-                                Omi to test with personas.
-                            </p>
+                    <div className="rofp-material-section rofp-material-section--coming-soon">
+                        <div className="rofp-coming-soon-overlay">
+                            <span className="rofp-coming-soon-badge">Coming Soon</span>
                         </div>
-
-                        <div className="rofp-material-section-body">
-                            <div className="rofp-field-group">
-                                <div className="rofp-field-label-row">
-                                    <label className="rofp-label" htmlFor="rof-artifact-instruction">
-                                        What should Omi do with this artifact?
-                                        <span className="rofp-label-optional">Optional</span>
-                                    </label>
-                                    <Tooltip text="Tell Omi what to test, decode, or react to in this artifact." />
-                                </div>
-                                <textarea
-                                    id="rof-artifact-instruction"
-                                    className="rofp-textarea rofp-textarea--lg"
-                                    placeholder="This is a campaign creative. Test whether the message is clear, believable, distinctive, and likely to drive interest or purchase intent…."
-                                    value={data.artifact.instruction}
-                                    maxLength={MATERIAL_INSTRUCTION_MAX_LENGTH}
-                                    onFocus={handleFieldFocus}
-                                    onBlur={handleFieldBlur}
-                                    onChange={e => updateArtifact({ instruction: e.target.value.slice(0, MATERIAL_INSTRUCTION_MAX_LENGTH) })}
-                                    rows={3}
-                                    disabled={data.artifact.submitted}
-                                />
-                                <p className="rofp-field-charcount">{data.artifact.instruction.length}/{MATERIAL_INSTRUCTION_MAX_LENGTH}</p>
+                        <div className="rofp-material-section">
+                            <div className="rofp-material-section-head">
+                                <h3 className="rofp-material-section-title">Artifact</h3>
+                                <p className="rofp-material-section-sub">
+                                    Share creatives, videos, images, landing pages, claims,
+                                    storyboards, prototypes, product flows, or anything you want
+                                    Omi to test with personas.
+                                </p>
                             </div>
 
-                            {data.artifact.links.map((link, idx) => (
-                                <LinkRow
-                                    key={link.id}
-                                    value={link.value}
-                                    placeholder="Paste a YouTube, video, image, landing page, product page, or creative URL"
-                                    onChange={value => updateArtifact({
-                                        links: data.artifact.links.map(l => l.id === link.id ? { ...l, value } : l),
-                                    })}
-                                    removable={data.artifact.links.length > 1 || idx > 0}
-                                    onRemove={() => updateArtifact({ links: data.artifact.links.filter(l => l.id !== link.id) })}
-                                    onFocus={handleFieldFocus}
-                                    onBlur={handleFieldBlur}
+                            <div className="rofp-material-section-body">
+                                <div className="rofp-field-group">
+                                    <div className="rofp-field-label-row">
+                                        <label className="rofp-label" htmlFor="rof-artifact-instruction">
+                                            What should Omi do with this artifact?
+                                            <span className="rofp-label-optional">Optional</span>
+                                        </label>
+                                        <Tooltip text="Tell Omi what to test, decode, or react to in this artifact." />
+                                    </div>
+                                    <textarea
+                                        id="rof-artifact-instruction"
+                                        className="rofp-textarea rofp-textarea--lg"
+                                        placeholder="This is a campaign creative. Test whether the message is clear, believable, distinctive, and likely to drive interest or purchase intent…."
+                                        value={data.artifact.instruction}
+                                        maxLength={MATERIAL_INSTRUCTION_MAX_LENGTH}
+                                        onFocus={handleFieldFocus}
+                                        onBlur={handleFieldBlur}
+                                        onChange={e => updateArtifact({ instruction: e.target.value.slice(0, MATERIAL_INSTRUCTION_MAX_LENGTH) })}
+                                        rows={3}
+                                        disabled={data.artifact.submitted}
+                                    />
+                                    <p className="rofp-field-charcount">{data.artifact.instruction.length}/{MATERIAL_INSTRUCTION_MAX_LENGTH}</p>
+                                </div>
+
+                                {data.artifact.links.map((link, idx) => (
+                                    <LinkRow
+                                        key={link.id}
+                                        value={link.value}
+                                        placeholder="Paste a YouTube, video, image, landing page, product page, or creative URL"
+                                        onChange={value => updateArtifact({
+                                            links: data.artifact.links.map(l => l.id === link.id ? { ...l, value } : l),
+                                        })}
+                                        removable={data.artifact.links.length > 1 || idx > 0}
+                                        onRemove={() => updateArtifact({ links: data.artifact.links.filter(l => l.id !== link.id) })}
+                                        onFocus={handleFieldFocus}
+                                        onBlur={handleFieldBlur}
+                                        disabled={data.artifact.submitted}
+                                    />
+                                ))}
+
+                                <p className="rofp-field-static-note rofp-field-static-note--italic">
+                                    Links are recommended for videos, social creatives, landing pages, hosted images, and product pages.
+                                </p>
+
+                                {canAddArtifactLink && !data.artifact.submitted && (
+                                    <button
+                                        type="button"
+                                        className="rofp-material-add-link-btn"
+                                        onClick={() => updateArtifact({ links: [...data.artifact.links, emptyLink()] })}
+                                    >
+                                        <PlusIcon /> Add another link
+                                    </button>
+                                )}
+
+                                <UploadSlot
+                                    label="Image"
+                                    acceptExtensions={ARTIFACT_EXTENSIONS}
+                                    maxBytes={ARTIFACT_MAX_BYTES}
+                                    formatsLabel="PNG, JPG, GIF, WEBP"
+                                    slot={data.artifact.file}
+                                    onSlotChange={file => updateArtifact({ file })}
                                     disabled={data.artifact.submitted}
+                                    compact
                                 />
-                            ))}
+                            </div>
 
-                            <p className="rofp-field-static-note rofp-field-static-note--italic">
-                                Links are recommended for videos, social creatives, landing pages, hosted images, and product pages.
-                            </p>
+                            {artifactProcessing && <OmiProcessingBar messageIndex={artifactMsgIndex} />}
 
-                            {canAddArtifactLink && !data.artifact.submitted && (
-                                <button
-                                    type="button"
-                                    className="rofp-material-add-link-btn"
-                                    onClick={() => updateArtifact({ links: [...data.artifact.links, emptyLink()] })}
-                                >
-                                    <PlusIcon /> Add another link
-                                </button>
+                            {artifactError && !artifactProcessing && (
+                                <p className="rofp-upload-slot-error">{artifactError}</p>
                             )}
 
-                            <UploadSlot
-                                label="Image"
-                                acceptExtensions={ARTIFACT_EXTENSIONS}
-                                maxBytes={ARTIFACT_MAX_BYTES}
-                                formatsLabel="PNG, JPG, GIF, WEBP"
-                                slot={data.artifact.file}
-                                onSlotChange={file => updateArtifact({ file })}
-                                disabled={data.artifact.submitted}
-                                compact
-                            />
-                        </div>
-
-                        {artifactProcessing && <OmiProcessingBar messageIndex={artifactMsgIndex} />}
-
-                        {artifactError && !artifactProcessing && (
-                            <p className="rofp-upload-slot-error">{artifactError}</p>
-                        )}
-
-                        {data.artifact.submitted && !artifactProcessing && (
-                            <div className="rofp-upload-complete">
-                                <span className="rofp-upload-complete-icon"><MaterialCheckIcon /></span>
-                                <div className="rofp-upload-complete-text">
-                                    <div className="rofp-upload-complete-title">Artifact saved</div>
-                                    <div className="rofp-upload-complete-sub">Omi can now test this against your personas.</div>
+                            {data.artifact.submitted && !artifactProcessing && (
+                                <div className="rofp-upload-complete">
+                                    <span className="rofp-upload-complete-icon"><MaterialCheckIcon /></span>
+                                    <div className="rofp-upload-complete-text">
+                                        <div className="rofp-upload-complete-title">Artifact saved</div>
+                                        <div className="rofp-upload-complete-sub">Omi can now test this against your personas.</div>
+                                    </div>
+                                    <button className="rofp-material-edit-btn" onClick={handleEditArtifact} type="button">
+                                        <EditIcon /> Edit
+                                    </button>
                                 </div>
-                                <button className="rofp-material-edit-btn" onClick={handleEditArtifact} type="button">
-                                    <EditIcon /> Edit
+                            )}
+
+                            <div className="rofp-material-section-cta">
+                                <button
+                                    className={["rofp-btn-section-submit", !canSubmitArtifact ? "rofp-btn-section-submit--disabled" : ""].filter(Boolean).join(" ")}
+                                    disabled={!canSubmitArtifact}
+                                    onClick={handleSubmitArtifact}
+                                    type="button"
+                                >
+                                    {artifactProcessing ? "Saving…" : data.artifact.submitted ? "Saved" : "Submit"}
                                 </button>
                             </div>
-                        )}
-
-                        <div className="rofp-material-section-cta">
-                            <button
-                                className={["rofp-btn-section-submit", !canSubmitArtifact ? "rofp-btn-section-submit--disabled" : ""].filter(Boolean).join(" ")}
-                                disabled={!canSubmitArtifact}
-                                onClick={handleSubmitArtifact}
-                                type="button"
-                            >
-                                {artifactProcessing ? "Saving…" : data.artifact.submitted ? "Saved" : "Submit"}
-                            </button>
                         </div>
                     </div>
 
@@ -1549,7 +1578,7 @@ const ResearchObjectiveFramer: React.FC<ResearchObjectiveFramerProps> = ({
     const scrollTabsBy = (amount: number) => { tabScrollRef.current?.scrollBy({ left: amount, behavior: "smooth" }); };
 
     const [data, setData] = useState<ROFramerData>({
-        context: { companyName: "", industry: "", website: "", competitors: [] },
+        context: { companyName: "", industry: "", website: "", competitors: [], extraContext: "" },
         businessTrigger: { trigger: "" },
         customerUnknown: { unknown: "" },
         decisionMoment: { decision: "" },
@@ -1629,9 +1658,9 @@ const ResearchObjectiveFramer: React.FC<ResearchObjectiveFramerProps> = ({
                 <div ref={tabScrollRef} className="rofp-tab-nav-wrap">
                     <div className="rofp-tab-nav" role="tablist">
                         {TABS.map((tab, i) => {
-                            const isActive     = tab.id === activeTab;
+                            const isActive = tab.id === activeTab;
                             const isAccessible = i <= accessibleUpTo;
-                            const isDone       = i < activeTabIndex;
+                            const isDone = i < activeTabIndex;
                             return (
                                 <button
                                     key={tab.id}

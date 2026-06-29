@@ -8,13 +8,7 @@ on:
       - "backend/**"
       - "k8sdeployment/**"
       - ".github/workflows/**"
-  pull_request:
-    branches: [ "staging" ]
-    paths:
-      - "frontend/**"
-      - "backend/**"
-      - "k8sdeployment/**"
-      - ".github/workflows/**"
+      
   workflow_dispatch:
 
 env:

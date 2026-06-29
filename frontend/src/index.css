@@ -62,3 +62,77 @@ h1 {
 .nav-item {
   @apply transition-colors duration-200;
 }
+/* ── react-toastify global overrides ──────────────────────────────────────── 
+   Add this at the bottom of index.css. 
+   ToastContainer is mounted once in App.tsx — these styles apply everywhere. 
+────────────────────────────────────────────────────────────────────────────── */
+
+/* Container — keep top-right but tighten the width */
+.Toastify__toast-container {
+  width: auto;
+  min-width: 280px;
+  max-width: 420px;
+}
+
+
+/* Base toast card — matches the pill shape in Figma */
+.Toastify__toast {
+  border-radius: 10px;          /* full pill */
+  padding: 14px 20px;
+  min-height: unset;             /* remove default tall min-height */
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.24);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Toast body (the text node) */
+.Toastify__toast-body {
+  padding: 0;
+  margin: 0;
+  flex: 1;
+}
+
+/* ── Per-type colours ── */
+.Toastify__toast--success {
+  background: #1AAB18;           /* green-500 — matches Figma */
+  color: #ffffff;
+}
+
+.Toastify__toast--error {
+  background: #ef4444;           /* red-500 */
+  color: #ffffff;
+}
+
+.Toastify__toast--warning {
+  background: #f59e0b;           /* amber-500 */
+  color: #ffffff;
+}
+
+.Toastify__toast--info {
+  background: #3b82f6;           /* blue-500 */
+  color: #ffffff;
+}
+
+/* ── Progress bar — hidden to keep the pill clean ── */
+
+/* ── Close button ── */
+.Toastify__close-button {
+  color: #ffffff;
+  opacity: 0.7;
+  align-self: center;
+  flex-shrink: 0;
+}
+
+.Toastify__close-button:hover {
+  opacity: 1;
+}
+
+/* ── Default icon (the coloured circle) — hide it, text-only like Figma ── */
+.Toastify__toast-icon {
+  display: none;
+}
