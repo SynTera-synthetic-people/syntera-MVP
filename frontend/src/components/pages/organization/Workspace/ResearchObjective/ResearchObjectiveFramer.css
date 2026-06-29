@@ -408,7 +408,7 @@
 }
 
 .rofp-input::placeholder {
-  color: rgba(255, 255, 255, 0.22);
+  color: #808591;
 }
 
 .rofp-input-row {
@@ -1424,7 +1424,7 @@
 }
 
 .rofp-video-link-input::placeholder {
-  color: rgba(255, 255, 255, 0.28);
+  color: #808591;
 }
 
 .rofp-video-link-input:disabled {

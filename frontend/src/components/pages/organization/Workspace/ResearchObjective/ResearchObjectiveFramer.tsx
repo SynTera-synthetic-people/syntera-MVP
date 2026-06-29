@@ -24,6 +24,7 @@ interface ContextData {
     industry: string;
     website: string;
     competitors: Competitor[];
+    extraContext: string;
 }
 
 interface BusinessTriggerData {
@@ -106,6 +107,7 @@ function buildFramerPayload(data: ROFramerData) {
         industry: data.context.industry || undefined,
         website: data.context.website || undefined,
         competitors: data.context.competitors.map(c => c.name),
+        extra_context: data.context.extraContext || undefined,
         business_context: data.businessTrigger.trigger || undefined,
         information_gap: data.customerUnknown.unknown || undefined,
         decision_problem: data.decisionMoment.decision || undefined,
@@ -467,6 +469,28 @@ const ContextTab: React.FC<ContextTabProps> = ({
                             </a>
                         )}
                     </div>
+                </div>
+                {/* Extra Context */}
+                <div className="rofp-field-group">
+                    <div className="rofp-field-label-row">
+                        <label className="rofp-label" htmlFor="rof-extra-context">
+                            Extra Context
+                            <span className="rofp-label-optional">Optional</span>
+                        </label>
+                        <Tooltip text="Tell Omi anything useful about your brand, category, products, or market." />
+                    </div>
+                    <textarea
+                        id="rof-extra-context"
+                        className="rofp-textarea rofp-textarea--lg"
+                        placeholder="Tell Omi what your brand does, which products matter, and what category context should be considered..."
+                        value={data.extraContext}
+                        maxLength={1000}
+                        onFocus={handleFieldFocus}
+                        onBlur={handleFieldBlur}
+                        onChange={e => onChange({ ...data, extraContext: e.target.value.slice(0, 1000) })}
+                        rows={4}
+                    />
+                    <p className="rofp-field-charcount">{data.extraContext.length}/1000</p>
                 </div>
 
                 {/* Competitors */}
@@ -1554,7 +1578,7 @@ const ResearchObjectiveFramer: React.FC<ResearchObjectiveFramerProps> = ({
     const scrollTabsBy = (amount: number) => { tabScrollRef.current?.scrollBy({ left: amount, behavior: "smooth" }); };
 
     const [data, setData] = useState<ROFramerData>({
-        context: { companyName: "", industry: "", website: "", competitors: [] },
+        context: { companyName: "", industry: "", website: "", competitors: [], extraContext: "" },
         businessTrigger: { trigger: "" },
         customerUnknown: { unknown: "" },
         decisionMoment: { decision: "" },
