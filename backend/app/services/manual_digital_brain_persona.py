@@ -473,7 +473,7 @@ _MANUAL_USER_INPUT_TEMPLATE = """
 **USER PROVIDED TRAITS**
 {user_provided_traits}
 
-Follow ALL steps in the system prompt and return the completed persona JSON with brain assignment.
+Follow ALL steps in the system prompt and return the completed persona JSON without brain assignment.
 
 """
 
@@ -781,6 +781,13 @@ async def calibrate_manual_persona_with_brains(
                 "web_evidence": evidence["eb_verdicts"],
                 "hq_research": evidence["hq_verdicts"],
             }
+            merged["evidence_snapshot"] = _build_manual_evidence_snapshot(
+                evidence,
+                evidence_metadata,
+                confidence_scoring,
+                blended_confidence,
+            )
+            merged["reference_sites_with_usage"] = _build_reference_sites_from_evidence(evidence)
             # Real-vs-LLM-generated counts are tracked here for internal
             # inspection only — never surfaced as a "[SIMULATED]"/"[ESTIMATED]"
             # label anywhere in the persona's user-facing content.
@@ -826,7 +833,7 @@ _HQ_MIN_SOURCES = 3
 # Confidence range for LLM-generated fallback verdicts — deliberately lower
 # and narrower than real-evidence confidence ranges, so a generated verdict
 # can never out-score a real one in downstream confidence weighting.
-_ESTIMATED_CONFIDENCE_RANGE = (0.85, 0.95)
+_ESTIMATED_CONFIDENCE_RANGE = (0.70, 0.95)
 
 def _build_pseudo_ro(raw_traits: dict, research_objective_text: str, category: str) -> dict:
     """
@@ -1008,6 +1015,97 @@ async def _estimate_hq_verdict(category: str) -> dict:
 def random_uniform(lo: float, hi: float) -> float:
     import random
     return random.uniform(lo, hi)
+
+
+def _source_level(source: str | None) -> str:
+    return "Real" if source == "real" else "Estimated"
+
+
+def _build_manual_evidence_snapshot(
+    evidence: Dict[str, Any],
+    evidence_metadata: Dict[str, Any],
+    confidence_scoring: Dict[str, Any],
+    calibration_confidence: int,
+) -> Dict[str, Any]:
+    """
+    Bridge the new three-stream manual evidence shape into the existing
+    frontend evidence_snapshot contract.
+    """
+    action_meta = evidence_metadata.get("action_data", {}) if isinstance(evidence_metadata, dict) else {}
+    web_meta = evidence_metadata.get("web_evidence", {}) if isinstance(evidence_metadata, dict) else {}
+    hq_meta = evidence_metadata.get("hq_research", {}) if isinstance(evidence_metadata, dict) else {}
+
+    action_count = int(action_meta.get("real_records_found") or 0)
+    web_count = int(web_meta.get("real_citations_found") or 0)
+    hq_count = int(hq_meta.get("real_sources_found") or 0)
+
+    sources = [
+        {
+            "platform": "Action Data",
+            "threads_or_posts": action_count,
+            "source_type": _source_level(action_meta.get("source")),
+        },
+        {
+            "platform": "Web Evidence",
+            "threads_or_posts": web_count,
+            "source_type": _source_level(web_meta.get("source")),
+        },
+        {
+            "platform": "HQ Research",
+            "threads_or_posts": hq_count,
+            "source_type": _source_level(hq_meta.get("source")),
+        },
+    ]
+
+    confidence_value = round(max(0, min(calibration_confidence, 100)) / 100, 2)
+    return {
+        "evidence_source": "manual_digital_brain",
+        "total_conversations": action_count + web_count + hq_count,
+        "sources": sources,
+        "confidence_calculation_detail": {
+            "level": confidence_scoring.get("confidence_level", "Medium"),
+            "value": confidence_value,
+            "weighted_total": confidence_value,
+        },
+        "timeframe": {
+            "months_analyzed": None,
+            "recent_activity": {"months": None, "percentage": None},
+        },
+        "stream_counts": evidence_metadata,
+        "verdict_counts": {
+            "action_data": len(evidence.get("depth_layers") or []),
+            "web_evidence": len(evidence.get("eb_verdicts") or []),
+            "hq_research": len(evidence.get("hq_verdicts") or []),
+        },
+    }
+
+
+def _build_reference_sites_from_evidence(evidence: Dict[str, Any]) -> list[dict]:
+    refs: list[dict] = []
+    seen: set[str] = set()
+    for verdict in evidence.get("eb_verdicts") or []:
+        platform = verdict.get("source_platform") or "Web Evidence"
+        for url in verdict.get("source_urls") or []:
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            refs.append({
+                "site": platform,
+                "url": url,
+                "usage_context": "Evidence-based web citation used during manual persona calibration.",
+            })
+    for verdict in evidence.get("hq_verdicts") or []:
+        provenance = verdict.get("provenance_detail") or {}
+        url = provenance.get("source_url")
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        refs.append({
+            "site": verdict.get("study_reference") or "HQ Research",
+            "url": url,
+            "usage_context": "HQ source used during manual persona calibration.",
+        })
+    return refs
 
 
 async def _collect_evidence_for_manual_persona(

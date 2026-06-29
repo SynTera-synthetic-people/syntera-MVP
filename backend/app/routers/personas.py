@@ -387,12 +387,104 @@ async def auto_generate_personas(
         )
 
 
+def _digital_brain_evidence_snapshot(pipeline_result: dict, overall_confidence: Any = None) -> dict:
+    depth_layers = pipeline_result.get("stage_3a_depth_layers") or []
+    eb_verdicts = pipeline_result.get("stage_3b_eb_verdicts") or []
+    hq_verdicts = pipeline_result.get("stage_3c_hq_verdicts") or []
+
+    action_real_count = sum(1 for v in depth_layers if v.get("query_reference"))
+    web_real_count = sum(
+        len(v.get("all_citations") or [])
+        for v in eb_verdicts
+        if v.get("source_note") == "real_citation_backed"
+    )
+    hq_real_count = sum(
+        1 for v in hq_verdicts
+        if (v.get("provenance_detail") or {}).get("type") == "real_hq_source"
+    )
+    real_stream_count = sum(1 for count in (action_real_count, web_real_count, hq_real_count) if count > 0)
+    real_ratio = real_stream_count / 3
+
+    try:
+        raw_confidence = float(overall_confidence)
+    except (TypeError, ValueError):
+        raw_confidence = 0.0
+    confidence_value = raw_confidence * (0.6 + 0.4 * real_ratio)
+    confidence_value = round(max(0.0, min(confidence_value, 1.0)), 2)
+
+    return {
+        "evidence_source": "digital_brain_pipeline",
+        "total_conversations": action_real_count + web_real_count + hq_real_count,
+        "sources": [
+            {
+                "platform": "Action Data",
+                "threads_or_posts": action_real_count,
+                "source_type": "Real" if action_real_count else "Estimated",
+            },
+            {
+                "platform": "Web Evidence",
+                "threads_or_posts": web_real_count,
+                "source_type": "Real" if web_real_count else "Estimated",
+            },
+            {
+                "platform": "HQ Research",
+                "threads_or_posts": hq_real_count,
+                "source_type": "Real" if hq_real_count else "Estimated",
+            },
+        ],
+        "confidence_calculation_detail": {
+            "level": "High" if confidence_value >= 0.75 else "Medium" if confidence_value >= 0.55 else "Low",
+            "value": confidence_value,
+            "weighted_total": confidence_value,
+        },
+        "timeframe": {
+            "months_analyzed": None,
+            "recent_activity": {"months": None, "percentage": None},
+        },
+        "verdict_counts": {
+            "action_data": len(depth_layers),
+            "web_evidence": len(eb_verdicts),
+            "hq_research": len(hq_verdicts),
+        },
+        "real_stream_count": real_stream_count,
+    }
+
+
+def _digital_brain_reference_sites(pipeline_result: dict) -> list[dict]:
+    refs: list[dict] = []
+    seen: set[str] = set()
+    for verdict in pipeline_result.get("stage_3b_eb_verdicts") or []:
+        platform = verdict.get("source_platform") or "Web Evidence"
+        for url in verdict.get("source_urls") or []:
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            refs.append({
+                "site": platform,
+                "url": url,
+                "usage_context": "Evidence-based web citation used by the Digital Brain pipeline.",
+            })
+    for verdict in pipeline_result.get("stage_3c_hq_verdicts") or []:
+        provenance = verdict.get("provenance_detail") or {}
+        url = provenance.get("source_url")
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        refs.append({
+            "site": verdict.get("study_reference") or "HQ Research",
+            "url": url,
+            "usage_context": "HQ source used by the Digital Brain pipeline.",
+        })
+    return refs
+
+
 def _persona_kwargs_from_digital_brain(
     persona: dict,
     workspace_id: str,
     exploration_id: str,
     created_by: str,
     geography: str | None = None,
+    pipeline_result: dict | None = None,
 ) -> dict:
     """Map one stage_5_personas entry onto Persona's required columns.
     age_range/gender/education_level/occupation/income_range are inferred
@@ -404,8 +496,21 @@ def _persona_kwargs_from_digital_brain(
     evidence = persona.get("evidence_traceability") or {}
 
     overall_confidence = evidence.get("overall_confidence")
+    evidence_snapshot = (
+        _digital_brain_evidence_snapshot(pipeline_result, overall_confidence)
+        if pipeline_result else None
+    )
+    snapshot_confidence = (
+        evidence_snapshot.get("confidence_calculation_detail", {}).get("value")
+        if isinstance(evidence_snapshot, dict)
+        else None
+    )
     calibration_confidence = (
-        int(round(overall_confidence * 100)) if isinstance(overall_confidence, (int, float)) else None
+        int(round(snapshot_confidence * 100))
+        if isinstance(snapshot_confidence, (int, float))
+        else int(round(overall_confidence * 100))
+        if isinstance(overall_confidence, (int, float))
+        else None
     )
 
     name = persona.get("persona_title") or persona.get("persona_archetype") or "Untitled Persona"
@@ -419,6 +524,9 @@ def _persona_kwargs_from_digital_brain(
         "backstory": backstory,
         "geography": geography,
     }
+    if pipeline_result and evidence_snapshot:
+        persona_details["evidence_snapshot"] = evidence_snapshot
+        persona_details["reference_sites_with_usage"] = _digital_brain_reference_sites(pipeline_result)
 
     return dict(
         exploration_id=exploration_id,
@@ -508,6 +616,7 @@ async def generate_personas_digital_brain(
         kwargs = _persona_kwargs_from_digital_brain(
             persona_data, workspace_id, exploration_id, current_user.id,
             geography=ro_dict.get("geography"),
+            pipeline_result=result,
         )
         saved_personas.append(Persona(**kwargs))
 
