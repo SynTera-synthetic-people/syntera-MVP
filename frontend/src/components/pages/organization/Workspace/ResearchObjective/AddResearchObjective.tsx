@@ -39,8 +39,6 @@ import { useOmniWorkflow } from '../../../../../hooks/useOmiWorkflow';
 import { useAutoGeneratePersonas, usePersonas } from '../../../../../hooks/usePersonaBuilder';
 import UpgradeModal from "../../../Upgrade/UpgradeModal";
 import SummaryRefineBubble from "./SummaryRefineBubble";
-// ─── ResearchObjectiveFramer is now a full page navigated to via router. ───
-// ROFramerTrigger (the old modal trigger) no longer exists — removed.
 import OmiGreet from '../../../../../assets/Omi Animations/OmiIdle.mp4';
 import OmiPencil from '../../../../../assets/Omi Animations/OmiPencil.mp4';
 import OmiKeyboard from '../../../../../assets/Omi Animations/OmiKeyboard.mp4';
@@ -149,6 +147,14 @@ const getFileTypeLabel = (file: File): string => {
   if (file.name.toLowerCase().endsWith('.xlsx')) return 'XLSX';
   if (file.name.toLowerCase().endsWith('.xls')) return 'XLS';
   return 'File';
+};
+
+const truncateHostname = (url: string): string => {
+  try {
+    return new URL(url.startsWith('http') ? url : `https://${url}`).hostname;
+  } catch {
+    return url.length > 30 ? url.slice(0, 30) + '…' : url;
+  }
 };
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -291,26 +297,18 @@ const AddResearchObjective: React.FC = () => {
     return () => clearInterval(interval);
   }, [isSendingMessage, isSubmitting]);
 
-  // ── Pick up drafted objective text returned from the RO Framer page ────────
-  // ResearchObjectiveFramer navigates back here with location.state.roFramerObjective
-  // when the user clicks "Use This Objective". We read it once on mount, apply it
-  // to the textarea, then clear it from history so a refresh doesn't re-apply it.
   useEffect(() => {
     const drafted = (location.state as any)?.roFramerObjective as string | undefined;
     if (drafted?.trim()) {
       setInputValue(drafted.trim());
-      // Replace current history entry without the framer state so it doesn't
-      // persist across refreshes or back-navigation.
       navigate(location.pathname, {
         replace: true,
         state: {
-          // Preserve any other state flags (e.g. viewOnly) that may exist
           ...((location.state as any) ?? {}),
           roFramerObjective: undefined,
         },
       });
     }
-    // Intentionally empty deps — this must only run once on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -578,15 +576,11 @@ const AddResearchObjective: React.FC = () => {
       { state: { flow: "manual", viewOnly: isViewOnly } }
     );
   };
+
   const handleOpenROFramer = () => {
     navigate(
       `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/frame-objective`,
-      {
-        state: {
-          // Tell the framer page where to return so it can navigate(-1) correctly
-          returnTo: location.pathname,
-        },
-      }
+      { state: { returnTo: location.pathname } }
     );
   };
 
@@ -601,14 +595,8 @@ const AddResearchObjective: React.FC = () => {
     if (error) { setFileError(error); return; }
     setUploadedFile(file);
   };
+
   const handleMaterialDone = async (value: FileUploadModalValue) => {
-    // Each section is submitted to the backend directly (extracted/summarized
-    // synchronously, same pipeline as the Research Objective Framer's Add
-    // Material tab) and persisted against this exploration — Omi's next chat
-    // turn picks it up automatically via get_unlinked_materials. This used to
-    // just stash the brief file into the chat's file-attach state, but the
-    // chat endpoint never actually reads a "file" field — it was silently
-    // dropped either way.
     const tasks: Promise<any>[] = [];
     if (value.briefFile || value.briefLink) {
       tasks.push(submitMaterialSection({
@@ -646,6 +634,51 @@ const AddResearchObjective: React.FC = () => {
     setFileError(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
+
+  // ── Derive material summary for the strip ─────────────────────────────────
+
+  const materialItems: {
+    key: string;
+    type: 'file' | 'link';
+    label: string;
+    badge: string;
+    onRemove: () => void;
+  }[] = [];
+
+  if (uploadedMaterial) {
+    if (uploadedMaterial.briefFile) {
+      materialItems.push({
+        key: 'bf', type: 'file', label: uploadedMaterial.briefFile.name, badge: 'Brief',
+        onRemove: () => setUploadedMaterial(prev => prev ? { ...prev, briefFile: null } : null),
+      });
+    }
+    if (uploadedMaterial.briefLink?.trim()) {
+      materialItems.push({
+        key: 'bl', type: 'link', label: truncateHostname(uploadedMaterial.briefLink), badge: 'Brief',
+        onRemove: () => setUploadedMaterial(prev => prev ? { ...prev, briefLink: '' } : null),
+      });
+    }
+    if (uploadedMaterial.artifactFile) {
+      materialItems.push({
+        key: 'af', type: 'file', label: uploadedMaterial.artifactFile.name, badge: 'Artifact',
+        onRemove: () => setUploadedMaterial(prev => prev ? { ...prev, artifactFile: null } : null),
+      });
+    }
+    uploadedMaterial.artifactLinks.filter(Boolean).forEach((link, i) => {
+      materialItems.push({
+        key: `al-${i}`, type: 'link', label: truncateHostname(link), badge: 'Artifact',
+        onRemove: () => setUploadedMaterial(prev => {
+          if (!prev) return null;
+          const updated = prev.artifactLinks.filter((_, idx) => idx !== i);
+          // if nothing left at all, null out entirely
+          const isEmpty = !prev.briefFile && !prev.briefLink?.trim() && !prev.artifactFile && updated.filter(Boolean).length === 0;
+          return isEmpty ? null : { ...prev, artifactLinks: updated };
+        }),
+      });
+    });
+  }
+
+  const clearAllMaterial = () => setUploadedMaterial(null);
 
   // ── Message sending ────────────────────────────────────────────────────────
 
@@ -1084,7 +1117,50 @@ const AddResearchObjective: React.FC = () => {
           ) : (
             <div className="aro-input-bar">
 
-              {/* File preview pill */}
+              {/* ── Material strip — shows what was uploaded via the modal ── */}
+              <AnimatePresence>
+                {materialItems.length > 0 && (
+                  <motion.div
+                    className="aro-material-strip"
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 4 }}
+                    transition={{ duration: 0.18 }}
+                  >
+                    <div className="aro-material-strip__pills">
+                      <AnimatePresence>
+                        {materialItems.map(item => (
+                          <motion.span
+                            key={item.key}
+                            className="aro-material-pill"
+                            initial={{ opacity: 0, scale: 0.92 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.88 }}
+                            transition={{ duration: 0.15 }}
+                          >
+                            {item.type === 'file'
+                              ? <TbFileTypeDoc size={13} />
+                              : <TbPaperclip size={13} />
+                            }
+                            <span className="aro-material-pill__name">{item.label}</span>
+                            <span className="aro-material-pill__badge">{item.badge}</span>
+                            <button
+                              type="button"
+                              className="aro-material-pill__remove"
+                              onClick={item.onRemove}
+                              aria-label={`Remove ${item.label}`}
+                            >
+                              <TbX size={10} />
+                            </button>
+                          </motion.span>
+                        ))}
+                      </AnimatePresence>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* File preview pill (chat file attach — separate from modal material) */}
               <AnimatePresence>
                 {uploadedFile && (
                   <motion.div
@@ -1131,16 +1207,6 @@ const AddResearchObjective: React.FC = () => {
                 )}
               </AnimatePresence>
 
-              {/*
-               * ── RO Framer trigger ─────────────────────────────────────────
-               * Navigates to the full-page ResearchObjectiveFramer.
-               * When the user completes the framer and clicks "Use This
-               * Objective", ResearchObjectiveFramer calls:
-               *   navigate(-1, { state: { roFramerObjective: builtText } })
-               * The useEffect at the top of this component catches that and
-               * populates the textarea automatically.
-               * Hidden in view-only mode and after the objective is confirmed.
-               */}
               {isFreshFirstInteraction && (
                 <button
                   className="aro-ro-framer-btn"
@@ -1153,8 +1219,6 @@ const AddResearchObjective: React.FC = () => {
               )}
 
               <form onSubmit={handleSendMessage} className="aro-input-form">
-                {/* File upload trigger */}
-                {/* File upload trigger — opens the material modal */}
                 <button
                   type="button"
                   className="aro-input-file-label"
@@ -1198,6 +1262,7 @@ const AddResearchObjective: React.FC = () => {
           )}
         </div>
       </div>
+
       <FileUploadModal
         isOpen={showFileModal}
         onClose={() => setShowFileModal(false)}

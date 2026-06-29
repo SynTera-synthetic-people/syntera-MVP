@@ -83,7 +83,9 @@
   cursor: pointer;
 }
 
-.aro-retry-btn:hover { color: #2563eb; }
+.aro-retry-btn:hover {
+  color: #2563eb;
+}
 
 .aro-empty-avatar {
   width: 4rem;
@@ -174,8 +176,14 @@
 }
 
 /* ── Chat text ── */
-.aro-chat-text { color: #F8F9F9; }
-.aro-chat-text-bold { color: #F8F9F9; font-weight: 700; }
+.aro-chat-text {
+  color: #F8F9F9;
+}
+
+.aro-chat-text-bold {
+  color: #F8F9F9;
+  font-weight: 700;
+}
 
 .aro-bubble-text {
   flex: 1;
@@ -197,7 +205,10 @@
   justify-content: center;
 }
 
-.aro-omi-avatar--typing { width: 2.25rem; height: 2.25rem; }
+.aro-omi-avatar--typing {
+  width: 2.25rem;
+  height: 2.25rem;
+}
 
 .aro-omi-video {
   width: 100%;
@@ -284,13 +295,31 @@
   animation: aro-dot-bounce 1.2s ease-in-out infinite;
 }
 
-.aro-typing-dots span:nth-child(1) { animation-delay: 0s; }
-.aro-typing-dots span:nth-child(2) { animation-delay: 0.2s; }
-.aro-typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+.aro-typing-dots span:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.aro-typing-dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.aro-typing-dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
 
 @keyframes aro-dot-bounce {
-  0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
-  30%            { opacity: 1;   transform: translateY(-3px); }
+
+  0%,
+  60%,
+  100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -410,8 +439,13 @@
   flex-shrink: 0;
 }
 
-.aro-char-ok  { color: #6b7280; }
-.aro-char-warn { color: #f87171; }
+.aro-char-ok {
+  color: #6b7280;
+}
+
+.aro-char-warn {
+  color: #f87171;
+}
 
 /* ── Hint text ── */
 .aro-summary-edit-hint {
@@ -457,9 +491,18 @@
   border-color: rgba(239, 68, 68, 0.5) !important;
 }
 
-.aro-summary-edit-textarea::-webkit-scrollbar { width: 4px; }
-.aro-summary-edit-textarea::-webkit-scrollbar-track { background: transparent; }
-.aro-summary-edit-textarea::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+.aro-summary-edit-textarea::-webkit-scrollbar {
+  width: 4px;
+}
+
+.aro-summary-edit-textarea::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.aro-summary-edit-textarea::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+}
 
 /* ── Save error message ── */
 .aro-summary-edit-error {
@@ -499,7 +542,10 @@
   color: #d1d5db;
 }
 
-.aro-summary-cancel-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.aro-summary-cancel-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
 
 .aro-summary-save-btn {
   display: flex;
@@ -576,8 +622,14 @@
   transition: background 0.2s ease, transform 0.15s ease;
 }
 
-.aro-btn-omi:hover { background: #1d4ed8; transform: scale(1.02); }
-.aro-btn-omi:active { transform: scale(0.97); }
+.aro-btn-omi:hover {
+  background: #1d4ed8;
+  transform: scale(1.02);
+}
+
+.aro-btn-omi:active {
+  transform: scale(0.97);
+}
 
 .aro-btn-manual {
   display: flex;
@@ -594,8 +646,15 @@
   transition: border-color 0.2s ease, color 0.2s ease, transform 0.15s ease;
 }
 
-.aro-btn-manual:hover { border-color: rgba(255,255,255,0.4); color: #F8F9F9; transform: scale(1.02); }
-.aro-btn-manual:active { transform: scale(0.97); }
+.aro-btn-manual:hover {
+  border-color: rgba(255, 255, 255, 0.4);
+  color: #F8F9F9;
+  transform: scale(1.02);
+}
+
+.aro-btn-manual:active {
+  transform: scale(0.97);
+}
 
 /* ── Input bar ── */
 .aro-input-bar {
@@ -614,7 +673,9 @@
   transition: border-color 0.2s ease;
 }
 
-.aro-input-form:focus-within { border-color: rgba(255,255,255,0.25); }
+.aro-input-form:focus-within {
+  border-color: rgba(255, 255, 255, 0.25);
+}
 
 .aro-input-file-label {
   flex-shrink: 0;
@@ -625,7 +686,10 @@
   transition: color 0.2s ease, background 0.2s ease;
 }
 
-.aro-input-file-label:hover { color: #60a5fa; background: rgba(255,255,255,0.05); }
+.aro-input-file-label:hover {
+  color: #60a5fa;
+  background: rgba(255, 255, 255, 0.05);
+}
 
 .aro-textarea {
   flex: 1;
@@ -641,8 +705,14 @@
   font-family: inherit;
 }
 
-.aro-textarea::placeholder { color: #4b5563; }
-.aro-textarea:disabled { opacity: 0.5; cursor: not-allowed; }
+.aro-textarea::placeholder {
+  color: #4b5563;
+}
+
+.aro-textarea:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
 .aro-input-icon-btn {
   flex-shrink: 0;
@@ -655,8 +725,15 @@
   transition: color 0.2s ease, background 0.2s ease;
 }
 
-.aro-input-icon-btn:hover:not(:disabled) { color: #60a5fa; background: rgba(255,255,255,0.05); }
-.aro-input-icon-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.aro-input-icon-btn:hover:not(:disabled) {
+  color: #60a5fa;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.aro-input-icon-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
 
 .aro-send-btn {
   flex-shrink: 0;
@@ -674,8 +751,16 @@
   transition: background 0.2s ease, opacity 0.2s ease;
 }
 
-.aro-send-btn:hover:not(:disabled) { background: #1d4ed8; }
-.aro-send-btn:disabled { background: #374151; box-shadow: none; cursor: not-allowed; opacity: 0.5; }
+.aro-send-btn:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.aro-send-btn:disabled {
+  background: #374151;
+  box-shadow: none;
+  cursor: not-allowed;
+  opacity: 0.5;
+}
 
 /* ── Uploaded file pill ── */
 .aro-file-pill {
@@ -711,32 +796,58 @@
   transition: color 0.15s ease;
 }
 
-.aro-file-pill-remove:hover { color: #f87171; }
+.aro-file-pill-remove:hover {
+  color: #f87171;
+}
 
 /* ── Scrollbars ── */
-.aro-messages::-webkit-scrollbar { width: 4px; }
-.aro-messages::-webkit-scrollbar-track { background: transparent; }
-.aro-messages::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.05); border-radius: 10px; }
+.aro-messages::-webkit-scrollbar {
+  width: 4px;
+}
 
-.aro-textarea::-webkit-scrollbar { width: 4px; }
-.aro-textarea::-webkit-scrollbar-track { background: transparent; }
-.aro-textarea::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.05); border-radius: 10px; }
+.aro-messages::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.aro-messages::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+}
+
+.aro-textarea::-webkit-scrollbar {
+  width: 4px;
+}
+
+.aro-textarea::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.aro-textarea::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+}
 
 /* ── Animations ── */
-@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 
 /* ── Button manual wrap & locked state ── */
-.aro-btn-manual-wrap { display: inline-flex; }
+.aro-btn-manual-wrap {
+  display: inline-flex;
+}
 
 .aro-btn-manual--locked {
   opacity: 0.45;
   cursor: not-allowed !important;
-  border-color: rgba(255,255,255,0.1) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
   color: #6b7280 !important;
 }
 
 .aro-btn-manual--locked:hover {
-  border-color: rgba(255,255,255,0.1) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
   color: #6b7280 !important;
   transform: none !important;
 }
@@ -752,21 +863,30 @@
   align-items: center;
   justify-content: center;
 }
- 
+
 .aro-thinking-brain {
   color: #60a5fa;
   /* Gentle pulse so it feels "alive" while waiting */
   animation: aro-brain-pulse 2s ease-in-out infinite;
 }
- 
+
 @keyframes aro-brain-pulse {
-  0%, 100% { opacity: 0.6; transform: scale(1); }
-  50%       { opacity: 1;   transform: scale(1.1); }
+
+  0%,
+  100% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
 }
- 
+
 /* ── 2. File type badge inside the bubble attachment row ─────────────────── */
 /* Shows "PDF", "DOC", or "DOCX" next to the filename                        */
- 
+
 .aro-bubble-file-type {
   font-size: 0.625rem;
   font-weight: 700;
@@ -779,10 +899,10 @@
   flex-shrink: 0;
   margin-left: auto;
 }
- 
+
 /* ── 3. Updated file pill (above the input form) ─────────────────────────── */
 /* Replaces the old .aro-file-pill entirely — better layout, X button        */
- 
+
 .aro-file-pill {
   display: inline-flex;
   align-items: center;
@@ -795,7 +915,7 @@
   margin-bottom: 6px;
   max-width: 100%;
 }
- 
+
 .aro-file-pill-name {
   font-size: 0.8125rem;
   font-weight: 500;
@@ -805,7 +925,7 @@
   white-space: nowrap;
   color: #93c5fd;
 }
- 
+
 /* Small type badge inside the pill */
 .aro-file-pill-badge {
   font-size: 0.625rem;
@@ -818,7 +938,7 @@
   color: #60a5fa;
   flex-shrink: 0;
 }
- 
+
 /* X remove button inside the pill */
 .aro-file-pill-remove {
   display: flex;
@@ -834,19 +954,19 @@
   flex-shrink: 0;
   margin-left: 2px;
 }
- 
+
 .aro-file-pill-remove:hover:not(:disabled) {
   color: #f87171;
   background: rgba(239, 68, 68, 0.1);
 }
- 
+
 .aro-file-pill-remove:disabled {
   opacity: 0.35;
   cursor: not-allowed;
 }
- 
+
 /* ── 4. File validation error banner ─────────────────────────────────────── */
- 
+
 .aro-file-error {
   display: flex;
   align-items: center;
@@ -860,15 +980,16 @@
   font-weight: 500;
   margin-bottom: 6px;
 }
- 
+
 /* ── 5. Clip icon disabled state when a file is already attached ─────────── */
 /* The label becomes non-interactive while uploadedFile is truthy             */
- 
+
 .aro-input-file-label:has(input:disabled) {
   opacity: 0.35;
   cursor: not-allowed;
   pointer-events: none;
 }
+
 /* ── RO Framer trigger — quiet, first-touch-only nudge ───────────────────── */
 .aro-ro-framer-btn {
   display: inline-flex;
@@ -880,8 +1001,8 @@
   background: none;
   border: none;
   color: #3A85FF;
-  font-size: 0.8125rem;
-  font-weight: 500;
+  font-size: 16px;
+  font-weight: 800;
   cursor: pointer;
   opacity: 0.85;
   transition: color 0.2s ease, opacity 0.2s ease;
@@ -910,4 +1031,91 @@
   object-fit: cover;
   object-position: center 30%;
   filter: grayscale(0.4);
+}
+
+/* ── Material strip ───────────────────────────────────────────────────────── */
+
+.aro-material-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+/* No label — just pills + clear */
+
+.aro-material-strip__pills {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Single pill — matches the existing .aro-file-pill language */
+.aro-material-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px 4px 8px;
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  max-width: 260px;
+  overflow: hidden;
+  /* same base as the chat file pill */
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.6);
+  transition: border-color 0.15s;
+}
+
+.aro-material-pill svg {
+  flex-shrink: 0;
+  opacity: 0.5;
+}
+
+.aro-material-pill__name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 160px;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+/* Small type badge — "Brief" / "Artifact" */
+.aro-material-pill__badge {
+  font-size: 0.5625rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 1px 5px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.35);
+}
+
+/* Clear-all button — tiny, far right, unobtrusive */
+.aro-material-strip__clear {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.2);
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.15s;
+  margin-left: 2px;
+}
+
+.aro-material-strip__clear:hover {
+  color: rgba(255, 255, 255, 0.55);
 }
