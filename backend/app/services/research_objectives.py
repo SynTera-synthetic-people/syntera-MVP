@@ -430,6 +430,8 @@ def _build_framer_structured_block(
         brand_bits.append(f"Website: {framer['website']}")
     if framer.get("competitors"):
         brand_bits.append(f"Competitors: {', '.join(framer['competitors'])}")
+    if framer.get("extra_context"):
+        brand_bits.append(f"Extra Context: {framer['extra_context']}")
     if brand_bits:
         lines.append("Brand Context:\n" + "\n".join(brand_bits))
 

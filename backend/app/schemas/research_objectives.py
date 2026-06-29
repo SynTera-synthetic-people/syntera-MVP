@@ -36,6 +36,7 @@ class ResearchObjectiveFramerInput(BaseModel):
     brand_name: Optional[str] = None
     industry: Optional[str] = None
     website: Optional[str] = None
+    extra_context: Optional[str] = None
     competitors: List[str] = Field(default_factory=list)
 
     business_context: Optional[str] = None

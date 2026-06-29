@@ -480,3 +480,35 @@
     animation: none !important;
   }
 }
+/* ── Coming Soon overlay on section ─────────────────────────────── */
+.fum-section--coming-soon {
+  position: relative;
+  pointer-events: none;
+  user-select: none;
+}
+
+.fum-coming-soon-overlay {
+  position: absolute;
+  inset: 0;
+  border-radius: 14px;
+  background: rgba(6, 6, 6, 0.6);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+}
+
+.fum-coming-soon-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 14px;
+  background: rgba(36, 229, 182, 0.1);
+  border: 1px solid rgba(36, 229, 182, 0.35);
+  border-radius: 999px;
+  color: #24E5B6;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}

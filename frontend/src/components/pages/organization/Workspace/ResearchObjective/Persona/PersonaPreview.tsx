@@ -607,17 +607,27 @@ const KnowledgeEnrichmentTooltip: React.FC<{ active?: boolean; payload?: Array<{
 };
 
 // ── Knowledge Enrichment Card ──────────────────────────────────────────────────
+// NOTE: randomTotal/sourceTypes are now passed in from the parent (PersonaPreview)
+// instead of being generated internally. This guarantees the donut + centre label
+// in this card and the "View Sources" modal list always show the exact same
+// numbers, since both read from the same single source of truth.
 
-const KnowledgeEnrichmentCard: React.FC<{ isManualMode: boolean }> = ({ isManualMode }) => {
+interface KnowledgeEnrichmentCardProps {
+  isManualMode: boolean;
+  randomTotal: number;
+  sourceTypes: typeof KE_SOURCE_TYPES;
+  onViewSources?: (() => void) | undefined;
+}
+
+const KnowledgeEnrichmentCard: React.FC<KnowledgeEnrichmentCardProps> = ({
+  isManualMode,
+  randomTotal,
+  sourceTypes,
+  onViewSources,
+}) => {
   const [hoveredSlice, setHoveredSlice] = useState<typeof KE_SOURCE_TYPES[number] | null>(null);
   const [barWidths, setBarWidths] = useState<Record<string, number>>({});
 
-  // Generate once per mount so it doesn't reshuffle on every re-render.
-  const [randomTotal] = useState<number>(getRandomSourceTotal);
-  const sourceTypes = React.useMemo(
-    () => scaleSourceTypesToTotal(KE_SOURCE_TYPES, randomTotal),
-    [randomTotal]
-  );
   const totalSourcesLabel = randomTotal.toLocaleString('en-IN');
 
   useEffect(() => {
@@ -631,14 +641,27 @@ const KnowledgeEnrichmentCard: React.FC<{ isManualMode: boolean }> = ({ isManual
 
   return (
     <div className="pp-calib-card">
-      {/* ── Header ── */}
-      <div className="pp-calib-card-header">
-        <h3 className="pp-calib-card-title">Knowledge Enrichment Layer</h3>
-        <p className="pp-calib-card-subtitle">
-          {isManualMode
-            ? 'Total sub-traits across all categories evaluated during calibration.'
-            : 'Enriched using a curated knowledge bank of credible sources across industries, segments, and consumer topics.'}
-        </p>
+      {/* ── Header with optional eye button (replaces the old "Total sources
+           activated" number row — that total now lives behind View Sources) ── */}
+      <div className="pp-calib-card-header" style={{ position: 'relative' }}>
+        <div style={{ paddingRight: onViewSources ? 110 : 0 }}>
+          <h3 className="pp-calib-card-title">Knowledge Enrichment Layer</h3>
+          <p className="pp-calib-card-subtitle">
+            {isManualMode
+              ? 'Total sub-traits across all categories evaluated during calibration.'
+              : 'Enriched using a curated knowledge bank of credible sources across industries, segments, and consumer topics.'}
+          </p>
+        </div>
+        {onViewSources && (
+          <button
+            className="pp-evidence-eye-btn"
+            onClick={onViewSources}
+            aria-label="View evidence sources"
+          >
+            <TbEye size={14} />
+            View Sources
+          </button>
+        )}
       </div>
 
       {/* ── Top stats strip ── */}
@@ -654,14 +677,8 @@ const KnowledgeEnrichmentCard: React.FC<{ isManualMode: boolean }> = ({ isManual
       {/* ── Divider ── */}
       <div className="pp-multi-divider" style={{ marginTop: 20, marginBottom: 0 }} />
 
-      {/* ── Total sources activated ── */}
-      <div className="ke-total-row">
-        <span className="ke-total-label">Total sources activated</span>
-        <span className="ke-total-value">{totalSourcesLabel}</span>
-      </div>
-
       {/* ── Donut chart + confidence side by side ── */}
-      <div className="ke-body">
+      <div className="ke-body" style={{ marginTop: 20 }}>
 
         {/* Left — donut */}
         <div className="ke-donut-wrap">
@@ -1050,6 +1067,20 @@ const PersonaPreview: React.FC = () => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>('demographics');
   const [showEvidenceModal, setShowEvidenceModal] = useState(false);
+  const [showKnowledgeModal, setShowKnowledgeModal] = useState(false);
+
+  // ── Knowledge Enrichment source data — generated once per mount and shared
+  // between the KnowledgeEnrichmentCard (donut + centre label) and its
+  // "View Sources" modal, so both always agree on the same numbers. ─────────
+  const [keRandomTotal] = useState<number>(getRandomSourceTotal);
+  const keSourceTypes = React.useMemo(
+    () => scaleSourceTypesToTotal(KE_SOURCE_TYPES, keRandomTotal),
+    [keRandomTotal]
+  );
+  const knowledgeEvidenceLinks: EvidenceLink[] = React.useMemo(
+    () => keSourceTypes.map(s => ({ name: s.name, count: s.value })),
+    [keSourceTypes]
+  );
 
   // ── Tab bar scroll arrows ──────────────────────────────────────────────────
   const tabBarRef = useRef<HTMLDivElement>(null);
@@ -2021,8 +2052,13 @@ const PersonaPreview: React.FC = () => {
                     }
                     params={REAL_ACTIONS_PARAMS}
                   />
-                  {/* ── Knowledge Enrichment Layer — now inline ── */}
-                  <KnowledgeEnrichmentCard isManualMode={isManualMode} />
+                  {/* ── Knowledge Enrichment Layer — now with View Sources CTA ── */}
+                  <KnowledgeEnrichmentCard
+                    isManualMode={isManualMode}
+                    randomTotal={keRandomTotal}
+                    sourceTypes={keSourceTypes}
+                    onViewSources={!isManualMode ? () => setShowKnowledgeModal(true) : undefined}
+                  />
                 </div>
                 <div className="pp-calib-col">
                   <CalibCard
@@ -2089,12 +2125,26 @@ const PersonaPreview: React.FC = () => {
         );
       })()}
 
-      {/* ── Evidence Links Modal ── */}
+      {/* ── Evidence Links Modal (Multi-platform Conversation card) ── */}
       <AnimatePresence>
         {showEvidenceModal && (
           <EvidenceLinksModal
             links={evidenceModalLinks}
             onClose={() => setShowEvidenceModal(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* ── Knowledge Enrichment Sources Modal — reuses the same EvidenceLinksModal
+           component, just fed the source-type breakdown instead of platform links.
+           Since these entries have no real URL, the modal naturally renders them
+           as a static list (name + count), which is exactly the "list form with
+           proper structure" requested. ── */}
+      <AnimatePresence>
+        {showKnowledgeModal && (
+          <EvidenceLinksModal
+            links={knowledgeEvidenceLinks}
+            onClose={() => setShowKnowledgeModal(false)}
           />
         )}
       </AnimatePresence>

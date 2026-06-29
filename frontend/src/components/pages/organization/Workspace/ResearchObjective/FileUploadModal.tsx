@@ -332,48 +332,53 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
             </div>
 
             {/* ── Artifact ───────────────────────────────────────────── */}
-            <div className="fum-section">
-              <div className="fum-section-head">
-                <h3 className="fum-section-title">Artifact</h3>
-                <p className="fum-section-sub">
-                  Creatives, videos, images, or landing pages for Omi to test with personas.
-                </p>
+            <div className="fum-section fum-section--coming-soon">
+              <div className="fum-coming-soon-overlay">
+                <span className="fum-coming-soon-badge">Coming Soon</span>
               </div>
+              <div className="fum-section">
+                <div className="fum-section-head">
+                  <h3 className="fum-section-title">Artifact</h3>
+                  <p className="fum-section-sub">
+                    Creatives, videos, images, or landing pages for Omi to test with personas.
+                  </p>
+                </div>
 
-              {artifactLinks.map((link, idx) => (
-                <LinkRow
-                  key={link.id}
-                  value={link.value}
-                  placeholder="Paste a YouTube, video, image, or page URL"
-                  onChange={value => updateArtifactLink(link.id, value)}
-                  removable={artifactLinks.length > 1 || idx > 0}
-                  onRemove={() => removeArtifactLink(link.id)}
-                />
-              ))}
+                {artifactLinks.map((link, idx) => (
+                  <LinkRow
+                    key={link.id}
+                    value={link.value}
+                    placeholder="Paste a YouTube, video, image, or page URL"
+                    onChange={value => updateArtifactLink(link.id, value)}
+                    removable={artifactLinks.length > 1 || idx > 0}
+                    onRemove={() => removeArtifactLink(link.id)}
+                  />
+                ))}
 
-              {canAddArtifactLink && (
-                <button
-                  type="button"
-                  className="fum-add-link-btn"
-                  onClick={() =>
-                    setArtifactLinks(prev => [...prev, { id: makeLinkId(), value: "" }])
+                {canAddArtifactLink && (
+                  <button
+                    type="button"
+                    className="fum-add-link-btn"
+                    onClick={() =>
+                      setArtifactLinks(prev => [...prev, { id: makeLinkId(), value: "" }])
+                    }
+                  >
+                    <PlusIcon /> Add another link
+                  </button>
+                )}
+
+                <UploadZone
+                  slot={artifactFile}
+                  acceptExtensions={ARTIFACT_EXTENSIONS}
+                  maxBytes={ARTIFACT_MAX_BYTES}
+                  formatsLabel="PNG, JPG, GIF, WEBP"
+                  compact
+                  onFileAccepted={file =>
+                    setArtifactFile({ file, sizeLabel: formatFileSize(file.size) })
                   }
-                >
-                  <PlusIcon /> Add another link
-                </button>
-              )}
-
-              <UploadZone
-                slot={artifactFile}
-                acceptExtensions={ARTIFACT_EXTENSIONS}
-                maxBytes={ARTIFACT_MAX_BYTES}
-                formatsLabel="PNG, JPG, GIF, WEBP"
-                compact
-                onFileAccepted={file =>
-                  setArtifactFile({ file, sizeLabel: formatFileSize(file.size) })
-                }
-                onRemove={() => setArtifactFile(null)}
-              />
+                  onRemove={() => setArtifactFile(null)}
+                />
+              </div>
             </div>
 
           </div>
