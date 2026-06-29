@@ -70,6 +70,39 @@ export const createResearchObjectiveFromFramer = async (workspaceId, exploration
   }
 };
 
+// Submits one Framer "Add Material" section (Research Brief or Artifact) — a
+// file and/or links plus a shared instruction. Backend extracts/fetches and
+// summarizes everything synchronously, returning only once that's done (this
+// is what drives the real processing -> done bar, not a fake timer).
+export const submitFramerMaterialSection = async (
+  workspaceId,
+  explorationId,
+  { kind, instruction, file, links }
+) => {
+  try {
+    const formData = new FormData();
+    formData.append('kind', kind);
+    if (instruction) formData.append('instruction', instruction);
+    if (file) formData.append('file', file);
+    (links || []).forEach(link => {
+      if (link && link.trim()) formData.append('links', link.trim());
+    });
+
+    const response = await axiosInstance.post(
+      `/workspaces/${workspaceId}/research/objectives/framer-materials`,
+      formData,
+      {
+        params: { exploration_id: explorationId },
+        headers: { 'Content-Type': 'multipart/form-data' },
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error submitting Framer material section:', error);
+    throw error;
+  }
+};
+
 export const getConversationHistory = async (workspaceId, explorationId) => {
   try {
     const response = await axiosInstance.get(`/workspaces/omi/conversation`, {

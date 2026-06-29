@@ -8,11 +8,11 @@ from fastapi import (
     status,
     BackgroundTasks
 )
-from typing import Optional
+from typing import Optional, List
 from app.db import get_session
 from app.models.exploration import Exploration
 from app.schemas.response import SuccessResponse, DeleteResponse, ErrorResponse
-from app.schemas.research_objectives import ResearchObjectivesCreate, ResearchObjectivesUpdate, ResearchObjectivesOut, ResearchObjectivesSummaryPatch, ResearchObjectiveFramerInput
+from app.schemas.research_objectives import ResearchObjectivesCreate, ResearchObjectivesUpdate, ResearchObjectivesOut, ResearchObjectivesSummaryPatch, ResearchObjectiveFramerInput, ResearchObjectiveMaterialOut
 from app.services import research_objectives as exp_service
 from app.services import persona as persona_service
 from app.services import interview as interview_service
@@ -21,7 +21,8 @@ from app.services.exploration import get_exploration_by_id
 from app.services import workspace as ws_service
 from app.services import templates as template_service
 from app.services.research_objectives import build_conversation_text, summarize_research_objective_from_conversation
-from app.utils.file_utils import save_upload_file
+from app.services import material_extraction
+from app.utils.file_utils import save_upload_file, save_material_file, material_file_path, MATERIAL_ALLOWED_EXT
 from app.models.user import User
 from app.routers.auth_dependencies import get_current_active_user
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -180,6 +181,95 @@ async def create_objective(
 
 
 
+@router.post("/framer-materials", response_model=SuccessResponse, status_code=201)
+async def submit_framer_material_section(
+    exploration_id: str,
+    kind: str = Form(...),
+    instruction: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
+    links: List[str] = Form(default=[]),
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Submits one Framer "Add Material" section (Research Brief or Artifact) — a
+    file and/or one-to-several links, plus a shared instruction. Each item is
+    extracted/fetched and LLM-summarized synchronously, in this same request,
+    matching the UI's real-time "processing -> done" bar. Persisted against
+    exploration_id (no ResearchObjectives row exists yet); research_objectives_id
+    is backfilled once the Framer is finally submitted (see /from-framer and
+    generate_and_save_research_objective).
+
+    Re-submitting clicks REPLACE this section's previous materials for this
+    exploration — there's only ever one current version per section. Submitting
+    with no file and no links clears the section.
+    """
+    if kind not in ("brief", "artifact"):
+        raise HTTPException(status_code=400, detail="kind must be 'brief' or 'artifact'")
+
+    exploration = await get_exploration_by_id(session, exploration_id)
+    if not exploration:
+        raise HTTPException(status_code=404, detail="Exploration not found")
+
+    if not await ws_service.is_workspace_admin(exploration.workspace_id, current_user.id):
+        raise HTTPException(
+            status_code=403,
+            detail="Only workspace admins can submit exploration materials"
+        )
+
+    clean_links = [l.strip() for l in links if l and l.strip()]
+
+    items: list[dict] = []
+
+    if file:
+        try:
+            stored_name, size, content_type, ext = await save_material_file(file)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        try:
+            extracted_context = await material_extraction.process_material(
+                material_file_path(stored_name), ext, content_type, instruction or ""
+            )
+        except Exception as e:
+            # Extraction/summarization failing should not block the submission — the
+            # file is already saved; it just won't contribute extracted context.
+            print(f"Error processing Framer material file: {e}")
+            extracted_context = ""
+        items.append({
+            "stored_name": stored_name,
+            "original_name": file.filename,
+            "content_type": content_type,
+            "size": size,
+            "instruction": instruction,
+            "extracted_context": extracted_context,
+        })
+
+    for link in clean_links:
+        try:
+            result = await material_extraction.process_material_url(link, instruction or "")
+        except Exception as e:
+            print(f"Error processing Framer material link ({link}): {e}")
+            result = {"extracted_context": "", "stored_name": None, "size": None, "content_type": None}
+        items.append({
+            "stored_name": result.get("stored_name"),
+            "original_name": link,
+            "content_type": result.get("content_type"),
+            "size": result.get("size"),
+            "source_url": link,
+            "instruction": instruction,
+            "extracted_context": result.get("extracted_context", ""),
+        })
+
+    materials = await exp_service.replace_framer_materials_for_kind(
+        session, exploration_id=exploration_id, material_kind=kind, items=items
+    )
+
+    return SuccessResponse(
+        message="Section cleared" if not materials else "Saved",
+        data=[exp_service.map_material_to_out(m) for m in materials],
+    )
+
+
 @router.post("/from-framer", response_model=SuccessResponse, status_code=201)
 async def create_objective_from_framer(
     exploration_id: str,
@@ -208,7 +298,18 @@ async def create_objective_from_framer(
         )
 
     framer = body.model_dump()
-    synthesis = await exp_service.synthesize_research_objective_from_framer(framer)
+    materials = await exp_service.get_unlinked_materials(session, exploration_id)
+    try:
+        synthesis = await exp_service.synthesize_research_objective_from_framer(framer, materials)
+    except Exception as e:
+        # Transient LLM failure (timeout/rate limit/network) — nothing was persisted
+        # yet, the Framer's fields and any uploaded/linked materials are untouched,
+        # so the user can safely just resubmit.
+        print(f"Error synthesizing research objective from Framer: {e}")
+        raise HTTPException(
+            status_code=502,
+            detail="Omi couldn't process this right now — please try submitting again."
+        )
     if not synthesis.get("final_objective"):
         raise HTTPException(
             status_code=400,
@@ -225,13 +326,25 @@ async def create_objective_from_framer(
     # chat-driven flow, instead of declaring an underfilled objective "done".
     # --------------------------------------------------
     if confidence < 70:
-        analysis = await exp_service.validate_description_with_llm(
-            description=synthesis["final_objective"],
-            conversation=[],
-        )
+        try:
+            analysis = await exp_service.validate_description_with_llm(
+                description=synthesis["final_objective"],
+                conversation=[],
+                materials=materials,
+            )
+        except Exception as e:
+            print(f"Error generating Omi follow-up for Framer submission: {e}")
+            raise HTTPException(
+                status_code=502,
+                detail="Omi couldn't process this right now — please try submitting again."
+            )
         questions = analysis.get("questions", "")
         if isinstance(questions, list):
             questions = " ".join(questions)
+
+        flagged_ids = analysis.get("materials_flagged_mismatch", [])
+        if flagged_ids:
+            await exp_service.mark_materials_flagged(session, flagged_ids)
 
         if questions:
             session_context = omi_session.context or {}

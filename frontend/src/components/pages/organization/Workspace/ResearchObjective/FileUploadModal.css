@@ -1,0 +1,482 @@
+/* ═══════════════════════════════════════════════════════════════════
+   FILE UPLOAD MODAL
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Overlay ─────────────────────────────────────────────────────── */
+.fum-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+  animation: fum-overlay-in 0.18s ease;
+}
+
+@keyframes fum-overlay-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ── Modal shell ─────────────────────────────────────────────────── */
+.fum-modal {
+  background: var(--T-Base-B1, #060606);
+  border: 1px solid #393C45;
+  border-radius: 20px;
+  width: 100%;
+  max-width: 720px;
+  max-height: 90vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  animation: fum-modal-in 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes fum-modal-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.fum-modal::-webkit-scrollbar { width: 4px; }
+.fum-modal::-webkit-scrollbar-track { background: transparent; }
+.fum-modal::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+
+/* ── Header ─────────────────────────────────────────────────────── */
+.fum-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+
+.fum-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+  letter-spacing: -0.01em;
+}
+
+.fum-close {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 18px;
+  font-weight: 400;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: inherit;
+  line-height: 1;
+  transition: background 0.15s, color 0.15s;
+}
+
+.fum-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+/* ── Body ────────────────────────────────────────────────────────── */
+.fum-body {
+  padding: 20px 24px;
+  flex: 1;
+}
+
+/* ── Two-column section row ─────────────────────────────────────── */
+.fum-sections-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+/* ── Section card ────────────────────────────────────────────────── */
+.fum-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.015);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 18px 16px 16px;
+  box-sizing: border-box;
+}
+
+.fum-section-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fum-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  margin: 0;
+}
+
+.fum-section-sub {
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.35);
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* ── Link row ────────────────────────────────────────────────────── */
+.fum-link-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #060606;
+  border: 1.5px solid rgba(36, 229, 182, 0.25);
+  border-radius: 11px;
+  padding: 0 12px;
+  height: 42px;
+  box-sizing: border-box;
+  transition: border-color 0.18s, background 0.18s;
+}
+
+.fum-link-row:focus-within {
+  border-color: rgba(36, 229, 182, 0.6);
+  background: rgba(36, 229, 182, 0.03);
+}
+
+.fum-link-row--error {
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+.fum-link-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #24E5B6;
+}
+
+.fum-link-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #fff;
+  font-size: 12.5px;
+  font-family: inherit;
+}
+
+.fum-link-input::placeholder {
+  color: rgba(255, 255, 255, 0.25);
+}
+
+.fum-link-clear {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+  padding: 0;
+  font-family: inherit;
+}
+
+.fum-link-clear:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+
+/* ── Add another link button ─────────────────────────────────────── */
+.fum-add-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  align-self: flex-start;
+  background: transparent;
+  border: none;
+  color: #24E5B6;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 2px 0;
+  transition: opacity 0.15s;
+}
+
+.fum-add-link-btn:hover { opacity: 0.7; }
+
+/* ── Upload zone ─────────────────────────────────────────────────── */
+.fum-upload-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.fum-upload-zone {
+  width: 100%;
+  min-height: 100px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: #060606;
+  border: 1.5px dashed rgba(36, 229, 182, 0.4);
+  border-radius: 11px;
+  padding: 20px 14px;
+  cursor: pointer;
+  transition: border-color 0.18s, background 0.18s;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.fum-upload-zone:hover,
+.fum-upload-zone--dragover {
+  border-color: rgba(36, 229, 182, 0.72);
+  background: rgba(36, 229, 182, 0.04);
+}
+
+.fum-upload-zone--compact {
+  min-height: 0;
+  flex-direction: row;
+  justify-content: center;
+  gap: 6px;
+  padding: 11px 14px;
+  border-radius: 9px;
+}
+
+.fum-upload-icon {
+  color: #24E5B6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fum-upload-zone--compact .fum-upload-icon svg,
+.fum-upload-zone--compact .fum-upload-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.fum-upload-label {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #24E5B6;
+  line-height: 1.5;
+}
+
+.fum-upload-zone--compact .fum-upload-label {
+  font-size: 12px;
+}
+
+.fum-hidden-input {
+  display: none;
+}
+
+.fum-formats {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.28);
+  line-height: 1.5;
+  margin-top: 7px;
+}
+
+.fum-formats strong {
+  color: rgba(255, 255, 255, 0.48);
+  font-weight: 600;
+}
+
+/* ── Uploaded file card ─────────────────────────────────────────── */
+.fum-file-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #060606;
+  border: 1px solid #393C45;
+  border-radius: 11px;
+  padding: 10px 12px;
+  box-sizing: border-box;
+}
+
+.fum-file-icon {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: rgba(36, 229, 182, 0.08);
+  border: 1px solid rgba(36, 229, 182, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #24E5B6;
+}
+
+.fum-file-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.fum-file-name {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fum-file-size {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.35);
+  margin-top: 2px;
+}
+
+.fum-file-remove {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+  font-family: inherit;
+}
+
+.fum-file-remove:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+
+/* ── Inline error text ───────────────────────────────────────────── */
+.fum-error {
+  font-size: 11.5px;
+  color: #f87171;
+  margin-top: 5px;
+  line-height: 1.5;
+}
+
+/* ── Footer ─────────────────────────────────────────────────────── */
+.fum-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 24px 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+
+.fum-footnote {
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.25);
+  font-style: italic;
+  line-height: 1.5;
+}
+
+.fum-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.fum-btn-cancel {
+  display: inline-flex;
+  align-items: center;
+  padding: 10px 20px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.fum-btn-cancel:hover {
+  border-color: rgba(255, 255, 255, 0.26);
+  color: #fff;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.fum-btn-done {
+  display: inline-flex;
+  align-items: center;
+  padding: 10px 24px;
+  background: linear-gradient(180deg, #1373f5, #0E63EC);
+  border: none;
+  border-radius: 12px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.15s;
+}
+
+.fum-btn-done:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.fum-btn-done:active {
+  transform: translateY(0);
+}
+
+/* ── Responsive ─────────────────────────────────────────────────── */
+@media (max-width: 600px) {
+  .fum-sections-row {
+    grid-template-columns: 1fr;
+  }
+
+  .fum-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .fum-footer-actions {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .fum-btn-cancel,
+  .fum-btn-done {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fum-overlay,
+  .fum-modal {
+    animation: none !important;
+  }
+}
