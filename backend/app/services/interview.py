@@ -53,6 +53,39 @@ def _safe_json(obj: Any) -> str:
     return json.dumps(obj, indent=2, default=_default)
 
 
+async def _build_persona_json_with_digital_brain(persona_obj: dict, exploration_id: str) -> str:
+    """
+    Merge a persona's Digital Brain data (research_objective, brain_assignment,
+    evidence, say_do_gap) as top-level keys into the persona JSON sent to the
+    interview LLM, in addition to the existing EBPB fields already on
+    persona_obj. brain_assignment/evidence/say_do_gap live inside the
+    persona's persona_details JSONB blob (see manual_digital_brain_persona.py /
+    digital_brain_pipeline.py) — older personas calibrated before Digital Brain
+    existed simply won't have them, so every lookup defaults to {}/None rather
+    than raising.
+    """
+    persona_data = dict(persona_obj or {})
+    persona_details = persona_data.get("persona_details") or {}
+
+    # Prefer the structured 12-component RO persisted at calibration/generation
+    # time (digital_brain_pipeline.py / manual_digital_brain_persona.py). Fall
+    # back to the free-text description for personas calibrated before that
+    # was persisted.
+    research_objective = persona_details.get("research_objective")
+    if not research_objective:
+        try:
+            research_objective = await get_description(exploration_id) or ""
+        except Exception:
+            research_objective = ""
+
+    persona_data["research_objective"] = research_objective
+    persona_data["brain_assignment"] = persona_details.get("brain_assignment") or {}
+    persona_data["evidence"] = persona_details.get("evidence") or {}
+    persona_data["say_do_gap"] = persona_details.get("say_do_gap")
+
+    return _safe_json(persona_data)
+
+
 def _coerce_score(value: Any) -> Optional[float]:
     """Normalize model-provided score values to a 0-1 float."""
     if value is None or isinstance(value, bool):
@@ -492,7 +525,10 @@ async def start_interview(
             flat_questions.append({"section": sec["title"], "question": q})
 
     persona_obj = await get_persona(persona_id) if persona_id else None
-    persona_json = _safe_json(persona_obj) if persona_obj else "{}"
+    persona_json = (
+        await _build_persona_json_with_digital_brain(persona_obj, exploration_id)
+        if persona_obj else "{}"
+    )
 
 
 #     prompt = f"""
@@ -647,8 +683,11 @@ async def add_user_message_and_get_persona_reply(
         
         if iv.persona_id:
             persona_obj = await get_persona(iv.persona_id)
-            persona_json = _safe_json(persona_obj) if persona_obj else "{}"
-            
+            persona_json = (
+                await _build_persona_json_with_digital_brain(persona_obj, iv.exploration_id)
+                if persona_obj else "{}"
+            )
+
             conversation_history = ""
             if len(iv.messages) > 1:
                 recent_messages = iv.messages[-6:]
@@ -661,7 +700,7 @@ async def add_user_message_and_get_persona_reply(
                     elif role == "persona":
                         history_lines.append(f"You: {text}")
                 conversation_history = "\n".join(history_lines)
-            
+
             from app.services.exploration import get_exploration
             research_context = ""
             try:
@@ -671,86 +710,51 @@ async def add_user_message_and_get_persona_reply(
                         research_context = exploration.description
             except Exception:
                 pass
-            
-#             prompt = f"""
-# You are role-playing as this persona in FIRST-PERSON for an in-depth interview.
-#
-# PERSONA DETAILS (this is YOU):
-# {persona_json}
-#
-# RESEARCH OBJECTIVE:
-# {research_context or "Understanding user perspectives and experiences"}
-#
-# CONVERSATION SO FAR:
-# {conversation_history or "This is the start of the interview."}
-#
-# CURRENT QUESTION:
-# {user_text}
-#
-# INSTRUCTIONS:
-# - Answer in FIRST-PERSON using "I", "my", "me"
-# - Give SPECIFIC, DETAILED answers based on YOUR persona traits, not generic responses
-# - Reference your actual characteristics: age, occupation, lifestyle, values, experiences
-# - If asked about preferences, explain WHY based on your personality and background
-# - If asked about experiences, create realistic examples that fit your persona
-# - Keep responses conversational and natural (2-4 sentences)
-# - Stay consistent with what you've said earlier in the conversation
-# - Be authentic to your persona's demographics, psychographics, and backstory
-#
-# EXAMPLES OF GOOD ANSWERS:
-# Generic: "I like quality products."
-# Specific: "As a 32-year-old environmental consultant, I prioritize sustainable products. I recently switched to a reusable water bottle brand that uses recycled materials - it costs more, but aligns with my values."
-#
-# Generic: "I use social media sometimes."
-# Specific: "I'm on Instagram daily, mainly following eco-friendly brands and sustainability influencers. LinkedIn is where I network professionally, but I avoid Facebook - too much noise for my taste."
-#
-# Reply briefly (2-4 sentences) in first-person as this persona:
-# """
 
-    prompt = LIVE_REPLY_PROMPT.format(
-        persona_json=persona_json,
-        research_context=research_context or "Not specified",
-        conversation_history=conversation_history,
-        user_text=user_text
-    )
+            prompt = LIVE_REPLY_PROMPT.format(
+                persona_json=persona_json,
+                research_context=research_context or "Not specified",
+                conversation_history=conversation_history,
+                user_text=user_text
+            )
 
-    res_ai = await client.chat.completions.create(
-        model="gpt-4o-mini",
-        response_format={"type": "json_object"},
-        messages=[
-            {
-                "role": "system",
-                "content": "You are a qualitative research simulation engine."
-            },
-            {
-                "role": "user",
-                "content": prompt
+            res_ai = await client.chat.completions.create(
+                model="gpt-4o-mini",
+                response_format={"type": "json_object"},
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a qualitative research simulation engine."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                temperature=0.8
+            )
+
+            data = json.loads(res_ai.choices[0].message.content)
+            persona_reply = data.get("response", "")
+            reply_meta = {
+                "reply_to": user_text,
+                **_score_meta(data),
             }
-        ],
-        temperature=0.8
-    )
 
-    data = json.loads(res_ai.choices[0].message.content)
-    persona_reply = data.get("response", "")
-    reply_meta = {
-        "reply_to": user_text,
-        **_score_meta(data),
-    }
-                
-    persona_msg = {
-        "role": "persona", 
-        "text": persona_reply,
-        "meta": reply_meta, 
-        "ts": datetime.utcnow().isoformat()
-    }
-    iv.messages.append(persona_msg)
-                
-    flag_modified(iv, "messages")
-                
-    session.add(iv)
-    await session.commit()
-    await session.refresh(iv)
-    return _map_interview_row_to_out(iv)
+            persona_msg = {
+                "role": "persona",
+                "text": persona_reply,
+                "meta": reply_meta,
+                "ts": datetime.utcnow().isoformat()
+            }
+            iv.messages.append(persona_msg)
+
+            flag_modified(iv, "messages")
+
+        session.add(iv)
+        await session.commit()
+        await session.refresh(iv)
+        return _map_interview_row_to_out(iv)
 
 async def generate_persona_reply_and_store(interview_id: str, user_text: str):
     """

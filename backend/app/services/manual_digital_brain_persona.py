@@ -781,6 +781,10 @@ async def calibrate_manual_persona_with_brains(
                 "web_evidence": evidence["eb_verdicts"],
                 "hq_research": evidence["hq_verdicts"],
             }
+            # The structured 12-component RO from Step 1, persisted so
+            # interview.py can ground qualitative responses in the full RO,
+            # not just the free-text description.
+            merged["research_objective"] = validated_ro
             merged["evidence_snapshot"] = _build_manual_evidence_snapshot(
                 evidence,
                 evidence_metadata,

@@ -485,6 +485,7 @@ def _persona_kwargs_from_digital_brain(
     created_by: str,
     geography: str | None = None,
     pipeline_result: dict | None = None,
+    validated_ro: dict | None = None,
 ) -> dict:
     """Map one stage_5_personas entry onto Persona's required columns.
     age_range/gender/education_level/occupation/income_range are inferred
@@ -514,7 +515,8 @@ def _persona_kwargs_from_digital_brain(
     )
 
     name = persona.get("persona_title") or persona.get("persona_archetype") or "Untitled Persona"
-    backstory = (persona.get("layer_6_contradiction") or {}).get("example")
+    contradiction = persona.get("layer_6_contradiction") or {}
+    backstory = contradiction.get("example")
 
     # Frontend reads consumer_personas[i].name / .backstory / .geography directly
     # from persona_details (not the saved DB columns), so mirror them in here too.
@@ -527,6 +529,31 @@ def _persona_kwargs_from_digital_brain(
     if pipeline_result and evidence_snapshot:
         persona_details["evidence_snapshot"] = evidence_snapshot
         persona_details["reference_sites_with_usage"] = _digital_brain_reference_sites(pipeline_result)
+    if validated_ro:
+        # The structured 12-component RO from Stage 1, persisted so interview.py
+        # can ground qualitative responses in the full RO, not just the
+        # free-text description.
+        persona_details["research_objective"] = validated_ro
+    if pipeline_result:
+        # Stage 3A/B/C verdicts are gathered once and shared across the whole
+        # batch of personas (unlike the manual-persona flow, where evidence is
+        # collected per persona) — interview.py reads this same "evidence" key
+        # regardless of flow, so attach the shared pool here too.
+        persona_details["evidence"] = {
+            "action_data": pipeline_result.get("stage_3a_depth_layers") or [],
+            "web_evidence": pipeline_result.get("stage_3b_eb_verdicts") or [],
+            "hq_research": pipeline_result.get("stage_3c_hq_verdicts") or [],
+        }
+    if contradiction:
+        # Normalized to the same "say_do_gap" shape used by the manual-persona
+        # flow (claim / evidence_based_observation / reasoning) so interview.py
+        # can read one consistent key regardless of which flow generated the
+        # persona — layer_6_contradiction uses says/does/why/example instead.
+        persona_details["say_do_gap"] = {
+            "claim": contradiction.get("says"),
+            "evidence_based_observation": contradiction.get("does"),
+            "reasoning": contradiction.get("why"),
+        }
 
     return dict(
         exploration_id=exploration_id,
@@ -617,6 +644,7 @@ async def generate_personas_digital_brain(
             persona_data, workspace_id, exploration_id, current_user.id,
             geography=ro_dict.get("geography"),
             pipeline_result=result,
+            validated_ro=ro_dict,
         )
         saved_personas.append(Persona(**kwargs))
 
