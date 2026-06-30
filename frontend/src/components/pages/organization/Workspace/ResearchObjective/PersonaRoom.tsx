@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   TbX, TbSend, TbMicrophone, TbLoader, TbChevronDown,
   TbMessageCircle, TbPaperclip, TbFileText, TbClock,
-  TbPlus, TbTrash,
+  TbPlus, TbTrash, TbUsers,
 } from 'react-icons/tb';
 import { motion, AnimatePresence } from 'framer-motion';
 import SpIcon from '../../../../SPIcon';
@@ -27,6 +27,8 @@ interface PersonaRoomProps {
   isSidebarOpen: boolean;
   onSidebarOpen: () => void;
   onSidebarClose: () => void;
+  /** Callback to render the persona switcher into the parent panel header */
+  onHeaderSlot?: (node: React.ReactNode) => void;
 }
 
 interface Persona {
@@ -42,6 +44,7 @@ export interface ChatMessage {
   text: string;
   timestamp: string;
   isThinking?: boolean;
+  personaName?: string; // which persona spoke (for combined mode)
 }
 
 interface BackendInterview {
@@ -61,9 +64,13 @@ interface Thread {
   preview: string;
   startedAt: string;
   messages: ChatMessage[];
+  isAllPersonas?: boolean;
+  groupInterviews?: Array<{ id: string; personaId: string; personaName: string }>;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+const ALL_PERSONAS_ID = '__all__';
 
 const toFrontendMessages = (apiMessages: Array<{ role: string; text: string; ts: string }> = []): ChatMessage[] =>
   apiMessages
@@ -73,6 +80,40 @@ const toFrontendMessages = (apiMessages: Array<{ role: string; text: string; ts:
       text: m.text || '',
       timestamp: m.ts,
     }));
+
+// Each persona in a group has its own interview with an identical [user, persona]
+// turn structure (one round = one user message + that persona's reply). Re-interleave
+// them round-by-round so the group reads like a single combined transcript.
+const mergeGroupMessages = (
+  groupIvs: BackendInterview[],
+  personaNames: string[],
+): ChatMessage[] => {
+  const perIvTurns = groupIvs.map((iv) =>
+    ((iv.messages as any) ?? []).filter((m: any) => m.role !== 'system')
+  );
+  const maxRounds = Math.max(0, ...perIvTurns.map((t) => Math.ceil(t.length / 2)));
+  const merged: ChatMessage[] = [];
+
+  for (let r = 0; r < maxRounds; r++) {
+    const userIdx = 2 * r;
+    const userTurn = perIvTurns.find((t) => t[userIdx])?.[userIdx];
+    if (userTurn) {
+      merged.push({ sender: 'user', text: userTurn.text || '', timestamp: userTurn.ts });
+    }
+    perIvTurns.forEach((turns, i) => {
+      const replyTurn = turns[userIdx + 1];
+      if (replyTurn) {
+        merged.push({
+          sender: 'bot',
+          text: replyTurn.text || '',
+          timestamp: replyTurn.ts,
+          personaName: personaNames[i] ?? 'Persona',
+        });
+      }
+    });
+  }
+  return merged;
+};
 
 const groupByDate = (items: Thread[]) => {
   const now       = new Date();
@@ -106,6 +147,7 @@ const PersonaRoom: React.FC<PersonaRoomProps> = ({
   isSidebarOpen,
   onSidebarOpen,
   onSidebarClose,
+  onHeaderSlot,
 }) => {
   // ── Personas ──────────────────────────────────────────────────────────────
 
@@ -116,12 +158,17 @@ const PersonaRoom: React.FC<PersonaRoomProps> = ({
 
   const [selectedPersona,     setSelectedPersona]     = useState<string>('');
   const [selectedPersonaName, setSelectedPersonaName] = useState<string>('');
+  const [isAllPersonas,       setIsAllPersonas]       = useState<boolean>(false);
   const [isDropdownOpen,      setIsDropdownOpen]      = useState<boolean>(false);
   const [isChatActive,        setIsChatActive]        = useState<boolean>(false);
   const [messages,            setMessages]            = useState<ChatMessage[]>([]);
   const [inputValue,          setInputValue]          = useState<string>('');
   const [interviewId,         setInterviewId]         = useState<string | null>(null);
+  // For combined mode we hold one interviewId per persona
+  const [allInterviewIds,     setAllInterviewIds]     = useState<Record<string, string>>({});
   const [activeThreadId,      setActiveThreadId]      = useState<string | null>(null);
+  // Combined mode: persona ids still waiting on a reply for the current question
+  const [pendingPersonaIds,   setPendingPersonaIds]   = useState<Set<string>>(new Set());
 
   const chatEndRef      = useRef<HTMLDivElement>(null);
   const dropdownRef     = useRef<HTMLDivElement>(null);
@@ -142,7 +189,7 @@ const PersonaRoom: React.FC<PersonaRoomProps> = ({
     workspaceId,
     objectiveId,
     interviewId ?? '',
-    { enabled: !!interviewId, refetchInterval: isChatActive ? 4_000 : false },
+    { enabled: !!interviewId && !isAllPersonas, refetchInterval: isChatActive ? 4_000 : false },
   );
 
   // ── Derive threads from backend list ──────────────────────────────────────
@@ -150,7 +197,20 @@ const PersonaRoom: React.FC<PersonaRoomProps> = ({
   const rawInterviews: BackendInterview[] =
     (interviewsRaw as any)?.data ?? (Array.isArray(interviewsRaw) ? interviewsRaw : []);
 
-  const threads: Thread[] = rawInterviews.map((iv) => {
+  const singleInterviews: BackendInterview[] = [];
+  const groupedInterviews = new Map<string, BackendInterview[]>();
+  for (const iv of rawInterviews) {
+    const gid = iv.session_group_id as string | undefined;
+    if (gid) {
+      const list = groupedInterviews.get(gid) ?? [];
+      list.push(iv);
+      groupedInterviews.set(gid, list);
+    } else {
+      singleInterviews.push(iv);
+    }
+  }
+
+  const singleThreads: Thread[] = singleInterviews.map((iv) => {
     const pid     = iv.persona_id ?? iv.personaId ?? '';
     const persona = personas.find((p) => p.id === pid);
     const pName   = persona?.name ?? 'Persona';
@@ -167,21 +227,51 @@ const PersonaRoom: React.FC<PersonaRoomProps> = ({
     };
   });
 
-  const sidebarThreads = selectedPersona
-    ? threads.filter((t) => t.personaId === selectedPersona)
-    : threads;
+  const groupThreads: Thread[] = Array.from(groupedInterviews.entries()).map(([gid, ivs]) => {
+    const groupInterviews = ivs.map((iv) => {
+      const pid     = iv.persona_id ?? iv.personaId ?? '';
+      const persona = personas.find((p) => p.id === pid);
+      return { id: iv.id, personaId: pid, personaName: persona?.name ?? 'Persona' };
+    });
+    const merged   = mergeGroupMessages(ivs, groupInterviews.map((g) => g.personaName));
+    const lastMsg  = merged.at(-1);
+    const earliest = ivs.reduce<string | undefined>((min, iv) => {
+      const ts = iv.created_at as string | undefined;
+      return !min || (ts && ts < min) ? ts : min;
+    }, undefined);
+    return {
+      id:               gid,
+      personaId:        ALL_PERSONAS_ID,
+      personaName:      'All Personas',
+      title:            `All Personas (${ivs.length})`,
+      preview:          lastMsg?.text?.slice(0, 60) ?? '',
+      startedAt:        earliest ?? new Date().toISOString(),
+      messages:         merged,
+      isAllPersonas:    true,
+      groupInterviews,
+    };
+  });
+
+  const threads: Thread[] = [...singleThreads, ...groupThreads];
+
+  const sidebarThreads = !selectedPersona
+    ? threads
+    : isAllPersonas
+      ? threads.filter((t) => t.isAllPersonas)
+      : threads.filter((t) => t.personaId === selectedPersona && !t.isAllPersonas);
 
   const groupedThreads = groupByDate(sidebarThreads);
 
   // ── Effects ───────────────────────────────────────────────────────────────
 
   useEffect(() => {
+    if (isAllPersonas) return; // combined mode manages messages itself
     const apiMessages = (interviewData as any)?.data?.messages;
     if (!apiMessages) return;
     const formatted = toFrontendMessages(apiMessages);
     if (formatted.length === 0) return;
     setMessages(formatted);
-  }, [interviewData]);
+  }, [interviewData, isAllPersonas]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -199,19 +289,70 @@ const PersonaRoom: React.FC<PersonaRoomProps> = ({
 
   // ── Handlers ─────────────────────────────────────────────────────────────
 
+  const resetChat = () => {
+    setIsChatActive(false);
+    setMessages([]);
+    setInputValue('');
+    setInterviewId(null);
+    setAllInterviewIds({});
+    setActiveThreadId(null);
+    setPendingPersonaIds(new Set());
+  };
+
   const handlePersonaSelect = (id: string, name: string) => {
+    resetChat();
     setSelectedPersona(id);
     setSelectedPersonaName(name);
     setIsDropdownOpen(false);
-    setInputValue('');
-    setIsChatActive(false);
-    setMessages([]);
-    setInterviewId(null);
-    setActiveThreadId(null);
+    setIsAllPersonas(id === ALL_PERSONAS_ID);
   };
 
   const handleStartConversation = async () => {
     if (!selectedPersona) return;
+
+    // ── Combined "All Personas" mode ──────────────────────────────────────
+    if (isAllPersonas) {
+      try {
+        const idMap: Record<string, string> = {};
+        const greetings: ChatMessage[] = [];
+        const sessionGroupId = `grp_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
+        await Promise.all(
+          personas.map(async (p) => {
+            const result = await startInterviewMutation.mutateAsync({
+              personaId:   p.id,
+              forceNew:    true,
+              lightweight: true,
+              sessionGroupId,
+            });
+            const id = (result as any)?.data?.id;
+            if (id) {
+              idMap[p.id] = id;
+              greetings.push({
+                sender:      'bot',
+                text:        `Hey, I'm ${p.name ?? 'Persona'}. Ready for your questions!`,
+                timestamp:   new Date().toISOString(),
+                personaName: p.name ?? 'Persona',
+              });
+            }
+          })
+        );
+
+        setAllInterviewIds(idMap);
+        setMessages(greetings);
+        setIsChatActive(true);
+        // Representative interview id for display only; the group itself is
+        // identified by sessionGroupId for sidebar/active-thread tracking.
+        const firstId = Object.values(idMap)[0] ?? null;
+        setInterviewId(firstId);
+        setActiveThreadId(sessionGroupId);
+      } catch (err) {
+        console.error('Failed to start combined interview:', err);
+      }
+      return;
+    }
+
+    // ── Single persona mode ───────────────────────────────────────────────
     try {
       const result = await startInterviewMutation.mutateAsync({
         personaId:   selectedPersona,
@@ -238,12 +379,46 @@ const PersonaRoom: React.FC<PersonaRoomProps> = ({
   const handleLoadThread = useCallback(async (thread: Thread) => {
     setMessages([]);
     setInterviewId(null);
+    setAllInterviewIds({});
     setIsChatActive(false);
+    setIsDropdownOpen(false);
+    setActiveThreadId(thread.id);
 
+    // ── Grouped "All Personas" thread ─────────────────────────────────────
+    if (thread.isAllPersonas && thread.groupInterviews) {
+      setSelectedPersona(ALL_PERSONAS_ID);
+      setSelectedPersonaName('All Personas');
+      setIsAllPersonas(true);
+
+      try {
+        const fresh = await Promise.all(
+          thread.groupInterviews.map((g) =>
+            queryClient.fetchQuery({
+              queryKey: interviewKeys.detail(workspaceId, objectiveId, g.id),
+              queryFn:  () => interviewService.getInterview(workspaceId, objectiveId, g.id),
+              staleTime: 0,
+            })
+          )
+        );
+        const freshIvs = fresh.map((r: any) => r?.data ?? r);
+        setMessages(mergeGroupMessages(freshIvs, thread.groupInterviews.map((g) => g.personaName)));
+      } catch {
+        setMessages(thread.messages);
+      }
+
+      const idMap: Record<string, string> = {};
+      thread.groupInterviews.forEach((g) => { idMap[g.personaId] = g.id; });
+      setAllInterviewIds(idMap);
+      setInterviewId(thread.groupInterviews[0]?.id ?? null);
+      setIsChatActive(true);
+      onSidebarClose();
+      return;
+    }
+
+    // ── Single persona thread ──────────────────────────────────────────────
+    setIsAllPersonas(false);
     setSelectedPersona(thread.personaId);
     setSelectedPersonaName(thread.personaName);
-    setActiveThreadId(thread.id);
-    setIsDropdownOpen(false);
 
     try {
       const res = await queryClient.fetchQuery({
@@ -262,18 +437,17 @@ const PersonaRoom: React.FC<PersonaRoomProps> = ({
     onSidebarClose();
   }, [workspaceId, objectiveId, queryClient, onSidebarClose]);
 
-  const handleNewChat = () => {
-    setIsChatActive(false);
-    setMessages([]);
-    setInputValue('');
-    setInterviewId(null);
-    setActiveThreadId(null);
-  };
+  const handleNewChat = () => resetChat();
 
   const handleDeleteThread = async (e: React.MouseEvent, threadId: string) => {
     e.stopPropagation();
+    const thread = threads.find((t) => t.id === threadId);
     try {
-      await deleteInterview.mutateAsync(threadId);
+      if (thread?.isAllPersonas && thread.groupInterviews) {
+        await Promise.all(thread.groupInterviews.map((g) => deleteInterview.mutateAsync(g.id)));
+      } else {
+        await deleteInterview.mutateAsync(threadId);
+      }
     } catch {
       // non-critical
     }
@@ -281,15 +455,56 @@ const PersonaRoom: React.FC<PersonaRoomProps> = ({
   };
 
   const handleSendMessage = async () => {
-    if (!inputValue.trim() || !interviewId) return;
+    if (!inputValue.trim()) return;
     const text = inputValue.trim();
 
     const userMsg: ChatMessage = { sender: 'user', text, timestamp: new Date().toISOString() };
     setMessages((prev) => [...prev, userMsg]);
     setInputValue('');
 
+    // ── Combined mode: fan out to all personas ────────────────────────────
+    if (isAllPersonas) {
+      const targets = personas.filter((p) => allInterviewIds[p.id]);
+      setPendingPersonaIds(new Set(targets.map((p) => p.id)));
+
+      // Fire independently — each persona's bubble lands the moment its own
+      // reply is ready instead of waiting for every persona to finish.
+      targets.forEach((p) => {
+        const iid = allInterviewIds[p.id];
+        (async () => {
+          try {
+            const res = await interviewService.sendMessage(workspaceId, objectiveId, iid, { role: 'user', text });
+            const replyText = (res as any)?.data?.text ?? '…';
+            setMessages((prev) => [
+              ...prev,
+              { sender: 'bot', text: replyText, timestamp: new Date().toISOString(), personaName: p.name ?? 'Persona' },
+            ]);
+          } catch (err) {
+            console.error(`Send failed for persona ${p.id}:`, err);
+            setMessages((prev) => [
+              ...prev,
+              { sender: 'bot', text: 'Sorry, there was an error. Please try again.', timestamp: new Date().toISOString(), personaName: p.name ?? 'Persona' },
+            ]);
+          } finally {
+            setPendingPersonaIds((prev) => {
+              const next = new Set(prev);
+              next.delete(p.id);
+              return next;
+            });
+          }
+        })();
+      });
+      return;
+    }
+
+    // ── Single persona mode ───────────────────────────────────────────────
+    if (!interviewId) return;
     try {
-      await sendMessageMutation.mutateAsync({ role: 'user', text });
+      const result = await sendMessageMutation.mutateAsync({ role: 'user', text });
+      const replyText = (result as any)?.data?.text;
+      if (replyText) {
+        setMessages((prev) => [...prev, { sender: 'bot', text: replyText, timestamp: new Date().toISOString() }]);
+      }
     } catch (err) {
       console.error('Send failed:', err);
       setMessages((prev) => [
@@ -308,13 +523,16 @@ const PersonaRoom: React.FC<PersonaRoomProps> = ({
 
   const handleDownloadConversation = () => {
     const content = messages
-      .map((m) => `${m.sender === 'user' ? 'You' : selectedPersonaName}: ${m.text}`)
+      .map((m) => {
+        const label = m.sender === 'user' ? 'You' : (m.personaName ?? selectedPersonaName);
+        return `${label}: ${m.text}`;
+      })
       .join('\n\n');
     const blob = new Blob([content], { type: 'text/plain' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href     = url;
-    a.download = `conversation-${selectedPersonaName}.txt`;
+    a.download = `conversation-${isAllPersonas ? 'all-personas' : selectedPersonaName}.txt`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -324,6 +542,9 @@ const PersonaRoom: React.FC<PersonaRoomProps> = ({
   const activePersona = personas.find((p) => p.id === selectedPersona);
   const hasSelection  = !!selectedPersona;
   const isStarting    = startInterviewMutation.isPending;
+  const canSend       = isAllPersonas
+    ? Object.keys(allInterviewIds).length > 0
+    : !!interviewId;
 
   const formatTime = (ts: string) => {
     try {
@@ -336,6 +557,81 @@ const PersonaRoom: React.FC<PersonaRoomProps> = ({
     try { return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); }
     catch { return ''; }
   };
+
+  // Avatar for a bot message (combined or single)
+  const getBotAvatar = (msg: ChatMessage) => {
+    if (isAllPersonas && msg.personaName) {
+      return msg.personaName.charAt(0).toUpperCase();
+    }
+    if (activePersona?.image) {
+      return (
+        <img src={activePersona.image as string} alt={selectedPersonaName} className="cs-bubble-avatar__img" />
+      );
+    }
+    return selectedPersonaName.charAt(0).toUpperCase();
+  };
+
+  // ── Push persona switcher into parent header ──────────────────────────────
+
+  const personaSwitcher = hasSelection ? (
+    <div className="cs-dropdown-wrap cs-dropdown-wrap--header" ref={dropdownRef}>
+      <button
+        className="cs-header-persona-btn"
+        onClick={() => setIsDropdownOpen((v) => !v)}
+      >
+        {isAllPersonas && <TbUsers size={14} />}
+        <span>{selectedPersonaName}</span>
+        <TbChevronDown
+          size={14}
+          className={`cs-dropdown-trigger__chevron ${isDropdownOpen ? 'cs-dropdown-trigger__chevron--open' : ''}`}
+        />
+      </button>
+      <AnimatePresence>
+        {isDropdownOpen && (
+          <motion.div
+            className="cs-dropdown-menu cs-dropdown-menu--right"
+            initial={{ opacity: 0, y: -6, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -6, scale: 0.97 }}
+            transition={{ duration: 0.15 }}
+          >
+            <button
+              className="cs-dropdown-item cs-dropdown-item--all"
+              onClick={() => handlePersonaSelect(ALL_PERSONAS_ID, 'All Personas')}
+            >
+              <div className="cs-dropdown-item__avatar cs-dropdown-item__avatar--all">
+                <TbUsers size={16} />
+              </div>
+              <div className="cs-dropdown-item__text">
+                <span className="cs-dropdown-item__name">All Personas</span>
+                <span className="cs-dropdown-item__role">Talk to everyone at once</span>
+              </div>
+            </button>
+            {personas.map((p) => (
+              <button
+                key={p.id}
+                className="cs-dropdown-item"
+                onClick={() => handlePersonaSelect(p.id, p.name ?? 'Persona')}
+              >
+                <div className="cs-dropdown-item__avatar">
+                  {(p.name ?? 'P').charAt(0).toUpperCase()}
+                </div>
+                <div className="cs-dropdown-item__text">
+                  <span className="cs-dropdown-item__name">{p.name ?? 'Persona'}</span>
+                  <span className="cs-dropdown-item__role">{p.occupation ?? ''}</span>
+                </div>
+              </button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  ) : null;
+
+  useEffect(() => {
+    onHeaderSlot?.(personaSwitcher);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPersona, isDropdownOpen, isAllPersonas, personas]);
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -373,7 +669,7 @@ const PersonaRoom: React.FC<PersonaRoomProps> = ({
               </button>
             </div>
           </div>
-          {selectedPersona && (
+          {selectedPersona && selectedPersona !== ALL_PERSONAS_ID && (
             <p className="cs-sidebar__filter-label">
               Showing threads for <strong>{selectedPersonaName}</strong>
             </p>
@@ -424,51 +720,6 @@ const PersonaRoom: React.FC<PersonaRoomProps> = ({
       {/* Main content */}
       <div className="cs-main">
 
-        {/* Header row — persona switcher */}
-        {hasSelection && (
-          <div className="cs-persona-room-header">
-            <div className="cs-dropdown-wrap cs-dropdown-wrap--inline" ref={dropdownRef}>
-              <button
-                className="cs-header-persona-btn"
-                onClick={() => setIsDropdownOpen((v) => !v)}
-              >
-                <span>{selectedPersonaName}</span>
-                <TbChevronDown
-                  size={14}
-                  className={`cs-dropdown-trigger__chevron ${isDropdownOpen ? 'cs-dropdown-trigger__chevron--open' : ''}`}
-                />
-              </button>
-              <AnimatePresence>
-                {isDropdownOpen && (
-                  <motion.div
-                    className="cs-dropdown-menu cs-dropdown-menu--right"
-                    initial={{ opacity: 0, y: -6, scale: 0.97 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: -6, scale: 0.97 }}
-                    transition={{ duration: 0.15 }}
-                  >
-                    {personas.map((p) => (
-                      <button
-                        key={p.id}
-                        className="cs-dropdown-item"
-                        onClick={() => handlePersonaSelect(p.id, p.name ?? 'Persona')}
-                      >
-                        <div className="cs-dropdown-item__avatar">
-                          {(p.name ?? 'P').charAt(0).toUpperCase()}
-                        </div>
-                        <div className="cs-dropdown-item__text">
-                          <span className="cs-dropdown-item__name">{p.name ?? 'Persona'}</span>
-                          <span className="cs-dropdown-item__role">{p.occupation ?? ''}</span>
-                        </div>
-                      </button>
-                    ))}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          </div>
-        )}
-
         {!hasSelection ? (
           /* ── Picker state ── */
           <>
@@ -497,21 +748,37 @@ const PersonaRoom: React.FC<PersonaRoomProps> = ({
                         transition={{ duration: 0.15 }}
                       >
                         {personas.length > 0 ? (
-                          personas.map((p) => (
+                          <>
+                            {/* All Personas option */}
                             <button
-                              key={p.id}
-                              className="cs-dropdown-item"
-                              onClick={() => handlePersonaSelect(p.id, p.name ?? 'Persona')}
+                              className="cs-dropdown-item cs-dropdown-item--all"
+                              onClick={() => handlePersonaSelect(ALL_PERSONAS_ID, 'All Personas')}
                             >
-                              <div className="cs-dropdown-item__avatar">
-                                {(p.name ?? 'P').charAt(0).toUpperCase()}
+                              <div className="cs-dropdown-item__avatar cs-dropdown-item__avatar--all">
+                                <TbUsers size={16} />
                               </div>
                               <div className="cs-dropdown-item__text">
-                                <span className="cs-dropdown-item__name">{p.name ?? 'Persona'}</span>
-                                <span className="cs-dropdown-item__role">{p.occupation ?? ''}</span>
+                                <span className="cs-dropdown-item__name">All Personas</span>
+                                <span className="cs-dropdown-item__role">Talk to everyone at once</span>
                               </div>
                             </button>
-                          ))
+
+                            {personas.map((p) => (
+                              <button
+                                key={p.id}
+                                className="cs-dropdown-item"
+                                onClick={() => handlePersonaSelect(p.id, p.name ?? 'Persona')}
+                              >
+                                <div className="cs-dropdown-item__avatar">
+                                  {(p.name ?? 'P').charAt(0).toUpperCase()}
+                                </div>
+                                <div className="cs-dropdown-item__text">
+                                  <span className="cs-dropdown-item__name">{p.name ?? 'Persona'}</span>
+                                  <span className="cs-dropdown-item__role">{p.occupation ?? ''}</span>
+                                </div>
+                              </button>
+                            ))}
+                          </>
                         ) : (
                           <div className="cs-dropdown-empty">No personas found</div>
                         )}
@@ -530,11 +797,23 @@ const PersonaRoom: React.FC<PersonaRoomProps> = ({
             <div className="cs-messages">
               {!isChatActive ? (
                 <div className="cs-messages__empty">
-                  <TbMessageCircle size={40} className="cs-messages__empty-icon" />
+                  {isAllPersonas ? (
+                    <TbUsers size={40} className="cs-messages__empty-icon" />
+                  ) : (
+                    <TbMessageCircle size={40} className="cs-messages__empty-icon" />
+                  )}
                   <h4 className="cs-messages__empty-title">Ready to deep dive?</h4>
                   <p className="cs-messages__empty-sub">
-                    You're talking to <strong>{selectedPersonaName}</strong>.
+                    {isAllPersonas
+                      ? <>You're talking to <strong>all {personas.length} personas</strong> simultaneously.</>
+                      : <>You're talking to <strong>{selectedPersonaName}</strong>.</>
+                    }
                   </p>
+                  {isAllPersonas && (
+                    <p className="cs-messages__empty-hint">
+                      Each persona will respond independently to your questions.
+                    </p>
+                  )}
                   <button
                     className="cs-start-btn"
                     onClick={handleStartConversation}
@@ -543,7 +822,7 @@ const PersonaRoom: React.FC<PersonaRoomProps> = ({
                     {isStarting ? (
                       <><TbLoader className="cs-start-btn__spinner" size={15} />Starting…</>
                     ) : (
-                      'Start Interview'
+                      isAllPersonas ? 'Start Group Interview' : 'Start Interview'
                     )}
                   </button>
                 </div>
@@ -561,14 +840,14 @@ const PersonaRoom: React.FC<PersonaRoomProps> = ({
                     >
                       {msg.sender === 'bot' && (
                         <div className="cs-bubble-avatar">
-                          {activePersona?.image ? (
-                            <img src={activePersona.image as string} alt={selectedPersonaName} className="cs-bubble-avatar__img" />
-                          ) : (
-                            selectedPersonaName.charAt(0).toUpperCase()
-                          )}
+                          {getBotAvatar(msg)}
                         </div>
                       )}
                       <div className="cs-bubble-col">
+                        {/* In combined mode show which persona is speaking above the bubble */}
+                        {isAllPersonas && msg.sender === 'bot' && msg.personaName && (
+                          <span className="cs-bubble-persona-label">{msg.personaName}</span>
+                        )}
                         <div className={`cs-bubble ${msg.sender === 'user' ? 'cs-bubble--user' : 'cs-bubble--bot'} ${msg.isThinking ? 'cs-bubble--thinking' : ''}`}>
                           {msg.isThinking ? (
                             <div className="cs-bubble__thinking">
@@ -580,7 +859,9 @@ const PersonaRoom: React.FC<PersonaRoomProps> = ({
                           )}
                         </div>
                         <div className={`cs-bubble-meta ${msg.sender === 'user' ? 'cs-bubble-meta--user' : ''}`}>
-                          {msg.sender === 'bot' ? selectedPersonaName : 'You'} • {formatTime(msg.timestamp)}
+                          {msg.sender === 'bot'
+                            ? (msg.personaName ?? selectedPersonaName)
+                            : 'You'} • {formatTime(msg.timestamp)}
                         </div>
                       </div>
                       {msg.sender === 'user' && (
@@ -588,7 +869,7 @@ const PersonaRoom: React.FC<PersonaRoomProps> = ({
                       )}
                     </div>
                   ))}
-                  {sendMessageMutation.isPending && (
+                  {sendMessageMutation.isPending && !isAllPersonas && (
                     <div className="cs-bubble-row">
                       <div className="cs-bubble-avatar">
                         {selectedPersonaName.charAt(0).toUpperCase()}
@@ -603,12 +884,29 @@ const PersonaRoom: React.FC<PersonaRoomProps> = ({
                       </div>
                     </div>
                   )}
+                  {isAllPersonas && Array.from(pendingPersonaIds).map((pid) => {
+                    const pName = personas.find((p) => p.id === pid)?.name ?? 'Persona';
+                    return (
+                      <div className="cs-bubble-row" key={`thinking-${pid}`}>
+                        <div className="cs-bubble-avatar">{pName.charAt(0).toUpperCase()}</div>
+                        <div className="cs-bubble-col">
+                          <span className="cs-bubble-persona-label">{pName}</span>
+                          <div className="cs-bubble cs-bubble--bot cs-bubble--thinking">
+                            <div className="cs-bubble__thinking">
+                              <TbLoader size={14} className="cs-bubble__thinking-spinner" />
+                              <span>Thinking…</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                   <div ref={chatEndRef} />
                 </>
               )}
             </div>
 
-            {isChatActive && interviewId && (
+            {isChatActive && canSend && (
               <div className="cs-input-area">
                 <div className="cs-input-row">
                   <button className="cs-input-attach" title="Attach file">
@@ -622,7 +920,7 @@ const PersonaRoom: React.FC<PersonaRoomProps> = ({
                       onKeyDown={handleKeyDown}
                       rows={1}
                       autoFocus
-                      placeholder="Ask anything…"
+                      placeholder={isAllPersonas ? 'Ask all personas…' : 'Ask anything…'}
                     />
                   </div>
                   <button className="cs-input-voice" title="Voice input">
@@ -631,9 +929,9 @@ const PersonaRoom: React.FC<PersonaRoomProps> = ({
                   <button
                     className="cs-send-btn"
                     onClick={handleSendMessage}
-                    disabled={!inputValue.trim() || sendMessageMutation.isPending}
+                    disabled={!inputValue.trim() || (isAllPersonas ? pendingPersonaIds.size > 0 : sendMessageMutation.isPending)}
                   >
-                    {sendMessageMutation.isPending
+                    {(isAllPersonas ? pendingPersonaIds.size > 0 : sendMessageMutation.isPending)
                       ? <TbLoader size={18} className="cs-send-btn__spinner" />
                       : <TbSend size={18} />
                     }

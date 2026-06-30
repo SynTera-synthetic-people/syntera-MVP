@@ -225,6 +225,74 @@ async def _fetch_ml_context(
         return None, None, None
 
 
+async def _generate_persona_themes(
+    description: str,
+    needed_count: int,
+    existing_names: Optional[List[str]] = None,
+) -> List[str]:
+    """
+    Stage 1 of persona generation: brainstorm `needed_count` distinct
+    behavioral segments for this Research Objective in a single fast call,
+    BEFORE any persona is generated. Each segment is then assigned to exactly
+    one parallel persona call (see ai_generate_persona) so independent calls
+    can't all converge on the same "obvious" theme.
+
+    Returns [] on any failure — caller falls back to the old generic
+    "be distinct" instruction, so a Stage 1 failure never blocks generation.
+    """
+    if needed_count <= 0:
+        return []
+
+    existing_block = ""
+    if existing_names:
+        existing_block = (
+            "\nThese segments are ALREADY covered by existing personas in this "
+            "exploration — do NOT repeat or closely resemble them:\n- "
+            + "\n- ".join(existing_names)
+            + "\n"
+        )
+
+    prompt = f"""
+**RESEARCH OBJECTIVE**
+{description}
+{existing_block}
+List exactly {needed_count} DISTINCT consumer behavioral segments/archetypes
+that this research objective could study. Each segment must differ from the
+others (and from anything listed above) in underlying motivation, behavior,
+or decision pattern — not just demographics.
+
+Return ONLY this JSON, no markdown, no explanations:
+{{"segments": ["short label 1", "short label 2", ...]}}
+"""
+
+    try:
+        response = await client.responses.create(
+            model="gpt-5",
+            reasoning={"effort": "low"},
+            input=[
+                {
+                    "role": "system",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": (
+                                "You are a market research strategist scoping "
+                                "distinct consumer segments before persona generation."
+                            ),
+                        }
+                    ],
+                },
+                {"role": "user", "content": prompt},
+            ],
+        )
+        data = _load_json_object(response.output_text)
+        segments = data.get("segments", [])
+        return [str(s).strip() for s in segments if str(s).strip()][:needed_count]
+    except Exception as exc:
+        print(f"[Themes] Stage 1 segment brainstorm failed ({type(exc).__name__}: {exc}) — falling back")
+        return []
+
+
 TEXT_PERSONA_FIELDS = (
     "name",
     "age_range",
@@ -619,6 +687,7 @@ async def ai_generate_persona(
     total_persona_goal: Optional[int] = None,
     starting_persona_number: int = 1,
     _attempt: int = 1,
+    assigned_themes: Optional[Dict[int, str]] = None,
 ):
     """
     Generate the requested number of Omi personas in parallel.
@@ -642,6 +711,31 @@ async def ai_generate_persona(
     # ============================================================================
     ml_domain, ml_subject_key, ml_context = await _fetch_ml_context(description or "")
 
+    persona_numbers = list(range(starting_persona_number, starting_persona_number + target_count))
+
+    # ============================================================================
+    # STAGE 1 — assign each persona slot a distinct behavioral segment up front
+    # so the (parallel, independent) generation calls below can't all converge
+    # on the same "obvious" theme. Skipped on retries: assigned_themes is passed
+    # back in from the original call so a retried slot keeps its original
+    # assignment instead of drawing a fresh one (and re-paying the Stage 1 call).
+    # ============================================================================
+    if assigned_themes is None:
+        existing_names: List[str] = []
+        try:
+            async with AsyncSession(async_engine) as session:
+                result = await session.execute(
+                    select(Persona.name).where(Persona.exploration_id == exploration_id)
+                )
+                existing_names = [n for n in result.scalars().all() if n]
+        except Exception as exc:
+            print(f"[Themes] Could not fetch existing persona names ({type(exc).__name__}: {exc}); continuing without them")
+
+        themes = await _generate_persona_themes(description or "", target_count, existing_names)
+        assigned_themes = {
+            num: themes[i] for i, num in enumerate(persona_numbers) if i < len(themes)
+        }
+
     # ============================================================================
     # PARALLEL PERSONA GENERATION
     # ============================================================================
@@ -652,13 +746,22 @@ async def ai_generate_persona(
         """
         ml_section = f"\n\n{ml_context}\n" if ml_context else ""
 
+        assigned_theme = assigned_themes.get(persona_number)
+        diversity_instruction = (
+            f'ASSIGNED SEGMENT FOR THIS PERSONA: "{assigned_theme}"\n'
+            "Build this persona to concretely embody that specific segment — "
+            "do not drift to a different one."
+            if assigned_theme
+            else "Ensure this persona represents a distinct behavioral segment from other personas."
+        )
+
         # Format dynamic prompt - specify this persona's position in the full plan limit
         dynamic_prompt = f"""
 {RESEARCH_OBJECTIVE_PROMPT.format(research_objective=description)}
 {ml_section}
 Generate exactly 1 high-quality persona (Persona #{persona_number} of {total_persona_goal} total).
 Return exactly one item inside consumer_personas.
-Ensure this persona represents a distinct behavioral segment from other personas.
+{diversity_instruction}
 """
 
         # API call with caching
@@ -707,7 +810,6 @@ Ensure this persona represents a distinct behavioral segment from other personas
     # ============================================================================
     
     print(f"\n🚀 Starting parallel persona generation ({target_count} concurrent API calls)...")
-    persona_numbers = list(range(starting_persona_number, starting_persona_number + target_count))
     start_time = asyncio.get_event_loop().time()
     
     # Launch both API calls simultaneously
@@ -828,6 +930,7 @@ Ensure this persona represents a distinct behavioral segment from other personas
             total_persona_goal=total_persona_goal,
             starting_persona_number=starting_persona_number + len(response["personas"]),
             _attempt=_attempt + 1,
+            assigned_themes=assigned_themes,
         )
         response["personas"].extend(retry_response.get("personas", []))
         response["consumer_personas"].extend(retry_response.get("consumer_personas", []))

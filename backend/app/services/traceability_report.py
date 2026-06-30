@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from datetime import datetime
@@ -18,6 +19,7 @@ from app.models.persona import Persona
 from app.models.survey_simulation import SurveySimulation
 from app.models.traceability import TraceabilityReport
 from app.services.auto_generated_persona import get_description
+from app.services.persona import _resolve_calibration_confidence
 from app.services.omi import get_conversation_history
 from app.services.research_objectives import build_conversation_text
 
@@ -197,20 +199,28 @@ async def get_personas_grouped_by_generation(
 
     async with AsyncSessionLocal() as session:
         stmt = (
-            select(
-                Persona.persona_details,
-                Persona.auto_generated_persona
-            )
+            select(Persona)
             .where(Persona.exploration_id == exploration_id)
         )
 
-        rows = (await session.execute(stmt)).all()
+        personas = (await session.execute(stmt)).scalars().all()
 
-        for persona_details, auto_generated in rows:
-            if auto_generated:
-                result["omi_generated"].append(persona_details)
+        for p in personas:
+            persona_details = p.persona_details if isinstance(p.persona_details, dict) else {}
+
+            # persona_details is the raw JSON column and frequently lacks a flat
+            # confidence field; resolve it the same way persona_to_dict() does
+            # (DB column + legacy JSON locations) so traceability matches the
+            # confidence shown elsewhere in the app instead of defaulting to 0.
+            enriched = dict(persona_details)
+            resolved_confidence = _resolve_calibration_confidence(p, persona_details)
+            if resolved_confidence is not None:
+                enriched["confidence"] = resolved_confidence
+
+            if p.auto_generated_persona:
+                result["omi_generated"].append(enriched)
             else:
-                result["manual_generated"].append(persona_details)
+                result["manual_generated"].append(enriched)
 
     return result
 
@@ -386,14 +396,28 @@ async def get_traceability_reports(
     """
 
     # 1. Research Objective Traceability
-    research_objective_summary = await get_description(exploration_id)
+    async def _fetch_conversation() -> Tuple[Optional[str], str]:
+        omi_session_id, information_gathered = await get_session_id_and_info(exploration_id)
+        if not omi_session_id:
+            raise ValueError("No OMI session found for exploration_id")
+        messages = await get_conversation_history(omi_session_id)
+        return information_gathered, build_conversation_text(messages)
 
-    omi_session_id, information_gathered = await get_session_id_and_info(exploration_id)
-    if not omi_session_id:
-        raise ValueError("No OMI session found for exploration_id")
-
-    messages = await get_conversation_history(omi_session_id)
-    conversation_text = build_conversation_text(messages)
+    # These DB/IO lookups are independent of each other, so run them
+    # concurrently instead of one-after-another to cut first-load latency.
+    (
+        research_objective_summary,
+        (information_gathered, conversation_text),
+        personas_grouped,
+        (results, response_result),
+        qualitative_input,
+    ) = await asyncio.gather(
+        get_description(exploration_id),
+        _fetch_conversation(),
+        get_personas_grouped_by_generation(exploration_id),
+        get_results_and_simulation_results(exploration_id),
+        build_qualitative_prompt_inputs(exploration_id),
+    )
 
     # ---RO Report Prompt ---
     ro_prompt = f"""
@@ -558,21 +582,21 @@ Never skip any component and ro_score should be greater then 75
 }}
 </OUTPUT FORMAT>
     """
-    ro_response = await client.responses.create(
-        model="gpt-4.1",
-        input=[{"role": "user", "content": ro_prompt}],
-    )
-
-    try:
-        ro_result = json.loads(ro_response.output_text)
-    except (json.JSONDecodeError, AttributeError):
-        logger.error("AI returned malformed JSON for RO traceability", extra={"exploration_id": exploration_id})
-        ro_result = {"components": [], "ro_score": 0, "error": "AI response could not be parsed"}
-    ro_result["summary"] = research_objective_summary
+    async def _call_ro() -> dict:
+        ro_response = await client.responses.create(
+            model="gpt-4.1",
+            input=[{"role": "user", "content": ro_prompt}],
+        )
+        try:
+            result = json.loads(ro_response.output_text)
+        except (json.JSONDecodeError, AttributeError):
+            logger.error("AI returned malformed JSON for RO traceability", extra={"exploration_id": exploration_id})
+            result = {"components": [], "ro_score": 0, "error": "AI response could not be parsed"}
+        result["summary"] = research_objective_summary
+        return result
 
     # 2. Persona Traceability
 
-    personas_grouped = await get_personas_grouped_by_generation(exploration_id)
     unique_count = count_unique_reference_sites(personas_grouped)
     persona_result = {
         "data":{
@@ -582,9 +606,6 @@ Never skip any component and ro_score should be greater then 75
     }
 
     # 4. Quantitative Traceability
-    results, response_result = await get_results_and_simulation_results(
-        exploration_id
-    )
     results, response_result = prepare_quant_inputs(
         results=results,
         response_result=response_result,
@@ -690,22 +711,21 @@ Return STRICT JSON only and score can be 0 to 100.
 }}
 </OUTPUT FORMAT>
 """
-    if is_quant:
+    async def _call_quant() -> Optional[dict]:
+        if not is_quant:
+            return None
         quant_response = await client.responses.create(
                 model="gpt-4.1",
                 input=[{"role": "user", "content": quant_prompt}],
             )
 
         try:
-            quant_result = json.loads(quant_response.output_text)
+            return json.loads(quant_response.output_text)
         except (json.JSONDecodeError, AttributeError):
             logger.error("AI returned malformed JSON for quant traceability", extra={"exploration_id": exploration_id})
-            quant_result = {"quality_scores": [], "overall_score": 0, "error": "AI response could not be parsed"}
-    else:
-        quant_result = None
+            return {"quality_scores": [], "overall_score": 0, "error": "AI response could not be parsed"}
 
     # 3. Qualitative
-    qualitative_input = await build_qualitative_prompt_inputs(exploration_id)
     qual_prompt = f"""
 <ROLE>
 You are a senior qualitative research methodologist and discussion-guide quality auditor.
@@ -801,19 +821,26 @@ Return STRICT JSON only. **Never miss any dimension**
 }}
 </OUTPUT FORMAT>
 """
-    if is_qual:
+    async def _call_qual() -> Optional[dict]:
+        if not is_qual:
+            return None
         qual_response = await client.responses.create(
                 model="gpt-4.1",
                 input=[{"role": "user", "content": qual_prompt}],
             )
 
         try:
-            qual_result = json.loads(qual_response.output_text)
+            return json.loads(qual_response.output_text)
         except (json.JSONDecodeError, AttributeError):
             logger.error("AI returned malformed JSON for qual traceability", extra={"exploration_id": exploration_id})
-            qual_result = {"quality_scores": [], "overall_score": 0, "error": "AI response could not be parsed"}
-    else:
-        qual_result = None
+            return {"quality_scores": [], "overall_score": 0, "error": "AI response could not be parsed"}
+
+    # Fire all needed LLM calls concurrently instead of sequentially - this is
+    # the main first-load latency win, since RO/quant/qual are independent
+    # GPT-4.1 calls that previously ran one after another.
+    ro_result, quant_result, qual_result = await asyncio.gather(
+        _call_ro(), _call_quant(), _call_qual()
+    )
 
     final_result_traceability = {
         "ro_traceability": ro_result,

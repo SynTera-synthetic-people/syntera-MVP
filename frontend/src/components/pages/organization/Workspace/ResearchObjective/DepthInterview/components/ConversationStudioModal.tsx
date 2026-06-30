@@ -13,8 +13,6 @@ type RoomMode = null | 'persona' | 'decision';
 interface ConversationStudioModalProps {
   workspaceId: string;
   objectiveId: string;
-  /** Pass 'qual' for qualitative flow, 'quant' for quantitative flow.
-   *  Defaults to 'qual' so existing call-sites without this prop keep working. */
   flow?: FlowType;
   onClose: () => void;
 }
@@ -55,17 +53,21 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
   flow = 'qual',
   onClose,
 }) => {
-  const [mode,          setMode]          = useState<RoomMode>(null);
-  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
+  const [mode,             setMode]             = useState<RoomMode>(null);
+  const [isSidebarOpen,    setIsSidebarOpen]    = useState<boolean>(false);
+  const [personaHeaderSlot, setPersonaHeaderSlot] = useState<React.ReactNode>(null);
 
   const handleSelectMode = (selected: NonNullable<RoomMode>) => {
     setMode(selected);
     setIsSidebarOpen(false);
+    // Clear any leftover slot when switching rooms
+    setPersonaHeaderSlot(null);
   };
 
   const handleBack = () => {
     setMode(null);
     setIsSidebarOpen(false);
+    setPersonaHeaderSlot(null);
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -90,7 +92,6 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
         {/* ── Panel header ── */}
         <div className="cs-panel-header">
           <div className="cs-panel-header__text">
-            {/* Back button — shown when inside a room */}
             {mode !== null && (
               <button className="cs-back-btn" onClick={handleBack} aria-label="Back to room selection">
                 <TbArrowLeft size={16} />
@@ -114,6 +115,9 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
           </div>
 
           <div className="cs-panel-header__actions">
+            {/* Persona switcher injected by PersonaRoom once a persona is selected */}
+            {personaHeaderSlot}
+
             <button className="cs-close" onClick={onClose} aria-label="Close">
               <TbX size={20} />
             </button>
@@ -123,7 +127,6 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
         {/* ── Body ── */}
         <AnimatePresence mode="wait">
 
-          {/* ── Landing — room selection ── */}
           {mode === null && (
             <motion.div
               key="landing"
@@ -145,21 +148,12 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: i * 0.08, duration: 0.22 }}
                     >
-                      {/* Accent glow orb */}
                       <div className="cs-room-card__glow" />
-
-                      {/* Icon */}
                       <div className="cs-room-card__icon">
                         <SpIcon name={room.icon} size={40} />
                       </div>
-
-                      {/* Title */}
                       <h3 className="cs-room-card__title">{room.title}</h3>
-
-                      {/* Subtitle (previously "description") */}
                       <p className="cs-room-card__subtitle">{room.subtitle}</p>
-
-                      {/* New longer description */}
                       <p className="cs-room-card__desc">{room.description}</p>
                     </motion.button>
                   ))}
@@ -168,7 +162,6 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
             </motion.div>
           )}
 
-          {/* ── Persona Room ── */}
           {mode === 'persona' && (
             <motion.div
               key="persona"
@@ -185,11 +178,11 @@ const ConversationStudioModal: React.FC<ConversationStudioModalProps> = ({
                 isSidebarOpen={isSidebarOpen}
                 onSidebarOpen={() => setIsSidebarOpen(true)}
                 onSidebarClose={() => setIsSidebarOpen(false)}
+                onHeaderSlot={setPersonaHeaderSlot}
               />
             </motion.div>
           )}
 
-          {/* ── Decision Room ── */}
           {mode === 'decision' && (
             <motion.div
               key="decision"

@@ -3,10 +3,10 @@ import axiosInstance from '../utils/axiosConfig';
 
 export const interviewService = {
   // Start an interview. forceNew bypasses idempotency; lightweight skips batch LLM (Conversation Studio).
-  startInterview: async (workspaceId, explorationId, personaId, forceNew = false, lightweight = false) => {
+  startInterview: async (workspaceId, explorationId, personaId, forceNew = false, lightweight = false, sessionGroupId = null) => {
     const response = await axiosInstance.post(
       `/workspaces/${workspaceId}/explorations/${explorationId}/in-depth/interviews`,
-      { persona_id: personaId, force_new: forceNew, lightweight },
+      { persona_id: personaId, force_new: forceNew, lightweight, session_group_id: sessionGroupId },
       { timeout: 300_000 }, // LLM generation per persona can take 1-3 min; override global 15s timeout
     );
     return response.data;

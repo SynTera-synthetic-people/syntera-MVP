@@ -875,6 +875,56 @@ async def preview_replication_anchor(
     }
 
 
+_REPLICATED_SCORE_TO_OMI_KEY: Dict[str, str] = {
+    "volume": "volume_score",
+    "source_diversity": "source_diversity_score",
+    "recency": "recency_score",
+    "signal_clarity": "signal_clarity_score",
+    "ro_alignment": "ro_alignment_score",
+}
+
+
+def _build_replicated_evidence_snapshot(
+    source_details: dict, confidence_comparison: dict
+) -> dict:
+    """
+    Deep/full replication regenerates persona_details from a fresh LLM schema that
+    excludes evidence_snapshot (see replication/utils.py _EXCLUDED_SCHEMA_KEYS).
+    Stage 5 (stage5_confidence.py) still recomputes all 5 confidence dimensions for
+    the target country, but only stores them under replication_artifacts — a path
+    the preview UI never reads. Carry that breakdown forward in the same shape the
+    Omi/legacy flow uses (components as 0-1 fractions, matching
+    evidence_snapshot.confidence_calculation_detail.components) so the existing
+    calibration UI renders the recalibrated bars + platform breakdown instead of
+    falling back to the single stored calibration_confidence value.
+    """
+    raw_evidence = source_details.get("evidence_snapshot") or {}
+    if isinstance(raw_evidence, str):
+        try:
+            raw_evidence = json.loads(raw_evidence)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            raw_evidence = {}
+    source_evidence: dict = raw_evidence if isinstance(raw_evidence, dict) else {}
+
+    replicated_scores = confidence_comparison.get("replicated_scores") or {}
+    components = {
+        omi_key: replicated_scores[field]
+        for field, omi_key in _REPLICATED_SCORE_TO_OMI_KEY.items()
+        if isinstance(replicated_scores.get(field), (int, float))
+    }
+    weighted_score = replicated_scores.get("weighted_score")
+
+    return {
+        "total_conversations": source_evidence.get("total_conversations") or 0,
+        "sources": source_evidence.get("sources") or [],
+        "confidence_calculation_detail": {
+            "components": components,
+            "weighted_total": weighted_score,
+            "value": weighted_score,
+        },
+    }
+
+
 async def replicate_persona(
     source_persona_id: str,
     target_country: str,
@@ -938,6 +988,16 @@ async def replicate_persona(
     artifact_dict = result.artifact.model_dump(mode="json", exclude_none=True)
     adapted["replication_mode"] = mode
     adapted["replication_artifacts"] = artifact_dict
+
+    # Deep/full replication's LLM-generated schema excludes evidence_snapshot, so
+    # without this the calibration breakdown has nothing to render and falls back
+    # to a single stored score. Fast-localization already carries evidence_snapshot
+    # forward from the source persona, so only backfill when it's genuinely missing.
+    confidence_comparison = artifact_dict.get("confidence_comparison")
+    if confidence_comparison and not adapted.get("evidence_snapshot"):
+        adapted["evidence_snapshot"] = _build_replicated_evidence_snapshot(
+            source_details, confidence_comparison
+        )
 
     # Round-trip through JSON to guarantee asyncpg receives a fully serializable
     # dict. Catches edge cases like nan/inf floats from LLM output, datetime objects

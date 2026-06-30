@@ -8,11 +8,11 @@ from fastapi import (
     status,
     BackgroundTasks
 )
-from typing import Optional
+from typing import Optional, List
 from app.db import get_session
 from app.models.exploration import Exploration
 from app.schemas.response import SuccessResponse, DeleteResponse, ErrorResponse
-from app.schemas.research_objectives import ResearchObjectivesCreate, ResearchObjectivesUpdate, ResearchObjectivesOut, ResearchObjectivesSummaryPatch
+from app.schemas.research_objectives import ResearchObjectivesCreate, ResearchObjectivesUpdate, ResearchObjectivesOut, ResearchObjectivesSummaryPatch, ResearchObjectiveFramerInput, ResearchObjectiveMaterialOut
 from app.services import research_objectives as exp_service
 from app.services import persona as persona_service
 from app.services import interview as interview_service
@@ -21,7 +21,8 @@ from app.services.exploration import get_exploration_by_id
 from app.services import workspace as ws_service
 from app.services import templates as template_service
 from app.services.research_objectives import build_conversation_text, summarize_research_objective_from_conversation
-from app.utils.file_utils import save_upload_file
+from app.services import material_extraction
+from app.utils.file_utils import save_upload_file, save_material_file, material_file_path, MATERIAL_ALLOWED_EXT
 from app.models.user import User
 from app.routers.auth_dependencies import get_current_active_user
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,8 +32,9 @@ from app.utils.omi_helpers import (
     get_omi_encouragement,
     get_omi_concern
 )
-from app.models.omi import WorkflowStage
+from app.models.omi import WorkflowStage, OmiState
 from app.services import omi as omi_service
+from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import select
 from app.models.research_objectives import ResearchObjectives, ResearchObjectivesFile
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -177,6 +179,277 @@ async def create_objective(
         }
     )
 
+
+
+@router.post("/framer-materials", response_model=SuccessResponse, status_code=201)
+async def submit_framer_material_section(
+    exploration_id: str,
+    kind: str = Form(...),
+    instruction: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
+    links: List[str] = Form(default=[]),
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Submits one Framer "Add Material" section (Research Brief or Artifact) — a
+    file and/or one-to-several links, plus a shared instruction. Each item is
+    extracted/fetched and LLM-summarized synchronously, in this same request,
+    matching the UI's real-time "processing -> done" bar. Persisted against
+    exploration_id (no ResearchObjectives row exists yet); research_objectives_id
+    is backfilled once the Framer is finally submitted (see /from-framer and
+    generate_and_save_research_objective).
+
+    Re-submitting clicks REPLACE this section's previous materials for this
+    exploration — there's only ever one current version per section. Submitting
+    with no file and no links clears the section.
+    """
+    if kind not in ("brief", "artifact"):
+        raise HTTPException(status_code=400, detail="kind must be 'brief' or 'artifact'")
+
+    exploration = await get_exploration_by_id(session, exploration_id)
+    if not exploration:
+        raise HTTPException(status_code=404, detail="Exploration not found")
+
+    if not await ws_service.is_workspace_admin(exploration.workspace_id, current_user.id):
+        raise HTTPException(
+            status_code=403,
+            detail="Only workspace admins can submit exploration materials"
+        )
+
+    clean_links = [l.strip() for l in links if l and l.strip()]
+
+    items: list[dict] = []
+
+    if file:
+        try:
+            stored_name, size, content_type, ext = await save_material_file(file)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        try:
+            extracted_context = await material_extraction.process_material(
+                material_file_path(stored_name), ext, content_type, instruction or ""
+            )
+        except Exception as e:
+            # Extraction/summarization failing should not block the submission — the
+            # file is already saved; it just won't contribute extracted context.
+            print(f"Error processing Framer material file: {e}")
+            extracted_context = ""
+        items.append({
+            "stored_name": stored_name,
+            "original_name": file.filename,
+            "content_type": content_type,
+            "size": size,
+            "instruction": instruction,
+            "extracted_context": extracted_context,
+        })
+
+    for link in clean_links:
+        try:
+            result = await material_extraction.process_material_url(link, instruction or "")
+        except Exception as e:
+            print(f"Error processing Framer material link ({link}): {e}")
+            result = {"extracted_context": "", "stored_name": None, "size": None, "content_type": None}
+        items.append({
+            "stored_name": result.get("stored_name"),
+            "original_name": link,
+            "content_type": result.get("content_type"),
+            "size": result.get("size"),
+            "source_url": link,
+            "instruction": instruction,
+            "extracted_context": result.get("extracted_context", ""),
+        })
+
+    materials = await exp_service.replace_framer_materials_for_kind(
+        session, exploration_id=exploration_id, material_kind=kind, items=items
+    )
+
+    return SuccessResponse(
+        message="Section cleared" if not materials else "Saved",
+        data=[exp_service.map_material_to_out(m) for m in materials],
+    )
+
+
+@router.post("/from-framer", response_model=SuccessResponse, status_code=201)
+async def create_objective_from_framer(
+    exploration_id: str,
+    body: ResearchObjectiveFramerInput,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Synthesizes the Research Objective Framer's structured fields into a research
+    objective. If the Framer was filled in thinly (confidence < 70), this does NOT
+    finalize — it hands off to the same follow-up-question logic the chat flow uses
+    (validate_description_with_llm), so Omi keeps refining instead of silently
+    accepting a weak objective. Only a confident synthesis gets persisted via the
+    existing ResearchObjectives pipeline — no new table, no schema migration.
+    """
+    exploration = await get_exploration_by_id(session, exploration_id)
+    if not exploration:
+        raise HTTPException(status_code=404, detail="Exploration not found")
+
+    if not await ws_service.is_workspace_admin(
+        exploration.workspace_id, current_user.id
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Only workspace admins can create research objectives"
+        )
+
+    framer = body.model_dump()
+    materials = await exp_service.get_unlinked_materials(session, exploration_id)
+    try:
+        synthesis = await exp_service.synthesize_research_objective_from_framer(framer, materials)
+    except Exception as e:
+        # Transient LLM failure (timeout/rate limit/network) — nothing was persisted
+        # yet, the Framer's fields and any uploaded/linked materials are untouched,
+        # so the user can safely just resubmit.
+        print(f"Error synthesizing research objective from Framer: {e}")
+        raise HTTPException(
+            status_code=502,
+            detail="Omi couldn't process this right now — please try submitting again."
+        )
+    if not synthesis.get("final_objective"):
+        raise HTTPException(
+            status_code=400,
+            detail="Fill in at least one section before submitting"
+        )
+
+    confidence = exp_service.framer_confidence(synthesis)
+
+    omi_result = await omi_service.get_or_create_session(exploration_id, current_user.id)
+    omi_session = omi_result[0] if isinstance(omi_result, tuple) else omi_result
+
+    # --------------------------------------------------
+    # LOW CONFIDENCE — let Omi ask a follow-up before finalizing, same as the
+    # chat-driven flow, instead of declaring an underfilled objective "done".
+    # --------------------------------------------------
+    if confidence < 70:
+        try:
+            analysis = await exp_service.validate_description_with_llm(
+                description=synthesis["final_objective"],
+                conversation=[],
+                materials=materials,
+            )
+        except Exception as e:
+            print(f"Error generating Omi follow-up for Framer submission: {e}")
+            raise HTTPException(
+                status_code=502,
+                detail="Omi couldn't process this right now — please try submitting again."
+            )
+        questions = analysis.get("questions", "")
+        if isinstance(questions, list):
+            questions = " ".join(questions)
+
+        flagged_ids = analysis.get("materials_flagged_mismatch", [])
+        if flagged_ids:
+            await exp_service.mark_materials_flagged(session, flagged_ids)
+
+        if questions:
+            session_context = omi_session.context or {}
+            session_context["research_objectives"] = {
+                "probe_round": 1,
+                "asked_components": analysis.get("missing", []),
+                "raw_inputs": [synthesis["final_objective"]],
+                "current_draft": synthesis["final_objective"],
+                "final_analysis": analysis,
+                "confidence_level": confidence,
+                "ready_to_save": False,
+                "final_synthesized_text": synthesis["final_objective"],
+                "conversation": analysis.get("conversation"),
+                "final_objective": analysis.get("final_objective"),
+                "information_gathered": analysis.get("information_gathered"),
+            }
+            omi_session.context = session_context
+            flag_modified(omi_session, "context")
+            session.add(omi_session)
+            await session.commit()
+
+            await exp_service.increment_clarification_attempts(exploration_id)
+
+            await omi_service.add_message(
+                session_id=omi_session.id,
+                role="omi",
+                content=questions,
+                message_type="chat",
+                workflow_stage=WorkflowStage.RESEARCH_OBJECTIVES,
+                omi_state=OmiState.THINKING,
+            )
+
+            return SuccessResponse(
+                message="A few things are still fuzzy — Omi has a quick follow-up for you.",
+                data={"needs_followup": True, "confidence_level": confidence},
+            )
+        # No follow-up question came back despite low confidence — nothing more
+        # to ask, so fall through and finalize with what we have.
+
+    # --------------------------------------------------
+    # FINALIZE — confident enough (or no further question to ask).
+    # --------------------------------------------------
+    existing_check = await session.execute(
+        select(ResearchObjectives).where(
+            ResearchObjectives.exploration_id == exploration.id
+        )
+    )
+    is_update = existing_check.scalars().first() is not None
+
+    try:
+        research_objective = await exp_service.persist_framer_research_objective(
+            session,
+            exploration_id=exploration.id,
+            created_by=current_user.id,
+            framer=framer,
+            synthesis=synthesis,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if is_update:
+        # Same invalidation as a manual description edit — downstream artifacts must regenerate.
+        await interview_service.clear_qualitative_outputs(exploration.workspace_id, exploration_id)
+        await persona_service.clear_personas_for_exploration(exploration.workspace_id, exploration_id)
+        await report_cache.invalidate_cache(exploration_id)
+
+    # --------------------------------------------------
+    # MIRROR THE OMI CONFIRMATION MESSAGE
+    # The frontend gates the "Create with Omi" / "Build Manually" CTAs on the
+    # last chat message containing this exact phrase — write it here so the
+    # Framer path surfaces those CTAs without any frontend special-casing.
+    # --------------------------------------------------
+    confirmation_message = (
+        "Thanks! I’ve put everything together and we’re good to proceed.\n\n"
+        "📌 **Research Objective Summary:**\n"
+        f"{research_objective.description}\n\n"
+        "I’ll carry this forward into personas."
+    )
+    await omi_service.add_message(
+        session_id=omi_session.id,
+        role="omi",
+        content=confirmation_message,
+        message_type="chat",
+        workflow_stage=WorkflowStage.RESEARCH_OBJECTIVES,
+    )
+
+    if WorkflowStage.RESEARCH_OBJECTIVES not in omi_session.completed_stages:
+        omi_session.completed_stages.append(WorkflowStage.RESEARCH_OBJECTIVES)
+        session.add(omi_session)
+        await session.commit()
+
+    await get_omi_encouragement(
+        exploration.workspace_id,
+        current_user.id,
+        "Research objective saved! 🎉 Ready to build personas."
+    )
+
+    return SuccessResponse(
+        message="Research objective saved successfully",
+        data={
+            "exploration": research_objective,
+            "validation_status": research_objective.validation_status,
+            "confidence_level": research_objective.confidence_level,
+        }
+    )
 
 
 @router.put("/{objective_id}", response_model=SuccessResponse)

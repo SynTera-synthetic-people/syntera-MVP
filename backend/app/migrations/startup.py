@@ -429,6 +429,12 @@ async def _repair_core_public_schema(conn: AsyncConnection) -> None:
     await ensure_column(conn, "interviewsection", "description TEXT NOT NULL DEFAULT ''")
     await ensure_column(conn, "interviewsection", "is_download BOOLEAN NOT NULL DEFAULT FALSE")
 
+    await ensure_column(conn, "interview", "session_group_id VARCHAR")
+    await ensure_index(
+        conn,
+        "CREATE INDEX IF NOT EXISTS ix_interview_session_group_id ON interview (session_group_id)",
+    )
+
     for column in (
         "persona_sample_sizes JSONB",
         "total_sample_size INTEGER NOT NULL DEFAULT 0",
@@ -455,6 +461,7 @@ async def _repair_core_public_schema(conn: AsyncConnection) -> None:
     await _repair_questionnaire_schema(conn)
     await _repair_persona_schema(conn)
     await _repair_research_objectives_schema(conn)
+    await _repair_research_objectives_file_schema(conn)
     await _repair_omi_schema(conn)
     await _repair_rebuttal_schema(conn)
     await _repair_traceability_schema(conn)
@@ -582,6 +589,44 @@ async def _repair_research_objectives_schema(conn: AsyncConnection) -> None:
         "confidence_level INTEGER NOT NULL DEFAULT 0",
     ):
         await ensure_column(conn, "research_objectives", column)
+
+
+async def _repair_research_objectives_file_schema(conn: AsyncConnection) -> None:
+    # Idempotent no-op if already nullable. Required so Framer materials
+    # (file uploads or pasted links) can be persisted before a
+    # ResearchObjectives row exists.
+    await _exec(
+        conn,
+        "ALTER TABLE research_objectives_file ALTER COLUMN research_objectives_id DROP NOT NULL",
+    )
+    await _exec(
+        conn,
+        "ALTER TABLE research_objectives_file ALTER COLUMN filename DROP NOT NULL",
+    )
+    for column in (
+        "exploration_id VARCHAR",
+        "instruction TEXT",
+        "extracted_context TEXT",
+        "source_url VARCHAR",
+        "material_kind VARCHAR",
+        "relevance_status VARCHAR NOT NULL DEFAULT 'pending'",
+    ):
+        await ensure_column(conn, "research_objectives_file", column)
+    await ensure_index(
+        conn,
+        "CREATE INDEX IF NOT EXISTS ix_research_objectives_file_exploration_id "
+        "ON research_objectives_file (exploration_id)",
+    )
+    await ensure_foreign_key(
+        conn,
+        table_sql="research_objectives_file",
+        schema="public",
+        table="research_objectives_file",
+        column="exploration_id",
+        referenced_table="explorations",
+        constraint_name="fk_research_objectives_file_exploration_id",
+        on_delete="CASCADE",
+    )
 
 
 async def _repair_omi_schema(conn: AsyncConnection) -> None:

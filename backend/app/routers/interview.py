@@ -214,11 +214,14 @@ async def start_interview(workspace_id: str, exploration_id: str, payload: Inter
     if not await ws_service.is_workspace_admin(workspace_id, current_user.id):
         raise HTTPException(status_code=403, detail=ErrorResponse(status="error", message="Only workspace admins can start interviews").dict())
 
+    if payload.persona_id == "__all__":
+        raise HTTPException(status_code=400, detail=ErrorResponse(status="error", message="persona_id must be a real persona; start one interview per persona for group mode").dict())
+
     # Conversation Studio lightweight path: skip LLM batch generation entirely.
     # Creates an empty session instantly; individual messages use the live reply endpoint.
     if payload.force_new and payload.lightweight:
         iv = await interview_service.create_conversation_session(
-            workspace_id, exploration_id, payload.persona_id, current_user.id
+            workspace_id, exploration_id, payload.persona_id, current_user.id, payload.session_group_id
         )
         await report_cache.invalidate_cache(exploration_id)
         return SuccessResponse(message="Conversation session started", data=iv)

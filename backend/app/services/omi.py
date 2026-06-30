@@ -79,8 +79,7 @@ async def get_or_create_session(exploration_id: str, user_id: str) -> OmiSession
         await add_message(
             omi_session.id,
             "omi",
-            "Hey, I'm Omi - your research co-pilot! 👋 Ready to define your research objectives? Let's start by understanding what you want to explore. What's the question or curiosity that brought you here today?",
-            "greeting",
+            "Hey, I’m Omi  Let’s uncover how people really think, feel, and make decisions.What are we diving into today?",
             WorkflowStage.RESEARCH_OBJECTIVES,
             OmiState.GREETING
         )
@@ -566,14 +565,27 @@ async def chat_with_omi(
         # -------------------------------
         # LLM ANALYSIS
         # -------------------------------
+        # Pulls in any materials the user shared via the "Add supporting
+        # material" modal in this chat window (or an earlier, low-confidence
+        # Framer submission that handed off into this chat loop) — same
+        # materials pipeline either way, keyed by exploration_id.
+        materials = await exp_service.get_unlinked_materials(db, exploration.id)
         analysis = await validate_description_with_llm(
             description=user_message,
-            conversation=ro_ctx.get("conversation", [])
+            conversation=ro_ctx.get("conversation", []),
+            materials=materials,
         )
 
         questions = analysis.get("questions", "")
         if isinstance(questions, list):
             questions = " ".join(questions)
+
+        # Deterministic, not prose-inferred: persist the flag immediately so this
+        # material is structurally excluded from every future prompt — the
+        # mismatch question can only ever be asked once for a given material.
+        flagged_ids = analysis.get("materials_flagged_mismatch", [])
+        if flagged_ids:
+            await exp_service.mark_materials_flagged(db, flagged_ids)
 
         missing = analysis.get("missing", [])
 
