@@ -2427,7 +2427,7 @@ const PersonaBuilder: React.FC = () => {
             is always a trusted user gesture, so it works even in the cases
             where the automatic pdf.save() trigger gets silently blocked
             (stale activation window, Windows display scaling, etc.). */}
-        {manualDownload && (
+        {/* {manualDownload && (
           <a
             href={manualDownload.url}
             download={manualDownload.filename}
@@ -2447,7 +2447,7 @@ const PersonaBuilder: React.FC = () => {
           >
             Didn't download automatically? Click here to save the file
           </a>
-        )}
+        )} */}
 
         {downloadError && (
           <div
