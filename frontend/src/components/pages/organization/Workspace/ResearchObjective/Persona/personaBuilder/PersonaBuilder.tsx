@@ -1453,14 +1453,35 @@ const PersonaBuilder: React.FC = () => {
   const isApproachLocked = !!((exploration as Record<string, unknown> | undefined)?.is_qualitative || (exploration as Record<string, unknown> | undefined)?.is_quantitative);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
   const [showDownloadToast, setShowDownloadToast] = useState(false);
+  // ── DOWNLOAD FIX: surface real errors instead of swallowing them, and
+  //    always keep a manual "click here" fallback link around. We can't
+  //    reliably detect whether Chrome's automatic download trigger actually
+  //    succeeded (it can be silently blocked depending on machine/profile),
+  //    so the manual link is the part that guarantees the file reaches the
+  //    user regardless of what happened automatically.
+  const [downloadError, setDownloadError] = useState('');
+  const [manualDownload, setManualDownload] = useState<{ url: string; filename: string } | null>(null);
 
   const handleDownloadPersonaCards = async (selectedIds: string[]) => {
-    await downloadPersonaCardsFrontend(
-      selectedIds,
-      savedPersonasFromAPI as unknown as PersonaCardData[]
-    );
-    setShowDownloadToast(true);
-    setTimeout(() => setShowDownloadToast(false), 3500);
+    setDownloadError('');
+    try {
+      const result = await downloadPersonaCardsFrontend(
+        selectedIds,
+        savedPersonasFromAPI as unknown as PersonaCardData[]
+      );
+      if (result) {
+        setManualDownload({ url: result.blobUrl, filename: result.filename });
+        setShowDownloadToast(true);
+        setTimeout(() => setShowDownloadToast(false), 6000);
+      } else {
+        setDownloadError('No personas were selected, or none could be rendered.');
+      }
+    } catch (error) {
+      console.error('Failed to download persona cards:', error);
+      setDownloadError(
+        error instanceof Error ? error.message : 'Download failed. Please try again.'
+      );
+    }
   };
 
   // ── formatPersonaData ───────────────────────────────────────────────────────
@@ -1633,13 +1654,20 @@ const PersonaBuilder: React.FC = () => {
   const handleCreateWithOmi = useCallback(() => {
     trigger({ stage: 'persona_builder', event: 'PERSONA_WORKFLOW_LOADED', payload: {} });
 
-    try { generatePersonas(); } catch (err) { console.error('Failed to kick off persona generation:', err); }
+    // Fire-and-forget so the loading page below can navigate to immediately;
+    // once generation actually finishes, invalidate the saved-personas list
+    // so the grid reflects the newly-saved personas without a manual refresh.
+    Promise.resolve(generatePersonas())
+      .then(() => {
+        queryClient.invalidateQueries({ queryKey: personaKeys.list(workspaceId, objectiveId) });
+      })
+      .catch((err) => console.error('Failed to kick off persona generation:', err));
 
     navigate(
       `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-generating`,
       { state: { flow: 'omi' } }
     );
-  }, [isFreeUser, isTier1User, isFreeOrTier1, personaLimitForTier, savedPersonasFromAPI.length, generatePersonas, navigate, workspaceId, objectiveId]);
+  }, [isFreeUser, isTier1User, isFreeOrTier1, personaLimitForTier, savedPersonasFromAPI.length, generatePersonas, navigate, workspaceId, objectiveId, queryClient]);
 
   const handleBuildManually = useCallback(() => {
     if (!isEnterpriseUser) {
@@ -2393,6 +2421,58 @@ const PersonaBuilder: React.FC = () => {
 
         {showDownloadToast && (
           <DownloadSuccessToast onClose={() => setShowDownloadToast(false)} />
+        )}
+
+        {/* ── DOWNLOAD FIX: guaranteed manual fallback. A click on this anchor
+            is always a trusted user gesture, so it works even in the cases
+            where the automatic pdf.save() trigger gets silently blocked
+            (stale activation window, Windows display scaling, etc.). */}
+        {manualDownload && (
+          <a
+            href={manualDownload.url}
+            download={manualDownload.filename}
+            className="pb-download-toast"
+            style={{
+              position: 'fixed',
+              bottom: showDownloadToast ? 80 : 24,
+              right: 24,
+              zIndex: 9999,
+              textDecoration: 'none',
+            }}
+            onClick={() => {
+              // Once the user has explicitly clicked to grab the file,
+              // there's no need to keep showing the fallback.
+              setTimeout(() => setManualDownload(null), 500);
+            }}
+          >
+            Didn't download automatically? Click here to save the file
+          </a>
+        )}
+
+        {downloadError && (
+          <div
+            style={{
+              position: 'fixed',
+              bottom: 24,
+              right: 24,
+              zIndex: 9999,
+              background: '#ef4444',
+              color: 'white',
+              padding: '10px 16px',
+              borderRadius: 8,
+              fontSize: 12,
+              maxWidth: 320,
+            }}
+          >
+            {downloadError}
+            <button
+              onClick={() => setDownloadError('')}
+              style={{ marginLeft: 10, background: 'none', border: 'none', color: 'white', cursor: 'pointer' }}
+              aria-label="Dismiss"
+            >
+              <TbX size={14} />
+            </button>
+          </div>
         )}
       </>
     );
