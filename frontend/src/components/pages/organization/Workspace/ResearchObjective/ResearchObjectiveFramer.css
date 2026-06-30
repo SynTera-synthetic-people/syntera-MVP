@@ -2,9 +2,6 @@
 
 /* ═══════════════════════════════════════════════════════════════════
    PAGE SHELL
-   rol-page-inner is: flex column, overflow-y auto, flex:1, min-height:0
-   We must NOT use min-height:100vh (fights the fixed-height parent).
-   We sit as a flex child and let natural content height drive scroll.
    ═══════════════════════════════════════════════════════════════════ */
 
 .rofp-page {
@@ -25,10 +22,10 @@
   position: absolute;
   top: 28px;
   right: 20px;
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
-  color: rgba(255,255,255,0.6);
+  color: rgba(255, 255, 255, 0.6);
   font-size: 13px;
   font-weight: 500;
   font-family: inherit;
@@ -43,8 +40,8 @@
 
 .rofp-back-btn:hover {
   color: #fff;
-  border-color: rgba(255,255,255,0.25);
-  background: rgba(255,255,255,0.08);
+  border-color: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -90,8 +87,15 @@
 }
 
 @keyframes rofp-orb-pulse {
-  0%, 100% { border-color: rgba(55, 255, 206, 0.4); }
-  50%       {  border-color: rgba(55, 255, 206, 0.7); }
+
+  0%,
+  100% {
+    border-color: rgba(55, 255, 206, 0.4);
+  }
+
+  50% {
+    border-color: rgba(55, 255, 206, 0.7);
+  }
 }
 
 /* Breathing ring behind orb */
@@ -105,8 +109,17 @@
 }
 
 @keyframes rofp-ring-breathe {
-  0%, 100% { transform: scale(1); opacity: 0.5; }
-  50%       { transform: scale(1.06); opacity: 1; }
+
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+
+  50% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
 }
 
 /* Actual video element */
@@ -137,7 +150,7 @@
 
 .rofp-master-tagline {
   font-size: 13.5px;
-  color: rgba(255,255,255,0.55);
+  color: rgba(255, 255, 255, 0.55);
   line-height: 1.5;
   margin-bottom: 4px;
   max-width: 560px;
@@ -145,17 +158,16 @@
 
 .rofp-master-support {
   font-size: 12px;
-  color: rgba(255,255,255,0.3);
+  color: rgba(255, 255, 255, 0.3);
   line-height: 1.5;
   max-width: 520px;
   font-style: italic;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   TAB NAVIGATION — pill-style, matching the app's tab pattern
+   TAB NAVIGATION
    ═══════════════════════════════════════════════════════════════════ */
 
-/* ─── Outer row: [left arrow] [scrollable tab strip] [right arrow] ──────── */
 .rofp-tab-nav-outer {
   width: 100%;
   max-width: 760px;
@@ -172,12 +184,11 @@
   justify-content: flex-start;
   overflow-x: auto;
   scroll-behavior: smooth;
-  /* NOTE: mask-image causes visible rendering artefacts (white bars)
-     when composited inside a flex chain with overflow:hidden ancestors.
-     Removed — the tab nav scrolls cleanly without it at typical widths. */
 }
 
-.rofp-tab-nav-wrap::-webkit-scrollbar { display: none; }
+.rofp-tab-nav-wrap::-webkit-scrollbar {
+  display: none;
+}
 
 .rofp-tab-nav {
   display: flex;
@@ -186,7 +197,6 @@
   padding: 0 4px;
 }
 
-/* ─── Arrow buttons either side of the tab strip ─────────────────────────── */
 .rofp-tab-nav-arrow {
   flex-shrink: 0;
   display: flex;
@@ -237,7 +247,6 @@
   color: #fff;
 }
 
-/* Active tab — solid teal fill, dark text, brand-accurate */
 .rofp-tab-btn--active {
   background: #24E5B6;
   border-color: #24E5B6;
@@ -251,7 +260,6 @@
   color: #0a0f14;
 }
 
-/* Completed tab — greyish fill, white text, lower emphasis than the active solid teal */
 .rofp-tab-btn--done {
   border-color: rgba(255, 255, 255, 0.18);
   color: #fff;
@@ -264,7 +272,6 @@
   color: #fff;
 }
 
-/* Locked tab (not yet accessible) */
 .rofp-tab-btn--locked {
   opacity: 0.45;
   cursor: not-allowed;
@@ -300,15 +307,21 @@
 }
 
 @keyframes rofp-tab-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
-/* Tab heading */
 .rofp-tab-head {
   margin-bottom: 32px;
   padding-bottom: 28px;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .rofp-tab-title {
@@ -321,7 +334,7 @@
 
 .rofp-tab-tagline {
   font-size: 13.5px;
-  color: rgba(255,255,255,0.45);
+  color: rgba(255, 255, 255, 0.45);
   line-height: 1.65;
   max-width: 540px;
 }
@@ -353,7 +366,7 @@
 .rofp-label {
   font-size: 12px;
   font-weight: 600;
-  color: rgba(255,255,255,0.5);
+  color: rgba(255, 255, 255, 0.5);
   text-transform: uppercase;
   letter-spacing: 0.07em;
 }
@@ -361,21 +374,19 @@
 .rofp-label-optional {
   font-size: 10.5px;
   font-weight: 400;
-  color: rgba(255,255,255,0.25);
+  color: rgba(255, 255, 255, 0.25);
   text-transform: none;
   letter-spacing: 0;
   margin-left: 4px;
 }
 
-/* Helper text under label */
 .rofp-field-helper {
   font-size: 12px;
-  color: rgba(255,255,255,0.28);
+  color: rgba(255, 255, 255, 0.28);
   margin-bottom: 8px;
   line-height: 1.5;
 }
 
-/* Text inputs */
 .rofp-input {
   width: 100%;
   height: 48px;
@@ -394,14 +405,12 @@
 .rofp-input:focus {
   border-color: #0E63EC;
   background: rgba(14, 99, 236, 0.05);
-
 }
 
 .rofp-input::placeholder {
-  color: rgba(255,255,255,0.22);
+  color: #808591;
 }
 
-/* Row with input + action button side by side */
 .rofp-input-row {
   display: flex;
   gap: 10px;
@@ -411,7 +420,6 @@
   flex: 1;
 }
 
-/* ─── Textarea variant of .rofp-input (Decision & Unknowns, etc.) ───────── */
 .rofp-textarea {
   width: 100%;
   min-height: 92px;
@@ -420,7 +428,7 @@
   border-radius: 13px;
   padding: 13px 16px;
   color: #fff;
-  font-size: 14px;
+  font-size: 12px;
   font-family: inherit;
   line-height: 1.6;
   outline: none;
@@ -435,36 +443,46 @@
 }
 
 .rofp-textarea::placeholder {
-  color: rgba(255,255,255,0.22);
+  color: #808591;
   line-height: 1.6;
 }
 
-/* ─── Single large textarea variant (Business Trigger, Customer Unknown,   */
-/* Decision Moment, Audience & Segments — one open field per tab) ──────── */
+.rofp-textarea:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .rofp-textarea--lg {
   min-height: 140px;
 }
 
-/* ─── Static directional note (italic, e.g. under Audience & Segments) ── */
 .rofp-tab-note {
   font-size: 12.5px;
-  color: rgba(255,255,255,0.32);
+  color: rgba(255, 255, 255, 0.32);
   line-height: 1.55;
   font-style: italic;
   margin-top: -6px;
   margin-bottom: 4px;
 }
 
-/* ─── Static helper line pinned under a field (e.g. "You'll define        */
-/* detailed personas..." on Audience & Segments) ───────────────────────── */
 .rofp-field-static-note {
   font-size: 12px;
-  color: rgba(255,255,255,0.28);
+  color: rgba(255, 255, 255, 0.28);
   line-height: 1.5;
   margin-top: 8px;
 }
 
-/* Visit link */
+.rofp-field-static-note--italic {
+  font-style: italic;
+}
+
+.rofp-field-charcount {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.25);
+  text-align: right;
+  margin-top: 6px;
+}
+
 .rofp-visit-btn {
   display: flex;
   align-items: center;
@@ -487,16 +505,15 @@
   border-color: rgba(14, 99, 236, 0.5);
 }
 
-/* Add button */
 .rofp-btn-add {
   display: flex;
   align-items: center;
   height: 48px;
   padding: 0 22px;
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 13px;
-  color: rgba(255,255,255,0.8);
+  color: rgba(255, 255, 255, 0.8);
   font-size: 13.5px;
   font-weight: 500;
   font-family: inherit;
@@ -507,16 +524,16 @@
 }
 
 .rofp-btn-add:hover {
-  background: rgba(255,255,255,0.09);
-  border-color: rgba(255,255,255,0.26);
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.26);
   color: #fff;
 }
 
 /* ─── Competitor pill list ─── */
 .rofp-comp-list-box {
   margin-top: 10px;
-  background: rgba(255,255,255,0.02);
-  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 13px;
   padding: 10px;
   min-height: 56px;
@@ -530,7 +547,7 @@
 
 .rofp-comp-list-empty {
   font-size: 12.5px;
-  color: rgba(255,255,255,0.18);
+  color: rgba(255, 255, 255, 0.18);
   padding: 8px 8px;
   text-align: center;
   align-self: center;
@@ -543,18 +560,27 @@
   gap: 8px;
   padding: 7px 8px 7px 14px;
   border-radius: 9999px;
-  background: rgba(255,255,255,0.08);
-  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   transition: background 0.15s;
   animation: rofp-pill-in 0.18s ease;
 }
 
 @keyframes rofp-pill-in {
-  from { opacity: 0; transform: scale(0.92); }
-  to   { opacity: 1; transform: scale(1); }
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
-.rofp-comp-pill:hover { background: rgba(255,255,255,0.12); }
+.rofp-comp-pill:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
 
 .rofp-comp-pill-name {
   font-size: 13.5px;
@@ -567,9 +593,9 @@
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: rgba(255,255,255,0.1);
+  background: rgba(255, 255, 255, 0.1);
   border: none;
-  color: rgba(255,255,255,0.7);
+  color: rgba(255, 255, 255, 0.7);
   font-size: 14px;
   font-weight: 700;
   line-height: 1;
@@ -605,9 +631,9 @@
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: rgba(255,255,255,0.07);
-  border: 1px solid rgba(255,255,255,0.12);
-  color: rgba(255,255,255,0.4);
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.4);
   font-size: 9.5px;
   font-weight: 700;
   cursor: default;
@@ -618,30 +644,27 @@
 }
 
 .rofp-tooltip-wrap:hover .rofp-tooltip-icon {
-  border-color: rgba(14,99,236,0.4);
+  border-color: rgba(14, 99, 236, 0.4);
   color: #5B9DF5;
 }
 
 .rofp-tooltip-bubble {
-  position: absolute;
-  left: 50%;
-  bottom: calc(100% + 8px);
-  transform: translateX(-50%);
+  position: fixed;
+  transform: translateX(-50%) translateY(-100%);
   width: 220px;
   background: #1E2026;
-  border: 1px solid rgba(255,255,255,0.1);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 10px;
   padding: 9px 12px;
   font-size: 12px;
-  color: rgba(255,255,255,0.65);
+  color: rgba(255, 255, 255, 0.65);
   line-height: 1.5;
   pointer-events: none;
-  z-index: 50;
+  z-index: 9999;
   white-space: normal;
-
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 
-/* Arrow below bubble */
 .rofp-tooltip-bubble::after {
   content: '';
   position: absolute;
@@ -649,7 +672,7 @@
   left: 50%;
   transform: translateX(-50%);
   border: 5px solid transparent;
-  border-top-color: rgba(255,255,255,0.1);
+  border-top-color: rgba(255, 255, 255, 0.1);
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -661,14 +684,10 @@
   flex-direction: column;
   align-items: flex-end;
   gap: 8px;
-  border-top: 1px solid rgba(255,255,255,0.06);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
   padding-top: 28px;
 }
 
-/* ─── CTA row variant: Back (left) + Continue (right) ───────────────────── */
-/* Activates automatically whenever a tab renders a Back button alongside   */
-/* Continue (e.g. Tab 2 onward). Tab 1 has no .rofp-btn-back, so its CTA    */
-/* row keeps the original right-aligned-only layout untouched.              */
 .rofp-tab-cta:has(.rofp-btn-back) {
   flex-direction: row;
   align-items: center;
@@ -688,9 +707,9 @@
   gap: 8px;
   padding: 13px 22px;
   background: transparent;
-  border: 1px solid rgba(255,255,255,0.12);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 14px;
-  color: rgba(255,255,255,0.6);
+  color: rgba(255, 255, 255, 0.6);
   font-size: 14px;
   font-weight: 600;
   font-family: inherit;
@@ -699,9 +718,9 @@
 }
 
 .rofp-btn-back:hover {
-  border-color: rgba(255,255,255,0.25);
+  border-color: rgba(255, 255, 255, 0.25);
   color: #fff;
-  background: rgba(255,255,255,0.04);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .rofp-btn-arrow--back {
@@ -727,12 +746,10 @@
   cursor: pointer;
   letter-spacing: 0.01em;
   transition: opacity 0.15s, transform 0.15s;
-
 }
 
 .rofp-btn-continue:hover:not(.rofp-btn-continue--disabled) {
   transform: translateY(-2px);
-
 }
 
 .rofp-btn-continue:active:not(.rofp-btn-continue--disabled) {
@@ -756,11 +773,479 @@
 
 .rofp-cta-hint {
   font-size: 12px;
-  color: rgba(255,255,255,0.28);
+  color: rgba(255, 255, 255, 0.28);
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   PREVIEW — compiled read-only summary (final tab before submit)
+   ADD MATERIAL — two sections side-by-side in a grid row
+   ═══════════════════════════════════════════════════════════════════ */
+
+/*
+ * KEY CHANGE: .rofp-material-sections-row wraps both section cards in a
+ * 2-column grid so they sit side by side. Each column is equal width.
+ * The panel is max-width 760px; at that width each column is ~360px —
+ * enough room for all the inputs without cramping. The row collapses to
+ * a single column only on screens narrower than 640px (the existing
+ * mobile breakpoint used everywhere else on this page).
+ */
+.rofp-material-sections-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+/* ─── Section card ─────────────────────────────────────────────── */
+.rofp-material-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.015);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 20px 18px 18px;
+  box-sizing: border-box;
+}
+
+.rofp-material-section-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rofp-material-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 0;
+}
+
+.rofp-material-section-sub {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.38);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.rofp-material-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rofp-material-section-cta {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 2px;
+}
+
+.rofp-btn-section-submit {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 20px;
+  background: rgba(36, 229, 182, 0.12);
+  border: 1px solid rgba(36, 229, 182, 0.4);
+  border-radius: 11px;
+  color: #24E5B6;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+}
+
+.rofp-btn-section-submit:hover:not(.rofp-btn-section-submit--disabled) {
+  background: rgba(36, 229, 182, 0.2);
+  border-color: rgba(36, 229, 182, 0.6);
+}
+
+.rofp-btn-section-submit--disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.rofp-material-add-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  background: transparent;
+  border: none;
+  color: #24E5B6;
+  font-size: 12.5px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 4px 2px;
+  transition: opacity 0.15s;
+}
+
+.rofp-material-add-link-btn:hover {
+  opacity: 0.75;
+}
+
+.rofp-material-edit-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: center;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 9px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 7px 12px;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.rofp-material-edit-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+
+/* ─── Upload dropzone ────────────────────────────────────────────── */
+.rofp-upload-zone {
+  width: 100%;
+  min-height: 120px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: #060606;
+  border: 1.5px dashed rgba(36, 229, 182, 0.45);
+  border-radius: 13px;
+  padding: 22px 16px;
+  cursor: pointer;
+  transition: border-color 0.18s, background 0.18s;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.rofp-upload-zone:hover,
+.rofp-upload-zone--dragover {
+  border-color: rgba(36, 229, 182, 0.75);
+  background: rgba(36, 229, 182, 0.04);
+}
+
+.rofp-upload-zone--disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.rofp-upload-zone--compact {
+  min-height: 0;
+  flex-direction: row;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-radius: 11px;
+}
+
+.rofp-upload-zone--compact .rofp-upload-zone-icon svg,
+.rofp-upload-zone--compact .rofp-upload-zone-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.rofp-upload-zone--compact .rofp-upload-zone-title {
+  font-size: 12.5px;
+}
+
+.rofp-upload-zone-icon {
+  color: #24E5B6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rofp-upload-zone-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: #24E5B6;
+}
+
+.rofp-upload-zone-input {
+  display: none;
+}
+
+.rofp-upload-formats {
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.3);
+  margin-top: 8px;
+  line-height: 1.5;
+}
+
+.rofp-upload-formats strong {
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 600;
+}
+
+.rofp-upload-slot--compact .rofp-upload-formats {
+  margin-top: 6px;
+  text-align: center;
+}
+
+.rofp-upload-footnote {
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.28);
+  font-style: italic;
+  margin-top: -6px;
+  line-height: 1.5;
+}
+
+/* ─── Uploaded file card ─────────────────────────────────────────── */
+.rofp-upload-file-card {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #060606;
+  border: 1px solid #393C45;
+  border-radius: 13px;
+  padding: 12px 14px;
+  box-sizing: border-box;
+}
+
+.rofp-upload-slot--compact .rofp-upload-file-card {
+  padding: 9px 12px;
+  gap: 9px;
+}
+
+.rofp-upload-file-icon {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: rgba(36, 229, 182, 0.08);
+  border: 1px solid rgba(36, 229, 182, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #24E5B6;
+}
+
+.rofp-upload-slot--compact .rofp-upload-file-icon {
+  width: 28px;
+  height: 28px;
+}
+
+.rofp-upload-file-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.rofp-upload-file-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+  max-width: 100%;
+}
+
+.rofp-upload-file-meta {
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.35);
+  margin-top: 2px;
+}
+
+.rofp-upload-file-remove {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+.rofp-upload-file-remove:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+
+.rofp-upload-file-remove:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* ─── Processing bar ─────────────────────────────────────────────── */
+.rofp-upload-omi-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  background: #060606;
+  border: 1px solid #393C45;
+  border-radius: 13px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.rofp-upload-omi-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: #0E0F12;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rofp-upload-omi-avatar video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top 20%;
+  display: block;
+}
+
+.rofp-upload-omi-msg-wrap {
+  flex: 1;
+  min-width: 0;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.rofp-upload-omi-msg {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  position: absolute;
+}
+
+.rofp-upload-omi-bullet {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #24E5B6;
+  flex-shrink: 0;
+}
+
+.rofp-upload-omi-dots {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.rofp-upload-omi-dots span {
+  display: block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.25);
+  animation: rofp-upload-dot-pulse 1.4s ease-in-out infinite;
+}
+
+.rofp-upload-omi-dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.rofp-upload-omi-dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes rofp-upload-dot-pulse {
+
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.9);
+  }
+
+  40% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+/* ─── Upload complete banner ──────────────────────────────────────── */
+.rofp-upload-complete {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 14px;
+  background: rgba(36, 229, 182, 0.06);
+  border: 1px solid rgba(36, 229, 182, 0.25);
+  border-radius: 13px;
+  box-sizing: border-box;
+}
+
+.rofp-upload-complete-icon {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(36, 229, 182, 0.15);
+  color: #24E5B6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rofp-upload-complete-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.rofp-upload-complete-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 2px;
+}
+
+.rofp-upload-complete-sub {
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.5);
+  line-height: 1.5;
+}
+
+/* ─── Error text under upload slot or link row ───────────────────── */
+.rofp-upload-slot-error {
+  font-size: 12px;
+  color: #f87171;
+  margin-top: 6px;
+  line-height: 1.5;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   PREVIEW
    ═══════════════════════════════════════════════════════════════════ */
 
 .rofp-preview-box {
@@ -771,13 +1256,38 @@
   margin-bottom: 36px;
   max-height: 420px;
   overflow-y: auto;
+
+  /* Firefox: minimal pill-shaped scrollbar, always faintly visible
+     so the section reads as scrollable without extra UI */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
 }
 
-.rofp-preview-box::-webkit-scrollbar { width: 4px; }
-.rofp-preview-box::-webkit-scrollbar-track { background: transparent; }
-.rofp-preview-box::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+.rofp-preview-box::-webkit-scrollbar {
+  width: 6px;
+}
 
-.rofp-preview-section { padding: 4px 0; }
+.rofp-preview-box::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 4px 0;
+}
+
+.rofp-preview-box::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 9999px;
+  border: 1.5px solid transparent;
+  background-clip: padding-box;
+  transition: background 0.15s;
+}
+
+.rofp-preview-box::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.32);
+  background-clip: padding-box;
+}
+
+.rofp-preview-section {
+  padding: 4px 0;
+}
 
 .rofp-preview-section-heading {
   font-size: 11px;
@@ -791,13 +1301,27 @@
 .rofp-preview-section-body {
   font-size: 13.5px;
   line-height: 1.7;
-  color: rgba(255,255,255,0.75);
+  color: rgba(255, 255, 255, 0.75);
   white-space: pre-line;
+}
+
+.rofp-preview-file-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 4px 10px;
+  background: rgba(36, 229, 182, 0.08);
+  border: 1px solid rgba(36, 229, 182, 0.2);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #24E5B6;
 }
 
 .rofp-preview-divider {
   height: 1px;
-  background: rgba(255,255,255,0.06);
+  background: rgba(255, 255, 255, 0.06);
   margin: 18px 0;
 }
 
@@ -812,7 +1336,7 @@
 
 .rofp-preview-empty-text {
   font-size: 13.5px;
-  color: rgba(255,255,255,0.32);
+  color: rgba(255, 255, 255, 0.32);
   line-height: 1.6;
 }
 
@@ -837,26 +1361,120 @@
 
 .rofp-coming-icon {
   font-size: 28px;
-  color: rgba(255,255,255,0.12);
+  color: rgba(255, 255, 255, 0.12);
   margin-bottom: 4px;
 }
 
 .rofp-coming-title {
   font-size: 17px;
   font-weight: 600;
-  color: rgba(255,255,255,0.4);
+  color: rgba(255, 255, 255, 0.4);
 }
 
 .rofp-coming-sub {
   font-size: 13px;
-  color: rgba(255,255,255,0.22);
+  color: rgba(255, 255, 255, 0.22);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   VIDEO / GENERIC LINK ROW
+   ═══════════════════════════════════════════════════════════════════ */
+
+.rofp-video-link-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #060606;
+  border: 1.5px solid rgba(36, 229, 182, 0.25);
+  border-radius: 13px;
+  padding: 0 14px;
+  height: 44px;
+  box-sizing: border-box;
+  transition: border-color 0.18s, background 0.18s;
+}
+
+.rofp-video-link-row:focus-within {
+  border-color: rgba(36, 229, 182, 0.65);
+  background: rgba(36, 229, 182, 0.04);
+}
+
+.rofp-video-link-row--error {
+  border-color: rgba(239, 68, 68, 0.55);
+}
+
+.rofp-video-link-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #24E5B6;
+}
+
+.rofp-video-link-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #fff;
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.rofp-video-link-input::placeholder {
+  color: #808591;
+}
+
+.rofp-video-link-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.rofp-video-link-clear {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+  padding: 0;
+  font-family: inherit;
+}
+
+.rofp-video-link-clear:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+
+.rofp-video-link-clear:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
    RESPONSIVE
    ═══════════════════════════════════════════════════════════════════ */
 
+/*
+ * Stack the two material sections back to a single column on mobile.
+ * We use 640px — the same breakpoint used for all other mobile
+ * adaptations on this page — so the layout switch is consistent.
+ */
 @media (max-width: 640px) {
+  .rofp-material-sections-row {
+    grid-template-columns: 1fr;
+  }
+
   .rofp-back-btn {
     top: 16px;
     right: 14px;
@@ -869,13 +1487,17 @@
     padding-bottom: 16px;
   }
 
-  .rofp-omi-wrap { margin-bottom: 10px; }
+  .rofp-omi-wrap {
+    margin-bottom: 10px;
+  }
 
   .rofp-tab-content {
     padding: 24px 20px 28px;
   }
 
-  .rofp-master-title { font-size: 20px; }
+  .rofp-master-title {
+    font-size: 20px;
+  }
 
   .rofp-master-tagline,
   .rofp-master-support {
@@ -903,27 +1525,96 @@
     justify-content: center;
   }
 
-  .rofp-tab-cta { align-items: stretch; }
-  .rofp-btn-continue { justify-content: center; }
+  .rofp-tab-cta {
+    align-items: stretch;
+  }
+
+  .rofp-btn-continue {
+    justify-content: center;
+  }
 
   .rofp-tab-cta:has(.rofp-btn-back) {
     flex-direction: column-reverse;
     align-items: stretch;
     gap: 12px;
   }
-  .rofp-tab-cta-right { align-items: stretch; }
-  .rofp-btn-back { justify-content: center; }
+
+  .rofp-tab-cta-right {
+    align-items: stretch;
+  }
+
+  .rofp-btn-back {
+    justify-content: center;
+  }
+
+  .rofp-video-link-row {
+    height: 44px;
+  }
+
+  .rofp-material-section {
+    padding: 18px 16px 16px;
+  }
+
+  .rofp-material-section-cta {
+    justify-content: stretch;
+  }
+
+  .rofp-btn-section-submit {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .rofp-upload-complete {
+    flex-wrap: wrap;
+  }
+
+  .rofp-material-edit-btn {
+    margin-left: 40px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   .rofp-tab-content,
   .rofp-omi-orb--pulse,
   .rofp-omi-orb::before,
   .rofp-comp-pill {
     animation: none !important;
   }
+
   .rofp-btn-continue,
   .rofp-progress-fill {
     transition: none !important;
   }
+}
+.rofp-material-section--coming-soon {
+  position: relative;
+  pointer-events: none;
+  user-select: none;
+}
+
+.rofp-coming-soon-overlay {
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  background: rgba(6, 6, 6, 0.6);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+}
+
+.rofp-coming-soon-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 14px;
+  background: rgba(36, 229, 182, 0.1);
+  border: 1px solid rgba(36, 229, 182, 0.35);
+  border-radius: 999px;
+  color: #24E5B6;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }

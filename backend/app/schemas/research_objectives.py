@@ -36,6 +36,7 @@ class ResearchObjectiveFramerInput(BaseModel):
     brand_name: Optional[str] = None
     industry: Optional[str] = None
     website: Optional[str] = None
+    extra_context: Optional[str] = None
     competitors: List[str] = Field(default_factory=list)
 
     business_context: Optional[str] = None
@@ -49,3 +50,16 @@ class ResearchObjectiveFramerInput(BaseModel):
     behaviors_attitudes: Optional[str] = None
     geography: Optional[str] = None
     additional_notes: Optional[str] = None
+
+class ResearchObjectiveMaterialOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    material_kind: Optional[str]
+    original_name: str
+    source_url: Optional[str]
+    content_type: Optional[str]
+    size: Optional[int]
+    instruction: Optional[str]
+    has_context: bool
+    uploaded_at: datetime

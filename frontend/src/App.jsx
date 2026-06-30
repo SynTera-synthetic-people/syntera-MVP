@@ -324,7 +324,7 @@ function App() {
             </Route>
           </Routes>
         </Router>
-        <ToastContainer position="top-right" autoClose={4000} newestOnTop theme="colored" />
+        <ToastContainer position="top-center" autoClose={3000} newestOnTop theme="colored" />
       </ThemeProvider>
     </QueryClientProvider>
   );

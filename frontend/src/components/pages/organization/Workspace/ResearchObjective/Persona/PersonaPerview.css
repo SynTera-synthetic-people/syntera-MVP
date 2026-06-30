@@ -418,14 +418,14 @@
 }
 
 .pp-trait-label {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   color: #64748b;
 }
 
 .pp-trait-value {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 200;
   color: #f1f5f9;
   line-height: 1.5;
 }
@@ -1187,30 +1187,6 @@
   color: #64748b;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-}
-
-/* ── Total sources row ── */
-.ke-total-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 0 10px;
-}
-
-.ke-total-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: #64748b;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.ke-total-value {
-  font-size: 18px;
-  font-weight: 800;
-  color: #f1f5f9;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.3px;
 }
 
 /* ── Body: donut left, confidence right ── */
