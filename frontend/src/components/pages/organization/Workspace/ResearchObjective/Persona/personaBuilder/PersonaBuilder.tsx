@@ -289,9 +289,6 @@ interface KebabMenuProps {
 
 const KebabMenu: React.FC<KebabMenuProps> = ({ items }) => {
   const [open, setOpen] = useState(false);
-
-  // Render nothing when there are no actions to show
-  if (items.length === 0) return null;
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -301,6 +298,8 @@ const KebabMenu: React.FC<KebabMenuProps> = ({ items }) => {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
+
+  if (items.length === 0) return null;
 
   return (
     <div ref={ref} className="pb-kebab-wrap" onClick={e => e.stopPropagation()}>
@@ -975,12 +974,14 @@ const PersonaGridCard: React.FC<PersonaGridCardProps> = ({
       icon: <TbEye size={14} />,
       onClick: () => onViewPersona?.(persona),
     },
-    ...(!isViewOnly ? [
+    ...(!isViewOnly && !isPersonaCreationLocked ? [
       {
         label: 'Replicate Personas',
         icon: <TbCopy size={14} />,
         onClick: () => onReplicatePersona?.(persona),
       },
+    ] : []),
+    ...(!isViewOnly ? [
       {
         label: 'Delete Persona',
         icon: <TbTrash size={14} />,
@@ -1076,7 +1077,7 @@ const CountryGroup: React.FC<CountryGroupProps> = ({
   isViewOnly = false,
   isPersonaCreationLocked = false,
 }) => {
-  const countryKebabItems = isViewOnly ? [] : [
+  const countryKebabItems = (isViewOnly || isPersonaCreationLocked) ? [] : [
     {
       label: 'Replicate Personas',
       icon: <TbCopy size={14} />,
@@ -1106,6 +1107,7 @@ const CountryGroup: React.FC<CountryGroupProps> = ({
               onReplicatePersona={onReplicatePersona}
               onDeletePersona={onDeletePersona}
               isViewOnly={isViewOnly}
+              isPersonaCreationLocked={isPersonaCreationLocked}
             />
           </motion.div>
         ))}
