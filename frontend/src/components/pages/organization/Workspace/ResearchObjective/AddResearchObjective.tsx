@@ -222,6 +222,34 @@ const AddResearchObjective: React.FC = () => {
     });
   }, [objectiveId]);
 
+  // ── RO Framer submission detection ─────────────────────────────────────────
+  //
+  // IMPORTANT: This is intentionally NOT based on the framer *draft* key
+  // (`ro_framer_draft_${objectiveId}`). That draft key is written on every
+  // keystroke while the user is filling out the Framer and is cleared the
+  // moment the final Submit succeeds — so it is truthy mid-fill and falsy
+  // right after a real submission, which is the opposite of what we want to
+  // show here.
+  //
+  // Instead we read a separate `ro_framer_submitted_${objectiveId}` flag
+  // that ResearchObjectiveFramer only sets inside its saveFramer onSuccess
+  // handler — i.e. only once the user has actually pressed Submit on the
+  // last step of the Framer. This is what should drive the
+  // "Review your research framing →" entry point below.
+  const [hasSubmittedFramer, setHasSubmittedFramer] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!objectiveId) { setHasSubmittedFramer(false); return; }
+    try {
+      const raw = localStorage.getItem(`ro_framer_submitted_${objectiveId}`);
+      setHasSubmittedFramer(Boolean(raw));
+    } catch {
+      setHasSubmittedFramer(false);
+    }
+    // Re-check whenever we land back on this screen (e.g. after returning
+    // from the framer), since location.pathname changes on navigation back.
+  }, [objectiveId, location.pathname]);
+
   // ── TanStack Query hooks ───────────────────────────────────────────────────
   const {
     data: sessionData,
@@ -581,6 +609,13 @@ const AddResearchObjective: React.FC = () => {
     navigate(
       `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/frame-objective`,
       { state: { returnTo: location.pathname } }
+    );
+  };
+
+  const handleViewROFramerSummary = () => {
+    navigate(
+      `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/frame-objective`,
+      { state: { returnTo: location.pathname, initialTab: "review" } }
     );
   };
 
@@ -1083,6 +1118,16 @@ const AddResearchObjective: React.FC = () => {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.25 }}
             >
+              {hasSubmittedFramer && (
+                <button
+                  className="aro-ro-framer-btn"
+                  type="button"
+                  onClick={handleViewROFramerSummary}
+                  title="Review what you entered in the research framer"
+                >
+                  Review your research framing →
+                </button>
+              )}
               <p className="aro-cta-heading">All set. Now let's bring the personas to life.</p>
               <div className="aro-cta-buttons">
                 <motion.button
@@ -1215,6 +1260,17 @@ const AddResearchObjective: React.FC = () => {
                   title="Frame your Research Objective step by step"
                 >
                   Guide me through research framing →
+                </button>
+              )}
+
+              {hasSubmittedFramer && (
+                <button
+                  className="aro-ro-framer-btn"
+                  type="button"
+                  onClick={handleViewROFramerSummary}
+                  title="Review what you entered in the research framer"
+                >
+                  Review your research framing →
                 </button>
               )}
 

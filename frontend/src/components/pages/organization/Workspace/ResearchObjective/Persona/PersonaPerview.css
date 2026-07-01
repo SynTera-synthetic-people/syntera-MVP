@@ -190,6 +190,7 @@
   align-items: center;
   justify-content: space-between;
   margin-bottom: 8px;
+  gap: 10px;
 }
 
 .pp-conf-title {
@@ -201,6 +202,7 @@
 .pp-conf-score {
   font-size: 15px;
   font-weight: 800;
+  flex-shrink: 0;
 }
 
 .pp-conf-bar-track {
@@ -1210,4 +1212,289 @@
   position: relative;
   width: 160px;
   height: 160px;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   DEPTH SIGNAL SECTION — horizontal bar chart rows with expandable
+   detail drawers (Dimensions / Depth Layer / Pattern Extracted)
+════════════════════════════════════════════════════════════════ */
+
+/* Section header: heading + inline confidence pill side by side */
+.pp-dsm-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+/* Stacked list of metric rows */
+.pp-dsm-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Individual metric card */
+.pp-dsm-row {
+  background: var(--T-Base-B4, #1E2126);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+/* Clickable header inside the card */
+.pp-dsm-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: none;
+  border: none;
+  padding: 12px 14px;
+  cursor: pointer;
+  text-align: left;
+}
+
+/* Left cluster: dot + name + bar */
+.pp-dsm-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.pp-dsm-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+
+.pp-dsm-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.pp-dsm-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e2e8f0;
+  line-height: 1;
+}
+
+.pp-dsm-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pp-dsm-bar-track {
+  flex: 1;
+  height: 5px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+
+.pp-dsm-bar-fill {
+  height: 100%;
+  border-radius: 99px;
+}
+
+.pp-dsm-accuracy {
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  min-width: 32px;
+  text-align: right;
+}
+
+/* Right cluster: count + chevron */
+.pp-dsm-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.pp-dsm-count {
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.3px;
+}
+
+/* Expandable detail drawer */
+.pp-dsm-detail-wrap {
+  overflow: hidden;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.pp-dsm-detail-inner {
+  padding: 12px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pp-dsm-detail-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.pp-dsm-detail-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pp-dsm-chip {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 6px;
+  padding: 4px 9px;
+  font-size: 11.5px;
+  color: #94a3b8;
+  line-height: 1.3;
+}
+
+.pp-dsm-weight-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.pp-dsm-weight-label {
+  font-size: 11px;
+  color: #475569;
+}
+
+.pp-dsm-weight-value {
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+}
+
+/* ── Confidence panel "Coming Soon" pill (Master Calibration) ── */
+.pp-breakdown-cs-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: #1E2126;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.4);
+  white-space: nowrap;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   BRAIN ASSIGNMENT (Neuroscience-Informed Calibration — Primary /
+   Secondary Brain rows with expandable reasoning, replacing the old
+   "Coming Soon" pill). Styled to match pp-calib-param-row / pp-multi-*
+   tokens so it reads as part of the same family of cards.
+════════════════════════════════════════════════════════════════ */
+
+.pp-brain-assignment {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 22px;
+}
+
+.pp-brain-row {
+  background: var(--T-Base-B4, #1E2126);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.pp-brain-row-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: none;
+  border: none;
+  padding: 12px 14px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.pp-brain-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pp-brain-role {
+  font-size: 10px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.pp-brain-name {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: #f1f5f9;
+  letter-spacing: -0.1px;
+}
+
+.pp-brain-row-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.pp-brain-confidence {
+  font-size: 13px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.pp-brain-chevron {
+  color: #64748b;
+  transition: transform 0.2s ease, color 0.15s ease;
+}
+
+.pp-brain-chevron--open {
+  transform: rotate(180deg);
+  color: #94a3b8;
+}
+
+.pp-brain-reason-wrap {
+  overflow: hidden;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.pp-brain-reason-text {
+  margin: 0;
+  padding: 12px 14px 14px;
+  font-size: 12.5px;
+  color: #94a3b8;
+  line-height: 1.6;
 }
