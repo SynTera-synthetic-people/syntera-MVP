@@ -155,6 +155,43 @@ const markFramerSubmitted = (objectiveId?: string) => {
     }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Local "last submitted Framer data" snapshot.
+//
+// This is DIFFERENT from both keys above:
+//  - the draft key (ro_framer_draft_*) is cleared on successful submit
+//  - the submitted flag (ro_framer_submitted_*) is just a boolean
+//
+// The read-only Preview screen (opened via "Review your research framing →")
+// needs the actual field values to display, and it needs them to still be
+// there even after the draft has been wiped. So on every successful submit
+// we also write a permanent snapshot of exactly what was submitted, and the
+// review-only Preview loads FROM THIS SNAPSHOT, never from the draft.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const framerSubmittedDataKey = (objectiveId?: string) => `ro_framer_submitted_data_${objectiveId ?? "unknown"}`;
+
+const saveFramerSubmittedData = (objectiveId: string | undefined, data: ROFramerData) => {
+    try {
+        localStorage.setItem(framerSubmittedDataKey(objectiveId), JSON.stringify(stripFilesForStorage(data)));
+    } catch {
+        // storage unavailable/full — non-fatal, just skip persistence
+    }
+};
+
+const loadFramerSubmittedData = (objectiveId?: string): ROFramerData | null => {
+    try {
+        const saved = localStorage.getItem(framerSubmittedDataKey(objectiveId));
+        if (!saved) return null;
+        const parsed = JSON.parse(saved);
+        // minimal shape check so old/corrupt data doesn't crash the form
+        if (parsed && parsed.context && parsed.material) return parsed as ROFramerData;
+        return null;
+    } catch {
+        return null;
+    }
+};
+
 const makeLinkIdForEmptySection = () => `link-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
 const emptySlot = (): MaterialSlot => ({
@@ -572,7 +609,7 @@ const ContextTab: React.FC<ContextTabProps> = ({
                             autoComplete="off"
                         />
                         {data.website && (
-                            <a
+                            <a>
                                 className="rofp-visit-btn"
                                 href={
                                     data.website.startsWith("http")
@@ -581,7 +618,6 @@ const ContextTab: React.FC<ContextTabProps> = ({
                                 }
                                 target="_blank"
                                 rel="noopener noreferrer"
-                            >
                                 Visit ↗
                             </a>
                         )}
@@ -1603,7 +1639,7 @@ const PreviewTab: React.FC<PreviewTabProps> = ({ data, onSubmit, onBack, isSubmi
                 </h2>
                 <p className="rofp-tab-tagline">
                     {readOnly
-                        ? "Here's everything you've entered in the research framer. Go back to edit, or close this and continue your chat with Omi."
+                        ? "Here's everything you've entered in the research framer. This is read-only — close this to continue your chat with Omi."
                         : "A quick look at everything Omi will use to build your brief. Go back to adjust anything before you submit."}
                 </p>
             </div>
@@ -1631,7 +1667,7 @@ const PreviewTab: React.FC<PreviewTabProps> = ({ data, onSubmit, onBack, isSubmi
             <div className="rofp-tab-cta">
                 <button className="rofp-btn-back" onClick={onBack} type="button" disabled={isSubmitting}>
                     <span className="rofp-btn-arrow rofp-btn-arrow--back">←</span>
-                    {readOnly ? "Edit framing" : "Back"}
+                    {readOnly ? "Close" : "Back"}
                 </button>
                 {!readOnly && (
                     <div className="rofp-tab-cta-right">
@@ -1690,7 +1726,10 @@ const ResearchObjectiveFramer: React.FC<ResearchObjectiveFramerProps> = ({
     const initialTabFromState = (location.state as { initialTab?: TabId } | null)?.initialTab;
     // If opened specifically to review a saved draft, treat Preview as
     // read-only (no Submit button) so users can't accidentally re-trigger
-    // a save just by looking at what they typed.
+    // a save just by looking at what they typed. In this mode every other
+    // tab is locked — the user can only be on "review" — so nothing can
+    // be edited after submission and silently drift out of sync with
+    // what's already been persisted on the backend.
     const isReviewOnlyOpen = initialTabFromState === "review";
 
     const [activeTab, setActiveTab] = useState<TabId>(initialTabFromState ?? "context");
@@ -1700,14 +1739,25 @@ const ResearchObjectiveFramer: React.FC<ResearchObjectiveFramerProps> = ({
     const { canScrollLeft, canScrollRight, recompute: recomputeTabScroll } = useTabNavScrollState(tabScrollRef);
     const scrollTabsBy = (amount: number) => { tabScrollRef.current?.scrollBy({ left: amount, behavior: "smooth" }); };
 
-    const [data, setData] = useState<ROFramerData>(() => loadFramerDraft(objectiveId) ?? emptyFramerData());
+    // In review-only mode, hydrate from the permanent "last submitted"
+    // snapshot — NOT the draft, which is cleared as soon as a submit
+    // succeeds and would otherwise leave this screen empty.
+    const [data, setData] = useState<ROFramerData>(() => {
+        if (isReviewOnlyOpen) {
+            return loadFramerSubmittedData(objectiveId) ?? emptyFramerData();
+        }
+        return loadFramerDraft(objectiveId) ?? emptyFramerData();
+    });
 
     // Persist the draft locally on every change, so users can come back and
     // review (or continue) without losing what they've typed. Nothing here
     // touches the backend — this is purely a local "don't lose my inputs" cache.
+    // Skipped entirely in review-only mode: that screen is read-only and must
+    // never overwrite the draft (or anything else) with its snapshot data.
     useEffect(() => {
+        if (isReviewOnlyOpen) return;
         saveFramerDraft(objectiveId, data);
-    }, [data, objectiveId]);
+    }, [data, objectiveId, isReviewOnlyOpen]);
 
     const activeTabIndex = TABS.findIndex(t => t.id === activeTab);
 
@@ -1736,6 +1786,10 @@ const ResearchObjectiveFramer: React.FC<ResearchObjectiveFramerProps> = ({
         saveFramer(buildFramerPayload(data), {
             onSuccess: (response: any) => {
                 clearFramerDraft(objectiveId);
+                // Snapshot exactly what was submitted so the read-only
+                // Preview (opened later via "Review your research framing →")
+                // has something to render — the draft above is gone by now.
+                saveFramerSubmittedData(objectiveId, data);
                 // Mark this objective as having a submitted Framer — this is
                 // what drives the "Review your research framing →" entry
                 // point on the chat screen. Only set this once the save
@@ -1765,8 +1819,6 @@ const ResearchObjectiveFramer: React.FC<ResearchObjectiveFramerProps> = ({
         if (prevTab) goToTab(prevTab.id);
     }, [activeTabIndex, goToTab]);
 
-    const accessibleUpTo = TABS.length - 1;
-
     return (
         <div className="rofp-page">
             <button className="rofp-back-btn" onClick={handleBackToObjective} type="button">← Back</button>
@@ -1784,7 +1836,12 @@ const ResearchObjectiveFramer: React.FC<ResearchObjectiveFramerProps> = ({
                     <div className="rofp-tab-nav" role="tablist">
                         {TABS.map((tab, i) => {
                             const isActive = tab.id === activeTab;
-                            const isAccessible = i <= accessibleUpTo;
+                            // In review-only mode, ONLY the Preview tab is
+                            // accessible — every other tab is locked so a
+                            // user who already submitted can't sneak back
+                            // in and edit fields that the backend has
+                            // already consumed/keyed off exploration_id.
+                            const isAccessible = isReviewOnlyOpen ? tab.id === "review" : true;
                             const isDone = i < activeTabIndex;
                             return (
                                 <button
@@ -1832,7 +1889,10 @@ const ResearchObjectiveFramer: React.FC<ResearchObjectiveFramerProps> = ({
                     <PreviewTab
                         data={data}
                         onSubmit={handleContinue}
-                        onBack={handleBack}
+                        // Read-only mode must never route "back" into an
+                        // editable tab (that's exactly the hole we're
+                        // closing) — it exits the framer entirely instead.
+                        onBack={isReviewOnlyOpen ? handleBackToObjective : handleBack}
                         isSubmitting={isSaving}
                         readOnly={isReviewOnlyOpen}
                     />
