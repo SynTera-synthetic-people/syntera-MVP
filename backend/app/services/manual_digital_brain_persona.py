@@ -831,8 +831,10 @@ async def calibrate_manual_persona_with_brains(
 # ---------------------------------------------------------------------------
 
 _ACTION_DATA_MIN_RECORDS = 100
-_WEB_EVIDENCE_MIN_CITATIONS = 5
 _HQ_MIN_SOURCES = 3
+# Web-evidence threshold is now owned by search_evidence_based_web_tiered()
+# in digital_brain_pipeline.py (default 10 citations). No separate constant
+# needed here.
 
 # Confidence range for LLM-generated fallback verdicts — deliberately lower
 # and narrower than real-evidence confidence ranges, so a generated verdict
@@ -946,43 +948,6 @@ async def _estimate_action_data_verdict(category: str) -> dict:
         "digital_brain_signal": None,
         "confidence_score": round(random_uniform(lo, hi), 2),
         "query_reference": None,
-        "source_note": "llm_generated",
-    }
-
-
-async def _estimate_web_evidence_verdict(category: str) -> dict:
-    """
-    LLM-generated stand-in when real web citations are sparse. Quote is
-    synthesized, generic, category-typical phrasing — never attributed to a
-    real person, real thread, or real URL.
-    """
-    lo, hi = _ESTIMATED_CONFIDENCE_RANGE
-    content = await _simulate_fallback_content(
-        f"Category: {category}\n\n"
-        "Generate a single realistic, category-typical consumer-discussion theme "
-        "and a representative quote, written exactly as if drawn from real online "
-        "consumer discussions about this category. Do not mention that it is "
-        "simulated, estimated, or inferred anywhere in the text.\n\n"
-        'Return ONLY JSON: {"key_discussion_theme": "<one short phrase>", '
-        '"representative_quote": "<one sentence, first-person consumer voice>"}',
-        default={
-            "key_discussion_theme": f"Category-typical consumer sentiment for {category}",
-            "representative_quote": f"People in this category usually care most about value and reliability when choosing {category}.",
-        },
-    )
-    return {
-        "verdict_id": "EB_ESTIMATED",
-        "source_platform": "Consumer Discussions",
-        "threads_analyzed": 0,
-        "sentiment_distribution": {"positive": 0.4, "neutral": 0.5, "negative": 0.1},
-        "key_discussion_themes": [content["key_discussion_theme"]],
-        "dimension_alignment": [],
-        "dimension_insights": {},
-        "digital_brain_signal": None,
-        "confidence_score": round(random_uniform(lo, hi), 2),
-        "representative_quote": content["representative_quote"],
-        "all_citations": [],
-        "source_urls": [],
         "source_note": "llm_generated",
     }
 
@@ -1132,7 +1097,7 @@ async def _collect_evidence_for_manual_persona(
     from app.services.digital_brain_pipeline import (
         fetch_action_data_all,
         scan_action_data,
-        search_evidence_based_web_real,
+        search_evidence_based_web_tiered,
         search_hq_database,
         _extract_category_keywords,
     )
@@ -1140,11 +1105,17 @@ async def _collect_evidence_for_manual_persona(
 
     with _cf.ThreadPoolExecutor(max_workers=3) as executor:
         fut_action_df = executor.submit(fetch_action_data_all, 5000)
-        fut_eb = executor.submit(search_evidence_based_web_real, validated_ro, activated_dimensions)
+        fut_eb = executor.submit(search_evidence_based_web_tiered, validated_ro, activated_dimensions)
         fut_hq = executor.submit(search_hq_database, validated_ro, activated_dimensions)
         action_df = fut_action_df.result()
-        eb_verdicts = fut_eb.result()
+        result_3b = fut_eb.result()
         hq_verdicts = fut_hq.result()
+
+    # Unpack tiered web evidence result. The orchestrator already handles
+    # Tier 2 (community forums) and Tier 3 (LLM fallback) internally, so
+    # there's no separate per-stream estimate call for web evidence here.
+    eb_verdicts = result_3b["eb_verdicts"]
+    web_tier_metadata = result_3b["evidence_metadata"]
 
     # fetch_action_data_all() has no category filter — it returns the most
     # recent N rows from the WHOLE table regardless of category. A raw row
@@ -1176,23 +1147,24 @@ async def _collect_evidence_for_manual_persona(
     # Real action-data confidence requires BOTH enough total volume AND that
     # volume actually being relevant to this persona's stated category.
     real_action_count = category_matched_rows
-    real_eb_verdicts = [v for v in eb_verdicts if v.get("source_note") == "real_citation_backed"]
-    real_eb_citation_count = sum(len(v.get("all_citations") or []) for v in real_eb_verdicts)
     real_hq_verdicts = [v for v in hq_verdicts if v.get("source_type") != "no_hq_coverage"]
     real_hq_count = len(real_hq_verdicts)
 
     final_depth_layers = list(depth_layers)
-    final_eb_verdicts = list(real_eb_verdicts)
+    # eb_verdicts already contains the full tiered result (Tier 1 real +
+    # Tier 2 community forums + Tier 3 LLM fallback if needed) — no
+    # separate estimate call required here; that would double-apply the fallback.
+    final_eb_verdicts = list(eb_verdicts)
     final_hq_verdicts = list(real_hq_verdicts)
 
     action_used_estimate = real_action_count < _ACTION_DATA_MIN_RECORDS
-    eb_used_estimate = real_eb_citation_count < _WEB_EVIDENCE_MIN_CITATIONS
     hq_used_estimate = real_hq_count < _HQ_MIN_SOURCES
+    # Web evidence uses the tiered orchestrator's own threshold and fallback
+    # tracking; "estimated" means the orchestrator activated Tier 3 LLM.
+    web_used_estimate = web_tier_metadata.get("tier_3_llm_estimated", False)
 
     if action_used_estimate:
         final_depth_layers.append(await _estimate_action_data_verdict(category))
-    if eb_used_estimate:
-        final_eb_verdicts.append(await _estimate_web_evidence_verdict(category))
     if hq_used_estimate:
         final_hq_verdicts.append(await _estimate_hq_verdict(category))
 
@@ -1203,16 +1175,17 @@ async def _collect_evidence_for_manual_persona(
             "threshold": _ACTION_DATA_MIN_RECORDS,
         },
         "web_evidence": {
-            "source": "estimated" if eb_used_estimate else "real",
-            "real_citations_found": real_eb_citation_count,
-            "threshold": _WEB_EVIDENCE_MIN_CITATIONS,
+            **web_tier_metadata,
+            "source": "mixed_real_and_estimated" if web_used_estimate else "real",
         },
         "hq_research": {
             "source": "estimated" if hq_used_estimate else "real",
             "real_sources_found": real_hq_count,
             "threshold": _HQ_MIN_SOURCES,
         },
-        "real_stream_count": sum(0 if x else 1 for x in (action_used_estimate, eb_used_estimate, hq_used_estimate)),
+        "real_stream_count": sum(
+            0 if x else 1 for x in (action_used_estimate, web_used_estimate, hq_used_estimate)
+        ),
     }
 
     # Evidence collection's job ends here. Brain assignment (Step 5) is a

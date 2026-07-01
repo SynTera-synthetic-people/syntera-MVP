@@ -1515,6 +1515,32 @@ def _domain_to_platform(url: str | None) -> str | None:
 _BATCH_DOMAINS = ["twitter.com", "x.com", "linkedin.com", "youtube.com", "quora.com", "medium.com"]
 _BATCH_MAX_SEARCH_USES = 10
 
+# ---------------------------------------------------------------------------
+# Tier 2 — community forums & review platform domain lists
+# ---------------------------------------------------------------------------
+
+_COMMUNITY_FORUM_DOMAINS = [
+    "trustpilot.com",
+    "producthunt.com",
+    "slashdot.org",
+    "stackoverflow.com",
+    "metafilter.com",
+    "g2.com",
+    "9gag.com",
+    "flipkart.com",
+]
+
+_CATEGORY_SPECIFIC_FORUMS: dict[str, list[str]] = {
+    "apparel": ["styleforum.net", "fashionbeans.com"],
+    "fashion": ["styleforum.net", "fashionista.com"],
+    "skincare": ["beautylish.com", "dermnet.com", "acne.org"],
+    "beauty": ["beautylish.com", "sephora.com"],
+    "food": ["chowhound.com", "eatingwell.com"],
+    "electronics": ["tomshardware.com", "anandtech.com"],
+    "finance": ["bogleheads.org", "seekingalpha.com"],
+    "home": ["houzz.com"],
+}
+
 # Reddit via Anthropic's web_search is a hard wall — verified empirically with
 # BOTH an explicit reddit.com allow-list (400 error: domain not accessible to
 # our user agent) AND a fully unrestricted general search (zero reddit.com
@@ -1742,6 +1768,202 @@ key_discussion_themes, sentiment_distribution, digital_brain_signal.
     logger.info("Stage 3B (real): %d/6 platforms returned real citation-backed evidence (~3 LLM calls total).",
                 real_count)
     return verdicts
+
+
+def search_community_forums_real(
+    validated_ro: dict,
+    activated_dimensions: list[int],
+) -> list[dict]:
+    """
+    Tier 2: Real web search on community forums, review sites, and aggregators.
+
+    Only called when Tier 1 (6-platform search) returned fewer citations than
+    the configured threshold. Uses the same citation-backed, no-fabrication
+    approach as Tier 1 but targets a broader, lower-authority domain list.
+
+    Returns verdicts with source_note: "community_forum".
+    """
+    category = (validated_ro.get("category") or "").lower()
+    query = (
+        f"{validated_ro.get('category', '')} {validated_ro.get('key_questions', '')} "
+        f"discussion community review forum"
+    ).strip()
+
+    allowed_domains = list(_COMMUNITY_FORUM_DOMAINS)
+    for key, extra_domains in _CATEGORY_SPECIFIC_FORUMS.items():
+        if key in category:
+            allowed_domains.extend(extra_domains)
+    allowed_domains = list(dict.fromkeys(allowed_domains))  # deduplicate, preserve order
+
+    anthro_client = get_anthropic_client()
+    snippets: list[dict] = []
+    try:
+        response = anthro_client.messages.create(
+            model=MODEL,
+            max_tokens=4096,
+            tools=[{
+                "type": "web_search_20250305",
+                "name": "web_search",
+                "max_uses": 10,
+                "allowed_domains": allowed_domains,
+            }],
+            messages=[{"role": "user", "content": query}],
+        )
+        for block in response.content:
+            if getattr(block, "type", None) == "text":
+                for c in (getattr(block, "citations", None) or []):
+                    url = getattr(c, "url", None)
+                    snippets.append({
+                        "quote": getattr(c, "cited_text", None),
+                        "url": url,
+                        "title": getattr(c, "title", None),
+                    })
+    except Exception as e:
+        logger.warning("Stage 3B (Tier 2): community forums search failed — %s", e)
+        return []
+
+    if not snippets:
+        logger.info("Stage 3B (Tier 2): no real community forum citations found.")
+        return []
+
+    synth_prompt = f"""
+Below are REAL quotes collected from community forums and review platforms.
+Each is a verbatim excerpt from an actual page fetched — not paraphrased, not invented.
+
+REAL QUOTES:
+{json.dumps(snippets[:10], indent=2, ensure_ascii=False)}
+
+Using ONLY these quotes, extract:
+- key_discussion_themes: up to 3 themes ACTUALLY present in the quotes
+- sentiment_distribution: dict with "positive", "neutral", "negative" floats summing to 1.0
+- digital_brain_signal: which of the 12 Digital Brains this conversation pattern signals
+
+Return ONLY valid JSON.
+"""
+    try:
+        raw = _llm(
+            synth_prompt,
+            system="Extract only from the provided real quotes. Never add outside information. Return only valid JSON.",
+        )
+        synth = _parse_json_from_llm(raw)
+        if not isinstance(synth, dict):
+            synth = {}
+    except Exception:
+        synth = {}
+
+    distinct_urls = list({s["url"] for s in snippets if s["url"]})
+    dimension_alignment = [
+        dim for dim in activated_dimensions
+        if any(kw in (s["quote"] or "").lower() for s in snippets for kw in DIMENSION_KEYWORDS.get(dim, []))
+    ] or activated_dimensions[:1]
+    confidence = round(min(0.50 + 0.06 * len(distinct_urls), 0.85), 2)
+
+    logger.info("Stage 3B (Tier 2): %d community forum citations found.", len(distinct_urls))
+    return [{
+        "verdict_id": "EB_COMMUNITY_FORUMS",
+        "source_platform": "Community Forums & Reviews",
+        "threads_analyzed": len(distinct_urls),
+        "sentiment_distribution": synth.get("sentiment_distribution") or {"positive": 0.0, "neutral": 1.0, "negative": 0.0},
+        "key_discussion_themes": synth.get("key_discussion_themes") or [],
+        "dimension_alignment": dimension_alignment,
+        "dimension_insights": {},
+        "digital_brain_signal": synth.get("digital_brain_signal"),
+        "confidence_score": confidence,
+        "representative_quote": snippets[0]["quote"] if snippets else None,
+        "all_citations": [
+            {"quote": s["quote"], "url": s["url"], "confidence": confidence}
+            for s in snippets
+        ],
+        "source_urls": distinct_urls[:5],
+        "source_note": "community_forum",
+    }]
+
+
+def search_evidence_based_web_tiered(
+    validated_ro: dict,
+    activated_dimensions: list[int],
+    citation_threshold: int = 10,
+) -> dict:
+    """
+    Three-tier web evidence search orchestrator used by both the auto-generated
+    digital brain pipeline (Stage 3B) and the manual persona calibration flow.
+
+    Tier 1: 6 mainstream platforms — always runs.
+    Tier 2: community forums & review sites — runs only when Tier 1 returns
+            fewer than citation_threshold real citations.
+    Tier 3: LLM-generated estimated verdict — runs only when Tiers 1+2
+            combined still fall short of the threshold.
+
+    Returns:
+        {
+            "eb_verdicts": [...],          # merged verdicts from all tiers
+            "evidence_metadata": {
+                "tier_1_citations": int,
+                "tier_2_citations": int,
+                "tier_3_llm_estimated": bool,
+                "total_real_citations": int,
+                "citation_threshold": int,
+                "tiers_activated": list[str],
+                "source": "real" | "mixed_real_and_estimated",
+            }
+        }
+    """
+    # Tier 1: 6-platform real search (always run).
+    logger.info("Stage 3B Tier 1: searching 6 main platforms…")
+    tier1_verdicts = search_evidence_based_web_real(validated_ro, activated_dimensions)
+    tier1_citations = sum(
+        len(v.get("all_citations") or [])
+        for v in tier1_verdicts
+        if v.get("source_note") == "real_citation_backed"
+    )
+
+    all_verdicts = list(tier1_verdicts)
+    tiers_activated = ["6-platform"]
+
+    # Tier 2: community forums (run only when Tier 1 is below threshold).
+    tier2_citations = 0
+    if tier1_citations < citation_threshold:
+        logger.info(
+            "Stage 3B Tier 1 returned %d citations (< %d threshold). Activating Tier 2 (community forums)…",
+            tier1_citations, citation_threshold,
+        )
+        tier2_verdicts = search_community_forums_real(validated_ro, activated_dimensions)
+        tier2_citations = sum(len(v.get("all_citations") or []) for v in tier2_verdicts)
+        all_verdicts.extend(tier2_verdicts)
+        # Always mark as activated — it was invoked regardless of yield.
+        tiers_activated.append("community-forums")
+        logger.info("Stage 3B Tier 2 added %d community forum citations.", tier2_citations)
+
+    # Tier 3: LLM-generated (run only when Tiers 1+2 are still below threshold).
+    tier3_used = False
+    if (tier1_citations + tier2_citations) < citation_threshold:
+        logger.info(
+            "Stage 3B Tiers 1+2 combined returned %d citations (< %d threshold). Activating Tier 3 (LLM estimate)…",
+            tier1_citations + tier2_citations, citation_threshold,
+        )
+        estimated = _estimate_web_evidence_verdict(
+            validated_ro.get("category") or "this category"
+        )
+        all_verdicts.append(estimated)
+        tiers_activated.append("llm-estimated")
+        tier3_used = True
+
+    logger.info(
+        "Stage 3B tiered search complete | tiers=%s tier1=%d tier2=%d tier3=%s total_verdicts=%d",
+        tiers_activated, tier1_citations, tier2_citations, tier3_used, len(all_verdicts),
+    )
+    return {
+        "eb_verdicts": all_verdicts,
+        "evidence_metadata": {
+            "tier_1_citations": tier1_citations,
+            "tier_2_citations": tier2_citations,
+            "tier_3_llm_estimated": tier3_used,
+            "total_real_citations": tier1_citations + tier2_citations,
+            "citation_threshold": citation_threshold,
+            "tiers_activated": tiers_activated,
+            "source": "real" if not tier3_used else "mixed_real_and_estimated",
+        },
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -2427,11 +2649,11 @@ def digital_brain_pipeline(
         loop = asyncio.get_event_loop()
 
         fut_3a = loop.run_in_executor(None, scan_action_data, resolved_action_df, activated, validated_ro)
-        fut_3b = loop.run_in_executor(None, search_evidence_based_web_real, validated_ro, activated)
+        fut_3b = loop.run_in_executor(None, search_evidence_based_web_tiered, validated_ro, activated)
         fut_3c = loop.run_in_executor(None, search_hq_database, validated_ro, activated)
 
-        depth_layers, eb_verdicts, hq_verdicts = await asyncio.gather(fut_3a, fut_3b, fut_3c)
-        return depth_layers, eb_verdicts, hq_verdicts
+        depth_layers, result_3b, hq_verdicts = await asyncio.gather(fut_3a, fut_3b, fut_3c)
+        return depth_layers, result_3b, hq_verdicts
 
     try:
         loop = asyncio.get_event_loop()
@@ -2439,22 +2661,25 @@ def digital_brain_pipeline(
             import concurrent.futures as cf
             with cf.ThreadPoolExecutor(max_workers=3) as executor:
                 fut_3a = executor.submit(scan_action_data, resolved_action_df, activated, validated_ro)
-                fut_3b = executor.submit(search_evidence_based_web_real, validated_ro, activated)
+                fut_3b = executor.submit(search_evidence_based_web_tiered, validated_ro, activated)
                 fut_3c = executor.submit(search_hq_database, validated_ro, activated)
                 depth_layers = fut_3a.result()
-                eb_verdicts = fut_3b.result()
+                result_3b = fut_3b.result()
                 hq_verdicts = fut_3c.result()
         else:
-            depth_layers, eb_verdicts, hq_verdicts = loop.run_until_complete(_run_parallel())
+            depth_layers, result_3b, hq_verdicts = loop.run_until_complete(_run_parallel())
     except RuntimeError:
         import concurrent.futures as cf
         with cf.ThreadPoolExecutor(max_workers=3) as executor:
             fut_3a = executor.submit(scan_action_data, resolved_action_df, activated, validated_ro)
-            fut_3b = executor.submit(search_evidence_based_web_real, validated_ro, activated)
+            fut_3b = executor.submit(search_evidence_based_web_tiered, validated_ro, activated)
             fut_3c = executor.submit(search_hq_database, validated_ro, activated)
             depth_layers = fut_3a.result()
-            eb_verdicts = fut_3b.result()
+            result_3b = fut_3b.result()
             hq_verdicts = fut_3c.result()
+
+    eb_verdicts = result_3b["eb_verdicts"]
+    stage_3b_evidence_metadata = result_3b["evidence_metadata"]
 
     logger.info("All 3 streams complete: %d DL | %d EB | %d HQ verdicts",
                 len(depth_layers), len(eb_verdicts), len(hq_verdicts))
@@ -2497,6 +2722,7 @@ def digital_brain_pipeline(
         "stage_2_dimensions": dim_result,
         "stage_3a_depth_layers": depth_layers,
         "stage_3b_eb_verdicts": eb_verdicts,
+        "stage_3b_evidence_metadata": stage_3b_evidence_metadata,
         "stage_3c_hq_verdicts": hq_verdicts,
         "stage_4_brain_matrix": brain_matrix,
         "stage_5_personas": personas,
