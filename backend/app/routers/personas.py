@@ -546,13 +546,21 @@ def _persona_kwargs_from_digital_brain(
         }
     if contradiction:
         # Normalized to the same "say_do_gap" shape used by the manual-persona
-        # flow (claim / evidence_based_observation / reasoning) so interview.py
-        # can read one consistent key regardless of which flow generated the
-        # persona — layer_6_contradiction uses says/does/why/example instead.
+        # flow so interview.py reads one consistent key regardless of which flow
+        # generated the persona. layer_6_contradiction uses says/does/why/example
+        # rather than the canonical names. Field aliases (stated_value,
+        # actual_behavior, hidden_driver) are included so the simulation engine
+        # can reference either naming convention without branching.
+        _says = contradiction.get("says")
+        _does = contradiction.get("does")
+        _why = contradiction.get("why")
         persona_details["say_do_gap"] = {
-            "claim": contradiction.get("says"),
-            "evidence_based_observation": contradiction.get("does"),
-            "reasoning": contradiction.get("why"),
+            "claim": _says,
+            "stated_value": _says,
+            "evidence_based_observation": _does,
+            "actual_behavior": _does,
+            "reasoning": _why,
+            "hidden_driver": _why,
         }
 
     return dict(

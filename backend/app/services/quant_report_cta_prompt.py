@@ -265,7 +265,7 @@ Category: [Inferred from research objective]
 Geography: [Inferred from research objective]
 Quant ID: [simulation_id from the payload]
 Ground Truth (Actions Data): [metadata.ground_truth_consumers_analyzed from the payload] relevant consumers analyzed. This number is pre-resolved upstream, display it exactly as given, do not recalculate.
-Enrichment Layer: [Derived from metadata.sourcebank_sources / metadata.sourcebank_context from the payload]. Render as the source count analyzed, with a platform breakdown if the sourcebank sources indicate platforms (for example: "12 sources analyzed across Reddit, Medium, and LinkedIn"). If no sourcebank data is present, output "Not Available".
+Enrichment Layer: [metadata.enrichment_layer from the payload]. This value is pre-resolved upstream. Display it exactly as given, do not modify, do not add or invent platform names, do not recalculate.
 HQ Sources: [metadata.sourcebank_sources_count from the payload] sources. This number is pre-resolved upstream, display it exactly as given, do not recalculate.
 Neuroscience Inference: [metadata.neuroscience_inference from the payload, Yes/No]
 Research Objective Score: [metadata.research_objective_score from the payload]%. If null, output "Not Available".
@@ -359,10 +359,8 @@ Write like a senior researcher explaining findings to a brand manager over coffe
 ---
 ### Section DI-3: The Persona Face-Off
 **Purpose:** Show how the key personas differ, in human terms.
-**Structure:** A narrative comparison table with plain-language takeaways. For each dimension:
-1. **What differs** (the dimension)
-2. **How much** (qualitative magnitude: "substantially," "moderately," "slightly")
-3. **What it means** (implication)
+**CRITICAL FORMAT RULE:** Render as a single cross-tab markdown table where PERSONAS ARE COLUMNS and DIMENSIONS ARE ROWS. The first column is "Dimension", then one column per persona, then a final "What It Means" column. Do NOT use separate tables per dimension, do NOT transpose so personas are rows.
+**Structure:** A single markdown table. Row headers are the dimensions to compare. Each persona column contains the plain-language finding for that persona on that dimension. The "What It Means" column contains the strategic implication.
 **Translation Rules:**
 | Backend Comparison | Narrative Framing |
 |-------------------|-------------------|

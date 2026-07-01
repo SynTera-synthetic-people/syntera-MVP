@@ -20,6 +20,7 @@ from app.services.exploration import (
     TrialLimitReachedException,
     PlanLimitReachedException,
     WorkflowError,
+    WorkspaceNotFoundException,
 )
 from app.models.user import User
 from app.routers.auth_dependencies import get_current_active_user
@@ -70,6 +71,8 @@ async def create(
                 "product_state": product_state,
             }),
         )
+    except WorkspaceNotFoundException:
+        raise HTTPException(status_code=404, detail="Workspace not found.")
 
 
 @router.get("/workspace/{workspace_id}", response_model=list[ExplorationOut])
