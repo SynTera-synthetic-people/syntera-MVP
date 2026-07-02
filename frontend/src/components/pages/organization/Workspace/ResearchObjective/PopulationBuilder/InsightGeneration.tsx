@@ -9,7 +9,8 @@ import {
   useEnsureSurveySimulation,
   useDownloadQuantTranscripts,
   useDownloadQuantDecisionIntelligence,
-  useDownloadQuantBehaviorArchaeology,
+  // Behaviour Archaeology not required for now — commented out
+  // useDownloadQuantBehaviorArchaeology,
 } from '../../../../../../hooks/useQuantitativeQueries';
 import { getSurveySimulationBySource } from '../../../../../../services/quantitativeServices';
 import { getAxiosErrorMessage } from '../../../../../../utils/axiosBlobError';
@@ -83,15 +84,16 @@ const INSIGHT_CARDS: InsightCard[] = [
     actionLabel: 'Generate',
     hasViewer: true,
   },
-  {
-    id: 'behaviour',
-    icon: <SpIcon name="sp-Edit-Undo" size={48} />,
-    timeLabel: '2 to 3 mins',
-    title: 'Behaviour Archaeology',
-    description: 'Uncover the behavioural patterns, motivations, and hidden drivers behind responses',
-    actionLabel: 'Generate',
-    hasViewer: true,
-  },
+  // ── Behaviour Archaeology: not required for now, card disabled ──────────
+  // {
+  //   id: 'behaviour',
+  //   icon: <SpIcon name="sp-Edit-Undo" size={48} />,
+  //   timeLabel: '2 to 3 mins',
+  //   title: 'Behaviour Archaeology',
+  //   description: 'Uncover the behavioural patterns, motivations, and hidden drivers behind responses',
+  //   actionLabel: 'Generate',
+  //   hasViewer: true,
+  // },
   {
     id: 'playground',
     icon: <SpIcon name="sp-Environment-Puzzle" size={48} />,
@@ -121,19 +123,21 @@ const LOADER_MESSAGES: Record<'decision' | 'behaviour', string[]> = {
     'Structuring recommendations and actions...',
     'Finalizing your report',
   ],
-  behaviour: [
-    'Exploring consumer response patterns...',
-    'Looking beneath the surface of the numbers...',
-    'Identifying behavioral clusters...',
-    'Detecting hidden motivations and tensions...',
-    'Mapping decision-making pathways...',
-    'Finding recurring habits and rituals...',
-    'Uncovering trade-offs and triggers...',
-    'Connecting attitudes with likely behaviors...',
-    'Building behavioral archetypes...',
-    'Constructing the behavioral story...',
-    'Unearthing the final insights',
-  ],
+  // ── Behaviour Archaeology: not required for now ──────────────────────────
+  // behaviour: [
+  //   'Exploring consumer response patterns...',
+  //   'Looking beneath the surface of the numbers...',
+  //   'Identifying behavioral clusters...',
+  //   'Detecting hidden motivations and tensions...',
+  //   'Mapping decision-making pathways...',
+  //   'Finding recurring habits and rituals...',
+  //   'Uncovering trade-offs and triggers...',
+  //   'Connecting attitudes with likely behaviors...',
+  //   'Building behavioral archetypes...',
+  //   'Constructing the behavioral story...',
+  //   'Unearthing the final insights',
+  // ],
+  behaviour: [],
 };
 
 // ── OmiLoaderBar ──────────────────────────────────────────────────────────────
@@ -218,7 +222,8 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
   const ensureSurveySimulationMutation = useEnsureSurveySimulation();
   const downloadTranscriptsMutation = useDownloadQuantTranscripts();
   const downloadDecisionMutation = useDownloadQuantDecisionIntelligence();
-  const downloadBehaviourMutation = useDownloadQuantBehaviorArchaeology();
+  // Behaviour Archaeology not required for now — commented out
+  // const downloadBehaviourMutation = useDownloadQuantBehaviorArchaeology();
 
   // ── Card states ───────────────────────────────────────────────────────────
 
@@ -295,8 +300,9 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
   const activeLoaderCard: 'decision' | 'behaviour' | null =
     cardStates['decision'] === 'generating'
       ? 'decision'
-      : cardStates['behaviour'] === 'generating'
-      ? 'behaviour'
+      // Behaviour Archaeology not required for now — commented out
+      // : cardStates['behaviour'] === 'generating'
+      // ? 'behaviour'
       : null;
 
   // ── Survey simulation ID resolution ──────────────────────────────────────
@@ -378,9 +384,11 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
         await downloadTranscriptsMutation.mutateAsync(payload);
       } else if (card.id === 'decision') {
         await downloadDecisionMutation.mutateAsync(payload);
-      } else if (card.id === 'behaviour') {
-        await downloadBehaviourMutation.mutateAsync(payload);
       }
+      // Behaviour Archaeology not required for now — commented out
+      // else if (card.id === 'behaviour') {
+      //   await downloadBehaviourMutation.mutateAsync(payload);
+      // }
 
       setCardStates((prev) => ({ ...prev, [card.id]: 'done' }));
       markLsReady(card.id, explorationId);
@@ -403,9 +411,11 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
         await downloadTranscriptsMutation.mutateAsync(payload);
       } else if (viewingCard === 'decision') {
         await downloadDecisionMutation.mutateAsync(payload);
-      } else if (viewingCard === 'behaviour') {
-        await downloadBehaviourMutation.mutateAsync(payload);
       }
+      // Behaviour Archaeology not required for now — commented out
+      // else if (viewingCard === 'behaviour') {
+      //   await downloadBehaviourMutation.mutateAsync(payload);
+      // }
     } catch (err) {
       console.error(`Failed to download ${viewingCard}:`, err);
       const detail = await getAxiosErrorMessage(err, 'Could not download this report.');
@@ -450,8 +460,9 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
 
   const isModalDownloading =
     downloadTranscriptsMutation.isPending ||
-    downloadDecisionMutation.isPending ||
-    downloadBehaviourMutation.isPending;
+    downloadDecisionMutation.isPending;
+    // Behaviour Archaeology not required for now — commented out
+    // || downloadBehaviourMutation.isPending;
 
   // ── Render ────────────────────────────────────────────────────────────────
 
