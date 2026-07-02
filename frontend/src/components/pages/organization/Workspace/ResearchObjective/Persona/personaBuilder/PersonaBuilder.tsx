@@ -281,6 +281,31 @@ const DownloadSuccessToast: React.FC<{ onClose: () => void }> = ({ onClose }) =>
   </AnimatePresence>
 );
 
+// ── DownloadErrorToast ────────────────────────────────────────────────────────
+
+const DownloadErrorToast: React.FC<{ onClose: () => void }> = ({ onClose }) => (
+  <AnimatePresence>
+    <motion.div
+      className="pb-download-toast pb-download-toast--error"
+      initial={{ opacity: 0, y: 40, scale: 0.95 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 40, scale: 0.95 }}
+      transition={{ duration: 0.22, ease: 'easeOut' }}
+    >
+      <span className="pb-download-toast-icon">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <circle cx="10" cy="10" r="9" stroke="#ef4444" strokeWidth="1.8" />
+          <path d="M10 6v4.5M10 13.5v.5" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      </span>
+      <span className="pb-download-toast-label">Download failed — please try again</span>
+      <button className="pb-download-toast-close" onClick={onClose} aria-label="Dismiss">
+        <TbX size={16} />
+      </button>
+    </motion.div>
+  </AnimatePresence>
+);
+
 // ── KebabMenu ────────────────────────────────────────────────────────────────
 
 interface KebabMenuProps {
@@ -289,9 +314,6 @@ interface KebabMenuProps {
 
 const KebabMenu: React.FC<KebabMenuProps> = ({ items }) => {
   const [open, setOpen] = useState(false);
-
-  // Render nothing when there are no actions to show
-  if (items.length === 0) return null;
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -301,6 +323,8 @@ const KebabMenu: React.FC<KebabMenuProps> = ({ items }) => {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
+
+  if (items.length === 0) return null;
 
   return (
     <div ref={ref} className="pb-kebab-wrap" onClick={e => e.stopPropagation()}>
@@ -975,12 +999,14 @@ const PersonaGridCard: React.FC<PersonaGridCardProps> = ({
       icon: <TbEye size={14} />,
       onClick: () => onViewPersona?.(persona),
     },
-    ...(!isViewOnly ? [
+    ...(!isViewOnly && !isPersonaCreationLocked ? [
       {
         label: 'Replicate Personas',
         icon: <TbCopy size={14} />,
         onClick: () => onReplicatePersona?.(persona),
       },
+    ] : []),
+    ...(!isViewOnly ? [
       {
         label: 'Delete Persona',
         icon: <TbTrash size={14} />,
@@ -1076,7 +1102,7 @@ const CountryGroup: React.FC<CountryGroupProps> = ({
   isViewOnly = false,
   isPersonaCreationLocked = false,
 }) => {
-  const countryKebabItems = isViewOnly ? [] : [
+  const countryKebabItems = (isViewOnly || isPersonaCreationLocked) ? [] : [
     {
       label: 'Replicate Personas',
       icon: <TbCopy size={14} />,
@@ -1106,6 +1132,7 @@ const CountryGroup: React.FC<CountryGroupProps> = ({
               onReplicatePersona={onReplicatePersona}
               onDeletePersona={onDeletePersona}
               isViewOnly={isViewOnly}
+              isPersonaCreationLocked={isPersonaCreationLocked}
             />
           </motion.div>
         ))}
@@ -1453,34 +1480,20 @@ const PersonaBuilder: React.FC = () => {
   const isApproachLocked = !!((exploration as Record<string, unknown> | undefined)?.is_qualitative || (exploration as Record<string, unknown> | undefined)?.is_quantitative);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
   const [showDownloadToast, setShowDownloadToast] = useState(false);
-  // ── DOWNLOAD FIX: surface real errors instead of swallowing them, and
-  //    always keep a manual "click here" fallback link around. We can't
-  //    reliably detect whether Chrome's automatic download trigger actually
-  //    succeeded (it can be silently blocked depending on machine/profile),
-  //    so the manual link is the part that guarantees the file reaches the
-  //    user regardless of what happened automatically.
-  const [downloadError, setDownloadError] = useState('');
-  const [manualDownload, setManualDownload] = useState<{ url: string; filename: string } | null>(null);
+  const [showDownloadError, setShowDownloadError] = useState(false);
 
   const handleDownloadPersonaCards = async (selectedIds: string[]) => {
-    setDownloadError('');
     try {
-      const result = await downloadPersonaCardsFrontend(
+      await downloadPersonaCardsFrontend(
         selectedIds,
         savedPersonasFromAPI as unknown as PersonaCardData[]
       );
-      if (result) {
-        setManualDownload({ url: result.blobUrl, filename: result.filename });
-        setShowDownloadToast(true);
-        setTimeout(() => setShowDownloadToast(false), 6000);
-      } else {
-        setDownloadError('No personas were selected, or none could be rendered.');
-      }
-    } catch (error) {
-      console.error('Failed to download persona cards:', error);
-      setDownloadError(
-        error instanceof Error ? error.message : 'Download failed. Please try again.'
-      );
+      setShowDownloadToast(true);
+      setTimeout(() => setShowDownloadToast(false), 3500);
+    } catch (err) {
+      console.error('[PersonaCard] Download failed:', err);
+      setShowDownloadError(true);
+      setTimeout(() => setShowDownloadError(false), 4000);
     }
   };
 
@@ -2423,56 +2436,8 @@ const PersonaBuilder: React.FC = () => {
           <DownloadSuccessToast onClose={() => setShowDownloadToast(false)} />
         )}
 
-        {/* ── DOWNLOAD FIX: guaranteed manual fallback. A click on this anchor
-            is always a trusted user gesture, so it works even in the cases
-            where the automatic pdf.save() trigger gets silently blocked
-            (stale activation window, Windows display scaling, etc.). */}
-        {/* {manualDownload && (
-          <a
-            href={manualDownload.url}
-            download={manualDownload.filename}
-            className="pb-download-toast"
-            style={{
-              position: 'fixed',
-              bottom: showDownloadToast ? 80 : 24,
-              right: 24,
-              zIndex: 9999,
-              textDecoration: 'none',
-            }}
-            onClick={() => {
-              // Once the user has explicitly clicked to grab the file,
-              // there's no need to keep showing the fallback.
-              setTimeout(() => setManualDownload(null), 500);
-            }}
-          >
-            Didn't download automatically? Click here to save the file
-          </a>
-        )} */}
-
-        {downloadError && (
-          <div
-            style={{
-              position: 'fixed',
-              bottom: 24,
-              right: 24,
-              zIndex: 9999,
-              background: '#ef4444',
-              color: 'white',
-              padding: '10px 16px',
-              borderRadius: 8,
-              fontSize: 12,
-              maxWidth: 320,
-            }}
-          >
-            {downloadError}
-            <button
-              onClick={() => setDownloadError('')}
-              style={{ marginLeft: 10, background: 'none', border: 'none', color: 'white', cursor: 'pointer' }}
-              aria-label="Dismiss"
-            >
-              <TbX size={14} />
-            </button>
-          </div>
+        {showDownloadError && (
+          <DownloadErrorToast onClose={() => setShowDownloadError(false)} />
         )}
       </>
     );

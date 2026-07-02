@@ -96,6 +96,12 @@ blockquote {
     text-align: left;
 }
 
+.report-toc-sub {
+    font-size: 10px;
+    margin: 0 0 5px 18px;
+    color: #5A6B7F;
+}
+
 .quant-table-wrap {
     margin: 10px 0 14px 0;
     page-break-inside: avoid;
@@ -189,4 +195,85 @@ code, pre {
     font-size: 8.5px;
     background: #F4F6F8;
     padding: 3px 4px;
+}
+
+/* ── Studied Personas cross-tab table ── */
+.quant-persona-table-wrap {
+    margin: 10px 0 14px 0;
+    page-break-inside: avoid;
+}
+
+.quant-persona-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed; /* colgroup percentages override per-column */
+}
+
+.quant-persona-table th {
+    background: #1F4788;
+    color: #FFFFFF;
+    font-size: 8px;
+    font-weight: 700;
+    line-height: 1.25;
+    text-align: left;
+    padding: 5px 6px;
+    border: 1px solid #D7E3F4;
+    word-wrap: break-word;
+    overflow-wrap: anywhere;
+    white-space: normal;
+}
+
+.quant-persona-table td {
+    font-size: 8.5px;
+    line-height: 1.32;
+    padding: 5px 6px;
+    border: 1px solid #D7E3F4;
+    vertical-align: top;
+    word-wrap: break-word;
+    overflow-wrap: anywhere;
+    white-space: normal;
+    background: #FFFFFF;
+    color: #132033;
+}
+
+.quant-persona-table tbody tr:nth-child(even) td {
+    background: #F7FAFD;
+}
+
+.quant-persona-table td.quant-persona-dim {
+    background: #E8EEF7;
+    font-weight: 700;
+    color: #1F4788;
+    font-size: 8.5px;
+}
+
+/* ── Global overflow / clipping prevention ── */
+* {
+    box-sizing: border-box;
+    max-width: 100%;
+}
+
+p, li, td, th, blockquote, .quant-record-value {
+    word-wrap: break-word;
+    overflow-wrap: anywhere;
+    hyphens: auto;
+}
+
+img {
+    max-width: 100%;
+    height: auto;
+}
+
+/* Prevent oversized code blocks from breaking the layout */
+pre, code {
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+/* ── Cover page metadata field layout ── */
+.quant-cover-field {
+    display: block;
+    font-size: 10.5px;
+    line-height: 1.5;
+    margin: 0;
 }

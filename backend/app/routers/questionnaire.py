@@ -803,12 +803,19 @@ async def simulate_survey(
 
     # Run the heavy LLM work as a background task.  The client must poll
     # GET /simulation/by-source/{simulation_source_id} until the row appears.
+    # personas_list/persona_samples were resolved above purely to validate
+    # that the requested personas exist; simulate_combined_and_store() now
+    # re-fetches each persona itself (to pull Digital Brain fields), so only
+    # the {persona_id, sample_size} pairs need to be passed through.
+    personas_selection = [
+        {"persona_id": p.get("id"), "sample_size": persona_samples[p.get("id")]}
+        for p in personas_list
+    ]
     background_tasks.add_task(
         simulate_combined_and_store,
         workspace_id=workspace_id,
         research_objective=objective_data,
-        personas_list=personas_list,
-        persona_samples=persona_samples,
+        personas_selection=personas_selection,
         simulation_id=payload.simulation_id,
         questions_sections=questions,
         user_id=current_user.id,

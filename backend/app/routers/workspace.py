@@ -436,13 +436,13 @@ async def delete_workspace(
             ).dict(),
         )
 
-    has_ro = await ws_service.workspace_has_research_objectives(session, workspace_id)
-    if has_ro:
+    has_explorations = await ws_service.workspace_has_explorations(session, workspace_id)
+    if has_explorations:
         raise HTTPException(
             status_code=409,
             detail=(
-                "Workspace cannot be deleted because one or more explorations "
-                "have a finalized research objective."
+                "Workspace cannot be deleted because it still contains active explorations. "
+                "Please delete all explorations first."
             ),
         )
 

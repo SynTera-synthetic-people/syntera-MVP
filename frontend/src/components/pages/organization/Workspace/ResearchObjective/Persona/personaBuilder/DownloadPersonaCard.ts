@@ -13,17 +13,11 @@ export interface DownloadOptions {
   onProgress?: (completed: number, total: number) => void;
 }
 
-/**
- * Returned after the PDF is built so the caller can ALWAYS offer a manual
- * "click here to download" fallback, regardless of whether the automatic
- * download actually fired. This is the key change: we no longer assume
- * pdf.save() succeeded just because it didn't throw.
- */
 export interface DownloadResult {
   filename: string;
   blobUrl: string;
   blob: Blob;
-  /** True if we believe the automatic download was triggered without error. */
+  /** True if we believe the automatic browser download was triggered. */
   autoTriggered: boolean;
 }
 
@@ -37,25 +31,166 @@ function safeFilename(name: string): string {
     .toLowerCase();
 }
 
-// ── Wait for fonts without an arbitrary fixed delay ───────────────────────────
-//
-// The previous version used a flat `setTimeout(300)` per card. That's both
-// unreliable (fonts may not be ready yet on a slow/cold machine) AND wasteful
-// (it stretches out the gap between the user's click and the eventual
-// pdf.save() call, which on Chrome risks the action falling outside the
-// "transient user activation" window and being silently blocked as if it
-// were an unsolicited download). document.fonts.ready resolves as soon as
-// fonts are actually usable, which is both faster on a warm cache and safer
-// on a cold one. We still cap it with a timeout so a font fetch failure can
-// never hang the whole pipeline forever.
-async function waitForFonts(timeoutMs = 1500): Promise<void> {
-  if (typeof document === 'undefined' || !('fonts' in document)) return;
-  await Promise.race([
-    document.fonts.ready.catch(() => undefined),
-    new Promise<void>(resolve => setTimeout(resolve, timeoutMs)),
-  ]);
-  // Two extra animation frames so layout has definitely settled post-font-swap.
-  await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+// ── Render readiness guard ────────────────────────────────────────────────────
+
+/**
+ * Waits for document fonts AND all <img> elements in the container to settle,
+ * then yields two animation frames (layout → paint) before returning.
+ *
+ * Replaces the old flat 300ms setTimeout, which was a race:
+ *  - fonts not yet swapped → blank text on cold cache
+ *  - images not decoded → broken placeholders
+ *  - single rAF not enough on slow hardware
+ */
+async function waitForRender(container: HTMLElement): Promise<void> {
+  await document.fonts.ready;
+
+  const images = Array.from(container.querySelectorAll<HTMLImageElement>('img'));
+  if (images.length > 0) {
+    await Promise.allSettled(
+      images.map(img => {
+        if (img.complete && img.naturalWidth > 0) return Promise.resolve();
+        return new Promise<void>(resolve => {
+          const settle = () => {
+            img.removeEventListener('load', settle);
+            img.removeEventListener('error', settle);
+            resolve();
+          };
+          img.addEventListener('load', settle);
+          img.addEventListener('error', settle);
+        });
+      }),
+    );
+  }
+
+  // Two rAFs: first fires after layout recalc, second after actual pixel paint.
+  await new Promise<void>(resolve =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+  );
+}
+
+// ── createPattern guard ───────────────────────────────────────────────────────
+
+function getCanvasSourceSize(source: CanvasImageSource): { width: number; height: number } | null {
+  const s = source as {
+    width?: unknown; height?: unknown;
+    naturalWidth?: unknown; naturalHeight?: unknown;
+    videoWidth?: unknown; videoHeight?: unknown;
+  };
+  const width =
+    typeof s.naturalWidth === 'number' ? s.naturalWidth :
+    typeof s.videoWidth   === 'number' ? s.videoWidth   :
+    typeof s.width        === 'number' ? s.width        : null;
+  const height =
+    typeof s.naturalHeight === 'number' ? s.naturalHeight :
+    typeof s.videoHeight   === 'number' ? s.videoHeight   :
+    typeof s.height        === 'number' ? s.height        : null;
+  return width === null || height === null ? null : { width, height };
+}
+
+/**
+ * Temporarily monkey-patches CanvasRenderingContext2D.createPattern so that
+ * any 0×0 source canvas is replaced with a 1×1 transparent fallback instead
+ * of throwing InvalidStateError. Restores the original after capture.
+ *
+ * This is a belt-and-suspenders defence on top of the primary fixes in
+ * PersonaCardRenderer (conditional progress-bar fills) and the onclone
+ * sanitizer below. If html2canvas ever creates a 0-size intermediate canvas
+ * for a CSS construct we haven't anticipated, this catches it without crashing.
+ */
+async function withCreatePatternGuard<T>(capture: () => Promise<T>): Promise<T> {
+  const original = CanvasRenderingContext2D.prototype.createPattern;
+  const fallback = document.createElement('canvas');
+  fallback.width = 1;
+  fallback.height = 1;
+
+  CanvasRenderingContext2D.prototype.createPattern = function (
+    image: CanvasImageSource,
+    repetition: string | null,
+  ): CanvasPattern | null {
+    const size = getCanvasSourceSize(image);
+    if (size && (size.width < 1 || size.height < 1)) {
+      return original.call(this, fallback, repetition);
+    }
+    return original.call(this, image, repetition);
+  };
+
+  try {
+    return await capture();
+  } finally {
+    CanvasRenderingContext2D.prototype.createPattern = original;
+  }
+}
+
+// ── Clone sanitizer ───────────────────────────────────────────────────────────
+
+/**
+ * Called via html2canvas's onclone callback. Strips gradient backgrounds and
+ * box-shadows from any element that html2canvas has laid out at 0 or sub-pixel
+ * dimensions. These are the elements that trigger the createPattern crash
+ * (html2canvas creates a 0×0 canvas for the gradient, then calls createPattern
+ * on it which is an InvalidStateError per the spec).
+ *
+ * Gradient elements are replaced with their solid computed backgroundColor
+ * (defaulting to the card surface colour #0d0d0d) so the card still looks
+ * correct — gradients on large visible elements are preserved.
+ */
+function sanitizeHtml2CanvasClone(doc: Document, clonedEl: HTMLElement): void {
+  const win = doc.defaultView;
+  const all = [clonedEl, ...Array.from(clonedEl.querySelectorAll<HTMLElement>('*'))];
+
+  all.forEach(el => {
+    const computed = win?.getComputedStyle(el);
+    const rect = el.getBoundingClientRect();
+    const w = Math.abs(rect.width);
+    const h = Math.abs(rect.height);
+    const bgImage = computed?.backgroundImage ?? el.style.backgroundImage;
+    const isGradient = bgImage.includes('gradient(');
+    const isZeroOrSubPixel = w === 0 || h === 0 || (w > 0 && w < 1) || (h > 0 && h < 1);
+
+    if (isZeroOrSubPixel) {
+      el.style.backgroundImage = 'none';
+      el.style.boxShadow = 'none';
+      return;
+    }
+
+    if (isGradient) {
+      el.style.backgroundImage = 'none';
+      const bg = computed?.backgroundColor;
+      if (!bg || bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent') {
+        el.style.backgroundColor = '#0d0d0d';
+      }
+    }
+  });
+}
+
+// ── Browser download trigger ──────────────────────────────────────────────────
+
+/**
+ * Creates a blob URL, clicks a hidden anchor, and defers URL revocation.
+ * More reliable than jsPDF.save() which internally does the same thing but
+ * can be silently blocked if the call lands outside the browser's transient
+ * user-activation window (e.g. when capture took > 5 s on a slow machine).
+ */
+function triggerBrowserDownload(blob: Blob, filename: string): boolean {
+  try {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.rel = 'noopener';
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    // Revoke after 60 s — revoking too early can cancel an in-flight download
+    // on some Chrome/Windows builds.
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    return true;
+  } catch (err) {
+    console.error('[downloadPersonaCards] triggerBrowserDownload failed:', err);
+    return false;
+  }
 }
 
 // ── Core renderer ─────────────────────────────────────────────────────────────
@@ -67,14 +202,23 @@ async function renderPersonaToCanvas(
 ): Promise<HTMLCanvasElement> {
   const html2canvas = (await import('html2canvas')).default;
 
+  // CRITICAL: Do NOT use overflow:hidden on the container.
+  // html2canvas walks the full ancestor chain to build clip rectangles. Any
+  // overflow:hidden ancestor — even one that has been expanded to the card's
+  // full height — causes html2canvas to create a clipping canvas for every
+  // child element. When a child is 0-wide (e.g. a progress bar fill at 0%,
+  // a 0-width decorative div), that clipping canvas is 0×0 and the subsequent
+  // createPattern() call throws InvalidStateError.
+  //
+  // Fix: position:fixed with a large negative left — the browser always paints
+  // fixed-position elements regardless of their viewport position, so
+  // html2canvas reads correct pixels with no ancestor clip rectangle.
   const scrollHost = document.createElement('div');
   scrollHost.style.cssText = [
     'position:fixed',
     'top:0',
-    'left:0',
+    `left:-${cardWidth + 200}px`,
     `width:${cardWidth}px`,
-    'height:1px',
-    'overflow:hidden',
     'opacity:0.01',
     'pointer-events:none',
     'z-index:-1',
@@ -95,43 +239,43 @@ async function renderPersonaToCanvas(
   try {
     root.render(React.createElement(PersonaCardRenderer, { persona, width: cardWidth }));
 
-    // Let React commit, then wait for fonts/layout instead of a blind 300ms.
-    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-    await waitForFonts();
+    // Deterministic readiness: fonts + images + two paint frames.
+    await waitForRender(mount);
 
     const cardEl = mount.firstElementChild as HTMLElement | null;
     if (!cardEl) {
-      throw new Error('Persona card failed to mount for capture (no root element found).');
+      throw new Error(
+        `PersonaCardRenderer produced no DOM for persona "${persona.name ?? 'unknown'}"`,
+      );
     }
 
     const { width: elW, height: elH } = cardEl.getBoundingClientRect();
-    if (!elW || !elH) {
-      throw new Error('Persona card rendered with zero size — capture aborted.');
+    if (elH === 0) {
+      throw new Error(
+        `Persona card "${persona.name ?? 'unknown'}" has zero height — layout did not complete`,
+      );
     }
 
-    scrollHost.style.height = `${elH}px`;
-    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-
-    // windowWidth/windowHeight pin html2canvas's internal cloned-document
-    // viewport to the card's own size instead of the host browser window.
-    // Without this, Windows display scaling (125%/150%/etc.), devtools being
-    // open, or a narrower/wider browser window than the one used to test can
-    // change how html2canvas's offscreen clone lays things out — a very
-    // plausible reason this "only fails on one machine."
-    const canvas = await html2canvas(cardEl, {
-      scale,
-      useCORS: true,
-      allowTaint: false,
-      backgroundColor: '#050505',
-      logging: false,
-      width: Math.round(elW),
-      height: Math.round(elH),
-      windowWidth: Math.round(elW),
-      windowHeight: Math.round(elH),
-      scrollX: 0,
-      scrollY: 0,
-      ignoreElements: el => el.hasAttribute('data-html2canvas-ignore'),
-    });
+    const canvas = await withCreatePatternGuard(() =>
+      html2canvas(cardEl, {
+        scale,
+        useCORS: true,
+        allowTaint: false,
+        backgroundColor: '#050505',
+        logging: false,
+        width: Math.round(elW) || cardWidth,
+        height: Math.round(elH),
+        // Pin the cloned-document viewport to the card's own size so Windows
+        // display scaling (125%/150%) or devtools open/closed does not change
+        // how html2canvas lays out the off-screen clone.
+        windowWidth: Math.round(elW) || cardWidth,
+        windowHeight: Math.round(elH),
+        scrollX: 0,
+        scrollY: 0,
+        onclone: (doc, clonedEl) => sanitizeHtml2CanvasClone(doc, clonedEl),
+        ignoreElements: el => el.hasAttribute('data-html2canvas-ignore'),
+      }),
+    );
 
     if (canvas.width === 0 || canvas.height === 0) {
       throw new Error('html2canvas produced an empty canvas.');
@@ -139,38 +283,12 @@ async function renderPersonaToCanvas(
 
     return canvas;
   } finally {
-    // Always clean up, even if capture threw, so a failed card never leaks
+    // Always clean up — even if capture threw — so a failed card never leaks
     // a detached React root or a stray DOM node into the page.
     root.unmount();
-    scrollHost.remove();
-  }
-}
-
-// ── Trigger the actual file save ──────────────────────────────────────────────
-//
-// jsPDF's internal `save()` does effectively this under the hood, but doing
-// it ourselves lets us (a) know for certain a Blob was produced, (b) hand
-// the Blob back to the caller for a guaranteed manual fallback link, and
-// (c) keep the anchor-click as close as possible to PDF completion rather
-// than relying on an opaque internal implementation.
-function triggerBrowserDownload(blob: Blob, filename: string): boolean {
-  try {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.rel = 'noopener';
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    // Revoke after a delay rather than immediately — revoking too early can
-    // cancel an in-flight download on some Chrome/Windows builds.
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    return true;
-  } catch (err) {
-    console.error('[downloadPersonaCards] triggerBrowserDownload failed:', err);
-    return false;
+    if (document.body.contains(scrollHost)) {
+      document.body.removeChild(scrollHost);
+    }
   }
 }
 
@@ -201,12 +319,9 @@ export async function downloadPersonaCards(
   let pdf: jsPDF | null = null;
   const failedNames: string[] = [];
 
-  // Build the PDF incrementally (capture → add page → discard canvas)
-  // instead of holding every canvas in memory at once. With this card's
-  // size (900px wide, scale 2, many sections), a handful of canvases held
-  // simultaneously can be tens of millions of pixels — a realistic source
-  // of an OOM/blank-canvas failure on a lower-memory machine that simply
-  // never shows up on a beefier dev machine.
+  // Render sequentially and add each page immediately — avoids holding every
+  // canvas in memory simultaneously (each 900px-wide @2x card is ~7 MB of
+  // pixel data; a handful at once can hit OOM on lower-memory machines).
   for (let i = 0; i < personas.length; i++) {
     const persona = personas[i]!;
     try {
@@ -223,8 +338,7 @@ export async function downloadPersonaCards(
 
       pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, pageW, pageH);
     } catch (err) {
-      // One bad card should not take down the whole batch — log it, skip it,
-      // and keep going so the user still gets the personas that worked.
+      // One bad card does not abort the batch — log, skip, continue.
       console.error(`[downloadPersonaCards] failed to render "${persona.name ?? persona.id}":`, err);
       failedNames.push(persona.name ?? persona.id);
     }
@@ -253,12 +367,7 @@ export async function downloadPersonaCards(
   return { filename, blobUrl, blob, autoTriggered };
 }
 
-// ── Drop-in alias (keeps PersonaBuilder.tsx import unchanged) ─────────────────
-//
-// NOTE: this now returns a DownloadResult instead of void. PersonaBuilder.tsx
-// needs a small update (see accompanying notes) to use the returned blobUrl
-// for a manual fallback link — that's the part that actually guarantees the
-// user gets their file even if the automatic trigger is silently blocked.
+// ── Drop-in alias ─────────────────────────────────────────────────────────────
 
 export async function downloadPersonaCardsFrontend(
   selectedIds: string[],
