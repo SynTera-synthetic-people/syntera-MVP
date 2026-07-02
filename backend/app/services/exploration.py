@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.exploration import Exploration
 from app.models.organization import Organization
 from app.models.user import User
+from app.models.workspace import Workspace
 from app.schemas.exploration import ExplorationCreate, ExplorationUpdate, ExplorationMethodSelect, ExplorationStep
 from app.models.research_objectives import ResearchObjectives
 from app.models.persona import Persona as PersonaModel
@@ -30,6 +31,11 @@ class PlanLimitReachedException(Exception):
     pass
 
 
+class WorkspaceNotFoundException(Exception):
+    """Raised when the target workspace does not exist."""
+    pass
+
+
 class WorkflowError(Exception):
     """Raised when an action is attempted at the wrong workflow step."""
     def __init__(self, message: str, current_step: str):
@@ -45,6 +51,12 @@ async def create_exploration(
     data: ExplorationCreate,
     current_user: Optional[User] = None,
 ) -> Exploration:
+    workspace_exists = await session.scalar(
+        select(Workspace.id).where(Workspace.id == workspace_id).limit(1)
+    )
+    if not workspace_exists:
+        raise WorkspaceNotFoundException()
+
     tier = getattr(current_user, "account_tier", "free") if current_user else None
 
     if current_user is not None and current_user.is_trial:

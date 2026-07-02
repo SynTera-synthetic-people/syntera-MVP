@@ -2,8 +2,9 @@
 Validation for manual_digital_brain_persona.py
 
 Tests against the REAL local DB (uses an existing workspace/exploration pair),
-but mocks the OpenAI call so no API cost is incurred. All test personas
-created are deleted at the end, regardless of pass/fail.
+but mocks both the OpenAI call (trait/brain enrichment) and the Anthropic call
+(RO component extraction in _extract_validated_ro) so no API cost is incurred.
+All test personas created are deleted at the end, regardless of pass/fail.
 
 Run from backend/:  .venv/Scripts/python.exe validate_manual_persona.py
 """
@@ -12,6 +13,10 @@ import sys
 import unittest.mock as mock
 
 sys.path.insert(0, ".")
+# Windows' default console codepage (cp1252) can't encode some characters
+# that show up in LLM-style fixture text (em dashes, smart quotes, etc.) —
+# reconfigure stdout to UTF-8 so a print() never crashes the whole run.
+sys.stdout.reconfigure(encoding="utf-8")
 
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -191,6 +196,43 @@ class _FakeOpenAIResponse:
         self.choices = [_FakeOpenAIChoice(content)]
 
 
+# _extract_validated_ro() calls extract_ro_components_for_pipeline(), which
+# uses the Anthropic client directly (not the OpenAI `client` mocked above).
+# Mock that separately so RO extraction never makes a real Anthropic call.
+FAKE_RO_COMPONENTS = {
+    "category": "FMCG - Personal Care",
+    "sub_category": "Skincare",
+    "target_audience": "Women aged 26-34, urban, mid-to-high income",
+    "geography": "India - Urban Metro",
+    "business_objective": "Understand purchase drivers for skincare in this segment",
+    "research_type": "Qualitative",
+    "key_questions": "What drives purchase decisions in this segment?",
+    "hypotheses": "Price and brand trust are key drivers",
+    "competitive_context": "Competing against established and DTC brands",
+    "time_frame": "Last 6 months",
+    "constraints": "Budget-conscious segment",
+    "probes": "Ask about price sensitivity and brand switching",
+}
+
+
+class _FakeAnthropicBlock:
+    def __init__(self, text):
+        self.type = "text"
+        self.text = text
+
+
+class _FakeAnthropicResponse:
+    def __init__(self, text):
+        self.content = [_FakeAnthropicBlock(text)]
+
+
+def _make_fake_anthropic_client():
+    fake_response = _FakeAnthropicResponse(__import__("json").dumps(FAKE_RO_COMPONENTS))
+    fake_client = mock.MagicMock()
+    fake_client.messages.create = mock.AsyncMock(return_value=fake_response)
+    return fake_client
+
+
 async def main():
     print("=" * 60)
     print("MANUAL DIGITAL BRAIN PERSONA — VALIDATION")
@@ -296,10 +338,19 @@ async def main():
     print("\n[5] calibrate_manual_persona_with_brains (mocked LLM call, real DB read/write)")
 
     if draft_id:
+        # The same canned OpenAI response is returned for every
+        # client.chat.completions.create call this flow makes (Step 3's
+        # trait/OCEAN enrichment, Step 5's brain assignment + say-do-gap, and
+        # any evidence-fallback LLM-simulation calls) — each step only reads
+        # the keys it cares about, so this is sufficient for the flow to
+        # complete without real API calls.
         fake_response = _FakeOpenAIResponse(content=__import__("json").dumps(FAKE_LLM_RESPONSE))
         with mock.patch(
             "app.services.manual_digital_brain_persona.client.chat.completions.create",
             new=mock.AsyncMock(return_value=fake_response),
+        ), mock.patch(
+            "app.services.ro_extractor.get_async_anthropic_client",
+            new=mock.MagicMock(return_value=_make_fake_anthropic_client()),
         ):
             calib_result = await calibrate_manual_persona_with_brains(draft_id, exploration_id)
 

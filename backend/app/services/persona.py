@@ -414,6 +414,78 @@ def _resolve_calibration_confidence(p: Persona, persona_details: dict) -> Option
     return None
 
 
+def _manual_evidence_snapshot_from_details(persona_details: dict, calibration_confidence: Optional[int]) -> Optional[dict]:
+    evidence_metadata = persona_details.get("evidence_metadata")
+    evidence = persona_details.get("evidence")
+    if not isinstance(evidence_metadata, dict) or not isinstance(evidence, dict):
+        return None
+
+    action_meta = evidence_metadata.get("action_data") or {}
+    web_meta = evidence_metadata.get("web_evidence") or {}
+    hq_meta = evidence_metadata.get("hq_research") or {}
+    if not all(isinstance(x, dict) for x in (action_meta, web_meta, hq_meta)):
+        return None
+
+    def _count(meta: dict, key: str) -> int:
+        try:
+            return int(meta.get(key) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def _source_level(meta: dict) -> str:
+        return "Real" if meta.get("source") == "real" else "Estimated"
+
+    action_count = _count(action_meta, "real_records_found")
+    web_count = _count(web_meta, "real_citations_found")
+    hq_count = _count(hq_meta, "real_sources_found")
+
+    confidence_scoring = persona_details.get("confidence_scoring") or {}
+    if not isinstance(confidence_scoring, dict):
+        confidence_scoring = {}
+    try:
+        confidence_value = float(calibration_confidence or 0) / 100
+    except (TypeError, ValueError):
+        confidence_value = 0.0
+    confidence_value = round(max(0.0, min(confidence_value, 1.0)), 2)
+
+    return {
+        "evidence_source": "manual_digital_brain",
+        "total_conversations": action_count + web_count + hq_count,
+        "sources": [
+            {
+                "platform": "Action Data",
+                "threads_or_posts": action_count,
+                "source_type": _source_level(action_meta),
+            },
+            {
+                "platform": "Web Evidence",
+                "threads_or_posts": web_count,
+                "source_type": _source_level(web_meta),
+            },
+            {
+                "platform": "HQ Research",
+                "threads_or_posts": hq_count,
+                "source_type": _source_level(hq_meta),
+            },
+        ],
+        "confidence_calculation_detail": {
+            "level": confidence_scoring.get("confidence_level", "Medium"),
+            "value": confidence_value,
+            "weighted_total": confidence_value,
+        },
+        "timeframe": {
+            "months_analyzed": None,
+            "recent_activity": {"months": None, "percentage": None},
+        },
+        "stream_counts": evidence_metadata,
+        "verdict_counts": {
+            "action_data": len(evidence.get("action_data") or []),
+            "web_evidence": len(evidence.get("web_evidence") or []),
+            "hq_research": len(evidence.get("hq_research") or []),
+        },
+    }
+
+
 def persona_to_dict(p: Persona, creator_full_name: Optional[str] = None) -> dict:
     if p.parent_persona_id:
         created_by_name = creator_full_name or "Unknown"
@@ -510,6 +582,11 @@ def persona_to_dict(p: Persona, creator_full_name: Optional[str] = None) -> dict
         }
 
     resolved_confidence = _resolve_calibration_confidence(p, persona_details)
+    evidence_snapshot = (
+        persona_details.get("evidence_snapshot")
+        if isinstance(persona_details.get("evidence_snapshot"), dict)
+        else _manual_evidence_snapshot_from_details(persona_details, resolved_confidence)
+    )
 
     return {
         "id": p.id,
@@ -644,59 +721,63 @@ def persona_to_dict(p: Persona, creator_full_name: Optional[str] = None) -> dict
         
         # Evidence & Sources
         "reference_sites_with_usage": persona_details.get("reference_sites_with_usage", []),
-        "evidence_snapshot": persona_details.get("evidence_snapshot"),
+        "evidence_snapshot": evidence_snapshot,
+        "evidence": persona_details.get("evidence"),
+        "evidence_metadata": persona_details.get("evidence_metadata"),
+        "brain_assignment": persona_details.get("brain_assignment"),
+        "say_do_gap": persona_details.get("say_do_gap"),
         
         # Flattened evidence fields for easy frontend access
         "sources_breakdown": (
-            persona_details.get("evidence_snapshot", {}).get("sources", [])
-            if isinstance(persona_details.get("evidence_snapshot"), dict)
+            evidence_snapshot.get("sources", [])
+            if isinstance(evidence_snapshot, dict)
             else []
         ),
         "total_conversations_analyzed": (
-            persona_details.get("evidence_snapshot", {}).get("total_conversations", 0)
-            if isinstance(persona_details.get("evidence_snapshot"), dict)
+            evidence_snapshot.get("total_conversations", 0)
+            if isinstance(evidence_snapshot, dict)
             else 0
         ),
         "evidence_confidence_score": (
-            persona_details.get("evidence_snapshot", {})
+            evidence_snapshot
             .get("confidence_calculation_detail", {})
             .get("value")
-            if isinstance(persona_details.get("evidence_snapshot"), dict)
+            if isinstance(evidence_snapshot, dict)
             else None
         ),
         "evidence_confidence_level": (
-            persona_details.get("evidence_snapshot", {})
+            evidence_snapshot
             .get("confidence_calculation_detail", {})
             .get("level")
-            if isinstance(persona_details.get("evidence_snapshot"), dict)
+            if isinstance(evidence_snapshot, dict)
             else None
         ),
         "evidence_source": (
-            persona_details.get("evidence_snapshot", {}).get("evidence_source", "evidence_based")
-            if isinstance(persona_details.get("evidence_snapshot"), dict)
+            evidence_snapshot.get("evidence_source", "evidence_based")
+            if isinstance(evidence_snapshot, dict)
             else "evidence_based"
         ),
         "recency_percentage": (
-            persona_details.get("evidence_snapshot", {})
+            evidence_snapshot
             .get("timeframe", {})
             .get("recent_activity", {})
             .get("percentage")
-            if isinstance(persona_details.get("evidence_snapshot"), dict)
+            if isinstance(evidence_snapshot, dict)
             else None
         ),
         "recency_months": (
-            persona_details.get("evidence_snapshot", {})
+            evidence_snapshot
             .get("timeframe", {})
             .get("recent_activity", {})
             .get("months")
-            if isinstance(persona_details.get("evidence_snapshot"), dict)
+            if isinstance(evidence_snapshot, dict)
             else None
         ),
         "months_analyzed": (
-            persona_details.get("evidence_snapshot", {})
+            evidence_snapshot
             .get("timeframe", {})
             .get("months_analyzed")
-            if isinstance(persona_details.get("evidence_snapshot"), dict)
+            if isinstance(evidence_snapshot, dict)
             else None
         ),
     }

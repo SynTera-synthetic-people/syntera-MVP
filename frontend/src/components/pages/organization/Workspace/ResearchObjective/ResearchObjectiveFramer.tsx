@@ -122,6 +122,160 @@ function buildFramerPayload(data: ROFramerData) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Local draft persistence — so users can revisit what they typed even though
+// nothing is saved server-side until final Submit.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const framerDraftKey = (objectiveId?: string) => `ro_framer_draft_${objectiveId ?? "unknown"}`;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Local "has this objective's Framer been submitted" flag.
+//
+// This is intentionally SEPARATE from the draft key above. The draft key is
+// written on every keystroke while the user is filling the form out and is
+// cleared the moment the final Submit succeeds — so it is NOT a reliable
+// signal for "the user finished framing this objective" (in fact it's the
+// opposite: it's truthy mid-fill and falsy right after a successful submit).
+//
+// The "Review your research framing →" entry point on the chat screen should
+// only appear once the user has actually pressed Submit on the last step of
+// the Framer, so we set this flag only inside the saveFramer onSuccess
+// handler in handleContinue below, and never clear it as part of normal
+// editing — it represents "has this objective ever had a Framer submission",
+// not "is there currently unsaved framer state".
+// ─────────────────────────────────────────────────────────────────────────────
+
+const framerSubmittedKey = (objectiveId?: string) => `ro_framer_submitted_${objectiveId ?? "unknown"}`;
+
+const markFramerSubmitted = (objectiveId?: string) => {
+    try {
+        localStorage.setItem(framerSubmittedKey(objectiveId), "1");
+    } catch {
+        // storage unavailable/full — non-fatal, just skip persistence
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Local "last submitted Framer data" snapshot.
+//
+// This is DIFFERENT from both keys above:
+//  - the draft key (ro_framer_draft_*) is cleared on successful submit
+//  - the submitted flag (ro_framer_submitted_*) is just a boolean
+//
+// The read-only Preview screen (opened via "Review your research framing →")
+// needs the actual field values to display, and it needs them to still be
+// there even after the draft has been wiped. So on every successful submit
+// we also write a permanent snapshot of exactly what was submitted, and the
+// review-only Preview loads FROM THIS SNAPSHOT, never from the draft.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const framerSubmittedDataKey = (objectiveId?: string) => `ro_framer_submitted_data_${objectiveId ?? "unknown"}`;
+
+const saveFramerSubmittedData = (objectiveId: string | undefined, data: ROFramerData) => {
+    try {
+        localStorage.setItem(framerSubmittedDataKey(objectiveId), JSON.stringify(stripFilesForStorage(data)));
+    } catch {
+        // storage unavailable/full — non-fatal, just skip persistence
+    }
+};
+
+const loadFramerSubmittedData = (objectiveId?: string): ROFramerData | null => {
+    try {
+        const saved = localStorage.getItem(framerSubmittedDataKey(objectiveId));
+        if (!saved) return null;
+        const parsed = JSON.parse(saved);
+        // minimal shape check so old/corrupt data doesn't crash the form
+        if (parsed && parsed.context && parsed.material) return parsed as ROFramerData;
+        return null;
+    } catch {
+        return null;
+    }
+};
+
+const makeLinkIdForEmptySection = () => `link-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+const emptySlot = (): MaterialSlot => ({
+    fileName: null,
+    fileSizeLabel: null,
+    uploadStatus: "idle",
+    file: null,
+});
+
+const emptyBriefSection = (): BriefSectionData => ({
+    instruction: "",
+    link: "",
+    file: emptySlot(),
+    submitted: false,
+});
+
+const emptyArtifactSection = (): ArtifactSectionData => ({
+    instruction: "",
+    links: [{ id: makeLinkIdForEmptySection(), value: "" }],
+    file: emptySlot(),
+    submitted: false,
+});
+
+const emptyFramerData = (): ROFramerData => ({
+    context: { companyName: "", industry: "", website: "", competitors: [], extraContext: "" },
+    businessTrigger: { trigger: "" },
+    customerUnknown: { unknown: "" },
+    decisionMoment: { decision: "" },
+    audienceSegments: { audience: "" },
+    material: {
+        brief: emptyBriefSection(),
+        artifact: emptyArtifactSection(),
+    },
+    otherInformation: { notes: "" },
+});
+
+// File objects can't survive JSON.stringify — strip them before saving so
+// localStorage doesn't choke or silently lose data. Display fields
+// (fileName/fileSizeLabel) are kept so the review screen still shows what
+// was attached, even though the raw file itself won't survive a reload.
+const stripFilesForStorage = (data: ROFramerData): ROFramerData => ({
+    ...data,
+    material: {
+        brief: {
+            ...data.material.brief,
+            file: { ...data.material.brief.file, file: null },
+        },
+        artifact: {
+            ...data.material.artifact,
+            file: { ...data.material.artifact.file, file: null },
+        },
+    },
+});
+
+const loadFramerDraft = (objectiveId?: string): ROFramerData | null => {
+    try {
+        const saved = localStorage.getItem(framerDraftKey(objectiveId));
+        if (!saved) return null;
+        const parsed = JSON.parse(saved);
+        // minimal shape check so old/corrupt data doesn't crash the form
+        if (parsed && parsed.context && parsed.material) return parsed as ROFramerData;
+        return null;
+    } catch {
+        return null;
+    }
+};
+
+const saveFramerDraft = (objectiveId: string | undefined, data: ROFramerData) => {
+    try {
+        localStorage.setItem(framerDraftKey(objectiveId), JSON.stringify(stripFilesForStorage(data)));
+    } catch {
+        // storage unavailable/full — non-fatal, just skip persistence
+    }
+};
+
+const clearFramerDraft = (objectiveId?: string) => {
+    try {
+        localStorage.removeItem(framerDraftKey(objectiveId));
+    } catch {
+        // ignore
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Tab registry
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -455,16 +609,15 @@ const ContextTab: React.FC<ContextTabProps> = ({
                             autoComplete="off"
                         />
                         {data.website && (
-                            <a
+                            <a>
                                 className="rofp-visit-btn"
                                 href={
                                     data.website.startsWith("http")
                                         ? data.website
-                                        : "https://" + data.website
+                                        : `https://${data.website}`
                                 }
                                 target="_blank"
                                 rel="noopener noreferrer"
-                            >
                                 Visit ↗
                             </a>
                         )}
@@ -797,20 +950,6 @@ const isLikelyValidUrl = (value: string): boolean => {
 
 const makeLinkId = () => `link-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 const emptyLink = (): MaterialLink => ({ id: makeLinkId(), value: "" });
-
-const emptyBriefSection = (): BriefSectionData => ({
-    instruction: "",
-    link: "",
-    file: { fileName: null, fileSizeLabel: null, uploadStatus: "idle", file: null },
-    submitted: false,
-});
-
-const emptyArtifactSection = (): ArtifactSectionData => ({
-    instruction: "",
-    links: [emptyLink()],
-    file: { fileName: null, fileSizeLabel: null, uploadStatus: "idle", file: null },
-    submitted: false,
-});
 
 const LinkIcon: React.FC = () => (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -1438,6 +1577,7 @@ interface PreviewTabProps {
     onSubmit: () => void;
     onBack: () => void;
     isSubmitting?: boolean;
+    readOnly?: boolean;
 }
 
 interface PreviewSection {
@@ -1487,20 +1627,30 @@ const buildPreviewSections = (data: ROFramerData): PreviewSection[] => {
     return sections;
 };
 
-const PreviewTab: React.FC<PreviewTabProps> = ({ data, onSubmit, onBack, isSubmitting }) => {
+const PreviewTab: React.FC<PreviewTabProps> = ({ data, onSubmit, onBack, isSubmitting, readOnly }) => {
     const sections = buildPreviewSections(data);
     const isEmpty = sections.length === 0;
 
     return (
         <div className="rofp-tab-content">
             <div className="rofp-tab-head">
-                <h2 className="rofp-tab-title">Your research objective, compiled</h2>
-                <p className="rofp-tab-tagline">A quick look at everything Omi will use to build your brief. Go back to adjust anything before you submit.</p>
+                <h2 className="rofp-tab-title">
+                    {readOnly ? "Your research framing so far" : "Your research objective, compiled"}
+                </h2>
+                <p className="rofp-tab-tagline">
+                    {readOnly
+                        ? "Here's everything you've entered in the research framer. This is read-only — close this to continue your chat with Omi."
+                        : "A quick look at everything Omi will use to build your brief. Go back to adjust anything before you submit."}
+                </p>
             </div>
 
             {isEmpty ? (
                 <div className="rofp-preview-empty">
-                    <p className="rofp-preview-empty-text">Nothing's been filled in yet — go back and answer a few prompts to see your compiled objective here.</p>
+                    <p className="rofp-preview-empty-text">
+                        {readOnly
+                            ? "No saved framing yet — nothing's been filled in."
+                            : "Nothing's been filled in yet — go back and answer a few prompts to see your compiled objective here."}
+                    </p>
                 </div>
             ) : (
                 <div className="rofp-preview-box">
@@ -1516,19 +1666,22 @@ const PreviewTab: React.FC<PreviewTabProps> = ({ data, onSubmit, onBack, isSubmi
 
             <div className="rofp-tab-cta">
                 <button className="rofp-btn-back" onClick={onBack} type="button" disabled={isSubmitting}>
-                    <span className="rofp-btn-arrow rofp-btn-arrow--back">←</span>Back
+                    <span className="rofp-btn-arrow rofp-btn-arrow--back">←</span>
+                    {readOnly ? "Close" : "Back"}
                 </button>
-                <div className="rofp-tab-cta-right">
-                    <button
-                        className={["rofp-btn-continue", isEmpty || isSubmitting ? "rofp-btn-continue--disabled" : ""].filter(Boolean).join(" ")}
-                        disabled={isEmpty || isSubmitting}
-                        onClick={() => { if (!isSubmitting) onSubmit(); }}
-                        type="button"
-                    >
-                        {isSubmitting ? "Saving…" : "Submit"}
-                    </button>
-                    {isEmpty && !isSubmitting && <p className="rofp-cta-hint">Fill in at least one section to submit</p>}
-                </div>
+                {!readOnly && (
+                    <div className="rofp-tab-cta-right">
+                        <button
+                            className={["rofp-btn-continue", isEmpty || isSubmitting ? "rofp-btn-continue--disabled" : ""].filter(Boolean).join(" ")}
+                            disabled={isEmpty || isSubmitting}
+                            onClick={() => { if (!isSubmitting) onSubmit(); }}
+                            type="button"
+                        >
+                            {isSubmitting ? "Saving…" : "Submit"}
+                        </button>
+                        {isEmpty && !isSubmitting && <p className="rofp-cta-hint">Fill in at least one section to submit</p>}
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -1570,25 +1723,41 @@ const ResearchObjectiveFramer: React.FC<ResearchObjectiveFramerProps> = ({
         else { navigate(-1); }
     }, [onBack, returnTo, navigate]);
 
-    const [activeTab, setActiveTab] = useState<TabId>("context");
+    const initialTabFromState = (location.state as { initialTab?: TabId } | null)?.initialTab;
+    // If opened specifically to review a saved draft, treat Preview as
+    // read-only (no Submit button) so users can't accidentally re-trigger
+    // a save just by looking at what they typed. In this mode every other
+    // tab is locked — the user can only be on "review" — so nothing can
+    // be edited after submission and silently drift out of sync with
+    // what's already been persisted on the backend.
+    const isReviewOnlyOpen = initialTabFromState === "review";
+
+    const [activeTab, setActiveTab] = useState<TabId>(initialTabFromState ?? "context");
     const [omiState, setOmiState] = useState<OmiState>("idle");
 
     const tabScrollRef = useRef<HTMLDivElement>(null);
     const { canScrollLeft, canScrollRight, recompute: recomputeTabScroll } = useTabNavScrollState(tabScrollRef);
     const scrollTabsBy = (amount: number) => { tabScrollRef.current?.scrollBy({ left: amount, behavior: "smooth" }); };
 
-    const [data, setData] = useState<ROFramerData>({
-        context: { companyName: "", industry: "", website: "", competitors: [], extraContext: "" },
-        businessTrigger: { trigger: "" },
-        customerUnknown: { unknown: "" },
-        decisionMoment: { decision: "" },
-        audienceSegments: { audience: "" },
-        material: {
-            brief: emptyBriefSection(),
-            artifact: emptyArtifactSection(),
-        },
-        otherInformation: { notes: "" },
+    // In review-only mode, hydrate from the permanent "last submitted"
+    // snapshot — NOT the draft, which is cleared as soon as a submit
+    // succeeds and would otherwise leave this screen empty.
+    const [data, setData] = useState<ROFramerData>(() => {
+        if (isReviewOnlyOpen) {
+            return loadFramerSubmittedData(objectiveId) ?? emptyFramerData();
+        }
+        return loadFramerDraft(objectiveId) ?? emptyFramerData();
     });
+
+    // Persist the draft locally on every change, so users can come back and
+    // review (or continue) without losing what they've typed. Nothing here
+    // touches the backend — this is purely a local "don't lose my inputs" cache.
+    // Skipped entirely in review-only mode: that screen is read-only and must
+    // never overwrite the draft (or anything else) with its snapshot data.
+    useEffect(() => {
+        if (isReviewOnlyOpen) return;
+        saveFramerDraft(objectiveId, data);
+    }, [data, objectiveId, isReviewOnlyOpen]);
 
     const activeTabIndex = TABS.findIndex(t => t.id === activeTab);
 
@@ -1616,6 +1785,16 @@ const ResearchObjectiveFramer: React.FC<ResearchObjectiveFramerProps> = ({
 
         saveFramer(buildFramerPayload(data), {
             onSuccess: (response: any) => {
+                clearFramerDraft(objectiveId);
+                // Snapshot exactly what was submitted so the read-only
+                // Preview (opened later via "Review your research framing →")
+                // has something to render — the draft above is gone by now.
+                saveFramerSubmittedData(objectiveId, data);
+                // Mark this objective as having a submitted Framer — this is
+                // what drives the "Review your research framing →" entry
+                // point on the chat screen. Only set this once the save
+                // actually succeeds, never on intermediate tab changes.
+                markFramerSubmitted(objectiveId);
                 const needsFollowup = response?.data?.needs_followup === true;
                 toast.success(
                     needsFollowup
@@ -1640,8 +1819,6 @@ const ResearchObjectiveFramer: React.FC<ResearchObjectiveFramerProps> = ({
         if (prevTab) goToTab(prevTab.id);
     }, [activeTabIndex, goToTab]);
 
-    const accessibleUpTo = TABS.length - 1;
-
     return (
         <div className="rofp-page">
             <button className="rofp-back-btn" onClick={handleBackToObjective} type="button">← Back</button>
@@ -1659,7 +1836,12 @@ const ResearchObjectiveFramer: React.FC<ResearchObjectiveFramerProps> = ({
                     <div className="rofp-tab-nav" role="tablist">
                         {TABS.map((tab, i) => {
                             const isActive = tab.id === activeTab;
-                            const isAccessible = i <= accessibleUpTo;
+                            // In review-only mode, ONLY the Preview tab is
+                            // accessible — every other tab is locked so a
+                            // user who already submitted can't sneak back
+                            // in and edit fields that the backend has
+                            // already consumed/keyed off exploration_id.
+                            const isAccessible = isReviewOnlyOpen ? tab.id === "review" : true;
                             const isDone = i < activeTabIndex;
                             return (
                                 <button
@@ -1704,7 +1886,16 @@ const ResearchObjectiveFramer: React.FC<ResearchObjectiveFramerProps> = ({
                     <OtherInformationTab data={data.otherInformation} onChange={oi => setData(d => ({ ...d, otherInformation: oi }))} onOmiStateChange={setOmiState} onContinue={handleContinue} onBack={handleBack} />
                 )}
                 {activeTab === "review" && (
-                    <PreviewTab data={data} onSubmit={handleContinue} onBack={handleBack} isSubmitting={isSaving} />
+                    <PreviewTab
+                        data={data}
+                        onSubmit={handleContinue}
+                        // Read-only mode must never route "back" into an
+                        // editable tab (that's exactly the hole we're
+                        // closing) — it exits the framer entirely instead.
+                        onBack={isReviewOnlyOpen ? handleBackToObjective : handleBack}
+                        isSubmitting={isSaving}
+                        readOnly={isReviewOnlyOpen}
+                    />
                 )}
             </div>
         </div>

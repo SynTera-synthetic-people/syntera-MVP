@@ -1,12 +1,11 @@
 from datetime import datetime, timedelta
 import secrets
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import async_engine
 from app.models.organization import Organization
-from app.models.research_objectives import ResearchObjectives
 from app.models.exploration import Exploration
 from app.models.user import User
 from app.models.workspace import Workspace, WorkspaceMember
@@ -858,6 +857,15 @@ async def delete_workspace(workspace_id: str):
         for member in members:
             await session.delete(member)
 
+        # Hard-delete soft-deleted explorations — their child records were already
+        # cascade-hard-deleted during soft-delete, so only the row itself remains.
+        await session.execute(
+            delete(Exploration).where(
+                Exploration.workspace_id == workspace_id,
+                Exploration.is_deleted.is_(True),
+            )
+        )
+
         workspace = await _get_workspace_by_id(session, workspace_id)
         if not workspace:
             raise ValueError("Workspace not found")
@@ -867,23 +875,14 @@ async def delete_workspace(workspace_id: str):
         return {"message": "Workspace deleted"}
 
 
-async def workspace_has_research_objectives(
+async def workspace_has_explorations(
     session: AsyncSession,
     workspace_id: str,
 ) -> bool:
-    exploration_ids_result = await session.execute(
+    result = await session.execute(
         select(Exploration.id).where(
             Exploration.workspace_id == workspace_id,
             Exploration.is_deleted.is_(False),
-        )
-    )
-    exploration_ids = exploration_ids_result.scalars().all()
-    if not exploration_ids:
-        return False
-
-    ro_exists = await session.execute(
-        select(ResearchObjectives.id).where(
-            ResearchObjectives.exploration_id.in_(exploration_ids)
         ).limit(1)
     )
-    return ro_exists.first() is not None
+    return result.first() is not None
