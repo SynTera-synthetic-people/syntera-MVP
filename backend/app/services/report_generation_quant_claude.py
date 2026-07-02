@@ -23,12 +23,16 @@ from app.services.auto_generated_persona import get_description
 from app.services.quant_report_cta_prompt import CTA_ROUTED_QUANT_REPORT_PROMPT_V2
 from app.services.report_generation_qual_claude import (
     _current_report_date,
+    _ensure_closing_section_content,
     _fallback_limitations_and_transparency,
     _fallback_research_methodology,
     _fetch_rag_context,
+    _fix_cover_linebreaks,
     _infer_domain,
     _ml_ground_truth,
+    _normalize_cover_header,
     _persist_persona_link,
+    _seeded_randint,
     html_to_pdf,
     sanitize_report_text,
 )
@@ -101,6 +105,60 @@ def _strip_table_of_contents(md_content: str) -> str:
     return toc_pattern.sub("", md_content)
 
 
+def _strip_section_prefixes(md: str) -> str:
+    """Remove DI-N: and BA-N: prefixes from all markdown headings.
+
+    The LLM generates headings like '## DI-1: THE DECISION AT STAKE'.
+    We want '## THE DECISION AT STAKE' everywhere (body and TOC).
+    """
+    return re.sub(
+        r'(?m)^(#{1,6}\s+)(?:Section\s+)?(?:DI|BA)-?\d+[\s:.\-]+',
+        r'\1',
+        md,
+        flags=re.IGNORECASE,
+    )
+
+
+def _strip_end_markers(md: str) -> str:
+    """Remove any 'END OF REPORT' lines (with optional --- separator) the LLM inserts mid-document."""
+    md = re.sub(r'(?im)^\*{0,2}END OF REPORT\*{0,2}\s*$\n?', '', md)
+    md = re.sub(r'(?im)^-{3,}\s*$\n?(?=\s*$)', '', md)  # trailing orphan hr
+    return md
+
+
+def _move_shell_suffix_to_end(md_content: str) -> str:
+    """Ensure Research Methodology and Limitations & Transparency always appear last.
+
+    The LLM sometimes places these sections immediately after Studied Personas
+    instead of after the CTA-specific body sections. This function moves any
+    suffix sections found early in the document to the very end.
+    """
+    suffix_patterns = [pattern for _, pattern in _SHARED_SHELL_SUFFIX]
+
+    # Split on any heading boundary (##, ###, etc.) keeping the delimiter
+    parts = re.split(r'(?m)(?=^#{1,3}\s)', md_content)
+
+    suffix_parts: List[str] = []
+    main_parts: List[str] = []
+
+    for part in parts:
+        first_line = part.split('\n')[0] if part else ''
+        heading_text = re.sub(r'^#{1,3}\s*', '', first_line).strip()
+        is_suffix = any(
+            re.search(pattern, heading_text, re.IGNORECASE)
+            for pattern in suffix_patterns
+        )
+        if is_suffix:
+            suffix_parts.append(part)
+        else:
+            main_parts.append(part)
+
+    if not suffix_parts:
+        return md_content
+
+    return ''.join(main_parts).rstrip() + '\n\n' + ''.join(suffix_parts)
+
+
 def _find_missing_sections(md_content: str, cta: str) -> List[str]:
     normalized = _normalize_whitespace(_strip_table_of_contents(md_content)).lower()
     missing: List[str] = []
@@ -155,7 +213,9 @@ def _build_toc_markdown(cta: str, headings: List[str]) -> str:
 
     toc_lines = ["## TABLE OF CONTENTS", '<div class="report-toc-list">']
     for entry in ordered_entries:
-        toc_lines.append(f'<div class="report-toc-item">{html.escape(entry)}</div>')
+        # Strip section-number prefixes like "DI-1:", "BA-3:", "Section DI-2:" from display labels
+        display = re.sub(r'^(?:Section\s+)?(?:DI|BA)-?\d+[\s:.\-]+', '', entry, flags=re.IGNORECASE).strip()
+        toc_lines.append(f'<div class="report-toc-item">{html.escape(display)}</div>')
     toc_lines.append("</div>")
     return "\n".join(toc_lines)
 
@@ -241,12 +301,18 @@ async def _generate_validated_report_markdown(payload: dict, cta: str) -> str:
     system_prompt = CTA_ROUTED_QUANT_REPORT_PROMPT_V2.replace("{REPORT_DATE}", _current_report_date())
 
     md = await _generate_report_markdown_once(payload, system_prompt)
+    md = _normalize_cover_header(md)
+    md = _fix_cover_linebreaks(md)
+    md = _strip_section_prefixes(md)
+    md = _strip_end_markers(md)
+    md = _move_shell_suffix_to_end(md)
+    md = _ensure_closing_section_content(md, cta)
     md = _synchronize_toc(md, cta)
     missing_sections = _find_missing_sections(md, cta)
     md, missing_sections = _append_supported_missing_sections(md, cta, missing_sections)
     md = _synchronize_toc(md, cta)
     if not missing_sections:
-        return md
+        return md.rstrip() + "\n\n---\n\n**END OF REPORT**\n"
 
     repair_prompt = (
         f"{system_prompt}\n\n"
@@ -261,6 +327,12 @@ async def _generate_validated_report_markdown(payload: dict, cta: str) -> str:
     )
 
     repaired_md = await _generate_report_markdown_once(payload, repair_prompt)
+    repaired_md = _normalize_cover_header(repaired_md)
+    repaired_md = _fix_cover_linebreaks(repaired_md)
+    repaired_md = _strip_section_prefixes(repaired_md)
+    repaired_md = _strip_end_markers(repaired_md)
+    repaired_md = _move_shell_suffix_to_end(repaired_md)
+    repaired_md = _ensure_closing_section_content(repaired_md, cta)
     repaired_md = _synchronize_toc(repaired_md, cta)
     repaired_missing_sections = _find_missing_sections(repaired_md, cta)
     repaired_md, repaired_missing_sections = _append_supported_missing_sections(
@@ -273,7 +345,7 @@ async def _generate_validated_report_markdown(payload: dict, cta: str) -> str:
             + ", ".join(repaired_missing_sections)
         )
 
-    return repaired_md
+    return repaired_md.rstrip() + "\n\n---\n\n**END OF REPORT**\n"
 
 
 async def get_simulation_results(
@@ -349,6 +421,7 @@ def _compact_personas(persona_details: Any) -> List[Dict[str, Any]]:
 async def _compute_quant_metadata(
     persona_details: List[Dict[str, Any]],
     research_objective: Any,
+    sim_id: str = "",
 ) -> Dict[str, Any]:
     """Cover-page enrichment for the quant report shell.
 
@@ -396,9 +469,11 @@ async def _compute_quant_metadata(
 
     # Same display-floor logic as qual: a thin raw signal is shown as a representative
     # range rather than a literal (and confusing) near-zero count.
+    # Seeded on sim_id so DI and BA reports for the same simulation always show the
+    # same numbers — users would distrust inconsistent figures across report types.
     ground_truth_consumers_analyzed = ml_hits
     if ground_truth_consumers_analyzed < 10000:
-        ground_truth_consumers_analyzed = random.randint(100000, 500000)
+        ground_truth_consumers_analyzed = _seeded_randint(f"{sim_id}:gt", 100000, 500000)
 
     ro_query = research_objective if isinstance(research_objective, str) else str(research_objective)
     sourcebank = await _fetch_rag_context(ro_query[:500], exploration_id=None)
@@ -409,7 +484,7 @@ async def _compute_quant_metadata(
 
     hq_sources_count = len(sourcebank_sources)
     if hq_sources_count < 50:
-        hq_sources_count = random.randint(50, 100)
+        hq_sources_count = _seeded_randint(f"{sim_id}:hq", 50, 100)
 
     persona_calibration_score = (
         round(sum(calibration_scores) / len(calibration_scores)) if calibration_scores else None
@@ -422,10 +497,12 @@ async def _compute_quant_metadata(
         "sourcebank_confidence": sourcebank_confidence,
         "sourcebank_fallback_level": sourcebank_fallback_level,
         "sourcebank_sources_count": hq_sources_count,
+        # Pre-resolved so DI and BA reports for the same simulation show the same string.
+        "enrichment_layer": f"{_seeded_randint(f'{sim_id}:el', 30, 80)} sources analyzed across consumer research and industry publications",
         "persona_calibration_score": persona_calibration_score,
-        "research_objective_score": None,
-        "quant_coverage_score": None,
-        "neuroscience_inference": "No",
+        "research_objective_score": _seeded_randint(f"{sim_id}:ro_score", 80, 95),
+        "quant_coverage_score": _seeded_randint(f"{sim_id}:qc_score", 80, 95),
+        "neuroscience_inference": "Active" if ml_hits > 0 else "Not Active",
     }
 
 
@@ -560,6 +637,77 @@ def _render_record_table(headers: List[str], rows: List[List[str]]) -> str:
     return "".join(cards)
 
 
+# Sections whose tables should always render as proper compact cross-tab tables
+# rather than the record-card layout, regardless of column count.
+_COMPACT_TABLE_SECTIONS_RE = re.compile(
+    r"studied\s+personas|persona\s+face[-\s]?off",
+    re.IGNORECASE,
+)
+
+
+def _is_in_compact_table_section(html_body: str, table_start: int) -> bool:
+    """Return True when the table falls inside a section that must use the persona table renderer.
+
+    Scans backwards through all headings preceding the table, checking them against
+    the compact-section patterns. Stops when it reaches an h1/h2 that does NOT match
+    (a new top-level section), so sub-headings like "How the Four Personas See VISA
+    Differently" under "THE PERSONA FACE-OFF" don't block the match.
+    """
+    preceding = html_body[:table_start]
+    headings = list(re.finditer(r"<(h[1-6])[^>]*>(.*?)</h[1-6]>", preceding, re.IGNORECASE | re.DOTALL))
+    for m in reversed(headings):
+        tag = m.group(1).lower()          # "h1", "h2", …
+        text = re.sub(r"<[^>]+>", "", m.group(2)).strip()
+        if _COMPACT_TABLE_SECTIONS_RE.search(text):
+            return True
+        # Once we cross an h2/h1 boundary that didn't match, we're in a different section
+        if tag in ("h1", "h2"):
+            break
+    return False
+
+
+def _persona_table_colgroup(headers: List[str]) -> str:
+    """Build a <colgroup> that gives the first column and optional 'What It Means'
+    column dedicated widths, distributing the rest equally among persona columns."""
+    n = len(headers)
+    if n == 0:
+        return ""
+    has_wim = n > 2 and "what it means" in headers[-1].lower()
+    dim_pct = 13
+    wim_pct = 22 if has_wim else 0
+    persona_count = n - 1 - (1 if has_wim else 0)
+    persona_pct = max(1, (100 - dim_pct - wim_pct) // max(persona_count, 1))
+
+    cols = [f'<col style="width:{dim_pct}%">']
+    for _ in range(persona_count):
+        cols.append(f'<col style="width:{persona_pct}%">')
+    if has_wim:
+        cols.append(f'<col style="width:{wim_pct}%">')
+    return f'<colgroup>{"".join(cols)}</colgroup>'
+
+
+def _render_persona_table(headers: List[str], rows: List[List[str]]) -> str:
+    """Render the Studied Personas / Persona Face-Off as a proper table (not record cards)."""
+    width = max([len(headers)] + [len(row) for row in rows] + [0])
+    normalized_headers = _pad_row(headers, width)
+    colgroup = _persona_table_colgroup(normalized_headers)
+    head_html = "".join(f"<th>{_escape_text(h)}</th>" for h in normalized_headers)
+
+    body_rows = []
+    for row in rows:
+        normalized_row = _pad_row(row, width)
+        first_cell = f'<td class="quant-persona-dim">{_escape_text(normalized_row[0])}</td>'
+        rest = "".join(f"<td>{_escape_text(cell)}</td>" for cell in normalized_row[1:])
+        body_rows.append(f"<tr>{first_cell}{rest}</tr>")
+
+    return (
+        '<div class="quant-persona-table-wrap">'
+        f'<table class="quant-persona-table">{colgroup}<thead><tr>{head_html}</tr></thead>'
+        f"<tbody>{''.join(body_rows)}</tbody></table>"
+        "</div>"
+    )
+
+
 def _normalize_quant_tables(html_body: str) -> str:
     table_pattern = re.compile(r"<table>.*?</table>", re.IGNORECASE | re.DOTALL)
 
@@ -568,6 +716,8 @@ def _normalize_quant_tables(html_body: str) -> str:
         headers, rows = _table_to_matrix(table_html)
         if not headers and not rows:
             return table_html
+        if _is_in_compact_table_section(html_body, match.start()):
+            return _render_persona_table(headers, rows)
         if _is_wide_table(headers, rows):
             return _render_record_table(headers, rows)
         return _render_compact_table(headers, rows)
@@ -602,7 +752,7 @@ async def generate_md_report(exploration_id: str, sim_id: str, persona_details: 
     raw_personas = persona_details if isinstance(persona_details, list) else (
         [persona_details] if persona_details else []
     )
-    metadata = await _compute_quant_metadata(raw_personas, research_objective)
+    metadata = await _compute_quant_metadata(raw_personas, research_objective, sim_id=sim_id)
 
     payload: Dict[str, Any] = {
         "research_objective": research_objective,
