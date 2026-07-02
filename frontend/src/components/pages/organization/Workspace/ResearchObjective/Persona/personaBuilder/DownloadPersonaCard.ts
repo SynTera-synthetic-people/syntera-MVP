@@ -23,22 +23,132 @@ function safeFilename(name: string): string {
     .toLowerCase();
 }
 
-// ── Core renderer ─────────────────────────────────────────────────────────────
+// ── Render readiness guard ────────────────────────────────────────────────────
 
 /**
- * Renders a PersonaCardRenderer to a canvas via html2canvas.
+ * Waits for document fonts AND all <img> elements in the container to settle,
+ * then yields two animation frames (layout → paint) before returning.
  *
- * KEY FIXES vs the blank-PDF version:
- *  1. Container uses `position:absolute` (not fixed) inside a real scrollable
- *     wrapper so the browser actually paints it.
- *  2. `opacity:0.01` (not `visibility:hidden`) — invisible to the user but
- *     still painted, so html2canvas can read the pixels.
- *  3. We capture the card element directly (not the wrapper) and pass
- *     explicit `width` + `height` from the element's bounding rect.
- *  4. A 300 ms settle time (not just rAF) gives web fonts time to load.
- *  5. `backgroundColor` is set to the card's actual bg (#050505) so the
- *     canvas is never transparent / empty.
+ * This replaces the previous hardcoded 300 ms timeout which was a race:
+ *  - fonts not yet swapped → blank text
+ *  - images not yet decoded → broken placeholders
+ *  - single rAF not enough on slow hardware
  */
+async function waitForRender(container: HTMLElement): Promise<void> {
+  // Block until every @font-face the browser knows about has loaded.
+  await document.fonts.ready;
+
+  // Settle any <img> tags (e.g. avatars). We resolve on both load and error so
+  // a failed image never blocks the download indefinitely.
+  const images = Array.from(container.querySelectorAll<HTMLImageElement>('img'));
+  if (images.length > 0) {
+    await Promise.allSettled(
+      images.map(img => {
+        if (img.complete && img.naturalWidth > 0) return Promise.resolve();
+        return new Promise<void>(resolve => {
+          const settle = () => {
+            img.removeEventListener('load', settle);
+            img.removeEventListener('error', settle);
+            resolve();
+          };
+          img.addEventListener('load', settle);
+          img.addEventListener('error', settle);
+        });
+      }),
+    );
+  }
+
+  // Two rAFs: first fires after layout recalc, second after actual pixel paint.
+  await new Promise<void>(resolve =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+  );
+}
+
+function getCanvasSourceSize(source: CanvasImageSource): { width: number; height: number } | null {
+  const maybeSized = source as {
+    width?: unknown;
+    height?: unknown;
+    naturalWidth?: unknown;
+    naturalHeight?: unknown;
+    videoWidth?: unknown;
+    videoHeight?: unknown;
+  };
+
+  const width =
+    typeof maybeSized.naturalWidth === 'number' ? maybeSized.naturalWidth :
+      typeof maybeSized.videoWidth === 'number' ? maybeSized.videoWidth :
+        typeof maybeSized.width === 'number' ? maybeSized.width :
+          null;
+
+  const height =
+    typeof maybeSized.naturalHeight === 'number' ? maybeSized.naturalHeight :
+      typeof maybeSized.videoHeight === 'number' ? maybeSized.videoHeight :
+        typeof maybeSized.height === 'number' ? maybeSized.height :
+          null;
+
+  return width === null || height === null ? null : { width, height };
+}
+
+async function withCreatePatternGuard<T>(capture: () => Promise<T>): Promise<T> {
+  const originalCreatePattern = CanvasRenderingContext2D.prototype.createPattern;
+  const fallbackCanvas = document.createElement('canvas');
+  fallbackCanvas.width = 1;
+  fallbackCanvas.height = 1;
+
+  CanvasRenderingContext2D.prototype.createPattern = function (
+    image: CanvasImageSource,
+    repetition: string | null,
+  ): CanvasPattern | null {
+    const size = getCanvasSourceSize(image);
+    if (size && (size.width < 1 || size.height < 1)) {
+      return originalCreatePattern.call(this, fallbackCanvas, repetition);
+    }
+
+    return originalCreatePattern.call(this, image, repetition);
+  };
+
+  try {
+    return await capture();
+  } finally {
+    CanvasRenderingContext2D.prototype.createPattern = originalCreatePattern;
+  }
+}
+
+function sanitizeHtml2CanvasClone(doc: Document, clonedEl: HTMLElement): void {
+  const win = doc.defaultView;
+  const elements = [clonedEl, ...Array.from(clonedEl.querySelectorAll<HTMLElement>('*'))];
+
+  elements.forEach(el => {
+    const computed = win?.getComputedStyle(el);
+    const rect = el.getBoundingClientRect();
+    const width = Math.abs(rect.width);
+    const height = Math.abs(rect.height);
+    const backgroundImage = computed?.backgroundImage ?? el.style.backgroundImage;
+    const hasGradientBackground = backgroundImage.includes('gradient(');
+    const hasZeroOrSubPixelBox =
+      width === 0 ||
+      height === 0 ||
+      (width > 0 && width < 1) ||
+      (height > 0 && height < 1);
+
+    if (hasZeroOrSubPixelBox) {
+      el.style.backgroundImage = 'none';
+      el.style.boxShadow = 'none';
+      return;
+    }
+
+    if (hasGradientBackground) {
+      el.style.backgroundImage = 'none';
+      const backgroundColor = computed?.backgroundColor;
+      if (!backgroundColor || backgroundColor === 'rgba(0, 0, 0, 0)' || backgroundColor === 'transparent') {
+        el.style.backgroundColor = '#0d0d0d';
+      }
+    }
+  });
+}
+
+// ── Core renderer ─────────────────────────────────────────────────────────────
+
 async function renderPersonaToCanvas(
   persona: PersonaCardData,
   cardWidth: number,
@@ -46,22 +156,31 @@ async function renderPersonaToCanvas(
 ): Promise<HTMLCanvasElement> {
   const html2canvas = (await import('html2canvas')).default;
 
-  // ── 1. Outer scroll-host (hides the card from the user) ──────────────────
+  // ── 1. Off-screen container ───────────────────────────────────────────────
+  //
+  // CRITICAL: Do NOT use overflow:hidden here.
+  // html2canvas walks the ancestor chain to build clip rectangles. Any
+  // overflow:hidden ancestor (even one that's been expanded to full height)
+  // causes html2canvas to create clipping canvases for every child element.
+  // When a child has 0 width (e.g. a progress bar at 0%, a 0-width gradient
+  // div), html2canvas calls createPattern() on a 0×0 canvas → InvalidStateError.
+  //
+  // Instead: position:fixed with a large negative left pushes the card fully
+  // off-screen to the left. The browser still paints fixed-position elements
+  // regardless of their viewport position, so html2canvas reads correct pixels.
+  // No overflow clipping → no 0-sized intermediate canvases.
   const scrollHost = document.createElement('div');
   scrollHost.style.cssText = [
     'position:fixed',
     'top:0',
-    'left:0',
+    `left:-${cardWidth + 200}px`,
     `width:${cardWidth}px`,
-    'height:1px',          // only 1 px tall — card overflows below visible area
-    'overflow:hidden',
-    'opacity:0.01',        // nearly invisible but still painted
+    'opacity:0.01',
     'pointer-events:none',
     'z-index:-1',
   ].join(';');
   document.body.appendChild(scrollHost);
 
-  // ── 2. Inner mount point — full height, scrolled out of view ─────────────
   const mount = document.createElement('div');
   mount.style.cssText = [
     'position:absolute',
@@ -71,44 +190,57 @@ async function renderPersonaToCanvas(
   ].join(';');
   scrollHost.appendChild(mount);
 
-  // ── 3. Render React card ──────────────────────────────────────────────────
   const root = createRoot(mount);
-  root.render(
-    React.createElement(PersonaCardRenderer, { persona, width: cardWidth }),
-  );
 
-  // Wait for React commit + layout + web-font load
-  await new Promise<void>(resolve => setTimeout(resolve, 300));
+  try {
+    // ── 2. Render ─────────────────────────────────────────────────────────
+    root.render(
+      React.createElement(PersonaCardRenderer, { persona, width: cardWidth }),
+    );
 
-  // ── 4. Measure actual rendered height ────────────────────────────────────
-  const cardEl = mount.firstElementChild as HTMLElement;
-  const { width: elW, height: elH } = cardEl.getBoundingClientRect();
+    // ── 3. Wait for fonts, images, and two paint frames ───────────────────
+    await waitForRender(mount);
 
-  // Expand scrollHost to full card height for the capture frame
-  scrollHost.style.height = `${elH}px`;
+    // ── 4. Measure ────────────────────────────────────────────────────────
+    const cardEl = mount.firstElementChild as HTMLElement | null;
+    if (!cardEl) {
+      throw new Error(
+        `PersonaCardRenderer produced no DOM for persona "${persona.name ?? 'unknown'}"`,
+      );
+    }
 
-  // One more frame for the browser to repaint at the new height
-  await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+    const { width: elW, height: elH } = cardEl.getBoundingClientRect();
+    if (elH === 0) {
+      throw new Error(
+        `Persona card "${persona.name ?? 'unknown'}" has zero height — layout did not complete`,
+      );
+    }
 
-  // ── 5. Capture ────────────────────────────────────────────────────────────
-  const canvas = await html2canvas(cardEl, {
-    scale,
-    useCORS: true,
-    allowTaint: false,
-    backgroundColor: '#050505',
-    logging: false,
-    width: Math.round(elW) || cardWidth,
-    height: Math.round(elH) || Math.round(cardWidth * 1.4),
-    scrollX: 0,
-    scrollY: 0,
-    ignoreElements: el => el.hasAttribute('data-html2canvas-ignore'),
-  });
-
-  // ── 6. Clean up ───────────────────────────────────────────────────────────
-  root.unmount();
-  document.body.removeChild(scrollHost);
-
-  return canvas;
+    // ── 5. Capture ────────────────────────────────────────────────────────
+    return await withCreatePatternGuard(() =>
+      html2canvas(cardEl, {
+        scale,
+        useCORS: true,
+        allowTaint: false,
+        backgroundColor: '#050505',
+        logging: false,
+        width: Math.round(elW) || cardWidth,
+        height: Math.round(elH),
+        scrollX: 0,
+        scrollY: 0,
+        onclone: (doc, clonedEl) => {
+          sanitizeHtml2CanvasClone(doc, clonedEl);
+        },
+        ignoreElements: el => el.hasAttribute('data-html2canvas-ignore'),
+      }),
+    );
+  } finally {
+    // ── 6. Guaranteed cleanup ─────────────────────────────────────────────
+    root.unmount();
+    if (document.body.contains(scrollHost)) {
+      document.body.removeChild(scrollHost);
+    }
+  }
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────

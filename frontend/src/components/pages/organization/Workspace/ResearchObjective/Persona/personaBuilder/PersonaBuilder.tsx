@@ -281,6 +281,31 @@ const DownloadSuccessToast: React.FC<{ onClose: () => void }> = ({ onClose }) =>
   </AnimatePresence>
 );
 
+// ── DownloadErrorToast ────────────────────────────────────────────────────────
+
+const DownloadErrorToast: React.FC<{ onClose: () => void }> = ({ onClose }) => (
+  <AnimatePresence>
+    <motion.div
+      className="pb-download-toast pb-download-toast--error"
+      initial={{ opacity: 0, y: 40, scale: 0.95 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 40, scale: 0.95 }}
+      transition={{ duration: 0.22, ease: 'easeOut' }}
+    >
+      <span className="pb-download-toast-icon">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <circle cx="10" cy="10" r="9" stroke="#ef4444" strokeWidth="1.8" />
+          <path d="M10 6v4.5M10 13.5v.5" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      </span>
+      <span className="pb-download-toast-label">Download failed — please try again</span>
+      <button className="pb-download-toast-close" onClick={onClose} aria-label="Dismiss">
+        <TbX size={16} />
+      </button>
+    </motion.div>
+  </AnimatePresence>
+);
+
 // ── KebabMenu ────────────────────────────────────────────────────────────────
 
 interface KebabMenuProps {
@@ -1455,14 +1480,21 @@ const PersonaBuilder: React.FC = () => {
   const isApproachLocked = !!((exploration as Record<string, unknown> | undefined)?.is_qualitative || (exploration as Record<string, unknown> | undefined)?.is_quantitative);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
   const [showDownloadToast, setShowDownloadToast] = useState(false);
+  const [showDownloadError, setShowDownloadError] = useState(false);
 
   const handleDownloadPersonaCards = async (selectedIds: string[]) => {
-    await downloadPersonaCardsFrontend(
-      selectedIds,
-      savedPersonasFromAPI as unknown as PersonaCardData[]
-    );
-    setShowDownloadToast(true);
-    setTimeout(() => setShowDownloadToast(false), 3500);
+    try {
+      await downloadPersonaCardsFrontend(
+        selectedIds,
+        savedPersonasFromAPI as unknown as PersonaCardData[]
+      );
+      setShowDownloadToast(true);
+      setTimeout(() => setShowDownloadToast(false), 3500);
+    } catch (err) {
+      console.error('[PersonaCard] Download failed:', err);
+      setShowDownloadError(true);
+      setTimeout(() => setShowDownloadError(false), 4000);
+    }
   };
 
   // ── formatPersonaData ───────────────────────────────────────────────────────
@@ -2402,6 +2434,10 @@ const PersonaBuilder: React.FC = () => {
 
         {showDownloadToast && (
           <DownloadSuccessToast onClose={() => setShowDownloadToast(false)} />
+        )}
+
+        {showDownloadError && (
+          <DownloadErrorToast onClose={() => setShowDownloadError(false)} />
         )}
       </>
     );

@@ -424,7 +424,7 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 function Section({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
   return (
     <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 14, padding: '24px 24px 20px', position: 'relative', overflow: 'hidden', ...style }}>
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: `linear-gradient(90deg, transparent, ${ACCENT}, transparent)`, opacity: 0.25 }} />
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: ACCENT, opacity: 0.18 }} />
       {children}
     </div>
   );
@@ -563,7 +563,7 @@ function DimCard({ name, description, intensity, value, color }: DimCardProps) {
       </div>
       <p style={{ fontFamily: SANS, fontSize: 11, lineHeight: 1.55, color: TEXT_SEC, marginBottom: 10 }}>{description}</p>
       <div style={{ height: 5, background: 'rgba(255,255,255,0.05)', borderRadius: 3, overflow: 'hidden' }}>
-        <div style={{ height: '100%', width: `${value}%`, background: color, borderRadius: 3 }} />
+        {value > 0 && <div style={{ height: '100%', width: `${value}%`, background: color, borderRadius: 3 }} />}
       </div>
     </div>
   );
@@ -632,7 +632,7 @@ function ConfidenceBar({ label, value }: { label: string; value: number }) {
         <span style={{ fontFamily: MONO, fontSize: 14, fontWeight: 700, color }}>{pct}%</span>
       </div>
       <div style={{ height: 5, background: 'rgba(255,255,255,0.05)', borderRadius: 3, overflow: 'hidden' }}>
-        <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 3 }} />
+        {pct > 0 && <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 3 }} />}
       </div>
     </div>
   );
@@ -778,7 +778,7 @@ function GroundTruthFoundation({ persona }: { persona: PersonaCardData }) {
                   <span style={{ fontFamily: MONO, fontSize: 11, fontWeight: 700, color: TEXT_PRI }}>{pct}%</span>
                 </div>
                 <div style={{ height: 4, background: 'rgba(255,255,255,0.06)', borderRadius: 99, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${pct}%`, background: `linear-gradient(90deg, ${ACCENT}, ${GREEN})`, borderRadius: 99 }} />
+                  {pct > 0 && <div style={{ height: '100%', width: `${pct}%`, background: ACCENT, borderRadius: 99 }} />}
                 </div>
               </div>
             ))}
@@ -1026,7 +1026,7 @@ const PersonaCardRenderer = React.forwardRef<HTMLDivElement, Props>(
       <div ref={ref} style={{ width, background: BG, padding: '52px 40px 48px', boxSizing: 'border-box', fontFamily: SANS, position: 'relative', overflow: 'hidden' }}>
 
         {/* Ambient glow */}
-        <div style={{ position: 'absolute', top: '-40%', left: '-30%', width: '160%', height: '160%', background: `radial-gradient(circle at 30% 20%, rgba(14,99,236,0.04) 0%, transparent 40%), radial-gradient(circle at 70% 80%, rgba(14,99,236,0.03) 0%, transparent 40%)`, pointerEvents: 'none', zIndex: 0 }} />
+        <div style={{ position: 'absolute', top: '-40%', left: '-30%', width: '160%', height: '160%', background: 'rgba(14,99,236,0.025)', pointerEvents: 'none', zIndex: 0 }} />
 
         {/* ── HEADER ─────────────────────────────────────────────────────── */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 52, position: 'relative', zIndex: 1 }}>
@@ -1248,7 +1248,7 @@ const PersonaCardRenderer = React.forwardRef<HTMLDivElement, Props>(
 
         {/* ── ROW 6: Evidence Base ─────────────────────────────────────────── */}
         {hasEvidence && (
-          <Section style={{ marginBottom: GAP, background: `linear-gradient(135deg, ${SURFACE} 0%, ${SURFACE_EL} 100%)`, position: 'relative', zIndex: 1 }}>
+          <Section style={{ marginBottom: GAP, background: SURFACE, position: 'relative', zIndex: 1 }}>
             <SectionTitle>Evidence Base</SectionTitle>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 20 }}>
