@@ -609,7 +609,7 @@ const ContextTab: React.FC<ContextTabProps> = ({
                             autoComplete="off"
                         />
                         {data.website && (
-                            <a>
+                            <a
                                 className="rofp-visit-btn"
                                 href={
                                     data.website.startsWith("http")
@@ -618,6 +618,7 @@ const ContextTab: React.FC<ContextTabProps> = ({
                                 }
                                 target="_blank"
                                 rel="noopener noreferrer"
+                            >
                                 Visit ↗
                             </a>
                         )}
