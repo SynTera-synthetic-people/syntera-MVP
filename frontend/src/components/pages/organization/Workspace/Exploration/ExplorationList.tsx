@@ -282,7 +282,7 @@ const ReportLogContainer: React.FC<ReportLogContainerProps> = ({ exploration, wo
       switch (itemId) {
         case 'interview-verbatim': {
           const blob = await interviewService.downloadQualTranscripts(workspaceId, explorationId);
-          _triggerBlobDownload(blob, `transcripts_${explorationId}.docx`);
+          _triggerBlobDownload(blob, `transcripts_${explorationId}.pdf`);
           break;
         }
 
