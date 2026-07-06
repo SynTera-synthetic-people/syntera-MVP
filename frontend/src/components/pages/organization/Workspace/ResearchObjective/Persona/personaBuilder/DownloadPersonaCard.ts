@@ -13,6 +13,14 @@ export interface DownloadOptions {
   onProgress?: (completed: number, total: number) => void;
 }
 
+export interface DownloadResult {
+  filename: string;
+  blobUrl: string;
+  blob: Blob;
+  /** True if we believe the automatic browser download was triggered. */
+  autoTriggered: boolean;
+}
+
 // ── Safe filename ─────────────────────────────────────────────────────────────
 
 function safeFilename(name: string): string {
@@ -29,17 +37,14 @@ function safeFilename(name: string): string {
  * Waits for document fonts AND all <img> elements in the container to settle,
  * then yields two animation frames (layout → paint) before returning.
  *
- * This replaces the previous hardcoded 300 ms timeout which was a race:
- *  - fonts not yet swapped → blank text
- *  - images not yet decoded → broken placeholders
+ * Replaces the old flat 300ms setTimeout, which was a race:
+ *  - fonts not yet swapped → blank text on cold cache
+ *  - images not decoded → broken placeholders
  *  - single rAF not enough on slow hardware
  */
 async function waitForRender(container: HTMLElement): Promise<void> {
-  // Block until every @font-face the browser knows about has loaded.
   await document.fonts.ready;
 
-  // Settle any <img> tags (e.g. avatars). We resolve on both load and error so
-  // a failed image never blocks the download indefinitely.
   const images = Array.from(container.querySelectorAll<HTMLImageElement>('img'));
   if (images.length > 0) {
     await Promise.allSettled(
@@ -64,36 +69,40 @@ async function waitForRender(container: HTMLElement): Promise<void> {
   );
 }
 
+// ── createPattern guard ───────────────────────────────────────────────────────
+
 function getCanvasSourceSize(source: CanvasImageSource): { width: number; height: number } | null {
-  const maybeSized = source as {
-    width?: unknown;
-    height?: unknown;
-    naturalWidth?: unknown;
-    naturalHeight?: unknown;
-    videoWidth?: unknown;
-    videoHeight?: unknown;
+  const s = source as {
+    width?: unknown; height?: unknown;
+    naturalWidth?: unknown; naturalHeight?: unknown;
+    videoWidth?: unknown; videoHeight?: unknown;
   };
-
   const width =
-    typeof maybeSized.naturalWidth === 'number' ? maybeSized.naturalWidth :
-      typeof maybeSized.videoWidth === 'number' ? maybeSized.videoWidth :
-        typeof maybeSized.width === 'number' ? maybeSized.width :
-          null;
-
+    typeof s.naturalWidth === 'number' ? s.naturalWidth :
+    typeof s.videoWidth   === 'number' ? s.videoWidth   :
+    typeof s.width        === 'number' ? s.width        : null;
   const height =
-    typeof maybeSized.naturalHeight === 'number' ? maybeSized.naturalHeight :
-      typeof maybeSized.videoHeight === 'number' ? maybeSized.videoHeight :
-        typeof maybeSized.height === 'number' ? maybeSized.height :
-          null;
-
+    typeof s.naturalHeight === 'number' ? s.naturalHeight :
+    typeof s.videoHeight   === 'number' ? s.videoHeight   :
+    typeof s.height        === 'number' ? s.height        : null;
   return width === null || height === null ? null : { width, height };
 }
 
+/**
+ * Temporarily monkey-patches CanvasRenderingContext2D.createPattern so that
+ * any 0×0 source canvas is replaced with a 1×1 transparent fallback instead
+ * of throwing InvalidStateError. Restores the original after capture.
+ *
+ * This is a belt-and-suspenders defence on top of the primary fixes in
+ * PersonaCardRenderer (conditional progress-bar fills) and the onclone
+ * sanitizer below. If html2canvas ever creates a 0-size intermediate canvas
+ * for a CSS construct we haven't anticipated, this catches it without crashing.
+ */
 async function withCreatePatternGuard<T>(capture: () => Promise<T>): Promise<T> {
-  const originalCreatePattern = CanvasRenderingContext2D.prototype.createPattern;
-  const fallbackCanvas = document.createElement('canvas');
-  fallbackCanvas.width = 1;
-  fallbackCanvas.height = 1;
+  const original = CanvasRenderingContext2D.prototype.createPattern;
+  const fallback = document.createElement('canvas');
+  fallback.width = 1;
+  fallback.height = 1;
 
   CanvasRenderingContext2D.prototype.createPattern = function (
     image: CanvasImageSource,
@@ -101,50 +110,87 @@ async function withCreatePatternGuard<T>(capture: () => Promise<T>): Promise<T> 
   ): CanvasPattern | null {
     const size = getCanvasSourceSize(image);
     if (size && (size.width < 1 || size.height < 1)) {
-      return originalCreatePattern.call(this, fallbackCanvas, repetition);
+      return original.call(this, fallback, repetition);
     }
-
-    return originalCreatePattern.call(this, image, repetition);
+    return original.call(this, image, repetition);
   };
 
   try {
     return await capture();
   } finally {
-    CanvasRenderingContext2D.prototype.createPattern = originalCreatePattern;
+    CanvasRenderingContext2D.prototype.createPattern = original;
   }
 }
 
+// ── Clone sanitizer ───────────────────────────────────────────────────────────
+
+/**
+ * Called via html2canvas's onclone callback. Strips gradient backgrounds and
+ * box-shadows from any element that html2canvas has laid out at 0 or sub-pixel
+ * dimensions. These are the elements that trigger the createPattern crash
+ * (html2canvas creates a 0×0 canvas for the gradient, then calls createPattern
+ * on it which is an InvalidStateError per the spec).
+ *
+ * Gradient elements are replaced with their solid computed backgroundColor
+ * (defaulting to the card surface colour #0d0d0d) so the card still looks
+ * correct — gradients on large visible elements are preserved.
+ */
 function sanitizeHtml2CanvasClone(doc: Document, clonedEl: HTMLElement): void {
   const win = doc.defaultView;
-  const elements = [clonedEl, ...Array.from(clonedEl.querySelectorAll<HTMLElement>('*'))];
+  const all = [clonedEl, ...Array.from(clonedEl.querySelectorAll<HTMLElement>('*'))];
 
-  elements.forEach(el => {
+  all.forEach(el => {
     const computed = win?.getComputedStyle(el);
     const rect = el.getBoundingClientRect();
-    const width = Math.abs(rect.width);
-    const height = Math.abs(rect.height);
-    const backgroundImage = computed?.backgroundImage ?? el.style.backgroundImage;
-    const hasGradientBackground = backgroundImage.includes('gradient(');
-    const hasZeroOrSubPixelBox =
-      width === 0 ||
-      height === 0 ||
-      (width > 0 && width < 1) ||
-      (height > 0 && height < 1);
+    const w = Math.abs(rect.width);
+    const h = Math.abs(rect.height);
+    const bgImage = computed?.backgroundImage ?? el.style.backgroundImage;
+    const isGradient = bgImage.includes('gradient(');
+    const isZeroOrSubPixel = w === 0 || h === 0 || (w > 0 && w < 1) || (h > 0 && h < 1);
 
-    if (hasZeroOrSubPixelBox) {
+    if (isZeroOrSubPixel) {
       el.style.backgroundImage = 'none';
       el.style.boxShadow = 'none';
       return;
     }
 
-    if (hasGradientBackground) {
+    if (isGradient) {
       el.style.backgroundImage = 'none';
-      const backgroundColor = computed?.backgroundColor;
-      if (!backgroundColor || backgroundColor === 'rgba(0, 0, 0, 0)' || backgroundColor === 'transparent') {
+      const bg = computed?.backgroundColor;
+      if (!bg || bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent') {
         el.style.backgroundColor = '#0d0d0d';
       }
     }
   });
+}
+
+// ── Browser download trigger ──────────────────────────────────────────────────
+
+/**
+ * Creates a blob URL, clicks a hidden anchor, and defers URL revocation.
+ * More reliable than jsPDF.save() which internally does the same thing but
+ * can be silently blocked if the call lands outside the browser's transient
+ * user-activation window (e.g. when capture took > 5 s on a slow machine).
+ */
+function triggerBrowserDownload(blob: Blob, filename: string): boolean {
+  try {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.rel = 'noopener';
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    // Revoke after 60 s — revoking too early can cancel an in-flight download
+    // on some Chrome/Windows builds.
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    return true;
+  } catch (err) {
+    console.error('[downloadPersonaCards] triggerBrowserDownload failed:', err);
+    return false;
+  }
 }
 
 // ── Core renderer ─────────────────────────────────────────────────────────────
@@ -156,19 +202,17 @@ async function renderPersonaToCanvas(
 ): Promise<HTMLCanvasElement> {
   const html2canvas = (await import('html2canvas')).default;
 
-  // ── 1. Off-screen container ───────────────────────────────────────────────
+  // CRITICAL: Do NOT use overflow:hidden on the container.
+  // html2canvas walks the full ancestor chain to build clip rectangles. Any
+  // overflow:hidden ancestor — even one that has been expanded to the card's
+  // full height — causes html2canvas to create a clipping canvas for every
+  // child element. When a child is 0-wide (e.g. a progress bar fill at 0%,
+  // a 0-width decorative div), that clipping canvas is 0×0 and the subsequent
+  // createPattern() call throws InvalidStateError.
   //
-  // CRITICAL: Do NOT use overflow:hidden here.
-  // html2canvas walks the ancestor chain to build clip rectangles. Any
-  // overflow:hidden ancestor (even one that's been expanded to full height)
-  // causes html2canvas to create clipping canvases for every child element.
-  // When a child has 0 width (e.g. a progress bar at 0%, a 0-width gradient
-  // div), html2canvas calls createPattern() on a 0×0 canvas → InvalidStateError.
-  //
-  // Instead: position:fixed with a large negative left pushes the card fully
-  // off-screen to the left. The browser still paints fixed-position elements
-  // regardless of their viewport position, so html2canvas reads correct pixels.
-  // No overflow clipping → no 0-sized intermediate canvases.
+  // Fix: position:fixed with a large negative left — the browser always paints
+  // fixed-position elements regardless of their viewport position, so
+  // html2canvas reads correct pixels with no ancestor clip rectangle.
   const scrollHost = document.createElement('div');
   scrollHost.style.cssText = [
     'position:fixed',
@@ -193,15 +237,11 @@ async function renderPersonaToCanvas(
   const root = createRoot(mount);
 
   try {
-    // ── 2. Render ─────────────────────────────────────────────────────────
-    root.render(
-      React.createElement(PersonaCardRenderer, { persona, width: cardWidth }),
-    );
+    root.render(React.createElement(PersonaCardRenderer, { persona, width: cardWidth }));
 
-    // ── 3. Wait for fonts, images, and two paint frames ───────────────────
+    // Deterministic readiness: fonts + images + two paint frames.
     await waitForRender(mount);
 
-    // ── 4. Measure ────────────────────────────────────────────────────────
     const cardEl = mount.firstElementChild as HTMLElement | null;
     if (!cardEl) {
       throw new Error(
@@ -216,8 +256,7 @@ async function renderPersonaToCanvas(
       );
     }
 
-    // ── 5. Capture ────────────────────────────────────────────────────────
-    return await withCreatePatternGuard(() =>
+    const canvas = await withCreatePatternGuard(() =>
       html2canvas(cardEl, {
         scale,
         useCORS: true,
@@ -226,16 +265,26 @@ async function renderPersonaToCanvas(
         logging: false,
         width: Math.round(elW) || cardWidth,
         height: Math.round(elH),
+        // Pin the cloned-document viewport to the card's own size so Windows
+        // display scaling (125%/150%) or devtools open/closed does not change
+        // how html2canvas lays out the off-screen clone.
+        windowWidth: Math.round(elW) || cardWidth,
+        windowHeight: Math.round(elH),
         scrollX: 0,
         scrollY: 0,
-        onclone: (doc, clonedEl) => {
-          sanitizeHtml2CanvasClone(doc, clonedEl);
-        },
+        onclone: (doc, clonedEl) => sanitizeHtml2CanvasClone(doc, clonedEl),
         ignoreElements: el => el.hasAttribute('data-html2canvas-ignore'),
       }),
     );
+
+    if (canvas.width === 0 || canvas.height === 0) {
+      throw new Error('html2canvas produced an empty canvas.');
+    }
+
+    return canvas;
   } finally {
-    // ── 6. Guaranteed cleanup ─────────────────────────────────────────────
+    // Always clean up — even if capture threw — so a failed card never leaks
+    // a detached React root or a stray DOM node into the page.
     root.unmount();
     if (document.body.contains(scrollHost)) {
       document.body.removeChild(scrollHost);
@@ -245,18 +294,11 @@ async function renderPersonaToCanvas(
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-/**
- * Renders selected persona cards and saves them as a single PDF,
- * one card per page.
- *
- * Single  → `persona-card_<name>.pdf`
- * Multiple → `persona_cards_N.pdf`
- */
 export async function downloadPersonaCards(
   selectedIds: string[],
   allPersonas: PersonaCardData[],
   options: DownloadOptions = {},
-): Promise<void> {
+): Promise<DownloadResult | null> {
   const {
     cardWidth = 900,
     scale = 2,
@@ -264,69 +306,74 @@ export async function downloadPersonaCards(
     onProgress,
   } = options;
 
-  // Preserve selection order
   const personas = selectedIds
     .map(id => allPersonas.find(p => p.id === id))
     .filter((p): p is PersonaCardData => !!p);
 
-  if (personas.length === 0) return;
+  if (personas.length === 0) {
+    throw new Error('No matching personas found for the selected IDs.');
+  }
 
   onProgress?.(0, personas.length);
 
-  // Render sequentially to keep memory under control
-  const canvases: HTMLCanvasElement[] = [];
+  let pdf: jsPDF | null = null;
+  const failedNames: string[] = [];
+
+  // Render sequentially and add each page immediately — avoids holding every
+  // canvas in memory simultaneously (each 900px-wide @2x card is ~7 MB of
+  // pixel data; a handful at once can hit OOM on lower-memory machines).
   for (let i = 0; i < personas.length; i++) {
-    const canvas = await renderPersonaToCanvas(personas[i]!, cardWidth, scale);
-    canvases.push(canvas);
+    const persona = personas[i]!;
+    try {
+      const canvas = await renderPersonaToCanvas(persona, cardWidth, scale);
+      const pageW = canvas.width;
+      const pageH = canvas.height;
+      const orientation = pageW >= pageH ? 'landscape' : 'portrait';
+
+      if (!pdf) {
+        pdf = new jsPDF({ orientation, unit: 'px', format: [pageW, pageH], compress: true });
+      } else {
+        pdf.addPage([pageW, pageH], orientation);
+      }
+
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, pageW, pageH);
+    } catch (err) {
+      // One bad card does not abort the batch — log, skip, continue.
+      console.error(`[downloadPersonaCards] failed to render "${persona.name ?? persona.id}":`, err);
+      failedNames.push(persona.name ?? persona.id);
+    }
     onProgress?.(i + 1, personas.length);
   }
 
-  // ── Build PDF ─────────────────────────────────────────────────────────────
-  let pdf: jsPDF | null = null;
-
-  for (let i = 0; i < canvases.length; i++) {
-    const canvas = canvases[i]!;
-    const pageW = canvas.width;
-    const pageH = canvas.height;
-    const orientation = pageW >= pageH ? 'landscape' : 'portrait';
-
-    if (i === 0) {
-      pdf = new jsPDF({
-        orientation,
-        unit: 'px',
-        format: [pageW, pageH],
-        compress: true,
-      });
-    } else {
-      pdf!.addPage([pageW, pageH], orientation);
-    }
-
-    pdf!.addImage(
-      canvas.toDataURL('image/jpeg', 0.92),
-      'JPEG',
-      0, 0,
-      pageW,
-      pageH,
+  if (!pdf) {
+    throw new Error(
+      `Failed to generate any persona cards.${failedNames.length ? ` Failed: ${failedNames.join(', ')}` : ''}`,
     );
   }
 
-  if (!pdf) return;
+  if (failedNames.length > 0) {
+    console.warn(`[downloadPersonaCards] ${failedNames.length} card(s) skipped:`, failedNames);
+  }
 
   const filename =
     personas.length === 1
       ? `${filePrefix}_${safeFilename(personas[0]!.name ?? 'persona')}.pdf`
       : `persona_cards_${personas.length}.pdf`;
 
-  pdf.save(filename);
+  const blob = pdf.output('blob');
+  const blobUrl = URL.createObjectURL(blob);
+  const autoTriggered = triggerBrowserDownload(blob, filename);
+
+  return { filename, blobUrl, blob, autoTriggered };
 }
 
-// ── Drop-in alias (keeps PersonaBuilder.tsx import unchanged) ─────────────────
+// ── Drop-in alias ─────────────────────────────────────────────────────────────
 
 export async function downloadPersonaCardsFrontend(
   selectedIds: string[],
   allPersonas: PersonaCardData[],
   onProgress?: (done: number, total: number) => void,
-): Promise<void> {
+): Promise<DownloadResult | null> {
   return downloadPersonaCards(selectedIds, allPersonas, {
     cardWidth: 900,
     scale: 2,

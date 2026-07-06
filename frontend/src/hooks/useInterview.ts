@@ -360,7 +360,7 @@ export const useExportAllInterviewsPdf = (
   });
 };
 
-// Download qualitative transcripts (.docx)
+// Download qualitative transcripts (.pdf)
 export const useDownloadQualTranscripts = (
   workspaceId?: string,
   explorationId?: string
@@ -370,7 +370,7 @@ export const useDownloadQualTranscripts = (
     mutationFn: () =>
       interviewService.downloadQualTranscripts(workspaceId, explorationId),
     onSuccess: (blob) => {
-      _triggerBlobDownload(blob, `transcripts_${explorationId}.docx`);
+      _triggerBlobDownload(blob, `transcripts_${explorationId}.pdf`);
       queryClient.invalidateQueries({ queryKey: interviewKeys.reportStatus(workspaceId, explorationId) });
     },
     onError: () =>
