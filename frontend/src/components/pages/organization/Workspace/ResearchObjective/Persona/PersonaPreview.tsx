@@ -655,23 +655,31 @@ const DIMENSION_NAME_TO_TOOLTIP: Record<string, string> = Object.fromEntries(
 const DepthSignalMetricRow: React.FC<{
   stat: DepthSignalStat;
   weight: number;
-  /** Whether to show the numeric count + accuracy bar in the row header.
-   *  Set false to hide all numeric metrics (Depth Layer no longer shows them). */
-  showMetrics?: boolean;
-  /** Whether to show the "Weight in Real Actions Signal confidence" footer.
-   *  Set false for metrics that no longer contribute to the confidence score. */
+  /** Whether to show the accuracy bar in the row header. */
+  showBar?: boolean;
+  /** Whether to show the numeric count in the row header. */
+  showCount?: boolean;
+  /** Whether to show the "Weight in Real Actions Signal confidence" footer. */
   showWeight?: boolean;
-}> = ({ stat, weight, showMetrics = true, showWeight = true }) => {
+  /** Optional per-detail tooltip copy (detail text → tooltip). When provided,
+   *  detail chips render with a hover tooltip instead of the plain chip style. */
+  detailTooltips?: Record<string, string>;
+}> = ({ stat, weight, showBar = true, showCount = true, showWeight = true, detailTooltips }) => {
   const [open, setOpen] = useState(false);
   const [filled, setFilled] = useState(false);
+  const [settled, setSettled] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setFilled(true), 120);
     return () => clearTimeout(t);
   }, []);
 
+  useEffect(() => {
+    if (!open) setSettled(false);
+  }, [open]);
+
   return (
-    <div className="pp-dsm-row">
+    <div className={`pp-dsm-row${settled ? ' pp-dsm-row--settled' : ''}`}>
       {/* Header row: metric name + (optional) count + (optional) accuracy bar + chevron */}
       <button
         type="button"
@@ -683,7 +691,7 @@ const DepthSignalMetricRow: React.FC<{
           <span className="pp-dsm-dot" style={{ background: stat.color }} />
           <div className="pp-dsm-meta">
             <span className="pp-dsm-name">{stat.name}</span>
-            {showMetrics && (
+            {showBar && (
               <div className="pp-dsm-bar-wrap">
                 <div className="pp-dsm-bar-track">
                   <div
@@ -703,7 +711,7 @@ const DepthSignalMetricRow: React.FC<{
           </div>
         </div>
         <div className="pp-dsm-right">
-          {showMetrics && (
+          {showCount && (
             <span className="pp-dsm-count" style={{ color: stat.color }}>
               {formatCompact(stat.displayValue)}
             </span>
@@ -723,14 +731,25 @@ const DepthSignalMetricRow: React.FC<{
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="pp-dsm-detail-wrap"
+            onAnimationComplete={() => { if (open) setSettled(true); }}
+            className={`pp-dsm-detail-wrap${settled ? ' pp-dsm-detail-wrap--settled' : ''}`}
           >
             <div className="pp-dsm-detail-inner">
               <span className="pp-dsm-detail-label">{stat.detailLabel}</span>
               <div className="pp-dsm-detail-chips">
-                {stat.details.map((d, i) => (
-                  <span key={i} className="pp-dsm-chip">{d}</span>
-                ))}
+                {stat.details.map((d, i) =>
+                  detailTooltips ? (
+                    <span
+                      key={i}
+                      className="pp-dim-pill"
+                      data-tooltip={detailTooltips[d] ?? ''}
+                    >
+                      {d}
+                    </span>
+                  ) : (
+                    <span key={i} className="pp-dsm-chip">{d}</span>
+                  )
+                )}
               </div>
               {showWeight && (
                 <div className="pp-dsm-weight-row">
@@ -750,14 +769,13 @@ const DepthSignalSection: React.FC<{
   stats: DepthSignalStat[];
   overallScore: number;
 }> = ({ stats, overallScore }) => {
-  // Only "Pattern Extracted" now contributes to the Real Actions Signal
-  // confidence score. "Dimensions Triggered" is rendered as an open pill
-  // list (no numeric metrics, tooltip on hover) and "Depth Layer" keeps its
-  // dropdown but no longer shows numbers/percentages or a confidence weight.
+  // Only "Predominant Patterns Extracted" now contributes to the Real Actions
+  // Signal confidence score. "Dimensions Triggered" and "Depth Layer" are
+  // both rendered as collapsible rows (same pattern) with no numeric metrics
+  // and no confidence weight — expand either to see the detail chips.
   const dimensionsStat = stats.find(s => s.name === 'Dimensions Triggered');
   const depthLayerStat = stats.find(s => s.name === 'Depth Layer');
-  const patternStat = stats.find(s => s.name === 'Pattern Extracted');
-  const dimensionNames = dimensionsStat?.details ?? [];
+  const patternStat = stats.find(s => s.name === 'Predominant Patterns Extracted');
 
   return (
     <div className="pp-calib-section">
@@ -781,29 +799,23 @@ const DepthSignalSection: React.FC<{
         </div>
       </div>
 
-      {/* Dimensions Triggered — open pill list, tooltip on hover (no icon),
-          no numeric metrics, no dropdown, no contribution to confidence. */}
-      <div className="pp-dim-card">
-        <h5 className="pp-dsm-subheading">{dimensionsStat?.name ?? 'Dimensions Triggered'}</h5>
-        <div className="pp-dim-pill-list">
-          {dimensionNames.map((name, i) => (
-            <span
-              key={`${name}-${i}`}
-              className="pp-dim-pill"
-              data-tooltip={DIMENSION_NAME_TO_TOOLTIP[name] ?? ''}
-            >
-              {name}
-            </span>
-          ))}
-        </div>
-      </div>
-
       <div className="pp-dsm-list">
+        {dimensionsStat && (
+          <DepthSignalMetricRow
+            stat={dimensionsStat}
+            weight={0}
+            showBar={false}
+            showCount={false}
+            showWeight={false}
+            detailTooltips={DIMENSION_NAME_TO_TOOLTIP}
+          />
+        )}
         {depthLayerStat && (
           <DepthSignalMetricRow
             stat={depthLayerStat}
             weight={0}
-            showMetrics={false}
+            showBar={false}
+            showCount={false}
             showWeight={false}
           />
         )}
@@ -811,7 +823,8 @@ const DepthSignalSection: React.FC<{
           <DepthSignalMetricRow
             stat={patternStat}
             weight={1}
-            showMetrics={true}
+            showBar={true}
+            showCount={false}
             showWeight={true}
           />
         )}
@@ -2093,7 +2106,7 @@ const PersonaPreview: React.FC = () => {
         'DL_010 (Peer Clustering): multiple users in the same city purchasing the same brands. EB_LINKEDIN mentions friend recommendations in 40% of threads — a weaker, secondary signal alongside the primary Explorer assignment.',
     };
 
-  // ── Depth signal stats (Dimensions Triggered / Depth Layer / Pattern Extracted) ──
+  // ── Depth signal stats (Dimensions Triggered / Depth Layer / Predominant Patterns Extracted) ──
   const dimensionsActivated = (
     (rawData?.stage_2_dimensions as Record<string, unknown> | undefined)?.activated_dimensions ??
     (mergedTraits?.stage_2_dimensions as Record<string, unknown> | undefined)?.activated_dimensions ??
@@ -2115,13 +2128,13 @@ const PersonaPreview: React.FC = () => {
   // ── Accuracy scores. Dimensions Triggered and Depth Layer accuracy are
   // still computed (used internally / retained on the stat objects) but no
   // longer feed into realActionsConfidenceScore or render as numeric UI —
-  // only Pattern Extracted accuracy now drives the Real Actions Signal
-  // confidence score. ─────────────────────────────────────────────────────
+  // only Predominant Patterns Extracted accuracy now drives the Real Actions
+  // Signal confidence score. ─────────────────────────────────────────────────
   const dimAccuracy = Math.round(Math.min(dimensionsTriggeredCount / 16, 1) * 100);
   const dlAccuracy = Math.round(Math.min(depthLayerCount / 10, 1) * 100);
   const patAccuracy = Math.round(Math.min(patternsExtractedCount / 20, 1) * 100);
 
-  // Only Pattern Extracted contributes to the Real Actions Signal confidence.
+  // Only Predominant Patterns Extracted contributes to the Real Actions Signal confidence.
   const realActionsConfidenceScore = patAccuracy;
 
   // ── Master Calibration Confidence ─────────────────────────────────────────
@@ -2160,8 +2173,9 @@ const PersonaPreview: React.FC = () => {
     'Peer clustering detected in 3 cities',
   ];
 
-  // ── Patterns extracted: real pattern_detected values (same source); count
-  // is UI-scaled to benchmark level since backend data will grow over time ──
+  // ── Patterns extracted: real pattern_detected values (same source); the
+  // large UI-scaled numeric count is no longer shown in the header (only the
+  // accuracy bar and the detail chips remain) ─────────────────────────────
   const patternRealDetails = (Array.isArray(actionDataVerdicts) ? actionDataVerdicts : [])
     .map(v => String(v?.behavioral_signal ?? v?.pattern_detected ?? '').trim())
     .filter(Boolean);
@@ -2181,7 +2195,9 @@ const PersonaPreview: React.FC = () => {
   // at the same order of magnitude as the 750M actions ingested headline stat.
   // (dimAccuracy / dlAccuracy / patAccuracy / realActionsConfidenceScore already
   // computed above — reused here so the bar chart and the Master Confidence panel
-  // always show the exact same number.)
+  // always show the exact same number.) Note: displayValue is retained on the
+  // stat object for completeness, but the Predominant Patterns Extracted row no
+  // longer renders it (showCount={false} in DepthSignalSection).
   const depthSignalStats: DepthSignalStat[] = [
     {
       name: 'Dimensions Triggered',
@@ -2202,11 +2218,11 @@ const PersonaPreview: React.FC = () => {
       details: depthLayerDetails.length > 0 ? depthLayerDetails : fallbackDepthDetails,
     },
     {
-      name: 'Pattern Extracted',
+      name: 'Predominant Patterns Extracted',
       // real value kept internally for confidence calc
       value: patternsExtractedCount,
       // UI-scaled to benchmark level (backend data grows; headline says 750M
-      // actions ingested, so extracted patterns should reflect that scale)
+      // actions ingested) — kept on the object but not rendered in the UI
       displayValue: patternsExtractedCount > 0
         ? Math.min(patternsExtractedCount * 12_000_000, 750_000_000)
         : 84_000_000,

@@ -1244,6 +1244,12 @@
   overflow: hidden;
 }
 
+/* Once its drawer has finished expanding, let content (e.g. tooltips)
+   escape the rounded-corner clipping instead of being cut off. */
+.pp-dsm-row--settled {
+  overflow: visible;
+}
+
 /* Clickable header inside the card */
 .pp-dsm-header {
   width: 100%;
@@ -1337,6 +1343,11 @@
 .pp-dsm-detail-wrap {
   overflow: hidden;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Once expand animation settles, allow tooltips inside to escape clipping */
+.pp-dsm-detail-wrap--settled {
+  overflow: visible;
 }
 
 .pp-dsm-detail-inner {
