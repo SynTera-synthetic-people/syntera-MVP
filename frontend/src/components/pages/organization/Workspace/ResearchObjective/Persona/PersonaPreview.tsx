@@ -7,6 +7,7 @@ import {
   TbLoader,
   TbEye,
   TbChevronDown,
+  TbMessages,
 } from 'react-icons/tb';
 import {
   SiLinkedin,
@@ -172,6 +173,7 @@ const PLATFORM_ICONS = [
   { icon: <SiInstagram size={18} />, key: 'instagram' },
   { icon: <SiReddit size={18} />, key: 'reddit' },
   { icon: <MdStarRate size={18} />, key: 'reviews' },
+  { icon: <TbMessages size={18} />, key: 'community_forums' },
 ];
 
 const DONUT_COLORS = [
@@ -189,20 +191,20 @@ const DONUT_COLORS = [
 
 const KE_TOP_STATS = [
   { value: '10,000+', label: 'Curated Source Links' },
-  { value: '250+',    label: 'Industries Covered'   },
-  { value: '1,500+', label: 'Categories & Topics'  },
+  { value: '250+', label: 'Industries Covered' },
+  { value: '1,500+', label: 'Categories & Topics' },
 ];
 
 const KE_SOURCE_TYPES = [
-  { name: 'Industry Reports',         value: 2400, color: '#0E63EC' },
-  { name: 'Consumer Studies',         value: 1800, color: '#24E5B6' },
-  { name: 'Academic Research',        value: 1600, color: '#5D74EB' },
-  { name: 'Market Reports',           value: 1400, color: '#24BCD3' },
+  { name: 'Industry Reports', value: 2400, color: '#0E63EC' },
+  { name: 'Consumer Studies', value: 1800, color: '#24E5B6' },
+  { name: 'Academic Research', value: 1600, color: '#5D74EB' },
+  { name: 'Market Reports', value: 1400, color: '#24BCD3' },
   { name: 'Behaviour Science Papers', value: 1100, color: '#EC0E7D' },
-  { name: 'Trend Reports',            value:  900, color: '#9355F0' },
-  { name: 'White Papers & Articles',  value:  700, color: '#FABC48' },
-  { name: 'Public Datasets',          value:  600, color: '#39B2CB' },
-  { name: 'Ethnographic Studies',     value:  500, color: '#37FFCE' },
+  { name: 'Trend Reports', value: 900, color: '#9355F0' },
+  { name: 'White Papers & Articles', value: 700, color: '#FABC48' },
+  { name: 'Public Datasets', value: 600, color: '#39B2CB' },
+  { name: 'Ethnographic Studies', value: 500, color: '#37FFCE' },
 ];
 
 const getRandomSourceTotal = (): number =>
@@ -234,23 +236,23 @@ const scaleSourceTypesToTotal = (
 const KE_CONFIDENCE_SCORE = 90;
 
 const KE_CONFIDENCE_COMPONENTS = [
-  { label: 'Volume',                       score: 88 },
-  { label: 'Recency',                      score: 82 },
+  { label: 'Volume', score: 88 },
+  { label: 'Recency', score: 82 },
   { label: 'Research Objective Alignment', score: 95 },
-  { label: 'Source Diversity',             score: 94 },
+  { label: 'Source Diversity', score: 94 },
 ];
 
 const KE_SOURCE_CHIPS: Array<{ label: string; iconName: SpIconName }> = [
-  { label: 'Industry Reports',         iconName: 'sp-File-File_Document'    },
-  { label: 'Consumer Studies',         iconName: 'sp-Edit-Copy'             },
-  { label: 'Academic Research',        iconName: 'sp-Environment-Puzzle'    },
-  { label: 'Market Reports',           iconName: 'sp-Other-Dashboard'       },
-  { label: 'Behaviour Science Papers', iconName: 'sp-Edit-Path'             },
-  { label: 'Trend Reports',            iconName: 'sp-Navigation-Globe'      },
-  { label: 'White Papers',             iconName: 'sp-Edit-Show'             },
-  { label: 'Expert Articles',          iconName: 'sp-Interface-Option'      },
-  { label: 'Public Datasets',          iconName: 'sp-Navigation-Navigation' },
-  { label: 'Ethnographic Studies',     iconName: 'sp-Edit-Copy'             },
+  { label: 'Industry Reports', iconName: 'sp-File-File_Document' },
+  { label: 'Consumer Studies', iconName: 'sp-Edit-Copy' },
+  { label: 'Academic Research', iconName: 'sp-Environment-Puzzle' },
+  { label: 'Market Reports', iconName: 'sp-Other-Dashboard' },
+  { label: 'Behaviour Science Papers', iconName: 'sp-Edit-Path' },
+  { label: 'Trend Reports', iconName: 'sp-Navigation-Globe' },
+  { label: 'White Papers', iconName: 'sp-Edit-Show' },
+  { label: 'Expert Articles', iconName: 'sp-Interface-Option' },
+  { label: 'Public Datasets', iconName: 'sp-Navigation-Navigation' },
+  { label: 'Ethnographic Studies', iconName: 'sp-Edit-Copy' },
 ];
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -408,8 +410,8 @@ const confColor = (score: number) =>
  *  Small numbers (< 1 000) are returned as-is. */
 const formatCompact = (n: number): string => {
   if (n >= 1_000_000_000) return `${parseFloat((n / 1_000_000_000).toFixed(1))} Billion`;
-  if (n >= 1_000_000)     return `${parseFloat((n / 1_000_000).toFixed(1))} Million`;
-  if (n >= 1_000)         return `${parseFloat((n / 1_000).toFixed(1))}K`;
+  if (n >= 1_000_000) return `${parseFloat((n / 1_000_000).toFixed(1))} Million`;
+  if (n >= 1_000) return `${parseFloat((n / 1_000).toFixed(1))}K`;
   return String(n);
 };
 
@@ -618,7 +620,48 @@ const DIMENSION_NAMES_MAP: Record<number, string> = {
   16: 'Emotional Engagement',
 };
 
-const DepthSignalMetricRow: React.FC<{ stat: DepthSignalStat; weight: number }> = ({ stat, weight }) => {
+// ── Dimension tooltip copy (mirrors the "Relevant Dimensions Activated" spec) ──
+// Shown on hover for each Dimensions Triggered pill — no numeric metrics,
+// no icon, just the explanatory copy for that dimension.
+
+const DIMENSION_TOOLTIPS_MAP: Record<number, string> = {
+  1: 'How often people buy, use, or engage.',
+  2: 'Whether people are moving between brands, platforms, or product types.',
+  3: 'How people respond to price, discounts, value, and premium cues.',
+  4: 'When people buy or engage: time of day, season, occasion, or lifecycle stage.',
+  5: 'Where behaviour changes across cities, regions, tiers, or local markets.',
+  6: 'Are people try something new for the first time.',
+  7: 'Did people stop using, buying, or engaging.',
+  8: 'Did people stay, repeat, or defend a brand.',
+  9: 'Maps the path to decision.',
+  10: 'Who influences the choice.',
+  11: 'Did behaviour in other categories connects to this one.',
+  12: 'What unmet needs or white spaces exist.',
+  13: 'What creates confidence in the brand, product, or claim.',
+  14: 'How willing people are to try, switch, or take chances.',
+  15: 'How people search, compare, and evaluate information.',
+  16: 'The emotional connection, anxiety, care, pride, or attachment linked to the category.',
+};
+
+// Reverse lookup (dimension name → tooltip copy) so it can be used both for
+// live activated-dimension names and for the static fallback name list.
+const DIMENSION_NAME_TO_TOOLTIP: Record<string, string> = Object.fromEntries(
+  Object.entries(DIMENSION_NAMES_MAP).map(([id, name]) => [
+    name,
+    DIMENSION_TOOLTIPS_MAP[Number(id)] ?? '',
+  ])
+);
+
+const DepthSignalMetricRow: React.FC<{
+  stat: DepthSignalStat;
+  weight: number;
+  /** Whether to show the numeric count + accuracy bar in the row header.
+   *  Set false to hide all numeric metrics (Depth Layer no longer shows them). */
+  showMetrics?: boolean;
+  /** Whether to show the "Weight in Real Actions Signal confidence" footer.
+   *  Set false for metrics that no longer contribute to the confidence score. */
+  showWeight?: boolean;
+}> = ({ stat, weight, showMetrics = true, showWeight = true }) => {
   const [open, setOpen] = useState(false);
   const [filled, setFilled] = useState(false);
 
@@ -629,7 +672,7 @@ const DepthSignalMetricRow: React.FC<{ stat: DepthSignalStat; weight: number }> 
 
   return (
     <div className="pp-dsm-row">
-      {/* Header row: metric name + displayed count + accuracy bar + chevron */}
+      {/* Header row: metric name + (optional) count + (optional) accuracy bar + chevron */}
       <button
         type="button"
         className="pp-dsm-header"
@@ -640,27 +683,31 @@ const DepthSignalMetricRow: React.FC<{ stat: DepthSignalStat; weight: number }> 
           <span className="pp-dsm-dot" style={{ background: stat.color }} />
           <div className="pp-dsm-meta">
             <span className="pp-dsm-name">{stat.name}</span>
-            <div className="pp-dsm-bar-wrap">
-              <div className="pp-dsm-bar-track">
-                <div
-                  className="pp-dsm-bar-fill"
-                  style={{
-                    width: filled ? `${stat.accuracy}%` : '0%',
-                    background: stat.color,
-                    transition: 'width 0.9s cubic-bezier(0.4,0,0.2,1)',
-                  }}
-                />
+            {showMetrics && (
+              <div className="pp-dsm-bar-wrap">
+                <div className="pp-dsm-bar-track">
+                  <div
+                    className="pp-dsm-bar-fill"
+                    style={{
+                      width: filled ? `${stat.accuracy}%` : '0%',
+                      background: stat.color,
+                      transition: 'width 0.9s cubic-bezier(0.4,0,0.2,1)',
+                    }}
+                  />
+                </div>
+                <span className="pp-dsm-accuracy" style={{ color: confColor(stat.accuracy) }}>
+                  {stat.accuracy}%
+                </span>
               </div>
-              <span className="pp-dsm-accuracy" style={{ color: confColor(stat.accuracy) }}>
-                {stat.accuracy}%
-              </span>
-            </div>
+            )}
           </div>
         </div>
         <div className="pp-dsm-right">
-          <span className="pp-dsm-count" style={{ color: stat.color }}>
-            {formatCompact(stat.displayValue)}
-          </span>
+          {showMetrics && (
+            <span className="pp-dsm-count" style={{ color: stat.color }}>
+              {formatCompact(stat.displayValue)}
+            </span>
+          )}
           <TbChevronDown
             size={14}
             className={`pp-brain-chevron${open ? ' pp-brain-chevron--open' : ''}`}
@@ -685,10 +732,12 @@ const DepthSignalMetricRow: React.FC<{ stat: DepthSignalStat; weight: number }> 
                   <span key={i} className="pp-dsm-chip">{d}</span>
                 ))}
               </div>
-              <div className="pp-dsm-weight-row">
-                <span className="pp-dsm-weight-label">Weight in Real Actions Signal confidence</span>
-                <span className="pp-dsm-weight-value">{Math.round(weight * 100)}%</span>
-              </div>
+              {showWeight && (
+                <div className="pp-dsm-weight-row">
+                  <span className="pp-dsm-weight-label">Weight in Real Actions Signal confidence</span>
+                  <span className="pp-dsm-weight-value">{Math.round(weight * 100)}%</span>
+                </div>
+              )}
             </div>
           </motion.div>
         )}
@@ -701,8 +750,14 @@ const DepthSignalSection: React.FC<{
   stats: DepthSignalStat[];
   overallScore: number;
 }> = ({ stats, overallScore }) => {
-  // Weights: Dimensions 25%, Depth Layer 35%, Pattern Extracted 40%
-  const WEIGHTS = [0.25, 0.35, 0.40];
+  // Only "Pattern Extracted" now contributes to the Real Actions Signal
+  // confidence score. "Dimensions Triggered" is rendered as an open pill
+  // list (no numeric metrics, tooltip on hover) and "Depth Layer" keeps its
+  // dropdown but no longer shows numbers/percentages or a confidence weight.
+  const dimensionsStat = stats.find(s => s.name === 'Dimensions Triggered');
+  const depthLayerStat = stats.find(s => s.name === 'Depth Layer');
+  const patternStat = stats.find(s => s.name === 'Pattern Extracted');
+  const dimensionNames = dimensionsStat?.details ?? [];
 
   return (
     <div className="pp-calib-section">
@@ -726,10 +781,40 @@ const DepthSignalSection: React.FC<{
         </div>
       </div>
 
+      {/* Dimensions Triggered — open pill list, tooltip on hover (no icon),
+          no numeric metrics, no dropdown, no contribution to confidence. */}
+      <div className="pp-dim-card">
+        <h5 className="pp-dsm-subheading">{dimensionsStat?.name ?? 'Dimensions Triggered'}</h5>
+        <div className="pp-dim-pill-list">
+          {dimensionNames.map((name, i) => (
+            <span
+              key={`${name}-${i}`}
+              className="pp-dim-pill"
+              data-tooltip={DIMENSION_NAME_TO_TOOLTIP[name] ?? ''}
+            >
+              {name}
+            </span>
+          ))}
+        </div>
+      </div>
+
       <div className="pp-dsm-list">
-        {stats.map((s, i) => (
-          <DepthSignalMetricRow key={s.name} stat={s} weight={WEIGHTS[i] ?? 0.33} />
-        ))}
+        {depthLayerStat && (
+          <DepthSignalMetricRow
+            stat={depthLayerStat}
+            weight={0}
+            showMetrics={false}
+            showWeight={false}
+          />
+        )}
+        {patternStat && (
+          <DepthSignalMetricRow
+            stat={patternStat}
+            weight={1}
+            showMetrics={true}
+            showWeight={true}
+          />
+        )}
       </div>
     </div>
   );
@@ -784,7 +869,15 @@ const MLActionsCard: React.FC<{
     </div>
   </div>
 );
-
+interface SearchTierInfo {
+  tiersActivated: string[];
+  tier1Citations: number;
+  tier2Citations: number;
+  tier3Estimated: boolean;
+  totalRealCitations: number;
+  citationThreshold: number;
+  source: string;
+}
 interface DonutEntry {
   name: string;
   value: number;
@@ -1032,6 +1125,7 @@ interface MultiPlatformCalibCardProps {
   overallScore: number;
   isManualMode: boolean;
   onViewSources?: (() => void) | undefined;
+  searchTiers?: SearchTierInfo | undefined;
 }
 
 const MultiPlatformCalibCard: React.FC<MultiPlatformCalibCardProps> = ({
@@ -1044,6 +1138,7 @@ const MultiPlatformCalibCard: React.FC<MultiPlatformCalibCardProps> = ({
   overallScore,
   isManualMode,
   onViewSources,
+  searchTiers,
 }) => {
   const [hoveredSlice, setHoveredSlice] = useState<DonutEntry | null>(null);
   const [barWidths, setBarWidths] = useState<Record<string, number>>({});
@@ -1230,6 +1325,62 @@ const MultiPlatformCalibCard: React.FC<MultiPlatformCalibCardProps> = ({
         <>
           <div className="pp-calib-card-count">{totalCount}</div>
           <div className="pp-calib-card-count-label">{totalCountLabel}</div>
+        </>
+      )}
+
+      {/* ── Search Depth — Tier 1 → Tier 2 → Tier 3 widened search ── */}
+      {searchTiers && (
+        <>
+          <div className="pp-multi-divider" />
+          <div className="pp-calib-section" style={{ marginTop: 0 }}>
+            <div className="pp-tier-summary">
+              <h4 className="pp-calib-section-heading" style={{ margin: 0 }}>Search Depth</h4>
+              <span
+                className="pp-tier-source-pill"
+                style={{
+                  background: searchTiers.source === 'mixed_real_and_estimated'
+                    ? 'rgba(250,188,72,0.12)' : 'rgba(26,171,24,0.12)',
+                  color: searchTiers.source === 'mixed_real_and_estimated'
+                    ? '#FABC48' : '#1AAB18',
+                }}
+              >
+                {searchTiers.source === 'mixed_real_and_estimated' ? 'Mixed Real + Estimated' : 'Fully Real'}
+              </span>
+            </div>
+            <div className="pp-tier-summary-total">
+              <strong>{searchTiers.totalRealCitations}</strong> real citations found
+              {' '}(threshold: {searchTiers.citationThreshold})
+            </div>
+            <div className="pp-tier-list">
+              <div className="pp-tier-row">
+                <div className="pp-tier-left">
+                  <span className="pp-tier-dot pp-tier-dot--active" />
+                  <span className="pp-tier-label">Tier 1 — 6-Platform Search</span>
+                </div>
+                <span className="pp-tier-count">{searchTiers.tier1Citations} citations</span>
+              </div>
+              <div className="pp-tier-row">
+                <div className="pp-tier-left">
+                  <span className={`pp-tier-dot ${searchTiers.tiersActivated.includes('community-forums') ? 'pp-tier-dot--active' : 'pp-tier-dot--inactive'}`} />
+                  <span className="pp-tier-label">Tier 2 — Community Forums &amp; Reviews</span>
+                </div>
+                {searchTiers.tiersActivated.includes('community-forums') ? (
+                  <span className="pp-tier-count">{searchTiers.tier2Citations} citations</span>
+                ) : (
+                  <span className="pp-tier-count pp-tier-count--muted">Not needed</span>
+                )}
+              </div>
+              <div className="pp-tier-row">
+                <div className="pp-tier-left">
+                  <span className={`pp-tier-dot ${searchTiers.tier3Estimated ? 'pp-tier-dot--active' : 'pp-tier-dot--inactive'}`} />
+                  <span className="pp-tier-label">Tier 3 — AI Category Estimate</span>
+                </div>
+                <span className={`pp-tier-count${searchTiers.tier3Estimated ? '' : ' pp-tier-count--muted'}`}>
+                  {searchTiers.tier3Estimated ? 'Activated' : 'Not needed'}
+                </span>
+              </div>
+            </div>
+          </div>
         </>
       )}
 
@@ -1848,6 +1999,8 @@ const PersonaPreview: React.FC = () => {
 
   // ── Multi-platform overall confidence score (used standalone for the
   // Master Calibration Confidence breakdown, independent of finalScore) ──────
+  // ── Multi-platform overall confidence score (used standalone for the
+  // Master Calibration Confidence breakdown, independent of finalScore) ──────
   const multiPlatformConfidenceScore: number = (() => {
     const vals = Object.values(donutConfidenceComponents);
     if (vals.length > 0) {
@@ -1855,6 +2008,31 @@ const PersonaPreview: React.FC = () => {
     }
     return finalScore || 0;
   })();
+
+  // ── Search tier metadata — surfaces the widened Tier 1 → 2 → 3 web search ──
+  const webEvidenceTierMeta = (
+    (mergedTraits?.evidence_metadata as Record<string, unknown> | undefined)?.web_evidence ??
+    (rawData?.evidence_metadata as Record<string, unknown> | undefined)?.web_evidence ??
+    rawData?.stage_3b_evidence_metadata ??
+    mergedTraits?.stage_3b_evidence_metadata ??
+    multiSection?.tier_metadata ??
+    multiSection?.evidence_metadata
+  ) as Record<string, unknown> | undefined;
+
+  const searchTiers = webEvidenceTierMeta
+    ? {
+      tiersActivated: (webEvidenceTierMeta.tiers_activated as string[] | undefined) ?? ['6-platform'],
+      tier1Citations: Number(webEvidenceTierMeta.tier_1_citations ?? 0),
+      tier2Citations: Number(webEvidenceTierMeta.tier_2_citations ?? 0),
+      tier3Estimated: !!webEvidenceTierMeta.tier_3_llm_estimated,
+      totalRealCitations: Number(
+        webEvidenceTierMeta.total_real_citations ??
+        (Number(webEvidenceTierMeta.tier_1_citations ?? 0) + Number(webEvidenceTierMeta.tier_2_citations ?? 0))
+      ),
+      citationThreshold: Number(webEvidenceTierMeta.citation_threshold ?? 10),
+      source: String(webEvidenceTierMeta.source ?? 'real'),
+    }
+    : undefined;
 
   // ── Real Actions Signal confidence (average of depth-layer / action-data
   // verdict confidence scores, when available) ───────────────────────────────
@@ -1934,17 +2112,17 @@ const PersonaPreview: React.FC = () => {
     ? actionDataVerdicts.filter(v => !!v?.pattern_detected).length || actionDataVerdicts.length
     : 14;
 
-  // ── Accuracy scores computed here so realActionsConfidenceScore is a single
-  // source of truth shared by both the depth-signal bar chart AND the Master
-  // Calibration Confidence panel — no forward-declare, no mismatch. ──────────
+  // ── Accuracy scores. Dimensions Triggered and Depth Layer accuracy are
+  // still computed (used internally / retained on the stat objects) but no
+  // longer feed into realActionsConfidenceScore or render as numeric UI —
+  // only Pattern Extracted accuracy now drives the Real Actions Signal
+  // confidence score. ─────────────────────────────────────────────────────
   const dimAccuracy = Math.round(Math.min(dimensionsTriggeredCount / 16, 1) * 100);
-  const dlAccuracy  = Math.round(Math.min(depthLayerCount / 10, 1) * 100);
+  const dlAccuracy = Math.round(Math.min(depthLayerCount / 10, 1) * 100);
   const patAccuracy = Math.round(Math.min(patternsExtractedCount / 20, 1) * 100);
 
-  // Weighted: Dimensions 25%, Depth Layer 35%, Pattern Extracted 40%
-  const realActionsConfidenceScore = Math.round(
-    dimAccuracy * 0.25 + dlAccuracy * 0.35 + patAccuracy * 0.40
-  );
+  // Only Pattern Extracted contributes to the Real Actions Signal confidence.
+  const realActionsConfidenceScore = patAccuracy;
 
   // ── Master Calibration Confidence ─────────────────────────────────────────
   const masterConfidenceScore = Math.round(
@@ -2508,6 +2686,7 @@ const PersonaPreview: React.FC = () => {
                     ]}
                   />
                   {/* ── Multi-platform card with eye CTA ── */}
+                  {/* ── Multi-platform card with eye CTA ── */}
                   <MultiPlatformCalibCard
                     title={isManualMode ? 'RO Alignment Score' : 'Multi-platform Conversation'}
                     subtitle={
@@ -2522,6 +2701,7 @@ const PersonaPreview: React.FC = () => {
                     overallScore={multiPlatformConfidenceScore}
                     isManualMode={isManualMode}
                     onViewSources={!isManualMode ? () => setShowEvidenceModal(true) : undefined}
+                    searchTiers={!isManualMode ? searchTiers : undefined}
                   />
                 </div>
               </div>
