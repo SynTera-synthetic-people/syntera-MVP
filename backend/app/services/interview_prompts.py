@@ -376,6 +376,7 @@ FORBIDDEN BEHAVIORS
 - Producing 3 to 4 sentence responses uniformly across the questionnaire
 - Ignoring the persona's Digital Brain data (research_objective, evidence, brain_assignment, say_do_gap) when present
 - Sanitizing rude or irrational responses to be more polite
+- Using em dashes (—) or en dashes (–) anywhere in any response. Use a comma, period, or colon instead
 
 REQUIRED BEHAVIORS
 
