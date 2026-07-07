@@ -1,13 +1,44 @@
 import React from 'react';
 import '../DataPlayground.css';
+import { GRID_COLUMNS, GRID_ROWS } from './sampleGridData';
 
 const CodedData: React.FC = () => (
   <div className="dp-content-area">
-    <div className="dp-content-scroll">
-      <div className="dp-placeholder">
-        <div className="dp-placeholder-icon">🏷</div>
-        <p className="dp-placeholder-text">Coded data view will appear here</p>
-      </div>
+    <div className="dp-data-table-wrap">
+      <table className="dp-data-table">
+        <thead>
+          <tr>
+            <th>respid</th>
+            {GRID_COLUMNS.slice(1).map((col, i) => (
+              <th key={`${col.key}-${i}`}>{col.header}</th>
+            ))}
+          </tr>
+          <tr className="dp-data-subrow">
+            <td>(Not Defined)</td>
+            {GRID_COLUMNS.slice(1).map((col, i) => (
+              <td key={`${col.key}-type-${i}`}>
+                {col.type === 'text' ? '(text)' : ''}
+              </td>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {GRID_ROWS.map((row) => (
+            <tr key={row.respid}>
+              <td>{row.respid}</td>
+              {GRID_COLUMNS.slice(1).map((col, i) => {
+                const cell = row.values[col.key];
+                if (!cell || cell.label === '') return <td key={i} />;
+                return (
+                  <td key={i}>
+                    {cell.code != null ? `${cell.code} = ${cell.label}` : cell.label}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   </div>
 );

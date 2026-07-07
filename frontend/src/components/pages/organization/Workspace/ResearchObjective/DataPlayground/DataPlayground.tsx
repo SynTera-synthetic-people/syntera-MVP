@@ -41,7 +41,19 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'labelled', label: 'Labelled Data' },
 ];
 
-const RUN_TABS = new Set<TabId>(['frequency', 'crosstabs', 'chart']);
+// Tabs that use the "Run <X>" primary action in the footer.
+const RUN_TABS = new Set<TabId>(['frequency', 'crosstabs']);
+
+// Tabs that show the "Upload Data" button in the header — per Figma, this
+// only appears on the two raw-data-selection tabs (Frequency Table / Cross
+// Tabs). Chart/Visuals, Insights/Summary, Coded Data and Labelled Data all
+// hide it since they operate on data that's already been selected/loaded.
+const UPLOAD_TABS = new Set<TabId>(['frequency', 'crosstabs']);
+
+// Tabs whose footer always shows a download-style action, regardless of
+// whether a "Run" has produced hasResults (Coded/Labelled data render
+// immediately since they don't require variable selection).
+const ALWAYS_DOWNLOAD_TABS = new Set<TabId>(['coded', 'labelled']);
 
 export const ALL_VARIABLES: Variable[] = [
   { id: 'respid', label: 'respid' },
@@ -215,7 +227,6 @@ const DataPlayground: React.FC<DataPlaygroundProps> = ({ onClose }) => {
     switch (activeTab) {
       case 'frequency': return 'Run Frequency';
       case 'crosstabs': return 'Run Cross Tab';
-      case 'chart': return 'Generate Chart';
       default: return 'Run';
     }
   };
@@ -227,6 +238,22 @@ const DataPlayground: React.FC<DataPlaygroundProps> = ({ onClose }) => {
   };
 
   const showRunBtn = RUN_TABS.has(activeTab);
+  const showUploadBtn = UPLOAD_TABS.has(activeTab);
+
+  // Footer download button: label differs for the report vs raw-data tabs,
+  // and Coded/Labelled Data show it unconditionally since there's no "Run"
+  // step gating their content.
+  const showDownloadBtn =
+    ALWAYS_DOWNLOAD_TABS.has(activeTab) ||
+    activeTab === 'chart' ||
+    activeTab === 'insights' ||
+    (hasResults && (activeTab === 'frequency' || activeTab === 'crosstabs'));
+
+  const getDownloadLabel = (): string => {
+    if (activeTab === 'insights') return 'Download Report';
+    if (activeTab === 'coded' || activeTab === 'labelled') return 'Download Data';
+    return 'Download Data';
+  };
 
   // ── Render tab content ────────────────────────────────────────────────────
 
@@ -264,12 +291,7 @@ const DataPlayground: React.FC<DataPlaygroundProps> = ({ onClose }) => {
           />
         );
       case 'chart':
-        return (
-          <ChartVisuals
-            allVariables={ALL_VARIABLES}
-            hasResults={hasResults}
-          />
-        );
+        return <ChartVisuals allVariables={ALL_VARIABLES} />;
       case 'insights':
         return <InsightsSummary />;
       case 'coded':
@@ -294,10 +316,12 @@ const DataPlayground: React.FC<DataPlaygroundProps> = ({ onClose }) => {
             </p>
           </div>
           <div className="dp-header-right">
-            <button className="dp-upload-btn">
-              <span className="dp-upload-icon">↑</span>
-              Upload Data
-            </button>
+            {showUploadBtn && (
+              <button className="dp-upload-btn">
+                <span className="dp-upload-icon">⤒</span>
+                Upload Data
+              </button>
+            )}
             <button className="dp-close-btn" onClick={onClose} aria-label="Close">
               ✕
             </button>
@@ -323,13 +347,13 @@ const DataPlayground: React.FC<DataPlaygroundProps> = ({ onClose }) => {
         {/* ── Footer ── */}
         <div className="dp-footer">
           <div className="dp-footer-left">
-            {hasResults && (
+            {showDownloadBtn && (
               <button
                 className="dp-download-btn"
                 onClick={() => setShowDownload(true)}
               >
                 <span className="dp-download-icon">⬇</span>
-                Download Data
+                {getDownloadLabel()}
               </button>
             )}
           </div>

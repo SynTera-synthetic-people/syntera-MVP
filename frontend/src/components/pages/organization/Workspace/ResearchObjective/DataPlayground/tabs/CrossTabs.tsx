@@ -15,8 +15,9 @@ interface ValueModalState {
 }
 
 interface NettGroup {
+  id: number;
   label: string;
-  vars: string[];
+  memberIdxs: number[];
 }
 
 // ── Sample data ───────────────────────────────────────────────────────────────
@@ -32,7 +33,6 @@ interface CrossRow {
   label: string;
   isBase?: boolean;
   isSigma?: boolean;
-  isNett?: boolean;
   isMean?: boolean;
   total: number;
   totalColPct: number;
@@ -49,6 +49,9 @@ const COL_CROSSTAB: CrossRow[] = [
   { label: 'Sigma', isSigma: true, total: 35, totalColPct: 1, totalRowPct: 1, colValues: [{ count: 5, colPct: 1, rowPct: 0.143 }, { count: 4, colPct: 1, rowPct: 0.114 }, { count: 22, colPct: 1, rowPct: 0.629 }, { count: 4, colPct: 1, rowPct: 0.114 }] },
 ];
 
+// Indexes into COL_CROSSTAB that are eligible to be grouped into a NETT
+// (i.e. everything except the Base and Sigma rows).
+const NETTABLE_ROW_IDXS = [1, 2, 3, 4];
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -93,6 +96,8 @@ const CrossTabs: React.FC<CrossTabsProps> = ({
   const [nettGroups, setNettGroups] = useState<NettGroup[]>([]);
   const [showNettInput, setShowNettInput] = useState(false);
   const [nettLabel, setNettLabel] = useState('');
+  const [buildingNettId, setBuildingNettId] = useState<number | null>(null);
+  const [rowLabels, setRowLabels] = useState<Record<number, string>>({});
 
   const allSelectedIds = new Set([
     ...bannerVars.map((v) => v.id),
@@ -137,12 +142,62 @@ const CrossTabs: React.FC<CrossTabsProps> = ({
 
   const handleAddNett = () => {
     if (!nettLabel.trim()) return;
-    setNettGroups((prev) => [...prev, { label: nettLabel.trim(), vars: [] }]);
+    const id = Date.now();
+    setNettGroups((prev) => [...prev, { id, label: nettLabel.trim(), memberIdxs: [] }]);
+    setBuildingNettId(id);
     setNettLabel('');
     setShowNettInput(false);
   };
 
+  const toggleNettMember = (rowIdx: number) => {
+    if (buildingNettId == null) return;
+    setNettGroups((prev) =>
+      prev.map((ng) =>
+        ng.id !== buildingNettId
+          ? ng
+          : {
+              ...ng,
+              memberIdxs: ng.memberIdxs.includes(rowIdx)
+                ? ng.memberIdxs.filter((i) => i !== rowIdx)
+                : [...ng.memberIdxs, rowIdx],
+            }
+      )
+    );
+  };
+
+  const handleEditRowLabel = (idx: number, text: string) => {
+    setRowLabels((prev) => ({ ...prev, [idx]: text }));
+  };
+
   const SIGMA_COUNTS = [5, 4, 22, 4] as const;
+
+  const nettComputed = nettGroups.map((ng) => {
+    const members = ng.memberIdxs
+      .slice()
+      .sort((a, b) => a - b)
+      .map((i) => COL_CROSSTAB[i])
+      .filter(Boolean) as CrossRow[];
+    const total = members.reduce((sum, m) => sum + m.total, 0);
+    const totalColPct = members.reduce((sum, m) => sum + m.totalColPct, 0);
+    const colValues = BANNER_COLS.map((_, colIdx) => {
+      const count = members.reduce((sum, m) => sum + (m.colValues[colIdx]?.count ?? 0), 0);
+      const colPct = members.reduce((sum, m) => sum + (m.colValues[colIdx]?.colPct ?? 0), 0);
+      const rowPct = members.reduce((sum, m) => sum + (m.colValues[colIdx]?.rowPct ?? 0), 0);
+      return { count, colPct, rowPct };
+    });
+    const memberLabels = members.map((m) => m.label.split(' ').slice(0, 2).join(' '));
+    return {
+      ng,
+      row: {
+        label: `NETT: ${ng.label}`,
+        total,
+        totalColPct,
+        totalRowPct: 1,
+        colValues,
+      } as CrossRow,
+      caption: `NETT = ${memberLabels.join(' + ') || '…'}`,
+    };
+  });
 
   const tableRows: CrossRow[] = hasResults
     ? [
@@ -167,7 +222,7 @@ const CrossTabs: React.FC<CrossTabsProps> = ({
   const formatCell = (row: CrossRow, isTotal: boolean, colIdx: number) => {
     if (row.isBase || row.isSigma) {
       const count = isTotal ? row.total : row.colValues[colIdx]?.count ?? 0;
-      return `1 ${count}`;
+      return `${count} 100.0`;
     }
     if (row.isMean) {
       return isTotal ? row.total.toFixed(1) : '—';
@@ -176,7 +231,7 @@ const CrossTabs: React.FC<CrossTabsProps> = ({
       ? (isTotal ? row.totalColPct : row.colValues[colIdx]?.colPct ?? 0)
       : (isTotal ? row.totalRowPct : row.colValues[colIdx]?.rowPct ?? 0);
     const count = isTotal ? row.total : row.colValues[colIdx]?.count ?? 0;
-    return `${(pct * 100).toFixed(1)}% ${count}`;
+    return `${count} ${(pct * 100).toFixed(1)}`;
   };
 
   return (
@@ -340,6 +395,12 @@ const CrossTabs: React.FC<CrossTabsProps> = ({
             </div>
 
             <div className="dp-crosstab-toolbar-right">
+              {buildingNettId != null && (
+                <button className="dp-toolbar-btn" onClick={() => setBuildingNettId(null)}>
+                  ✓ Done grouping NETT
+                </button>
+              )}
+
               {/* Add Row */}
               <div className="dp-addrow-wrap">
                 <button
@@ -390,19 +451,6 @@ const CrossTabs: React.FC<CrossTabsProps> = ({
             <EmptyState />
           ) : (
             <div>
-              {/* NETT groups displayed above table */}
-              {nettGroups.map((ng, i) => (
-                <div key={i} className="dp-nett-badge">
-                  <span className="dp-nett-badge-label">NETT: {ng.label}</span>
-                  <button
-                    className="dp-nett-badge-remove"
-                    onClick={() => setNettGroups((prev) => prev.filter((_, j) => j !== i))}
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
-
               <div className="dp-cross-block-title">
                 Table 1 — Q2_Current approach to AI-powered marketing ×{' '}
                 {bannerVars.map((v) => v.label).join(', ') || 'S2_Employee count'}
@@ -411,48 +459,114 @@ const CrossTabs: React.FC<CrossTabsProps> = ({
                 <table className="dp-cross-table">
                   <thead>
                     <tr>
+                      <th className="dp-cross-td--rowctl" aria-hidden />
                       <th className="dp-cross-th--label"></th>
                       <th className="dp-cross-th--num">Total</th>
                       {BANNER_COLS.map((col) => (
-                        <th key={col} className="dp-cross-th--num">{col}</th>
+                        <th key={col} className="dp-cross-th--num">
+                          <span
+                            className="dp-editable"
+                            contentEditable
+                            suppressContentEditableWarning
+                          >
+                            {col}
+                          </span>
+                        </th>
                       ))}
                     </tr>
                     <tr>
+                      <th className="dp-cross-td--rowctl" aria-hidden />
                       <th className="dp-cross-th--subhead">
                         {percentMode === 'col' ? 'Col%' : 'Row%'} / Count
                       </th>
-                      <th className="dp-cross-th--subhead">
-                        {percentMode === 'col' ? 'Col%' : 'Row%'} Count
-                      </th>
+                      <th className="dp-cross-th--subhead">Count</th>
                       {BANNER_COLS.map((col) => (
-                        <th key={col} className="dp-cross-th--subhead">
-                          {percentMode === 'col' ? 'Col%' : 'Row%'} Count
-                        </th>
+                        <th key={col} className="dp-cross-th--subhead">Count</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {tableRows.map((row, i) => (
-                      <tr
-                        key={i}
-                        className={
-                          row.isBase
-                            ? 'dp-cross-row--base'
-                            : row.isSigma
-                            ? 'dp-cross-row--sigma'
-                            : row.isMean
-                            ? 'dp-cross-row--mean'
-                            : ''
-                        }
-                      >
-                        <td className="dp-cross-td--label">{row.label}</td>
-                        <td className="dp-cross-td--num">{formatCell(row, true, -1)}</td>
-                        {row.colValues.map((_, j) => (
-                          <td key={j} className="dp-cross-td--num">
-                            {formatCell(row, false, j)}
+                    {tableRows.map((row, i) => {
+                      const isNettable = NETTABLE_ROW_IDXS.includes(i);
+                      const isBuildingMember =
+                        buildingNettId != null &&
+                        nettGroups.find((ng) => ng.id === buildingNettId)?.memberIdxs.includes(i);
+
+                      return (
+                        <tr
+                          key={i}
+                          className={
+                            row.isBase
+                              ? 'dp-cross-row--base'
+                              : row.isSigma
+                              ? 'dp-cross-row--sigma'
+                              : row.isMean
+                              ? 'dp-cross-row--mean'
+                              : isBuildingMember
+                              ? 'dp-cross-row--nett-child'
+                              : ''
+                          }
+                          onClick={() => isNettable && buildingNettId != null && toggleNettMember(i)}
+                          style={buildingNettId != null && isNettable ? { cursor: 'pointer' } : undefined}
+                        >
+                          <td className="dp-cross-td--rowctl">
+                            {row.isBase || row.isSigma ? (
+                              <span className="dp-row-link-icon" title="Aggregate row">⛓</span>
+                            ) : (
+                              <span className="dp-row-updown">
+                                <button className="dp-row-updown-btn" aria-label="Move row down">↓</button>
+                                <button className="dp-row-updown-btn" aria-label="Move row up">↑</button>
+                              </span>
+                            )}
                           </td>
-                        ))}
-                      </tr>
+                          <td className="dp-cross-td--label">
+                            <span
+                              className="dp-editable"
+                              contentEditable={!row.isBase && !row.isSigma}
+                              suppressContentEditableWarning
+                              onBlur={(e) => handleEditRowLabel(i, e.currentTarget.textContent ?? '')}
+                            >
+                              {rowLabels[i] ?? row.label}
+                            </span>
+                          </td>
+                          <td className="dp-cross-td--num">{formatCell(row, true, -1)}</td>
+                          {row.colValues.map((_, j) => (
+                            <td key={j} className="dp-cross-td--num">
+                              {formatCell(row, false, j)}
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    })}
+
+                    {/* NETT rows — appended after the standard rows, each with
+                        a small caption row showing its formula. */}
+                    {nettComputed.map(({ ng, row, caption }) => (
+                      <React.Fragment key={ng.id}>
+                        <tr className="dp-cross-row--nett">
+                          <td className="dp-cross-td--rowctl">
+                            <span className="dp-row-link-icon" title="NETT aggregate">⛓</span>
+                          </td>
+                          <td className="dp-cross-td--label">{row.label}</td>
+                          <td className="dp-cross-td--num">{formatCell(row, true, -1)}</td>
+                          {row.colValues.map((_, j) => (
+                            <td key={j} className="dp-cross-td--num">
+                              {formatCell(row, false, j)}
+                            </td>
+                          ))}
+                        </tr>
+                        <tr>
+                          <td className="dp-cross-td--rowctl" />
+                          <td
+                            className="dp-cross-td--label"
+                            colSpan={2 + row.colValues.length}
+                            style={{ fontSize: 11, color: '#6b6f7a', fontStyle: 'italic' }}
+                          >
+                            {caption}
+                            {buildingNettId === ng.id && ' — click rows above to add/remove members'}
+                          </td>
+                        </tr>
+                      </React.Fragment>
                     ))}
                   </tbody>
                 </table>
