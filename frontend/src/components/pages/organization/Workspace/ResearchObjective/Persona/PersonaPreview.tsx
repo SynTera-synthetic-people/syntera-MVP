@@ -41,7 +41,7 @@ import { useTheme } from '../../../../../../context/ThemeContext';
 import omiTransitionSrc from '../../../../../../assets/Omi Animations/OmiTransition.mp4';
 import omiDarkImg from '../../../../../../assets/OMI_Dark.png';
 import EvidenceLinksModal from './EvidenceLinkModal';
-import type { EvidenceLink } from './EvidenceLinkModal'
+import type { EvidenceLink, KESourceEntry, WebCitationEntry } from './EvidenceLinkModal'
 import './EvidenceLinkModal.css';
 import './PersonaPerview.css';
 
@@ -957,6 +957,8 @@ interface KnowledgeEnrichmentCardProps {
   randomTotal: number;
   sourceTypes: typeof KE_SOURCE_TYPES;
   onViewSources?: (() => void) | undefined;
+  confidenceScore?: number;
+  confidenceComponents?: typeof KE_CONFIDENCE_COMPONENTS;
 }
 
 const KnowledgeEnrichmentCard: React.FC<KnowledgeEnrichmentCardProps> = ({
@@ -964,20 +966,25 @@ const KnowledgeEnrichmentCard: React.FC<KnowledgeEnrichmentCardProps> = ({
   randomTotal,
   sourceTypes,
   onViewSources,
+  confidenceScore: confidenceScoreProp,
+  confidenceComponents: confidenceComponentsProp,
 }) => {
   const [hoveredSlice, setHoveredSlice] = useState<typeof KE_SOURCE_TYPES[number] | null>(null);
   const [barWidths, setBarWidths] = useState<Record<string, number>>({});
+
+  const activeConfidenceScore = confidenceScoreProp ?? KE_CONFIDENCE_SCORE;
+  const activeConfidenceComponents = confidenceComponentsProp ?? KE_CONFIDENCE_COMPONENTS;
 
   const totalSourcesLabel = randomTotal.toLocaleString('en-IN');
 
   useEffect(() => {
     const t = setTimeout(() => {
       const widths: Record<string, number> = {};
-      KE_CONFIDENCE_COMPONENTS.forEach(c => { widths[c.label] = Math.min(c.score, 100); });
+      activeConfidenceComponents.forEach(c => { widths[c.label] = Math.min(c.score, 100); });
       setBarWidths(widths);
     }, 120);
     return () => clearTimeout(t);
-  }, []);
+  }, [activeConfidenceComponents]);
 
   return (
     <div className="pp-calib-card">
@@ -1073,16 +1080,16 @@ const KnowledgeEnrichmentCard: React.FC<KnowledgeEnrichmentCardProps> = ({
             className="pp-multi-conf-pill"
             style={{
               background: 'rgba(26,171,24,0.1)',
-              border: `1px solid ${confColor(KE_CONFIDENCE_SCORE)}33`,
+              border: `1px solid ${confColor(activeConfidenceScore)}33`,
             }}
           >
             <span className="pp-multi-conf-pill-label">Calibration Confidence</span>
-            <span className="pp-multi-conf-pill-score" style={{ color: confColor(KE_CONFIDENCE_SCORE) }}>
-              {KE_CONFIDENCE_SCORE}%
+            <span className="pp-multi-conf-pill-score" style={{ color: confColor(activeConfidenceScore) }}>
+              {activeConfidenceScore}%
             </span>
           </div>
 
-          {KE_CONFIDENCE_COMPONENTS.map(({ label, score }) => (
+          {activeConfidenceComponents.map(({ label, score }) => (
             <div key={label} className="pp-multi-conf-bar-row">
               <div className="pp-multi-conf-bar-header">
                 <span className="pp-multi-conf-bar-label">{label}</span>
@@ -1467,9 +1474,10 @@ const PersonaPreview: React.FC = () => {
   const [showEvidenceModal, setShowEvidenceModal] = useState(false);
   const [showKnowledgeModal, setShowKnowledgeModal] = useState(false);
 
-  // ── Knowledge Enrichment source data — generated once per mount and shared
-  // between the KnowledgeEnrichmentCard (donut + centre label) and its
-  // "View Sources" modal, so both always agree on the same numbers. ─────────
+  // ── Knowledge Enrichment source data — generated once per mount ─────────
+  // Legacy random-scaled fallback (used for older personas that predate the
+  // KE Sourcebank enrichment pipeline).  Real data computed below, after
+  // mergedTraits / personaDetails are available.
   const [keRandomTotal] = useState<number>(getRandomSourceTotal);
   const keSourceTypes = React.useMemo(
     () => scaleSourceTypesToTotal(KE_SOURCE_TYPES, keRandomTotal),
@@ -1566,6 +1574,71 @@ const PersonaPreview: React.FC = () => {
   }, [calibrationStatus, workspaceId, objectiveId, personaId, navigate]);
 
   const uiTraits = mapApiTraitsToUi(mergedTraits, personaId);
+
+  // ── Real KE Sourcebank data ────────────────────────────────────────────────
+  // Populated by enrich_persona_ke_sources() after persona generation.
+  // Falls back gracefully to the legacy hardcoded values for older personas.
+
+  const rawKeSources = React.useMemo(() => {
+    const v = mergedTraits?.ke_sources_used ?? personaDetails?.ke_sources_used;
+    return Array.isArray(v) && v.length > 0 ? (v as KESourceEntry[]) : null;
+  }, [mergedTraits, personaDetails]);
+
+  const rawKeBreakdown = React.useMemo(() => {
+    const v = mergedTraits?.ke_source_type_breakdown ?? personaDetails?.ke_source_type_breakdown;
+    return v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length > 0
+      ? (v as Record<string, number>)
+      : null;
+  }, [mergedTraits, personaDetails]);
+
+  const rawKeConfidence = React.useMemo(() => {
+    const v = mergedTraits?.ke_confidence ?? personaDetails?.ke_confidence;
+    return v && typeof v === 'object' && 'overall' in (v as object)
+      ? (v as { overall: number; components: Record<string, number> })
+      : null;
+  }, [mergedTraits, personaDetails]);
+
+  // Active source types for the donut — real counts when available
+  const activeKeSourceTypes = React.useMemo(() => {
+    if (!rawKeBreakdown) return keSourceTypes;
+    const mapped = KE_SOURCE_TYPES
+      .map(t => ({ ...t, value: rawKeBreakdown[t.name] ?? 0 }))
+      .filter(t => t.value > 0);
+    return mapped.length > 0 ? mapped : keSourceTypes;
+  }, [rawKeBreakdown, keSourceTypes]);
+
+  // Centre-label total for the donut
+  const keRealTotal = React.useMemo(() => {
+    if (!rawKeBreakdown) return keRandomTotal;
+    return Object.values(rawKeBreakdown).reduce((a, b) => a + b, 0);
+  }, [rawKeBreakdown, keRandomTotal]);
+
+  // Confidence badge + bars
+  const keConfidenceScore = rawKeConfidence?.overall ?? KE_CONFIDENCE_SCORE;
+  const keConfidenceComponents = React.useMemo(() => {
+    if (!rawKeConfidence?.components) return KE_CONFIDENCE_COMPONENTS;
+    return KE_CONFIDENCE_COMPONENTS.map(c => ({
+      ...c,
+      score: rawKeConfidence.components[c.label] ?? c.score,
+    }));
+  }, [rawKeConfidence]);
+
+  // "View Sources" modal links — grouped by category with real sub-docs when present
+  const activeKnowledgeEvidenceLinks: EvidenceLink[] = React.useMemo(() => {
+    if (!rawKeSources) return knowledgeEvidenceLinks;
+    const byCategory = new Map<string, KESourceEntry[]>();
+    for (const src of rawKeSources) {
+      const cat = src.source_type || 'Industry Reports';
+      if (!byCategory.has(cat)) byCategory.set(cat, []);
+      byCategory.get(cat)!.push(src);
+    }
+    return Array.from(byCategory.entries()).map(([cat, sources]) => ({
+      name: cat,
+      count: sources.length,
+      usage_context: sources[0]?.usage_context,
+      ke_sources: sources,
+    }));
+  }, [rawKeSources, knowledgeEvidenceLinks]);
 
   // ── Confidence data ────────────────────────────────────────────────────────
 
@@ -1768,6 +1841,58 @@ const PersonaPreview: React.FC = () => {
       };
     });
   })();
+
+  // ── Web evidence by platform (all scraped URLs + HQ research sources) ──────
+  // Stored by the Digital Brain and Manual pipelines; absent on Omi personas.
+  // When present, replaces the flat reference_sites_with_usage list with a
+  // richer per-platform accordion view (WebPlatformCitationRow).
+
+  interface RawWebEvidencePlatform {
+    platform: string;
+    total_posts?: number;
+    themes?: string[];
+    source_note?: string;
+    is_hq?: boolean;
+    citations?: Array<{
+      url?: string;
+      quote?: string;
+      confidence?: number;
+      title?: string;
+      authority_tier?: string;
+      domain?: string;
+    }>;
+  }
+
+  const rawWebEvidenceByPlatform = React.useMemo<RawWebEvidencePlatform[] | null>(() => {
+    const v =
+      mergedTraits?.web_evidence_by_platform ??
+      personaDetails?.web_evidence_by_platform;
+    return Array.isArray(v) && v.length > 0
+      ? (v as RawWebEvidencePlatform[])
+      : null;
+  }, [mergedTraits, personaDetails]);
+
+  // When real web_evidence_by_platform data is available, build EvidenceLink
+  // entries with web_citations sub-arrays so the modal renders per-article rows.
+  // Falls back to the flat evidenceModalLinks for Omi personas or older records.
+  const activeEvidenceModalLinks: EvidenceLink[] = React.useMemo(() => {
+    if (!rawWebEvidenceByPlatform) return evidenceModalLinks;
+    return rawWebEvidenceByPlatform.map((group) => ({
+      name: prettifyPlatform(group.platform) ?? group.platform,
+      count: group.total_posts ?? 0,
+      themes: group.themes ?? [],
+      source_note: group.source_note,
+      is_hq: group.is_hq ?? false,
+      web_citations: (group.citations ?? []).map((c) => ({
+        url: c.url ?? '',
+        quote: c.quote,
+        confidence: c.confidence,
+        title: c.title,
+        authority_tier: c.authority_tier,
+        domain: c.domain,
+      } as WebCitationEntry)),
+    } as EvidenceLink));
+  }, [rawWebEvidenceByPlatform, evidenceModalLinks]);
 
   // ── OCEAN profile ──────────────────────────────────────────────────────────
 
@@ -2056,7 +2181,7 @@ const PersonaPreview: React.FC = () => {
     []
   ) as Array<Record<string, unknown>>;
 
-  const knowledgeEnrichmentConfidenceScore = KE_CONFIDENCE_SCORE;
+  const knowledgeEnrichmentConfidenceScore = keConfidenceScore; // real or hardcoded fallback
 
   // ── Brain Assignment (Primary / Secondary) for Neuroscience-Informed card ──
   const brainAssignmentRaw = (
@@ -2680,9 +2805,11 @@ const PersonaPreview: React.FC = () => {
                   {/* ── Knowledge Enrichment Layer — now with View Sources CTA ── */}
                   <KnowledgeEnrichmentCard
                     isManualMode={isManualMode}
-                    randomTotal={keRandomTotal}
-                    sourceTypes={keSourceTypes}
+                    randomTotal={keRealTotal}
+                    sourceTypes={activeKeSourceTypes}
                     onViewSources={!isManualMode ? () => setShowKnowledgeModal(true) : undefined}
+                    confidenceScore={keConfidenceScore}
+                    confidenceComponents={keConfidenceComponents}
                   />
                 </div>
                 <div className="pp-calib-col">
@@ -2756,21 +2883,17 @@ const PersonaPreview: React.FC = () => {
       <AnimatePresence>
         {showEvidenceModal && (
           <EvidenceLinksModal
-            links={evidenceModalLinks}
+            links={activeEvidenceModalLinks}
             onClose={() => setShowEvidenceModal(false)}
           />
         )}
       </AnimatePresence>
 
-      {/* ── Knowledge Enrichment Sources Modal — reuses the same EvidenceLinksModal
-           component, just fed the source-type breakdown instead of platform links.
-           Since these entries have no real URL, the modal naturally renders them
-           as a static list (name + count), which is exactly the "list form with
-           proper structure" requested. ── */}
+      {/* ── Knowledge Enrichment Sources Modal ── */}
       <AnimatePresence>
         {showKnowledgeModal && (
           <EvidenceLinksModal
-            links={knowledgeEvidenceLinks}
+            links={activeKnowledgeEvidenceLinks}
             onClose={() => setShowKnowledgeModal(false)}
           />
         )}
