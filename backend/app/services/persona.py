@@ -7,6 +7,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 from app.utils.id_generator import generate_id
 import json
+import re
 import logging
 import time
 from openai import AsyncOpenAI
@@ -1263,6 +1264,277 @@ NO text outside JSON. NO markdown. NO explanations.
             "weaknesses": ["Persona scoring failed due to formatting"],
             "improvements": "Ensure persona fields are complete and formatting is correct."
         }
+
+
+_BRAIN_NAMES_RE = re.compile(
+    r"\b(Explorer|Connector|Guardian|Pragmatist|Achiever|Visionary|Optimizer|"
+    r"Hedonist|Empath|Nomad|Rebel|Maverick|Aspirational Achiever)\s*(brain|type)?\b",
+    re.IGNORECASE,
+)
+
+
+def _compute_ro_alignment_sanity_check(patterns: list, ro: dict) -> int:
+    """Rule-based RO alignment score — no LLM. Counts keyword overlap between patterns and RO."""
+    if not patterns or not ro:
+        return 0
+
+    ro_text = " ".join(filter(None, [
+        ro.get("business_objective", ""),
+        ro.get("key_questions", ""),
+    ])).lower()
+
+    ro_keywords = {w for w in ro_text.split() if len(w) > 3}
+    if not ro_keywords:
+        return 50
+
+    aligned_count = sum(
+        1 for pattern in patterns
+        if set(pattern.lower().split()) & ro_keywords
+    )
+    return max(0, min(100, int((aligned_count / len(patterns)) * 100)))
+
+
+def _extract_manual_signals(full_persona_info: dict) -> list[str]:
+    """Extract behavioral signals from manual persona trait fields (no digital brain evidence)."""
+    signals: list[str] = []
+
+    def _add(prefix: str, value) -> None:
+        if not value:
+            return
+        items = value if isinstance(value, list) else [value]
+        for item in items:
+            text = str(item).strip()
+            if len(text) > 5:
+                signals.append(f"[{prefix}] {text}")
+
+    _add("PERSONALITY", full_persona_info.get("personality"))
+    _add("VALUES", full_persona_info.get("values"))
+    _add("MOTIVATIONS", full_persona_info.get("motivations"))
+    _add("LIFESTYLE", full_persona_info.get("lifestyle"))
+    _add("INTERESTS", full_persona_info.get("interests"))
+    _add("DECISION_STYLE", full_persona_info.get("decision_making_style"))
+    _add("PURCHASE_CHANNEL", full_persona_info.get("purchase_channel"))
+    _add("PURCHASE_TRIGGER", full_persona_info.get("purchase_triggers"))
+    _add("PURCHASE_BARRIER", full_persona_info.get("purchase_barriers"))
+    _add("MEDIA", full_persona_info.get("media_consumption_patterns"))
+    _add("DIGITAL", full_persona_info.get("digital_behaviour") or full_persona_info.get("digital_activity"))
+
+    for key, label in [
+        ("price_sensitivity", "PRICE_SENSITIVITY"),
+        ("brand_sensitivity", "BRAND_SENSITIVITY"),
+        ("switching_tendency", "SWITCHING_TENDENCY"),
+    ]:
+        val = full_persona_info.get(key)
+        if val:
+            signals.append(f"[{label}] {val}")
+
+    bpp = full_persona_info.get("barriers_pain_points")
+    if isinstance(bpp, dict):
+        for items in bpp.values():
+            if isinstance(items, list):
+                for item in items[:2]:
+                    text = str(item).strip()
+                    if len(text) > 5:
+                        signals.append(f"[BARRIER] {text}")
+
+    trig = full_persona_info.get("triggers_opportunities")
+    if isinstance(trig, dict):
+        for items in trig.values():
+            if isinstance(items, list):
+                for item in items[:2]:
+                    text = str(item).strip()
+                    if len(text) > 5:
+                        signals.append(f"[TRIGGER] {text}")
+
+    backstory = full_persona_info.get("backstory") or full_persona_info.get("formative_experience_description")
+    if backstory:
+        text = str(backstory).strip()[:300]
+        if len(text) > 20:
+            signals.append(f"[BACKSTORY] {text}")
+
+    return signals
+
+
+def _build_patterns_prompt(ro_text: str, signals: list[str]) -> str:
+    return f"""You are a consumer insights expert. Transform the raw behavioral signals below into exactly 10 clear, complete behavioral insights.
+
+RESEARCH OBJECTIVE:
+{ro_text}
+
+RAW BEHAVIORAL SIGNALS:
+{chr(10).join(f"- {s}" for s in signals[:15])}
+
+RULES:
+1. Output EXACTLY 10 patterns (or fewer only if fewer than 10 signals exist)
+2. Each pattern must be a complete, clear sentence — 10 to 20 words
+3. ZERO brain names (Explorer, Optimizer, Guardian, Connector, Achiever, Visionary, Hedonist, Empath, Pragmatist, Nomad, Rebel, Maverick)
+4. ZERO technical jargon — write for a non-technical marketing manager who has never seen this data
+5. Each pattern must express a specific, observable behavior, contradiction, or consumer insight
+6. Cover a variety of signal types: price behavior, brand switching, peer influence, timing, trust, lifestyle, say-do gaps
+7. Compute ro_alignment_score: integer 0-100 — what % of patterns directly address the research objective's key questions
+
+GOOD EXAMPLES:
+- "They regularly switch between brands, but claim to value brand loyalty when asked."
+- "Most purchases happen late at night, suggesting deliberate, reward-driven shopping sessions."
+- "Peer recommendations consistently override personal brand preferences during switching decisions."
+- "Shoppers spend at premium tier but describe themselves as budget-conscious buyers."
+
+BAD EXAMPLES (avoid):
+- "Explorer brain overrides stated quality preference" (brain name + jargon)
+- "Peer-driven switching clusters" (fragment, too vague)
+- "Behavioral heterogeneity signals" (jargon)
+
+OUTPUT — strict JSON only, no markdown:
+{{
+  "patterns": ["Complete sentence pattern 1.", "Complete sentence pattern 2.", ...],
+  "ro_alignment_score": 78
+}}"""
+
+
+async def _generate_patterns_fallback(full_persona_info: dict, ro_text: str) -> dict:
+    """Minimal LLM call when main generation fails. Returns {patterns, score, error}."""
+    name = full_persona_info.get("name", "")
+    occupation = full_persona_info.get("occupation", "")
+    values = full_persona_info.get("values", "")
+    motivations = full_persona_info.get("motivations", "")
+    personality = full_persona_info.get("personality", "")
+    lifestyle = full_persona_info.get("lifestyle", "")
+    price_sensitivity = full_persona_info.get("price_sensitivity", "")
+    brand_sensitivity = full_persona_info.get("brand_sensitivity", "")
+
+    try:
+        res = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            response_format={"type": "json_object"},
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Generate clear, jargon-free behavioral patterns from persona data. "
+                        "Output strict JSON only. No brain names, no technical jargon."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": f"""Research Objective: {ro_text}
+Persona: {name}, {occupation}
+Values: {values} | Motivations: {motivations}
+Personality: {personality} | Lifestyle: {lifestyle}
+Price sensitivity: {price_sensitivity} | Brand sensitivity: {brand_sensitivity}
+
+Generate 8 clear behavioral patterns (complete sentences, 10-20 words each, no brain names) and an ro_alignment_score (0-100).
+JSON: {{"patterns": [...], "ro_alignment_score": 70}}""",
+                },
+            ],
+        )
+        data = json.loads(res.choices[0].message.content)
+        patterns = [
+            _BRAIN_NAMES_RE.sub("", str(p)).strip(" ,")
+            for p in (data.get("patterns") or [])
+            if p and len(str(p).strip()) > 3
+        ][:10]
+        score = max(0, min(100, int(data.get("ro_alignment_score") or 50)))
+        logger.info("generate_predominant_patterns: fallback succeeded patterns=%d score=%d", len(patterns), score)
+        return {"patterns": patterns, "score": score, "error": False}
+    except Exception:
+        logger.exception("generate_predominant_patterns: fallback also failed")
+        return {"patterns": [], "score": 0, "error": True}
+
+
+async def generate_predominant_patterns(full_persona_info: dict) -> dict:
+    """Generate 10 clear, jargon-free behavioral patterns + RO Alignment score.
+    Works for both digital brain personas (uses evidence streams) and manual
+    personas (extracts signals from trait fields).
+    """
+    evidence = (full_persona_info or {}).get("evidence") or {}
+    ro = (full_persona_info or {}).get("research_objective") or {}
+    say_do = (full_persona_info or {}).get("say_do_gap") or {}
+
+    # --- Digital brain signals ---
+    signals: list[str] = []
+    for layer in (evidence.get("action_data") or []):
+        text = str(layer.get("pattern_detected") or "").strip()
+        if len(text) > 8:
+            signals.append(f"[ACTION] {text}")
+    for verdict in (evidence.get("web_evidence") or []):
+        for theme in (verdict.get("key_discussion_themes") or []):
+            text = str(theme or "").strip()
+            if len(text) > 8:
+                signals.append(f"[WEB] {text}")
+    for div in (say_do.get("divergences") or []):
+        text = str(div or "").strip()
+        if len(text) > 8:
+            signals.append(f"[SAY_DO_GAP] {text}")
+
+    # --- Fallback to manual trait signals for non-digital-brain personas ---
+    if not signals:
+        signals = _extract_manual_signals(full_persona_info or {})
+
+    if isinstance(ro, dict):
+        ro_text = " | ".join(filter(None, [
+            ro.get("business_objective", ""),
+            ro.get("key_questions", ""),
+            ro.get("hypotheses", ""),
+        ]))
+    else:
+        ro_text = str(ro)
+
+    prompt = _build_patterns_prompt(ro_text, signals)
+
+    try:
+        res = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            response_format={"type": "json_object"},
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You produce concise, jargon-free behavioral patterns from consumer research signals. "
+                        "Output strict JSON only. Never use brain names or technical jargon."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+        )
+        data = json.loads(res.choices[0].message.content)
+        raw_patterns = data.get("patterns") or []
+        patterns = [
+            _BRAIN_NAMES_RE.sub("", str(pat)).strip(" ,")
+            for pat in raw_patterns
+            if pat and len(str(pat).strip()) > 3
+        ][:10]
+        llm_score = max(0, min(100, int(data.get("ro_alignment_score") or 0)))
+        sanity_score = _compute_ro_alignment_sanity_check(patterns, ro if isinstance(ro, dict) else {})
+        final_score = int((llm_score + sanity_score) / 2)
+        if abs(llm_score - sanity_score) > 20:
+            logger.warning(
+                "generate_predominant_patterns: large score discrepancy llm=%d sanity=%d final=%d",
+                llm_score, sanity_score, final_score,
+            )
+        else:
+            logger.info(
+                "generate_predominant_patterns: patterns=%d llm=%d sanity=%d final=%d",
+                len(patterns), llm_score, sanity_score, final_score,
+            )
+        return {"metric": "RO Alignment", "score": final_score, "patterns": patterns}
+    except Exception:
+        logger.exception("generate_predominant_patterns: main LLM call failed, trying fallback")
+        fallback = await _generate_patterns_fallback(full_persona_info or {}, ro_text)
+        patterns = fallback.get("patterns", [])
+        sanity_score = _compute_ro_alignment_sanity_check(patterns, ro if isinstance(ro, dict) else {})
+        if fallback.get("error"):
+            # Both LLMs failed — use rule-based sanity score only, never 0
+            final_score = max(sanity_score, 1)
+            logger.info("generate_predominant_patterns: sanity_only score=%d", final_score)
+        else:
+            fallback_llm_score = fallback.get("score", 50)
+            final_score = int((fallback_llm_score + sanity_score) / 2)
+            logger.info(
+                "generate_predominant_patterns: fallback_hybrid llm=%d sanity=%d final=%d",
+                fallback_llm_score, sanity_score, final_score,
+            )
+        return {"metric": "RO Alignment", "score": final_score, "patterns": patterns}
+
 
 def persona_preview_from_dict(p, full_persona_info, confidence=None):
 

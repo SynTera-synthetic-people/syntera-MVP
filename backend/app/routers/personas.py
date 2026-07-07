@@ -1669,6 +1669,31 @@ async def preview_persona(
 
     preview = persona_service.persona_preview_from_dict(p, full_persona_info, confidence=confidence)
 
+    cached_patterns = full_persona_info.get("predominant_patterns")
+    if cached_patterns and cached_patterns.get("patterns"):
+        preview["predominant_patterns"] = cached_patterns
+        logger.info(
+            "preview_persona:patterns_cached persona=%s score=%d count=%d",
+            persona_id,
+            cached_patterns.get("score", 0),
+            len(cached_patterns.get("patterns", [])),
+        )
+    else:
+        try:
+            patterns_started_at = time.perf_counter()
+            patterns_result = await persona_service.generate_predominant_patterns(full_persona_info)
+            preview["predominant_patterns"] = patterns_result
+            logger.info(
+                "preview_persona:patterns_done persona=%s score=%d count=%d elapsed_ms=%d",
+                persona_id,
+                patterns_result.get("score", 0),
+                len(patterns_result.get("patterns", [])),
+                int((time.perf_counter() - patterns_started_at) * 1000),
+            )
+        except Exception:
+            logger.exception("preview_persona:patterns_failed persona=%s", persona_id)
+            preview["predominant_patterns"] = {"metric": "RO Alignment", "score": 0, "patterns": []}
+
     logger.info(
         "preview_persona:success persona=%s total_elapsed_ms=%d",
         persona_id,

@@ -24,7 +24,7 @@ from openai import AsyncOpenAI
 from app.db import async_engine
 from app.models.persona import Persona
 from app.utils.id_generator import generate_id
-from app.services.persona import persona_to_dict, manual_prompt_traits
+from app.services.persona import persona_to_dict, manual_prompt_traits, generate_predominant_patterns
 from app.services.ke_sourcebank_enrichment import enrich_persona_ke_sources
 from app.config import OPENAI_API_KEY
 
@@ -799,6 +799,15 @@ async def calibrate_manual_persona_with_brains(
             # inspection only — never surfaced as a "[SIMULATED]"/"[ESTIMATED]"
             # label anywhere in the persona's user-facing content.
             merged["evidence_metadata"] = evidence_metadata
+
+            # Pre-compute patterns so preview reads from cache instead of calling LLM again.
+            try:
+                merged["predominant_patterns"] = await generate_predominant_patterns(merged)
+            except Exception:
+                logger.warning(
+                    "manual_persona.calibrate: pattern generation failed, will recompute at preview",
+                )
+
             p.persona_details = merged
 
             session.add(p)

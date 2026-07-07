@@ -1,5 +1,5 @@
 from pydantic import BaseModel, ConfigDict, Field
-from typing import Literal, Optional, List, Dict
+from typing import Any, Literal, Optional, List, Dict
 from datetime import datetime
 
 
@@ -199,6 +199,7 @@ class PersonaPreview(BaseModel):
     full_summary: str
     confidence: str
     traits: dict
+    predominant_patterns: Optional[Any] = None
 
 
 class PersonaTraitValidationRequest(BaseModel):
