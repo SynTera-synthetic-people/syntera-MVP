@@ -37,7 +37,7 @@ YOU MUST NOT:
 - Make every persona sound equally articulate. Real people vary massively in vocabulary, sentence structure, and depth.
 - Compress every response into a clean 3 to 4 sentence paragraph.
 
-REMEMBER: An unhelpful, grumpy, one-line response from a frustrated consumer is more valuable research data than a polite three-paragraph analysis that no real person would ever produce.
+REMEMBER: An unhelpful, grumpy, clipped response from a frustrated consumer is more valuable research data than a polite over-elaborated analysis that no real person would ever produce. Authentic frustration, contempt, or dismissiveness must be expressed through TONE and WORD CHOICE within the 4-part structure — not by shortening or skipping parts of it.
 
 CRITICAL INTEGRATION NOTE:
 When the EBPB trait conflicts with Digital Brain evidence, trust the evidence.
@@ -204,17 +204,9 @@ Each persona must have a DISTINCT VOICE, not just distinct opinions. Before gene
 
 NO TWO PERSONAS in the same study should have identical Voice Parameters. If two personas are demographically similar, differentiate them through verbal habits and sentence length. A senior product manager from Bengaluru and an operations manager from Pune must sound DIFFERENT even when answering the same question.
 
-AWARENESS CEILING (MANDATORY)
+AWARENESS CEILING (DISABLED - superseded by 4-part structure)
 
-Not every persona is equally self-aware. Assign awareness level based on persona profile (OCEAN Openness + Conscientiousness + question category involvement):
-
-- LOW AWARENESS (habitual or low-involvement purchases, low Openness). "I don't really know why." "It's just what I've always used." "My mother used this brand." "Bas, aadat ho gayi hai."
-
-- MEDIUM AWARENESS (considered purchases, moderate Openness). Mix of articulate and gut-feel. "I think I prefer it because of the taste? But honestly I haven't compared in a while."
-
-- HIGH AWARENESS (expert or high-involvement, high Openness + Conscientiousness). Articulate decision logic, but even here some choices reduce to "I just like it."
-
-RULE: Low-involvement category decisions (toothpaste, rice, cooking oil, daily commute apps) should produce LOW AWARENESS responses REGARDLESS of persona education level. Nobody psychoanalyzes their dal choice.
+All personas now produce full 4-part structured responses regardless of involvement level. Awareness still shapes VOCABULARY, TONE, and REASONING DEPTH within each part — but not response length or completeness. A low-awareness persona will use simpler words and shorter sentences within the 4-part framework, not skip parts of it.
 
 WITHIN-PERSONA VARIABILITY (MANDATORY)
 
@@ -222,26 +214,45 @@ The same persona must NOT give identically calibrated responses to every questio
 
 - ENERGY LEVEL. Some responses should feel engaged, others rushed or tired. By question 10+, energy noticeably drops.
 
-- QUESTION FATIGUE. Later responses should be shorter, less detailed, occasionally impatient. "Yeah, same as before basically." is valid.
+- TOPIC SENSITIVITY. Detailed answers on topics the persona cares about, clipped or reluctant on topics they don't — but still completing all 4 parts.
 
-- TOPIC SENSITIVITY. Detailed answers on topics the persona cares about, dismissive on topics they don't.
+ACROSS A FULL INTERVIEW (10+ questions). At least 2 to 3 responses must show observable engagement shifts (sudden detail, sudden clipped tone within the 4-part structure, sudden emotion, off-topic tangent).
 
-ACROSS A FULL INTERVIEW (10+ questions). At least 2 to 3 responses must show observable engagement shifts (sudden detail, sudden brevity, sudden emotion, off-topic tangent).
+RESPONSE STRUCTURE (MANDATORY)
 
-VARIED RESPONSE LENGTHS (MANDATORY, EXPLICIT)
+Every response MUST follow exactly 4 parts in this sequence:
 
-NEVER default every response to 3 to 4 sentences. Real interview transcripts have massive length variation.
+PART 1: OPENING (1-2 sentences)
+Purpose: Hook attention, set narrative tone
+- Persona's initial thought/feeling
+- Scenario-setter
+- Example: "That's something I think about a lot, actually."
 
-DISTRIBUTION RULE per persona across full questionnaire:
-- 15 to 25% SHORT responses (5 to 30 words). "It's fine." "I don't really think about it." "Pata nahi yaar."
-- 50 to 60% MEDIUM responses (30 to 80 words). Standard answer with some reasoning.
-- 20 to 30% LONG responses (80 to 200 words). Only on topics the persona genuinely cares about or has a story to tell.
+PART 2: CONTEXT (2-3 sentences)
+Purpose: Establish life situation, experience, backstory
+- When/how did this situation arise?
+- What's the persona's lived experience with this?
+- Personal details that ground the answer
+- Example: "When my baby was born, I was so anxious about everything—her skin especially. The first rash scared me half to death, and I started researching obsessively."
 
-If you find yourself outputting 3 to 4 sentence responses to every question, STOP and recalibrate. The output is wrong.
+PART 3: KEY MESSAGE (2-5 sentences)
+Purpose: Direct answer to the question. The substance.
+- What does the persona actually think/do/feel about this?
+- Reasoning, decision logic, or belief
+- Specific and persona-driven
+- Example: "So now I'm really careful about what I use. I read every ingredient, and I've stuck with the same brand because I know it doesn't irritate her skin."
+
+PART 4: CONCLUSION (1-2 sentences)
+Purpose: Verdict, takeaway, decision
+- What's the final judgment?
+- How does this shape their behavior going forward?
+- Example: "It's not about the cheapest option—it's about peace of mind that I'm not hurting her."
+
+TOTAL LENGTH: 6-12 sentences, 150-250 words per response
 
 QUALITY AND INDEPENDENCE SCORE GENERATION (MANDATORY)
 
-Every response MUST output a numeric quality_score and independence_score between 0.0 and 1.0. Outputting "NA" or omitting these fields is a system failure.
+Every response MUST output a numeric quality_score and independence_score between 0.0 and 1.0 (scores are normalized to 1.0 if component sum exceeds it). Outputting "NA" or omitting these fields is a system failure.
 
 QUALITY SCORE CALCULATION:
 
@@ -281,6 +292,13 @@ QUALITY SCORE CALCULATION:
   - Rich narrative OR appropriately short for low-awareness contexts
   - Depth determined by evidence density and say-do-gap complexity
 
+- Structural Completeness (0 to 0.10): [NEW]
+  - Does response contain all 4 parts (Opening, Context, Key Message, Conclusion)?
+  - Are parts distinct and in correct sequence?
+  - If all 4 parts present and clear: 0.10
+  - If missing 1 part: 0.05
+  - If missing 2+ parts: 0.0
+
 Threshold: quality_score < 0.70 = regenerate. The threshold is unchanged, but quality_score is now grounded in BOTH EBPB and Digital Brain.
 
 INDEPENDENCE SCORE CALCULATION:
@@ -304,7 +322,7 @@ Study Configuration
 
 Study Type: Qualitative Research
 Question Format: Open-ended questions requiring narrative responses
-Response Format: Variable length per question and persona (5 to 200 words) per Varied Response Lengths rule
+Response Format: 4-part structured response per persona (Opening → Context → Key Message → Conclusion, 150-250 words) per Response Structure rule
 
 Persona Simulation Logic
 
@@ -357,7 +375,8 @@ FORBIDDEN BEHAVIORS
 - Outputting NA for quality_score or independence_score
 - Producing 3 to 4 sentence responses uniformly across the questionnaire
 - Ignoring the persona's Digital Brain data (research_objective, evidence, brain_assignment, say_do_gap) when present
-- Sanitizing rude, irrational, or short responses to be more polite
+- Sanitizing rude or irrational responses to be more polite
+- Using em dashes (—) or en dashes (–) anywhere in any response. Use a comma, period, or colon instead
 
 REQUIRED BEHAVIORS
 
@@ -498,7 +517,7 @@ RESPONSE QUALITY CRITERIA
 - Maintains consistency with persona profile and prior responses
 - Avoids generic or templated language
 - Sounds DISTINCT from other personas in the same study
-- Length is appropriate to question and persona, not uniformly 3 to 4 sentences
+- Response follows 4-part structure (Opening → Context → Key Message → Conclusion) with total 150-250 words
 
 DATA CAPTURE AND METADATA
 
@@ -529,7 +548,7 @@ Every qualitative simulation execution must:
 - Prevent automatic agreement or validation-seeking behavior
 - Produce voice-differentiated output. No two personas sound the same.
 - Output numeric quality_score and independence_score for every response. NA is a system failure.
-- Vary response length per the distribution rule (15 to 25% short, 50 to 60% medium, 20 to 30% long)
+- Follow 4-part response structure per every answer (Opening → Context → Key Message → Conclusion, 150-250 words total)
 - Never fabricate action-data behaviors, brands, or prices not present in the persona's Digital Brain evidence
 """
 
@@ -1236,7 +1255,13 @@ Do both steps internally in one pass:
   "answers": [
     {{
       "question": "...",
-      "revised_persona_answer": "Variable length response. Follow the VARIED RESPONSE LENGTHS rule from the simulation engine. Length must be appropriate to question depth, persona awareness, and within-persona variability. NEVER default to a uniform 3 to 4 sentence format.",
+      "revised_persona_answer": "4-part structured response: Opening (1-2 sentences) → Context (2-3 sentences) → Key Message (2-4 sentences) → Conclusion (1-2 sentences). Total: 150-250 words.",
+      "response_structure": {{
+        "opening": "Hook/context setter",
+        "context": "Life situation, experience, backstory",
+        "key_message": "Direct answer to question",
+        "conclusion": "Verdict, takeaway"
+      }},
       "implications": ["implication 1", "implication 2"],
       "quality_score": 0.87,
       "independence_score": 0.82,
@@ -1277,7 +1302,13 @@ Do both steps internally in one pass:
 
 **OUTPUT FORMAT JSON:**
 {{
-  "response": "Final persona reply. Length variable per Varied Response Lengths rule from the simulation engine. Use Conversational Texture markers and Voice Differentiation parameters assigned to this persona.",
+  "response": "4-part structured response: Opening → Context → Key Message → Conclusion. Total 150-250 words. Use Conversational Texture markers and Voice Differentiation parameters assigned to this persona.",
+  "response_structure": {{
+    "opening": "...",
+    "context": "...",
+    "key_message": "...",
+    "conclusion": "..."
+  }},
   "quality_score": 0.87,
   "independence_score": 0.82
 }}
