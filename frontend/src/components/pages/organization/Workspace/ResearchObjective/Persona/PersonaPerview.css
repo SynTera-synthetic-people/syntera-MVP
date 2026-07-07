@@ -1244,6 +1244,12 @@
   overflow: hidden;
 }
 
+/* Once its drawer has finished expanding, let content (e.g. tooltips)
+   escape the rounded-corner clipping instead of being cut off. */
+.pp-dsm-row--settled {
+  overflow: visible;
+}
+
 /* Clickable header inside the card */
 .pp-dsm-header {
   width: 100%;
@@ -1337,6 +1343,11 @@
 .pp-dsm-detail-wrap {
   overflow: hidden;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Once expand animation settles, allow tooltips inside to escape clipping */
+.pp-dsm-detail-wrap--settled {
+  overflow: visible;
 }
 
 .pp-dsm-detail-inner {
@@ -1497,4 +1508,192 @@
   font-size: 12.5px;
   color: #94a3b8;
   line-height: 1.6;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   DIMENSIONS TRIGGERED — open pill list with hover tooltips
+   (Real Actions Signal card). No numeric metrics, no dropdown,
+   no icon; each pill shows its explanatory copy on hover.
+════════════════════════════════════════════════════════════════ */
+
+.pp-dim-block {
+  margin-bottom: 16px;
+}
+
+.pp-dsm-subheading {
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 10px;
+}
+
+.pp-dim-pill-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pp-dim-pill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  background: var(--T-Base-B4, #1E2126);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 13px;
+  color: #cbd5e1;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: default;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.pp-dim-pill:hover {
+  color: #f1f5f9;
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+/* Custom hover tooltip — pure CSS, no icon, shown above the pill */
+.pp-dim-pill:hover::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1a1d24;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 400;
+  color: #f1f5f9;
+  white-space: normal;
+  width: max-content;
+  max-width: 240px;
+  line-height: 1.45;
+  text-transform: none;
+  letter-spacing: normal;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+  z-index: 30;
+  pointer-events: none;
+}
+
+.pp-dim-pill:hover::before {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: #1a1d24;
+  z-index: 30;
+  pointer-events: none;
+}
+.pp-dim-card {
+  background: var(--T-Base-B4, #1E2126);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px;
+  padding: 12px 14px 14px;
+  margin-bottom: 16px;
+}
+/* ════════════════════════════════════════════════════════════════
+   MULTI-PLATFORM SEARCH DEPTH (Tier 1 → Tier 2 → Tier 3 widened search)
+════════════════════════════════════════════════════════════════ */
+
+.pp-tier-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.pp-tier-summary-total {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-bottom: 10px;
+}
+
+.pp-tier-summary-total strong {
+  color: #f1f5f9;
+  font-weight: 700;
+}
+
+.pp-tier-source-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 20px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.pp-tier-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pp-tier-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: var(--T-Base-B4, #1E2126);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+  padding: 9px 12px;
+}
+
+.pp-tier-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pp-tier-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.pp-tier-dot--active {
+  background: #24E5B6;
+  box-shadow: 0 0 0 3px rgba(36, 229, 182, 0.15);
+}
+
+.pp-tier-dot--inactive {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.pp-tier-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #cbd5e1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pp-tier-count {
+  font-size: 12px;
+  font-weight: 700;
+  color: #f1f5f9;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.pp-tier-count--muted {
+  color: #475569;
+  font-weight: 500;
 }

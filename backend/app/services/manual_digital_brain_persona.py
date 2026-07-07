@@ -12,6 +12,7 @@ a {"status": "success" | "error", ...} dict so routers can convert
 failures into clean HTTP responses without try/except boilerplate.
 """
 
+import asyncio
 import json
 import logging
 from typing import Optional, Dict, Any, Tuple, List
@@ -24,6 +25,7 @@ from app.db import async_engine
 from app.models.persona import Persona
 from app.utils.id_generator import generate_id
 from app.services.persona import persona_to_dict, manual_prompt_traits
+from app.services.ke_sourcebank_enrichment import enrich_persona_ke_sources
 from app.config import OPENAI_API_KEY
 
 logger = logging.getLogger(__name__)
@@ -792,6 +794,7 @@ async def calibrate_manual_persona_with_brains(
                 blended_confidence,
             )
             merged["reference_sites_with_usage"] = _build_reference_sites_from_evidence(evidence)
+            merged["web_evidence_by_platform"] = _build_web_evidence_by_platform_from_evidence(evidence)
             # Real-vs-LLM-generated counts are tracked here for internal
             # inspection only — never surfaced as a "[SIMULATED]"/"[ESTIMATED]"
             # label anywhere in the persona's user-facing content.
@@ -801,6 +804,18 @@ async def calibrate_manual_persona_with_brains(
             session.add(p)
             await session.commit()
             await session.refresh(p)
+
+            # Enrich KE sources in background — runs after response is sent.
+            # research_objective is always a plain string here (fetched by
+            # get_description() earlier in this function).
+            asyncio.create_task(
+                enrich_persona_ke_sources(
+                    persona_id=persona_id,
+                    research_objective=research_objective,
+                    persona_name=p.name or "",
+                    exploration_id=exploration_id,
+                )
+            )
 
             logger.info(
                 "manual_persona.calibrate:success persona_id=%s confidence=%s brain=%s real_streams=%d/3",
@@ -1075,6 +1090,72 @@ def _build_reference_sites_from_evidence(evidence: Dict[str, Any]) -> list[dict]
             "usage_context": "HQ source used during manual persona calibration.",
         })
     return refs
+
+
+def _build_web_evidence_by_platform_from_evidence(evidence: Dict[str, Any]) -> list[dict]:
+    """Build grouped evidence structure for the 'All Sources Used' UI view.
+
+    Mirrors _build_web_evidence_by_platform in the personas.py router but
+    operates on the manual persona's per-persona evidence dict (which uses
+    'eb_verdicts' / 'hq_verdicts' keys instead of 'stage_3b_eb_verdicts' /
+    'stage_3c_hq_verdicts').
+
+    See the Digital Brain counterpart for the full shape documentation.
+    """
+    _MAX_CITATIONS_PER_PLATFORM = 15
+
+    groups: list[dict] = []
+
+    for verdict in evidence.get("eb_verdicts") or []:
+        platform = verdict.get("source_platform") or "Web Evidence"
+        raw_citations = verdict.get("all_citations") or []
+        deduplicated: list[dict] = []
+        seen_urls: set[str] = set()
+        for c in raw_citations:
+            url = c.get("url") or ""
+            if url and url not in seen_urls:
+                seen_urls.add(url)
+                deduplicated.append({
+                    "url": url,
+                    "quote": (c.get("quote") or "")[:300],
+                    "confidence": round(float(c.get("confidence") or 0), 3),
+                })
+        groups.append({
+            "platform": platform,
+            "total_posts": verdict.get("threads_analyzed") or len(deduplicated),
+            "themes": verdict.get("key_discussion_themes") or [],
+            "sentiment": verdict.get("sentiment_distribution") or {},
+            "source_note": verdict.get("source_note") or "estimated",
+            "is_hq": False,
+            "citations": deduplicated[:_MAX_CITATIONS_PER_PLATFORM],
+        })
+
+    hq_citations: list[dict] = []
+    for verdict in evidence.get("hq_verdicts") or []:
+        provenance = verdict.get("provenance_detail") or {}
+        if provenance.get("type") not in ("real_hq_source",):
+            continue
+        hq_citations.append({
+            "url": provenance.get("source_url") or "",
+            "title": verdict.get("study_reference") or "Research Source",
+            "quote": (verdict.get("finding_summary") or "")[:300],
+            "confidence": round(float(verdict.get("confidence_score") or 0), 3),
+            "authority_tier": provenance.get("authority_tier") or "",
+            "domain": provenance.get("domain") or "",
+        })
+
+    if hq_citations:
+        groups.append({
+            "platform": "HQ Research Sources",
+            "total_posts": len(hq_citations),
+            "themes": [],
+            "sentiment": {},
+            "source_note": "real_citation_backed",
+            "is_hq": True,
+            "citations": hq_citations,
+        })
+
+    return groups
 
 
 async def _collect_evidence_for_manual_persona(

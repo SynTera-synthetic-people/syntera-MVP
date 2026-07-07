@@ -1,12 +1,13 @@
+import asyncio
 import json
 import logging
 import time
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status, Query
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
-from typing import List
+from typing import List, Optional
 from app.schemas.persona import (
     PersonaCreate, PersonaOut, PersonaUpdate, PersonaPreview,
     PersonaBackstoryIn, PersonaReplicateRequest, PersonaBulkDownloadRequest,
@@ -63,6 +64,7 @@ from app.services.manual_digital_brain_persona import (
     create_manual_persona_draft as create_manual_persona_draft_with_brains,
     calibrate_manual_persona_with_brains,
 )
+from app.services.ke_sourcebank_enrichment import enrich_persona_ke_sources
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/explorations/{exploration_id}/personas",
@@ -478,6 +480,102 @@ def _digital_brain_reference_sites(pipeline_result: dict) -> list[dict]:
     return refs
 
 
+def _build_web_evidence_by_platform(pipeline_result: dict) -> list[dict]:
+    """Build a grouped evidence structure for the UI's 'All Sources Used' view.
+
+    Groups web scrape citations by platform (with quote previews) and appends
+    HQ research sources as a dedicated group.  Stored in persona_details so
+    the frontend can render per-article accordion rows without re-parsing the
+    raw stage_3b/3c verdict arrays.
+
+    Each platform group shape:
+        {
+          "platform": str,
+          "total_posts": int,
+          "themes": [str, ...],
+          "sentiment": {"positive": float, "neutral": float, "negative": float},
+          "source_note": str,        # "real_citation_backed" | "estimated"
+          "is_hq": false,
+          "citations": [
+            {"url": str, "quote": str, "confidence": float},
+            ...                      # capped at 15 per platform
+          ]
+        }
+
+    HQ research group shape:
+        {
+          "platform": "HQ Research Sources",
+          "total_posts": int,        # real HQ verdicts count
+          "is_hq": true,
+          "citations": [
+            {
+              "url": str,
+              "title": str,          # study_reference text
+              "quote": str,          # finding_summary excerpt
+              "confidence": float,
+              "authority_tier": str,
+              "domain": str
+            },
+            ...
+          ]
+        }
+    """
+    _MAX_CITATIONS_PER_PLATFORM = 15
+
+    groups: list[dict] = []
+
+    for verdict in pipeline_result.get("stage_3b_eb_verdicts") or []:
+        platform = verdict.get("source_platform") or "Web Evidence"
+        raw_citations = verdict.get("all_citations") or []
+        deduplicated: list[dict] = []
+        seen_urls: set[str] = set()
+        for c in raw_citations:
+            url = c.get("url") or ""
+            if url and url not in seen_urls:
+                seen_urls.add(url)
+                deduplicated.append({
+                    "url": url,
+                    "quote": (c.get("quote") or "")[:300],
+                    "confidence": round(float(c.get("confidence") or 0), 3),
+                })
+        groups.append({
+            "platform": platform,
+            "total_posts": verdict.get("threads_analyzed") or len(deduplicated),
+            "themes": verdict.get("key_discussion_themes") or [],
+            "sentiment": verdict.get("sentiment_distribution") or {},
+            "source_note": verdict.get("source_note") or "estimated",
+            "is_hq": False,
+            "citations": deduplicated[:_MAX_CITATIONS_PER_PLATFORM],
+        })
+
+    hq_citations: list[dict] = []
+    for verdict in pipeline_result.get("stage_3c_hq_verdicts") or []:
+        provenance = verdict.get("provenance_detail") or {}
+        if provenance.get("type") not in ("real_hq_source",):
+            continue
+        hq_citations.append({
+            "url": provenance.get("source_url") or "",
+            "title": verdict.get("study_reference") or "Research Source",
+            "quote": (verdict.get("finding_summary") or "")[:300],
+            "confidence": round(float(verdict.get("confidence_score") or 0), 3),
+            "authority_tier": provenance.get("authority_tier") or "",
+            "domain": provenance.get("domain") or "",
+        })
+
+    if hq_citations:
+        groups.append({
+            "platform": "HQ Research Sources",
+            "total_posts": len(hq_citations),
+            "themes": [],
+            "sentiment": {},
+            "source_note": "real_citation_backed",
+            "is_hq": True,
+            "citations": hq_citations,
+        })
+
+    return groups
+
+
 def _persona_kwargs_from_digital_brain(
     persona: dict,
     workspace_id: str,
@@ -529,6 +627,7 @@ def _persona_kwargs_from_digital_brain(
     if pipeline_result and evidence_snapshot:
         persona_details["evidence_snapshot"] = evidence_snapshot
         persona_details["reference_sites_with_usage"] = _digital_brain_reference_sites(pipeline_result)
+        persona_details["web_evidence_by_platform"] = _build_web_evidence_by_platform(pipeline_result)
     if validated_ro:
         # The structured 12-component RO from Stage 1, persisted so interview.py
         # can ground qualitative responses in the full RO, not just the
@@ -661,6 +760,19 @@ async def generate_personas_digital_brain(
     await session.commit()
     for p in saved_personas:
         await session.refresh(p)
+
+    # Enrich KE sources in background — runs after response is sent.
+    # ro.description is the verbatim research objective text, which gives
+    # better semantic search recall than joining ro_dict structured components.
+    for p in saved_personas:
+        asyncio.create_task(
+            enrich_persona_ke_sources(
+                persona_id=p.id,
+                research_objective=ro.description or "",
+                persona_name=p.name or "",
+                exploration_id=exploration_id,
+            )
+        )
 
     return SuccessResponse(
         message="Digital Brain personas generated",
@@ -1019,6 +1131,72 @@ async def create_manual_persona_draft(
             "validation_warnings": warnings,
             "has_plausibility_warnings": bool(warnings),
         },
+    )
+
+
+@router.get("/export-json")
+async def export_personas_json(
+    workspace_id: str,
+    exploration_id: str,
+    persona_ids: Optional[List[str]] = Query(default=None),
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Export personas in this exploration as a downloadable JSON file, keyed by
+    research_objective_id. Personas are already fully persisted
+    (persona.persona_details) by the generation flows, so this only reads and
+    reshapes existing data — nothing is regenerated.
+
+    Pass ?persona_ids=id1&persona_ids=id2 to export only selected personas;
+    omit it to export every persona in the exploration (bulk export)."""
+    members = await ws_service.list_workspace_members(workspace_id)
+    if not any(m["user_id"] == current_user.id for m in members):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=ErrorResponse(status="error", message="Not a member of this workspace").dict()
+        )
+
+    ro_result = await session.execute(
+        select(ResearchObjectives).where(ResearchObjectives.exploration_id == exploration_id)
+    )
+    ro = ro_result.scalars().first()
+    if not ro:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=ErrorResponse(status="error", message="Research objective not found for this exploration").dict()
+        )
+
+    personas = await persona_service.list_personas(workspace_id, exploration_id)
+
+    if persona_ids:
+        wanted = set(persona_ids)
+        personas = [p for p in personas if p["id"] in wanted]
+        if not personas:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=ErrorResponse(status="error", message="No matching personas found").dict()
+            )
+
+    import json as _json
+    from datetime import datetime as _dt
+
+    def _serialise(obj):
+        if isinstance(obj, _dt):
+            return obj.isoformat()
+        raise TypeError(f"Not serialisable: {type(obj)}")
+
+    payload = {
+        "research_objective_id": ro.id,
+        "personas": personas,
+    }
+    content = _json.dumps(payload, default=_serialise, ensure_ascii=False, indent=2)
+
+    suffix = "selected" if persona_ids else "all"
+    filename = f"research_objective_{ro.id[:8]}_personas_{suffix}.json"
+
+    return JSONResponse(
+        content=_json.loads(content),
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

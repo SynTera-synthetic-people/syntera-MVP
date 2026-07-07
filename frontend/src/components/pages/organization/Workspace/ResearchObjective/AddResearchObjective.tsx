@@ -6,18 +6,12 @@ import FileUploadModal from "./FileUploadModal";
 import type { FileUploadModalValue } from "./FileUploadModal";
 import {
   TbPaperclip,
-  TbMicrophone,
-  TbSend,
   TbRobot,
-  TbUser,
   TbLoader,
   TbSparkles,
   TbPencil,
   TbLock,
-  TbCheck,
   TbX,
-  TbEdit,
-  TbBrain,
   TbFileTypePdf,
   TbFileTypeDoc,
   TbFileTypeXls,
@@ -172,6 +166,11 @@ const AddResearchObjective: React.FC = () => {
   const dispatch = useDispatch();
   const [showFileModal, setShowFileModal] = useState(false);
   const [uploadedMaterial, setUploadedMaterial] = useState<FileUploadModalValue | null>(null);
+
+  // Tracks whether the "Add supporting material" submission (from the modal)
+  // is still in flight. Drives the Omi typing indicator in the chat window
+  // between clicking "Done" and the success/error toast appearing.
+  const [isProcessingMaterial, setIsProcessingMaterial] = useState(false);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -425,10 +424,10 @@ const AddResearchObjective: React.FC = () => {
   }, [messages, prevMessagesLength]);
 
   useEffect(() => {
-    if (messagesContainerRef.current && (isSendingMessage || isSubmitting)) {
+    if (messagesContainerRef.current && (isSendingMessage || isSubmitting || isProcessingMaterial)) {
       messagesContainerRef.current.scrollTo({ top: messagesContainerRef.current.scrollHeight, behavior: 'smooth' });
     }
-  }, [isSendingMessage, isSubmitting]);
+  }, [isSendingMessage, isSubmitting, isProcessingMaterial]);
 
   const handleTemplateSelect = (template: Template) => { setShowTemplates(false); };
 
@@ -653,6 +652,10 @@ const AddResearchObjective: React.FC = () => {
       return;
     }
 
+    // Show the Omi "processing" indicator in the chat window while the
+    // upload is in flight, and clear it the moment we know the outcome —
+    // right before the corresponding toast is fired.
+    setIsProcessingMaterial(true);
     try {
       await Promise.all(tasks);
       setUploadedMaterial(value);
@@ -661,6 +664,8 @@ const AddResearchObjective: React.FC = () => {
       toast.error(
         error?.response?.data?.detail ?? "Couldn't save your material. Please try again."
       );
+    } finally {
+      setIsProcessingMaterial(false);
     }
   };
 
@@ -1035,9 +1040,11 @@ const AddResearchObjective: React.FC = () => {
                     );
                   })}
 
-                {/* Thinking indicator */}
+                {/* Thinking / processing indicator — shown while Omi is responding
+                    to a chat message OR while the "Add supporting material" modal
+                    submission is in flight. */}
                 <AnimatePresence>
-                  {(isSendingMessage || isSubmitting) && (
+                  {(isSendingMessage || isSubmitting || isProcessingMaterial) && (
                     <motion.div
                       key="typing-indicator"
                       initial={{ opacity: 0, y: 8 }}
@@ -1054,14 +1061,14 @@ const AddResearchObjective: React.FC = () => {
                           <div className="aro-typing-text-wrap">
                             <AnimatePresence mode="wait">
                               <motion.span
-                                key={thinkingPhraseIndex}
+                                key={isProcessingMaterial ? 'processing-material' : thinkingPhraseIndex}
                                 initial={{ opacity: 0, y: 4 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 exit={{ opacity: 0, y: -4 }}
                                 transition={{ duration: 0.25 }}
                                 className="aro-typing-text"
                               >
-                                {thinkingPhrases[thinkingPhraseIndex]}
+                                {isProcessingMaterial ? "Adding your material…" : thinkingPhrases[thinkingPhraseIndex]}
                               </motion.span>
                             </AnimatePresence>
                             <span className="aro-typing-dots">
@@ -1280,7 +1287,7 @@ const AddResearchObjective: React.FC = () => {
                   className="aro-input-file-label"
                   title="Add supporting material"
                   onClick={() => setShowFileModal(true)}
-                  disabled={isSubmitting || isLoading || !sessionData}
+                  disabled={isSubmitting || isLoading || isProcessingMaterial || !sessionData}
                 >
                   <SpIcon name="sp-Edit-Paperclip_Attechment_Tilt" />
                 </button>
@@ -1294,7 +1301,7 @@ const AddResearchObjective: React.FC = () => {
                   }}
                   className="aro-textarea"
                   rows={1}
-                  disabled={isSubmitting || isLoading || !sessionData}
+                  disabled={isSubmitting || isLoading || isProcessingMaterial || !sessionData}
                   placeholder={uploadedFile ? "Add a message about your file (optional)…" : undefined}
                 />
 
@@ -1310,7 +1317,7 @@ const AddResearchObjective: React.FC = () => {
                 <button
                   type="submit"
                   className="aro-send-btn"
-                  disabled={isSubmitting || isLoading || !sessionData || (inputValue.trim() === "" && !uploadedFile)}
+                  disabled={isSubmitting || isLoading || isProcessingMaterial || !sessionData || (inputValue.trim() === "" && !uploadedFile)}
                 >
                   <SpIcon name="sp-Communication-Paper_Plane" size={16} />
                 </button>

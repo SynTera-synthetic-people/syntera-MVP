@@ -31,6 +31,7 @@ from app.services.report_generation_qual_claude import (
     generate_combined_interviews_pdf,
     generate_docx_path,
     generate_qual_transcripts_docx,
+    generate_qual_transcripts_pdf,
     generate_pdf_path,
     llm_md_to_pdf,
 )
@@ -56,6 +57,7 @@ router = APIRouter(
 
 QUAL_TRANSCRIPTS_CACHE_KEY = "TRANSCRIPTS_QA_DOCX_V6"
 QUAL_TRANSCRIPTS_LEGACY_CACHE_KEYS = ("TRANSCRIPTS", "QUAL_VERBATIM_V1")
+QUAL_TRANSCRIPTS_PDF_CACHE_KEY = "TRANSCRIPTS_PDF_V1"
 QUAL_DI_CACHE_KEY = "DECISION_INTELLIGENCE_V8"
 QUAL_DI_LEGACY_CACHE_KEYS = ("QUAL_DECISION_INTELLIGENCE_V1",)
 QUAL_BA_CACHE_KEY = "BEHAVIORAL_ARCHAEOLOGY_V8"
@@ -86,7 +88,7 @@ QUAL_PREPARE_CONFIG = {
     },
 }
 QUAL_SHARE_CONFIG: dict[str, dict] = {
-    "transcripts": {"cache_key": QUAL_TRANSCRIPTS_CACHE_KEY, "label": "Interview Verbatim"},
+    "transcripts": {"cache_key": QUAL_TRANSCRIPTS_PDF_CACHE_KEY, "label": "Interview Verbatim"},
     "decision-intelligence": {"cache_key": QUAL_DI_CACHE_KEY, "label": "Decision Intelligence"},
     "behavior-archaeology": {"cache_key": QUAL_BA_CACHE_KEY, "label": "Behaviour Archaeology"},
     "all-combined": {"cache_key": QUAL_ALL_CACHE_KEY, "label": "All Combined Report"},
@@ -589,7 +591,10 @@ async def share_qual_report(
         raise HTTPException(status_code=404, detail="Unsupported report type")
 
     if report_slug == "transcripts":
-        cached = await _ensure_qual_transcripts_cached(exploration_id)
+        # Prefer PDF; fall back to DOCX for legacy explorations.
+        cached = await cache.get_cached_report(exploration_id, QUAL_TRANSCRIPTS_PDF_CACHE_KEY)
+        if not _cached_file_ready(cached):
+            cached = await _ensure_qual_transcripts_cached(exploration_id)
     else:
         cached = await cache.get_cached_report(exploration_id, config["cache_key"])
         if not _cached_file_ready(cached) and report_slug == "decision-intelligence":
@@ -630,20 +635,70 @@ async def share_qual_report(
     return {"message": "Report shared successfully"}
 
 
+def _extract_di_title_from_cache(di_cached) -> Optional[str]:
+    """Pull the report title out of a cached DI markdown string, if available."""
+    if not di_cached:
+        return None
+    md = _legacy_markdown(getattr(di_cached, "content_md", None))
+    if not md:
+        return None
+    import re as _re
+    m = _re.search(r'^#{1,2}\s+(.+)$', md, _re.MULTILINE)
+    return m.group(1).strip() if m else None
+
+
 @router.get("/qual/transcripts")
 async def qual_transcripts(
     workspace_id: str,
     exploration_id: str,
     current_user: User = Depends(get_current_active_user),
 ):
-    """Verbatim interview Q&A DOCX in discussion-guide transcript format."""
-    cached = await _ensure_qual_transcripts_cached(exploration_id)
-    content = _read_cached_file(cached)
+    """Verbatim interview transcript PDF — deterministic, no LLM call, same speed as before.
 
+    Title is sourced from the cached DI report when available so it matches
+    the Decision Intelligence report for the same exploration.
+    """
+    # Serve from cache if already generated.
+    pdf_cached = await cache.get_cached_report(exploration_id, QUAL_TRANSCRIPTS_PDF_CACHE_KEY)
+    if _cached_file_ready(pdf_cached):
+        content = _read_cached_file(pdf_cached)
+        return Response(
+            content=content,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="transcripts_{exploration_id}.pdf"'},
+        )
+
+    # Try to get the DI title so the transcript cover matches the DI report.
+    di_cached = await cache.get_cached_report(exploration_id, QUAL_DI_CACHE_KEY)
+    di_title = _extract_di_title_from_cache(di_cached)
+
+    out_path = generate_pdf_path(prefix="qual_transcripts_pdf")
+    try:
+        pdf_path = await generate_qual_transcripts_pdf(
+            objective_id=exploration_id,
+            out_path=out_path,
+            title=di_title,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=str(exc) or "No completed interviews found. Run interviews first.",
+        )
+
+    content = _read_file(pdf_path)
+    await _store_file_report_cache(
+        exploration_id=exploration_id,
+        cta_type=QUAL_TRANSCRIPTS_PDF_CACHE_KEY,
+        path=pdf_path,
+        report_type="qual",
+        content=content,
+        media_type="application/pdf",
+        filename=f"transcripts_{exploration_id}.pdf",
+    )
     return Response(
         content=content,
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={"Content-Disposition": f'attachment; filename="{_qual_transcripts_filename(exploration_id)}"'},
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="transcripts_{exploration_id}.pdf"'},
     )
 
 

@@ -29,6 +29,7 @@ from urllib.parse import urlparse
 from app.db import async_engine
 from app.models.persona import Persona
 from app.utils.id_generator import generate_id
+from app.services.ke_sourcebank_enrichment import enrich_persona_ke_sources
 
 from app.services.auto_generated_persona_prompts import (
     PERSONA_GENERATION_PROMPT,
@@ -409,6 +410,85 @@ def _json_object_or_none(value: Any) -> Optional[dict]:
         if isinstance(parsed, dict):
             return _json_safe(parsed)
     return None
+
+
+_DOMAIN_TO_PLATFORM: dict[str, str] = {
+    "reddit.com":    "Reddit",
+    "quora.com":     "Quora",
+    "youtube.com":   "YouTube",
+    "x.com":         "Twitter/X",
+    "twitter.com":   "Twitter/X",
+    "linkedin.com":  "LinkedIn",
+    "medium.com":    "Medium",
+    "capterra.in":   "Capterra",
+    "capterra.com":  "Capterra",
+}
+
+
+def _extract_omi_url_and_context(raw: str) -> tuple[str, str]:
+    """Split an Omi reference string into (clean_url, context_snippet).
+
+    GPT's web_search tool sometimes returns strings in the format:
+        "https://reddit.com/r/.../post_title/ — summary of what was found"
+    The em-dash (—) or regular " - " separates the URL from the context text.
+    We must store them separately so the href only ever contains a real URL.
+
+    Returns ("", "") when the string is not a valid http/https URL.
+    """
+    raw = raw.strip()
+    context = ""
+    for sep in (" — ", " - ", " | "):   # em-dash, hyphen, pipe
+        if sep in raw:
+            parts = raw.split(sep, 1)
+            raw, context = parts[0].strip(), parts[1].strip()
+            break
+
+    parsed = urlparse(raw)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        return "", ""
+    return raw, context
+
+
+def _build_omi_web_evidence_by_platform(reference_urls: list) -> list[dict]:
+    """Group Omi web-search URLs by platform for the 'All Sources Used' modal.
+
+    Omi uses GPT's web_search tool which returns raw citation strings that can
+    look like:
+        "https://reddit.com/r/.../post/ — community cites brand X for quality"
+
+    We split the URL from the context text (which becomes the quote preview),
+    validate the URL is a real https address, then group by platform.
+    This ensures the accordion shows clickable links without 404 risk from
+    trailing context text being included in the href.
+    """
+    platform_buckets: dict[str, list[dict]] = {}
+    for raw in reference_urls:
+        if not isinstance(raw, str):
+            continue
+        clean_url, context = _extract_omi_url_and_context(raw)
+        if not clean_url:
+            continue
+        netloc = urlparse(clean_url).netloc.lower().removeprefix("www.")
+        platform = next(
+            (name for domain, name in _DOMAIN_TO_PLATFORM.items() if netloc.endswith(domain)),
+            netloc or "Web",
+        )
+        platform_buckets.setdefault(platform, []).append(
+            {"url": clean_url, "quote": context, "confidence": 0.0}
+        )
+
+    return [
+        {
+            "platform": platform,
+            "total_posts": len(citations),
+            "themes": [],
+            "sentiment": {},
+            "source_note": "real_citation_backed",
+            "is_hq": False,
+            "citations": citations,
+        }
+        for platform, citations in platform_buckets.items()
+    ]
 
 
 def _normalise_generated_persona(persona: dict) -> dict:
@@ -852,6 +932,11 @@ Return exactly one item inside consumer_personas.
                     Counter(urlparse(url).netloc for url in reference_sites)
                 )
                 persona["researched_sites"] = site_counter
+                # Group web-search URLs by platform so the frontend can render
+                # a per-URL accordion (same modal shape as Digital Brain pathway).
+                persona["web_evidence_by_platform"] = _build_omi_web_evidence_by_platform(
+                    reference_sites
+                )
 
                 persona_id = generate_id()
                 persona["id"] = persona_id
@@ -900,6 +985,16 @@ Return exactly one item inside consumer_personas.
 
                     session.add(p)
                     await session.commit()
+
+                # Enrich KE sources in background — does not block the response
+                asyncio.create_task(
+                    enrich_persona_ke_sources(
+                        persona_id=persona_id,
+                        research_objective=description,
+                        persona_name=db_persona["name"],
+                        exploration_id=exploration_id,
+                    )
+                )
 
                 response["personas"].append({
                     "id": persona_id,
