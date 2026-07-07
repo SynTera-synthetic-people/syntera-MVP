@@ -1632,12 +1632,18 @@ const PersonaPreview: React.FC = () => {
       if (!byCategory.has(cat)) byCategory.set(cat, []);
       byCategory.get(cat)!.push(src);
     }
-    return Array.from(byCategory.entries()).map(([cat, sources]) => ({
-      name: cat,
-      count: sources.length,
-      usage_context: sources[0]?.usage_context,
-      ke_sources: sources,
-    }));
+    return Array.from(byCategory.entries()).map(([cat, sources]) => {
+      const firstUsage = sources[0]?.usage_context;
+
+      return {
+        name: cat,
+        count: sources.length,
+        ...(firstUsage !== undefined && {
+          usage_context: firstUsage,
+        }),
+        ke_sources: sources,
+      };
+    });
   }, [rawKeSources, knowledgeEvidenceLinks]);
 
   // ── Confidence data ────────────────────────────────────────────────────────
