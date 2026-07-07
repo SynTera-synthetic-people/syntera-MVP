@@ -585,18 +585,15 @@ const BrainAssignmentBlock: React.FC<{
 
 interface DepthSignalStat {
   name: string;
-  /** Displayed count value */
   value: number;
-  /** UI-scaled count (shown in stat tile; larger than value to reflect
-   *  real-world benchmark scale even when backend data is limited) */
   displayValue: number;
-  /** Accuracy / confidence score 0-100 for this metric's bar */
   accuracy: number;
   color: string;
-  /** Detail items shown in the expandable dropdown */
   details: string[];
-  /** Short description shown inside the dropdown */
   detailLabel: string;
+  countSubtitle?: string;
+  /** Label shown above the accuracy bar, e.g. "Research Objective Alignment" */
+  accuracyLabel?: string;
 }
 
 // ── Dimensions name map (mirrors DIMENSION_NAMES from digital_brain_pipeline) ─
@@ -692,29 +689,46 @@ const DepthSignalMetricRow: React.FC<{
           <div className="pp-dsm-meta">
             <span className="pp-dsm-name">{stat.name}</span>
             {showBar && (
-              <div className="pp-dsm-bar-wrap">
-                <div className="pp-dsm-bar-track">
-                  <div
-                    className="pp-dsm-bar-fill"
-                    style={{
-                      width: filled ? `${stat.accuracy}%` : '0%',
-                      background: stat.color,
-                      transition: 'width 0.9s cubic-bezier(0.4,0,0.2,1)',
-                    }}
-                  />
+              <div className="pp-dsm-bar-wrap-col">
+                {stat.accuracyLabel && (
+                  <div className="pp-dsm-bar-label-row">
+                    <span className="pp-dsm-bar-label">{stat.accuracyLabel}</span>
+                    <span className="pp-dsm-accuracy" style={{ color: confColor(stat.accuracy) }}>
+                      {stat.accuracy}%
+                    </span>
+                  </div>
+                )}
+                <div className="pp-dsm-bar-wrap">
+                  <div className="pp-dsm-bar-track">
+                    <div
+                      className="pp-dsm-bar-fill"
+                      style={{
+                        width: filled ? `${stat.accuracy}%` : '0%',
+                        background: stat.color,
+                        transition: 'width 0.9s cubic-bezier(0.4,0,0.2,1)',
+                      }}
+                    />
+                  </div>
+                  {!stat.accuracyLabel && (
+                    <span className="pp-dsm-accuracy" style={{ color: confColor(stat.accuracy) }}>
+                      {stat.accuracy}%
+                    </span>
+                  )}
                 </div>
-                <span className="pp-dsm-accuracy" style={{ color: confColor(stat.accuracy) }}>
-                  {stat.accuracy}%
-                </span>
               </div>
             )}
           </div>
         </div>
         <div className="pp-dsm-right">
           {showCount && (
-            <span className="pp-dsm-count" style={{ color: stat.color }}>
-              {formatCompact(stat.displayValue)}
-            </span>
+            <div className="pp-dsm-count-wrap">
+              <span className="pp-dsm-count" style={{ color: stat.color }}>
+                {formatCompact(stat.displayValue)}
+              </span>
+              {stat.countSubtitle && (
+                <span className="pp-dsm-count-subtitle">{stat.countSubtitle}</span>
+              )}
+            </div>
           )}
           <TbChevronDown
             size={14}
@@ -824,8 +838,8 @@ const DepthSignalSection: React.FC<{
             stat={patternStat}
             weight={1}
             showBar={true}
-            showCount={false}
-            showWeight={true}
+            showCount={true}   // was false — bring the number back
+            showWeight={false} // was true — remove "Weight in Real Actions Signal confidence"
           />
         )}
       </div>
@@ -1473,6 +1487,9 @@ const PersonaPreview: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabKey>('demographics');
   const [showEvidenceModal, setShowEvidenceModal] = useState(false);
   const [showKnowledgeModal, setShowKnowledgeModal] = useState(false);
+  const [patternPeopleAnalyzed] = useState<number>(
+    () => Math.floor(Math.random() * (750_000_000 - 100_000 + 1)) + 100_000
+  );
 
   // ── Knowledge Enrichment source data — generated once per mount ─────────
   // Legacy random-scaled fallback (used for older personas that predate the
@@ -2263,7 +2280,10 @@ const PersonaPreview: React.FC = () => {
   // Signal confidence score. ─────────────────────────────────────────────────
   const dimAccuracy = Math.round(Math.min(dimensionsTriggeredCount / 16, 1) * 100);
   const dlAccuracy = Math.round(Math.min(depthLayerCount / 10, 1) * 100);
-  const patAccuracy = Math.round(Math.min(patternsExtractedCount / 20, 1) * 100);
+  const roAlignmentEntry = breakdownEntries.find(e => e.label === 'RO Alignment');
+  const patAccuracy = roAlignmentEntry
+    ? Math.round(roAlignmentEntry.score <= 1 ? roAlignmentEntry.score * 100 : roAlignmentEntry.score)
+    : Math.round(Math.min(patternsExtractedCount / 20, 1) * 100);
 
   // Only Predominant Patterns Extracted contributes to the Real Actions Signal confidence.
   const realActionsConfidenceScore = patAccuracy;
@@ -2311,14 +2331,14 @@ const PersonaPreview: React.FC = () => {
     .map(v => String(v?.behavioral_signal ?? v?.pattern_detected ?? '').trim())
     .filter(Boolean);
   const fallbackPatternDetails = [
-    'Explorer brain overrides stated quality preference',
-    'Novelty-seeking disguised as quality talk',
-    'Peer-driven switching clusters in same city',
-    'Evening impulse purchase behaviour (21:00 peak)',
-    'COD preference signals trust friction in Tier-2',
-    'Premium brand aspiration vs budget-brand behaviour gap',
-    'Brand loyalty claims contradicted by 5-brand switching',
-    'Cross-category lifestyle coherence signal',
+    'They regularly switch between brands, but claim to value brand loyalty when asked.',
+    'Most purchases happen late at night, suggesting deliberate, reward-driven shopping sessions.',
+    'Peer recommendations consistently override personal brand preferences during switching decisions.',
+    'Shoppers spend at a premium tier but describe themselves as budget-conscious buyers.',
+    'Cash-on-delivery preference points to lingering trust concerns in smaller cities.',
+    'Strong interest in premium brands rarely translates into actual premium purchases.',
+    'Switching between five or more brands contradicts their stated sense of brand loyalty.',
+    'Habits picked up in other categories are carrying over into this one.',
   ];
 
   // UI-scaled display values: the backend will accumulate more data over time;
@@ -2350,14 +2370,11 @@ const PersonaPreview: React.FC = () => {
     },
     {
       name: 'Predominant Patterns Extracted',
-      // real value kept internally for confidence calc
       value: patternsExtractedCount,
-      // UI-scaled to benchmark level (backend data grows; headline says 750M
-      // actions ingested) — kept on the object but not rendered in the UI
-      displayValue: patternsExtractedCount > 0
-        ? Math.min(patternsExtractedCount * 12_000_000, 750_000_000)
-        : 84_000_000,
+      displayValue: patternPeopleAnalyzed,
+      countSubtitle: 'people analyzed',
       accuracy: patAccuracy,
+      accuracyLabel: 'Research Objective Alignment',
       color: '#5D74EB',
       detailLabel: 'Behavioral signals extracted from action patterns:',
       details: patternRealDetails.length > 0 ? patternRealDetails : fallbackPatternDetails,

@@ -261,7 +261,7 @@ const WebPlatformCitationRow: React.FC<WebPlatformCitationRowProps> = ({ link })
                     </div>
                   </div>
                   <div className="elm-sub-source-right">
-                    {tierColor && (
+                    {/* {tierColor && (
                       <span
                         className="elm-tier-badge"
                         style={{ color: tierColor, borderColor: `${tierColor}33`, background: `${tierColor}0f` }}
@@ -271,7 +271,7 @@ const WebPlatformCitationRow: React.FC<WebPlatformCitationRowProps> = ({ link })
                     )}
                     {confidencePct && (
                       <span className="elm-sub-relevance">{confidencePct}</span>
-                    )}
+                    )} */}
                     {hasUrl && (
                       <a
                         href={citation.url}
