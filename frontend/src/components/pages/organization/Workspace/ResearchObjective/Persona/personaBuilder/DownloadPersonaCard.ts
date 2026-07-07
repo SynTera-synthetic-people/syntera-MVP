@@ -195,6 +195,8 @@ function triggerBrowserDownload(blob: Blob, filename: string): boolean {
 
 // ── Core renderer ─────────────────────────────────────────────────────────────
 
+const CARD_BACKGROUND_COLOR = '#050505'; // must match BG in PersonaCardRenderer.tsx
+
 async function renderPersonaToCanvas(
   persona: PersonaCardData,
   cardWidth: number,
@@ -249,27 +251,43 @@ async function renderPersonaToCanvas(
       );
     }
 
-    const { width: elW, height: elH } = cardEl.getBoundingClientRect();
-    if (elH === 0) {
+    const { width: elW } = cardEl.getBoundingClientRect();
+    if (cardEl.scrollHeight === 0) {
       throw new Error(
         `Persona card "${persona.name ?? 'unknown'}" has zero height — layout did not complete`,
       );
     }
+
+    // IMPORTANT: We only pin WIDTH here, never height.
+    //
+    // Width needs to be pinned because it drives text reflow — without a
+    // fixed windowWidth, Windows display scaling (125%/150%) or devtools
+    // open/closed can change how the off-screen clone wraps text.
+    //
+    // Height must NOT be pinned. It is a *measured output* of layout, not an
+    // independent input — html2canvas re-implements CSS text/line-wrap layout
+    // itself instead of using the real browser engine, so its internally
+    // measured content height routinely differs from what
+    // getBoundingClientRect() reports for the live DOM, and the difference
+    // scales with how much text/how many wrapped lines a given persona's
+    // data produces (barriers, triggers, Ground Truth Foundation content,
+    // etc.) — so no fixed guess-buffer can cover every case. Passing an
+    // explicit `height`/`windowHeight` therefore causes html2canvas to
+    // silently crop anything beyond that number, which is what was cutting
+    // off the bottom of persona cards. Omitting height/windowHeight lets
+    // html2canvas capture however tall the content actually renders — always
+    // complete, never cropped, and with no manual measurement to get wrong.
+    const captureW = Math.ceil(elW) || cardWidth;
 
     const canvas = await withCreatePatternGuard(() =>
       html2canvas(cardEl, {
         scale,
         useCORS: true,
         allowTaint: false,
-        backgroundColor: '#050505',
+        backgroundColor: CARD_BACKGROUND_COLOR,
         logging: false,
-        width: Math.round(elW) || cardWidth,
-        height: Math.round(elH),
-        // Pin the cloned-document viewport to the card's own size so Windows
-        // display scaling (125%/150%) or devtools open/closed does not change
-        // how html2canvas lays out the off-screen clone.
-        windowWidth: Math.round(elW) || cardWidth,
-        windowHeight: Math.round(elH),
+        width: captureW,
+        windowWidth: captureW,
         scrollX: 0,
         scrollY: 0,
         onclone: (doc, clonedEl) => sanitizeHtml2CanvasClone(doc, clonedEl),
