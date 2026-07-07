@@ -152,7 +152,7 @@ interface QuestionModalProps {
 
 const QuestionModal: React.FC<QuestionModalProps> = ({ mode, initialValue = '', isPending, onConfirm, onClose }) => {
   const [value, setValue] = useState(initialValue);
-  const MAX = 100;
+  const MAX = 500;
   return (
     <ModalOverlay onClose={onClose}>
       <button className="di-modal__close" onClick={onClose}><TbX size={18} /></button>
