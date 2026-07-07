@@ -3,10 +3,10 @@ import logging
 import time
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status, Query
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
-from typing import List
+from typing import List, Optional
 from app.schemas.persona import (
     PersonaCreate, PersonaOut, PersonaUpdate, PersonaPreview,
     PersonaBackstoryIn, PersonaReplicateRequest, PersonaBulkDownloadRequest,
@@ -1019,6 +1019,72 @@ async def create_manual_persona_draft(
             "validation_warnings": warnings,
             "has_plausibility_warnings": bool(warnings),
         },
+    )
+
+
+@router.get("/export-json")
+async def export_personas_json(
+    workspace_id: str,
+    exploration_id: str,
+    persona_ids: Optional[List[str]] = Query(default=None),
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Export personas in this exploration as a downloadable JSON file, keyed by
+    research_objective_id. Personas are already fully persisted
+    (persona.persona_details) by the generation flows, so this only reads and
+    reshapes existing data — nothing is regenerated.
+
+    Pass ?persona_ids=id1&persona_ids=id2 to export only selected personas;
+    omit it to export every persona in the exploration (bulk export)."""
+    members = await ws_service.list_workspace_members(workspace_id)
+    if not any(m["user_id"] == current_user.id for m in members):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=ErrorResponse(status="error", message="Not a member of this workspace").dict()
+        )
+
+    ro_result = await session.execute(
+        select(ResearchObjectives).where(ResearchObjectives.exploration_id == exploration_id)
+    )
+    ro = ro_result.scalars().first()
+    if not ro:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=ErrorResponse(status="error", message="Research objective not found for this exploration").dict()
+        )
+
+    personas = await persona_service.list_personas(workspace_id, exploration_id)
+
+    if persona_ids:
+        wanted = set(persona_ids)
+        personas = [p for p in personas if p["id"] in wanted]
+        if not personas:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=ErrorResponse(status="error", message="No matching personas found").dict()
+            )
+
+    import json as _json
+    from datetime import datetime as _dt
+
+    def _serialise(obj):
+        if isinstance(obj, _dt):
+            return obj.isoformat()
+        raise TypeError(f"Not serialisable: {type(obj)}")
+
+    payload = {
+        "research_objective_id": ro.id,
+        "personas": personas,
+    }
+    content = _json.dumps(payload, default=_serialise, ensure_ascii=False, indent=2)
+
+    suffix = "selected" if persona_ids else "all"
+    filename = f"research_objective_{ro.id[:8]}_personas_{suffix}.json"
+
+    return JSONResponse(
+        content=_json.loads(content),
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
