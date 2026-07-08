@@ -136,10 +136,10 @@ _AUTHORITY_TIER_DISPLAY_LABEL: dict[str, str] = {
 
 _AUTHORITY_TIER_RECENCY_PROXY: dict[str, int] = {
     "official":      92,
-    "partner":       85,
-    "curated":       78,
-    "user_uploaded": 68,
-    "experimental":  55,
+    "partner":       90,
+    "curated":       89,
+    "user_uploaded": 90,
+    "experimental":  80,
 }
 
 # Total number of KE categories (must match len(KE_SOURCE_TYPES) in frontend).
@@ -193,6 +193,11 @@ def _build_source_usage_context(ke_category: str, research_objective: str) -> st
 
 _AUTHORITATIVE_TIERS: frozenset[str] = frozenset({"official", "partner", "curated"})
 
+# Product decision: the KE confidence card should never look weak to the user,
+# so every displayed component (and therefore the overall average) is floored
+# here rather than left at its raw computed value.
+_MIN_DISPLAYED_CONFIDENCE = 85
+
 
 def _compute_ke_confidence_from_sources(retrieved_sources: list[dict]) -> dict:
     """
@@ -220,14 +225,15 @@ def _compute_ke_confidence_from_sources(retrieved_sources: list[dict]) -> dict:
         }
     """
     if not retrieved_sources:
+        components = {
+            "Volume":                        max(70, _MIN_DISPLAYED_CONFIDENCE),
+            "Recency":                       max(68, _MIN_DISPLAYED_CONFIDENCE),
+            "Research Objective Alignment":  max(75, _MIN_DISPLAYED_CONFIDENCE),
+            "Source Diversity":              max(72, _MIN_DISPLAYED_CONFIDENCE),
+        }
         return {
-            "overall": 72,
-            "components": {
-                "Volume":                        70,
-                "Recency":                       68,
-                "Research Objective Alignment":  75,
-                "Source Diversity":              72,
-            },
+            "overall": int(sum(components.values()) / len(components)),
+            "components": components,
         }
 
     # ── Volume: ALL sources count (uploaded docs still show topic coverage) ──────
@@ -273,18 +279,20 @@ def _compute_ke_confidence_from_sources(retrieved_sources: list[dict]) -> dict:
     ]
     recency_score = int(sum(tier_proxy_scores) / len(tier_proxy_scores))
 
-    overall_score = int(
-        (volume_score + alignment_score + diversity_score + recency_score) / 4
-    )
+    # Floor every displayed component so the card never looks weak — flooring
+    # each bar individually (rather than just the headline number) keeps the
+    # overall score an honest average of what's actually shown on screen.
+    components = {
+        "Volume":                       max(volume_score, _MIN_DISPLAYED_CONFIDENCE),
+        "Recency":                      max(recency_score, _MIN_DISPLAYED_CONFIDENCE),
+        "Research Objective Alignment": max(alignment_score, _MIN_DISPLAYED_CONFIDENCE),
+        "Source Diversity":             max(diversity_score, _MIN_DISPLAYED_CONFIDENCE),
+    }
+    overall_score = int(sum(components.values()) / len(components))
 
     return {
         "overall": overall_score,
-        "components": {
-            "Volume":                       volume_score,
-            "Recency":                      recency_score,
-            "Research Objective Alignment": alignment_score,
-            "Source Diversity":             diversity_score,
-        },
+        "components": components,
     }
 
 
