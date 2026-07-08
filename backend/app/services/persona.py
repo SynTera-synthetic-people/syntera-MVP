@@ -340,6 +340,103 @@ def _build_calibration_breakdown(persona_details: Optional[dict]) -> dict:
     }
 
 
+def compute_master_calibration_confidence(
+    full_persona_info: dict,
+    confidence: Optional[dict],
+    predominant_patterns: Optional[dict],
+) -> Optional[int]:
+    """
+    Single source of truth for the "Master Calibration Confidence" score shown
+    on the persona grid card and the preview page. Averages three layers:
+
+      1. Real Actions Signal   — predominant_patterns["score"] (RO Alignment)
+      2. Knowledge Enrichment  — ke_confidence["overall"], fallback 90
+      3. Multi-platform Conv.  — average of calibration_breakdown
+                                 .multi_platform_conversations
+                                 .confidence_components, else
+                                 confidence["weighted_score"] * 100
+
+    Missing layers are skipped rather than treated as 0, so a persona with only
+    partial data still gets an honest average of what's actually known. Returns
+    None only when NEITHER Real Actions Signal nor Multi-platform Conversation
+    has real data yet — i.e. all we'd have is the constant KE fallback, which
+    alone is not "enough data" to persist a score.
+    """
+    sub_scores: list[float] = []
+    # Only Real Actions Signal and Multi-platform Conversation count towards the
+    # "enough data" gate below — Knowledge Enrichment always contributes via its
+    # own fallback, so it alone can't prove there's real evidence behind the score.
+    real_non_ke_layers = 0
+
+    if isinstance(predominant_patterns, dict):
+        ro_score = predominant_patterns.get("score")
+        if isinstance(ro_score, (int, float)):
+            sub_scores.append(float(ro_score))
+            real_non_ke_layers += 1
+
+    ke_confidence = (full_persona_info or {}).get("ke_confidence")
+    ke_overall = ke_confidence.get("overall") if isinstance(ke_confidence, dict) else None
+    if isinstance(ke_overall, (int, float)):
+        sub_scores.append(float(ke_overall))
+    else:
+        sub_scores.append(90.0)
+
+    calibration_breakdown = (full_persona_info or {}).get("calibration_breakdown") or {}
+    multi_platform = calibration_breakdown.get("multi_platform_conversations") or {}
+    confidence_components = multi_platform.get("confidence_components")
+    multi_platform_score: Optional[float] = None
+    if isinstance(confidence_components, dict) and confidence_components:
+        numeric_vals = [
+            float(v) for v in confidence_components.values() if isinstance(v, (int, float))
+        ]
+        if numeric_vals:
+            multi_platform_score = sum(numeric_vals) / len(numeric_vals)
+    if multi_platform_score is None and calibration_breakdown.get("is_manual_mode"):
+        # confidence_components itself is never actually populated anywhere yet, so
+        # without this the richer per-dimension average was silently unreachable and
+        # every persona fell straight to the single weighted_score fallback below.
+        # Manual Build Mode's component_scores ARE genuine 0-100 percentages (see
+        # _build_calibration_breakdown's is_manual_mode branch) — safe to average
+        # directly. Legacy/Omi mode's component_scores holds raw per-platform
+        # conversation counts, not percentages, so it's deliberately excluded here.
+        component_scores = multi_platform.get("component_scores")
+        if isinstance(component_scores, dict) and component_scores:
+            numeric_vals = [
+                float(v) for v in component_scores.values() if isinstance(v, (int, float))
+            ]
+            if numeric_vals:
+                multi_platform_score = sum(numeric_vals) / len(numeric_vals)
+    if multi_platform_score is None and isinstance(confidence, dict):
+        weighted_score = confidence.get("weighted_score")
+        if isinstance(weighted_score, (int, float)):
+            multi_platform_score = float(weighted_score) * 100
+    if multi_platform_score is not None:
+        sub_scores.append(multi_platform_score)
+        real_non_ke_layers += 1
+
+    if real_non_ke_layers < 1:
+        return None
+
+    average = sum(sub_scores) / len(sub_scores)
+    return max(0, min(100, int(round(average))))
+
+
+def _confidence_for_master_scoring(full_persona_info: dict) -> dict:
+    """Best-available confidence dict for compute_master_calibration_confidence's
+    legacy weighted_score fallback, for call sites that don't already have a
+    resolved `confidence` object (preview_persona resolves its own, richer one)."""
+    confidence_scoring = full_persona_info.get("confidence_scoring")
+    if isinstance(confidence_scoring, dict) and confidence_scoring:
+        return confidence_scoring
+    evidence_snapshot = full_persona_info.get("evidence_snapshot") or {}
+    detail = evidence_snapshot.get("confidence_calculation_detail") or {}
+    # `or` would treat a genuine 0.0 confidence as missing and fall through to
+    # weighted_total — use an explicit None-check so a real 0 is preserved.
+    value = detail.get("value")
+    weighted_score = value if value is not None else detail.get("weighted_total")
+    return {"weighted_score": weighted_score}
+
+
 def _coerce_confidence_percent(value: Any) -> Optional[int]:
     if value is None or isinstance(value, bool):
         return None
@@ -632,6 +729,7 @@ def persona_to_dict(p: Persona, creator_full_name: Optional[str] = None) -> dict
         "created_by_name": created_by_name,
         "calibration_confidence": resolved_confidence,
         "confidence_score": resolved_confidence,
+        "master_calibration_confidence": p.master_calibration_confidence,
         "created_at": p.created_at,
         "auto_generated_persona": p.auto_generated_persona,
         "persona_source": _persona_source(p),
@@ -783,6 +881,15 @@ def persona_to_dict(p: Persona, creator_full_name: Optional[str] = None) -> dict
         ),
     }
 
+
+def _full_persona_info_for_scoring(p: Persona) -> dict:
+    """Same merge shape the preview endpoint builds for its own confidence/patterns
+    resolution: flat + derived columns (via persona_to_dict) overlaid with the raw
+    persona_details JSON, so predominant_patterns/ke_confidence/calibration_breakdown
+    are all readable at the top level for compute_master_calibration_confidence."""
+    return {**persona_to_dict(p), **(p.persona_details or {})}
+
+
 async def get_persona(persona_id: str) -> Optional[dict]:
     from app.models.user import User
     async with AsyncSession(async_engine) as session:
@@ -799,6 +906,32 @@ async def get_persona(persona_id: str) -> Optional[dict]:
                 full_name = u.full_name or f"{u.first_name} {u.last_name}".strip() or None
 
         return persona_to_dict(p, creator_full_name=full_name)
+
+
+async def save_predominant_patterns_and_master_confidence(
+    persona_id: str,
+    predominant_patterns: Optional[dict] = None,
+    master_calibration_confidence: Optional[int] = None,
+) -> None:
+    """Persist a freshly-generated predominant_patterns payload and/or a
+    recomputed master_calibration_confidence onto the Persona row. Called from
+    the preview endpoint after a live (uncached) computation so subsequent
+    requests read the same numbers back instead of recomputing them per visit."""
+    if predominant_patterns is None and master_calibration_confidence is None:
+        return
+    async with AsyncSession(async_engine) as session:
+        res = await session.execute(select(Persona).where(Persona.id == persona_id))
+        p = res.scalars().first()
+        if not p:
+            return
+        if predominant_patterns is not None:
+            details = dict(p.persona_details or {})
+            details["predominant_patterns"] = predominant_patterns
+            p.persona_details = details
+        if master_calibration_confidence is not None:
+            p.master_calibration_confidence = master_calibration_confidence
+        session.add(p)
+        await session.commit()
 
 
 async def list_personas(workspace_id: str, exploration_id: str) -> List[dict]:
@@ -1139,6 +1272,19 @@ async def replicate_persona(
             calibration_status=source.get("calibration_status") or "calibrated",
             calibration_confidence=result.confidence_int,
         )
+
+        # Replication produces its own confidence data (evidence_snapshot /
+        # predominant_patterns above) — recompute the master score now so the
+        # replicated persona doesn't show a stale/blank value until its next preview.
+        full_persona_info = _full_persona_info_for_scoring(p)
+        master_score = compute_master_calibration_confidence(
+            full_persona_info,
+            _confidence_for_master_scoring(full_persona_info),
+            full_persona_info.get("predominant_patterns"),
+        )
+        if master_score is not None:
+            p.master_calibration_confidence = master_score
+
         session.add(p)
         await session.commit()
         await session.refresh(p)
@@ -1513,17 +1659,24 @@ async def generate_predominant_patterns(full_persona_info: dict) -> dict:
             if pat and len(str(pat).strip()) > 3
         ][:10]
         llm_score = max(0, min(100, int(data.get("ro_alignment_score") or 0)))
+        # sanity_score is a naive literal-keyword-overlap check, but the prompt above
+        # deliberately instructs the LLM to rephrase patterns in plain, jargon-free
+        # language rather than repeat the RO's wording — so sanity_score trends low
+        # by design, independent of true alignment quality. Averaging it 50/50 was
+        # silently dragging every persona's score down (an 85 LLM score could land
+        # in the 50s). Trust the LLM's direct semantic judgment for the persisted
+        # score; sanity_score is kept only as a diagnostic signal in the logs.
         sanity_score = _compute_ro_alignment_sanity_check(patterns, ro if isinstance(ro, dict) else {})
-        final_score = int((llm_score + sanity_score) / 2)
+        final_score = llm_score
         if abs(llm_score - sanity_score) > 20:
             logger.warning(
-                "generate_predominant_patterns: large score discrepancy llm=%d sanity=%d final=%d",
-                llm_score, sanity_score, final_score,
+                "generate_predominant_patterns: large llm/sanity divergence (diagnostic only) llm=%d sanity=%d",
+                llm_score, sanity_score,
             )
         else:
             logger.info(
-                "generate_predominant_patterns: patterns=%d llm=%d sanity=%d final=%d",
-                len(patterns), llm_score, sanity_score, final_score,
+                "generate_predominant_patterns: patterns=%d llm=%d sanity=%d",
+                len(patterns), llm_score, sanity_score,
             )
         return {"metric": "RO Alignment", "score": final_score, "patterns": patterns}
     except Exception:
@@ -1532,15 +1685,17 @@ async def generate_predominant_patterns(full_persona_info: dict) -> dict:
         patterns = fallback.get("patterns", [])
         sanity_score = _compute_ro_alignment_sanity_check(patterns, ro if isinstance(ro, dict) else {})
         if fallback.get("error"):
-            # Both LLMs failed — use rule-based sanity score only, never 0
+            # Both LLMs failed — sanity_score is the only signal left, never 0
             final_score = max(sanity_score, 1)
             logger.info("generate_predominant_patterns: sanity_only score=%d", final_score)
         else:
+            # Same reasoning as the main path above — trust the fallback LLM's own
+            # score rather than averaging it down with the jargon-biased sanity check.
             fallback_llm_score = fallback.get("score", 50)
-            final_score = int((fallback_llm_score + sanity_score) / 2)
+            final_score = fallback_llm_score
             logger.info(
-                "generate_predominant_patterns: fallback_hybrid llm=%d sanity=%d final=%d",
-                fallback_llm_score, sanity_score, final_score,
+                "generate_predominant_patterns: fallback_llm score=%d sanity=%d(diagnostic)",
+                fallback_llm_score, sanity_score,
             )
         return {"metric": "RO Alignment", "score": final_score, "patterns": patterns}
 

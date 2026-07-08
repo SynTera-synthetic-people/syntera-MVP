@@ -140,6 +140,10 @@ export interface PersonaCardData {
   calibration_status?: string;
   calibration_confidence?: number;
   confidence_score?: number;
+  // Backend-computed, persisted once by compute_master_calibration_confidence()
+  // so the card and the preview page show the same number. Preferred over the
+  // live 3-layer client-side average below when present.
+  master_calibration_confidence?: number;
   confidence_scoring?: ConfidenceScoring;
   auto_fill_report?: AutoFillReport;
 
@@ -1410,9 +1414,15 @@ const PersonaCardRenderer = React.forwardRef<HTMLDivElement, Props>(
     );
     const multiPlatform = React.useMemo(() => computeMultiPlatform(persona), [persona]);
 
-    const masterConfidenceScore = Math.round(
-      (realActionsSignal.confidenceScore + knowledgeEnrichment.confidenceScore + multiPlatform.confidenceScore) / 3
-    );
+    // Prefer the backend-persisted score (same value the preview page shows);
+    // fall back to the live 3-layer client average only when it hasn't been
+    // computed for this persona yet.
+    const masterConfidenceScore = typeof persona.master_calibration_confidence === 'number'
+      && !Number.isNaN(persona.master_calibration_confidence)
+      ? Math.round(persona.master_calibration_confidence)
+      : Math.round(
+        (realActionsSignal.confidenceScore + knowledgeEnrichment.confidenceScore + multiPlatform.confidenceScore) / 3
+      );
 
     // Behavioral dim cards
     const dims: DimCardProps[] = [
