@@ -2286,10 +2286,38 @@ const PersonaPreview: React.FC = () => {
     : Math.round(Math.min(patternsExtractedCount / 20, 1) * 100);
 
   // Only Predominant Patterns Extracted contributes to the Real Actions Signal confidence.
-  const realActionsConfidenceScore = patAccuracy;
+  // predominant_patterns.score is the exact "RO Alignment" number the backend's
+  // compute_master_calibration_confidence() uses for this layer — reading it here
+  // (rather than the legacy confidence.components.ro_alignment_score entry that
+  // patAccuracy falls back through) keeps this pill in sync with the master ring
+  // instead of showing an unrelated older score next to it. patAccuracy remains the
+  // fallback for personas that don't have predominant_patterns generated yet.
+  const predominantPatterns = (
+    rawData?.predominant_patterns ??
+    mergedTraits?.predominant_patterns ??
+    personaDetails?.predominant_patterns
+  ) as { score?: number } | undefined;
+
+  const realActionsConfidenceScore =
+    typeof predominantPatterns?.score === 'number' && !Number.isNaN(predominantPatterns.score)
+      ? Math.round(predominantPatterns.score)
+      : patAccuracy;
 
   // ── Master Calibration Confidence ─────────────────────────────────────────
-  const masterConfidenceScore = Math.round(
+  // Backend now computes and persists this once (persona.master_calibration_confidence)
+  // so every screen shows the same number — prefer it here, and only fall back to the
+  // live 3-layer client-side average for personas the backend hasn't scored yet.
+  const storedMasterConfidenceRaw = (
+    rawData?.master_calibration_confidence ??
+    mergedTraits?.master_calibration_confidence ??
+    personaDetails?.master_calibration_confidence
+  );
+  const storedMasterConfidence =
+    typeof storedMasterConfidenceRaw === 'number' && !Number.isNaN(storedMasterConfidenceRaw)
+      ? Math.round(storedMasterConfidenceRaw)
+      : null;
+
+  const masterConfidenceScore = storedMasterConfidence ?? Math.round(
     (realActionsConfidenceScore + knowledgeEnrichmentConfidenceScore + multiPlatformConfidenceScore) / 3
   );
 

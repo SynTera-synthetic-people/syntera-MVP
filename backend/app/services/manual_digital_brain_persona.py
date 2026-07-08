@@ -24,7 +24,13 @@ from openai import AsyncOpenAI
 from app.db import async_engine
 from app.models.persona import Persona
 from app.utils.id_generator import generate_id
-from app.services.persona import persona_to_dict, manual_prompt_traits, generate_predominant_patterns
+from app.services.persona import (
+    persona_to_dict,
+    manual_prompt_traits,
+    generate_predominant_patterns,
+    compute_master_calibration_confidence,
+    _full_persona_info_for_scoring,
+)
 from app.services.ke_sourcebank_enrichment import enrich_persona_ke_sources
 from app.config import OPENAI_API_KEY
 
@@ -809,6 +815,19 @@ async def calibrate_manual_persona_with_brains(
                 )
 
             p.persona_details = merged
+
+            # Calibration produces all three master-confidence inputs (RO-alignment
+            # patterns above, confidence_scoring, and the freshly-built calibration
+            # breakdown) — recompute and persist now instead of leaving it for the
+            # next preview call.
+            full_persona_info = _full_persona_info_for_scoring(p)
+            master_score = compute_master_calibration_confidence(
+                full_persona_info,
+                confidence_scoring,
+                merged.get("predominant_patterns"),
+            )
+            if master_score is not None:
+                p.master_calibration_confidence = master_score
 
             session.add(p)
             await session.commit()

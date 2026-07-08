@@ -33,6 +33,18 @@ const coerceConfidenceScore = (raw: unknown): number | null => {
 // ── Confidence Score Utilities ────────────────────────────────────────────────
 
 export const getConfidenceScore = (persona: SavedPersona): number | null => {
+  // Backend now computes and persists this once (persona.master_calibration_confidence)
+  // so every screen — this grid card included — shows the same number. Only fall back
+  // to the legacy candidates below for personas the backend hasn't scored yet.
+  // Read directly rather than through coerceConfidenceScore: this field is always
+  // already an int 0-100 (or null) from the backend, never a 0-1 fraction, so
+  // coerceConfidenceScore's "<=1 means fraction, multiply by 100" heuristic would
+  // misinterpret a genuine score of 1 as 100.
+  const raw = persona.master_calibration_confidence;
+  if (typeof raw === 'number' && !Number.isNaN(raw) && raw >= 0 && raw <= 100) {
+    return Math.round(raw);
+  }
+
   const details = getRecord(persona.persona_details);
   const candidates = [
     persona.confidence_scoring?.weighted_score,

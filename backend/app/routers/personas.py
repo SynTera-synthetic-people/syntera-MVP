@@ -1670,6 +1670,7 @@ async def preview_persona(
     preview = persona_service.persona_preview_from_dict(p, full_persona_info, confidence=confidence)
 
     cached_patterns = full_persona_info.get("predominant_patterns")
+    patterns_freshly_generated = False
     if cached_patterns and cached_patterns.get("patterns"):
         preview["predominant_patterns"] = cached_patterns
         logger.info(
@@ -1683,6 +1684,8 @@ async def preview_persona(
             patterns_started_at = time.perf_counter()
             patterns_result = await persona_service.generate_predominant_patterns(full_persona_info)
             preview["predominant_patterns"] = patterns_result
+            cached_patterns = patterns_result
+            patterns_freshly_generated = True
             logger.info(
                 "preview_persona:patterns_done persona=%s score=%d count=%d elapsed_ms=%d",
                 persona_id,
@@ -1693,6 +1696,35 @@ async def preview_persona(
         except Exception:
             logger.exception("preview_persona:patterns_failed persona=%s", persona_id)
             preview["predominant_patterns"] = {"metric": "RO Alignment", "score": 0, "patterns": []}
+            # cached_patterns may still hold a stale value from an earlier persisted
+            # attempt (e.g. one with a real score but an empty patterns list, which is
+            # why we're regenerating at all) — reset it so the master-confidence
+            # computation below doesn't use a score that disagrees with what the
+            # response just showed the user for predominant_patterns.
+            cached_patterns = None
+
+    # Persist master_calibration_confidence (and, when freshly generated, the
+    # predominant_patterns that fed it — previously computed live here and
+    # discarded on every call, which is why the grid and preview could disagree).
+    # If it's already stored and nothing new was generated this request, reuse it
+    # untouched — no recompute, no extra write, no LLM call.
+    stored_master_score = p.get("master_calibration_confidence")
+    if patterns_freshly_generated or stored_master_score is None:
+        full_persona_info["predominant_patterns"] = cached_patterns
+        master_score = persona_service.compute_master_calibration_confidence(
+            full_persona_info, confidence, cached_patterns
+        )
+        if patterns_freshly_generated or master_score != stored_master_score:
+            await persona_service.save_predominant_patterns_and_master_confidence(
+                persona_id,
+                predominant_patterns=cached_patterns if patterns_freshly_generated else None,
+                master_calibration_confidence=master_score,
+            )
+        preview["master_calibration_confidence"] = (
+            master_score if master_score is not None else stored_master_score
+        )
+    else:
+        preview["master_calibration_confidence"] = stored_master_score
 
     logger.info(
         "preview_persona:success persona=%s total_elapsed_ms=%d",

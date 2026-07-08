@@ -457,6 +457,11 @@ async def enrich_persona_ke_sources(
     from sqlalchemy.ext.asyncio import AsyncSession
     from app.db import async_engine
     from app.models.persona import Persona
+    from app.services.persona import (
+        compute_master_calibration_confidence,
+        _confidence_for_master_scoring,
+        _full_persona_info_for_scoring,
+    )
 
     try:
         running_loop = asyncio.get_running_loop()
@@ -488,6 +493,18 @@ async def enrich_persona_ke_sources(
             updated_details["ke_source_type_breakdown"] = ke_enrichment_data["ke_source_type_breakdown"]
             updated_details["ke_confidence"]             = ke_enrichment_data["ke_confidence"]
             persona.persona_details = updated_details
+
+            # KE confidence is one of the three master-confidence inputs and lands
+            # here, after persona creation — recompute and persist now rather than
+            # leaving a stale/blank master score until the next preview call.
+            full_persona_info = _full_persona_info_for_scoring(persona)
+            master_score = compute_master_calibration_confidence(
+                full_persona_info,
+                _confidence_for_master_scoring(full_persona_info),
+                full_persona_info.get("predominant_patterns"),
+            )
+            if master_score is not None:
+                persona.master_calibration_confidence = master_score
 
             db_session.add(persona)
             await db_session.commit()

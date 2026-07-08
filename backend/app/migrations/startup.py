@@ -528,6 +528,7 @@ async def _repair_persona_schema(conn: AsyncConnection) -> None:
         "persona_details JSONB NOT NULL DEFAULT '{}'::jsonb",
         "auto_generated_persona BOOLEAN NOT NULL DEFAULT FALSE",
         "calibration_confidence INTEGER",
+        "master_calibration_confidence INTEGER",
         "parent_persona_id VARCHAR",
         "calibration_status VARCHAR",
         "subject_key VARCHAR",
