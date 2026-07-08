@@ -1461,10 +1461,19 @@ async def generate_predominant_patterns(full_persona_info: dict) -> dict:
             text = str(theme or "").strip()
             if len(text) > 8:
                 signals.append(f"[WEB] {text}")
+    # Manual flow: divergences list
     for div in (say_do.get("divergences") or []):
         text = str(div or "").strip()
         if len(text) > 8:
             signals.append(f"[SAY_DO_GAP] {text}")
+    # Digital brain flow: flat claim/actual_behavior/reasoning fields
+    _claim = str(say_do.get("claim") or say_do.get("stated_value") or "").strip()
+    _actual = str(say_do.get("actual_behavior") or say_do.get("evidence_based_observation") or "").strip()
+    _reason = str(say_do.get("reasoning") or say_do.get("hidden_driver") or "").strip()
+    if _claim and _actual:
+        signals.append(f"[SAY_DO_GAP] Claims: {_claim}. Actual behavior: {_actual}.")
+    if _reason and len(_reason) > 8:
+        signals.append(f"[SAY_DO_GAP] Hidden driver: {_reason}")
 
     # --- Fallback to manual trait signals for non-digital-brain personas ---
     if not signals:
