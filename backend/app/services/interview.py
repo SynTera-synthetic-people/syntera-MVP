@@ -325,42 +325,125 @@ async def clear_qualitative_outputs(workspace_id: str, exploration_id: str) -> N
 
         await session.commit()
 
+async def _strip_questions_from_existing_interviews(
+    workspace_id: str, exploration_id: str, question_texts: List[str]
+) -> None:
+    """
+    Remove Q&A entries for now-deleted discussion-guide question(s) from every
+    already-generated Interview snapshot for this exploration.
+
+    Interview.messages/generated_answers are frozen at generation time and keyed
+    by question TEXT (no question_id is stored on the message), so deleting the
+    InterviewQuestion row alone leaves stale Q&A behind in any interview that
+    already ran — this is what previously let deleted questions resurface in
+    transcript exports. Called from delete_interview_question/_section so the
+    scrub happens atomically with the guide edit.
+    """
+    if not question_texts:
+        return
+
+    from sqlalchemy.orm.attributes import flag_modified
+
+    texts = set(question_texts)
+    async with AsyncSession(async_engine) as session:
+        result = await session.execute(
+            select(Interview).where(
+                Interview.workspace_id == workspace_id,
+                Interview.exploration_id == exploration_id,
+            )
+        )
+        interviews = result.scalars().all()
+
+        for iv in interviews:
+            changed = False
+
+            if iv.generated_answers:
+                for t in texts:
+                    if t in iv.generated_answers:
+                        del iv.generated_answers[t]
+                        changed = True
+                if changed:
+                    flag_modified(iv, "generated_answers")
+
+            if iv.messages:
+                kept = [
+                    msg for msg in iv.messages
+                    if not (
+                        (msg.get("role") == "user" and msg.get("text") in texts)
+                        or (msg.get("role") == "persona" and (msg.get("meta") or {}).get("question") in texts)
+                    )
+                ]
+                if len(kept) != len(iv.messages):
+                    iv.messages = kept
+                    flag_modified(iv, "messages")
+                    changed = True
+
+            if changed:
+                session.add(iv)
+
+        await session.commit()
+
+
 async def delete_interview_section(section_id: str) -> bool:
-    """Delete an interview section and all its questions"""
+    """Delete an interview section and all its questions, scrubbing their Q&A from existing interview transcripts"""
     async with AsyncSession(async_engine) as session:
         questions_query = select(InterviewQuestion).where(
             InterviewQuestion.section_id == section_id
         )
         questions_result = await session.execute(questions_query)
         questions = questions_result.scalars().all()
-        
+        question_texts = [q.text for q in questions]
+
         for question in questions:
             await session.delete(question)
-        
+
         section_query = select(InterviewSection).where(InterviewSection.id == section_id)
         section_result = await session.execute(section_query)
         section = section_result.scalars().first()
-        
+
         if not section:
             return False
-        
+
+        workspace_id = section.workspace_id
+        exploration_id = section.exploration_id
+
         await session.delete(section)
         await session.commit()
-        return True
+
+    await _strip_questions_from_existing_interviews(workspace_id, exploration_id, question_texts)
+
+    from app.services import report_orchestrator as report_cache
+    await report_cache.invalidate_cache(exploration_id)
+
+    return True
 
 async def delete_interview_question(question_id: str) -> bool:
-    """Delete a specific interview question"""
+    """Delete a specific interview question, scrubbing its Q&A from existing interview transcripts"""
     async with AsyncSession(async_engine) as session:
         query = select(InterviewQuestion).where(InterviewQuestion.id == question_id)
         result = await session.execute(query)
         question = result.scalars().first()
-        
+
         if not question:
             return False
-        
+
+        section_query = select(InterviewSection).where(InterviewSection.id == question.section_id)
+        section = (await session.execute(section_query)).scalars().first()
+
+        question_text = question.text
+        workspace_id = section.workspace_id if section else None
+        exploration_id = section.exploration_id if section else None
+
         await session.delete(question)
         await session.commit()
-        return True
+
+    if workspace_id and exploration_id:
+        await _strip_questions_from_existing_interviews(workspace_id, exploration_id, [question_text])
+
+        from app.services import report_orchestrator as report_cache
+        await report_cache.invalidate_cache(exploration_id)
+
+    return True
 
 async def update_interview_section(section_id: str, title: str) -> Optional[Dict]:
     """Update an interview section title"""
@@ -614,6 +697,25 @@ async def start_interview(
         messages.append({"role": "persona", "text": pa, "meta": answer_meta, "ts": datetime.utcnow().isoformat(), "all_info": all_info, "all_info_raw": all_info_raw})
 
     async with AsyncSession(async_engine) as session:
+        # Replace any prior batch-guide interview for this persona so re-running
+        # (e.g. after editing the discussion guide) never leaves a stale row
+        # behind — otherwise its old Q&A (possibly for since-deleted questions)
+        # can resurface in transcripts. Conversation Studio sessions are left
+        # alone: they carry a different first system message and aren't guide-driven.
+        if persona_id:
+            existing_result = await session.execute(
+                select(Interview).where(
+                    Interview.workspace_id == workspace_id,
+                    Interview.exploration_id == exploration_id,
+                    Interview.persona_id == persona_id,
+                )
+            )
+            for old in existing_result.scalars().all():
+                first_msg = old.messages[0] if old.messages else {}
+                if first_msg.get("text") == "Interview started":
+                    await session.execute(delete(InterviewFile).where(InterviewFile.interview_id == old.id))
+                    await session.delete(old)
+
         iv = Interview(
             id=generate_id(),
             workspace_id=workspace_id,
