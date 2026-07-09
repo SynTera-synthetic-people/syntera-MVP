@@ -11,6 +11,7 @@ const ARTIFACT_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"];
 const ARTIFACT_MAX_BYTES = 10 * 1024 * 1024;
 
 const ARTIFACT_MAX_LINKS = 3;
+const ARTIFACT_COMING_SOON = true;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -332,10 +333,17 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
             </div>
 
             {/* ── Artifact ───────────────────────────────────────────── */}
-            <div className="fum-section fum-section--coming-soon">
-              <div className="fum-coming-soon-overlay">
-                <span className="fum-coming-soon-badge">Coming Soon</span>
-              </div>
+            <div
+              className={[
+                "fum-section",
+                ARTIFACT_COMING_SOON ? "fum-section--coming-soon" : "",
+              ].filter(Boolean).join(" ")}
+            >
+              {ARTIFACT_COMING_SOON && (
+                <div className="fum-coming-soon-overlay">
+                  <span className="fum-coming-soon-badge">Coming Soon</span>
+                </div>
+              )}
               <div className="fum-section">
                 <div className="fum-section-head">
                   <h3 className="fum-section-title">Artifact</h3>
