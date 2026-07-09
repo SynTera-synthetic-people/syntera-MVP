@@ -62,7 +62,7 @@ from app.services.digital_brain_pipeline import digital_brain_pipeline
 from app.services.ro_extractor import extract_ro_components_for_pipeline
 from app.services.manual_digital_brain_persona import (
     create_manual_persona_draft as create_manual_persona_draft_with_brains,
-    calibrate_manual_persona_with_brains,
+    run_manual_calibration_background,
 )
 from app.services.ke_sourcebank_enrichment import enrich_persona_ke_sources
 
@@ -1480,8 +1480,24 @@ async def calibrate_persona(
 ):
     """
     Phase 2 of manual persona flow: enrich draft with AI behavioral depth.
-    Uses stored raw_traits from the draft; updates the persona in-place.
-    Idempotent — calling on an already-calibrated persona returns it unchanged.
+
+    Runs asynchronously: this endpoint returns immediately once calibration has
+    been queued (calibration_status="calibrating") — the actual multi-LLM-call
+    enrichment (RO extraction, trait auto-fill, evidence collection, brain
+    assignment; often 30-180s+) happens in the background via
+    run_manual_calibration_background(), exactly like enrich_persona_ke_sources.
+    A synchronous version of this request could exceed a reverse-proxy/gateway
+    timeout before the backend responded, which surfaces to the browser as a
+    misleading CORS error rather than the actual 502.
+
+    Poll GET /{persona_id} and read calibration_status: "calibrating" -> keep
+    polling, "calibrated" -> done, "draft" with persona_details
+    .last_calibration_error set -> failed (safe to retry by calling this
+    endpoint again).
+
+    Idempotent — calling on an already-calibrated persona returns it unchanged
+    immediately; calling while already calibrating returns the in-progress
+    state without starting a second job.
     """
     if not await ws_service.is_workspace_admin(workspace_id, current_user.id):
         raise HTTPException(
@@ -1496,30 +1512,28 @@ async def calibrate_persona(
             detail=ErrorResponse(status="error", message="Persona not found").dict()
         )
 
-    try:
-        result = await calibrate_manual_persona_with_brains(persona_id, exploration_id)
-    except Exception as e:
+    existing_status = existing.get("calibration_status")
+    if existing_status == "calibrated":
+        return SuccessResponse(message="Persona already calibrated", data=existing)
+    if existing_status == "calibrating":
+        return SuccessResponse(message="Persona calibration already in progress", data=existing)
+
+    calibrating_view = await persona_service.mark_persona_calibrating(persona_id)
+    if not calibrating_view:
         raise HTTPException(
-            status_code=500,
-            detail={"status": "error", "message": str(e), "type": e.__class__.__name__}
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=ErrorResponse(status="error", message="Persona not found").dict()
         )
 
-    if result.get("status") == "error":
-        error_message = result.get("error_message", "Failed to calibrate persona")
-        not_found = "not found" in error_message.lower()
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND if not_found else status.HTTP_400_BAD_REQUEST,
-            detail=ErrorResponse(status="error", message=error_message).dict()
+    asyncio.create_task(
+        run_manual_calibration_background(
+            persona_id=persona_id,
+            exploration_id=exploration_id,
+            workspace_id=workspace_id,
         )
+    )
 
-    calibrated = result["persona"]
-
-    if existing.get("calibration_status") != "calibrated":
-        # Calibration changes persona content; generated qualitative outputs must be rebuilt.
-        await interview_service.clear_qualitative_outputs(workspace_id, exploration_id)
-        await report_cache.invalidate_cache(exploration_id)
-
-    return SuccessResponse(message="Persona calibrated successfully", data=calibrated)
+    return SuccessResponse(message="Persona calibration started", data=calibrating_view)
 
 
 @router.get("/{persona_id}/preview", response_model=SuccessResponse)

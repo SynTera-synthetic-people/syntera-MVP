@@ -934,6 +934,43 @@ async def save_predominant_patterns_and_master_confidence(
         await session.commit()
 
 
+async def mark_persona_calibrating(persona_id: str) -> Optional[dict]:
+    """Flip calibration_status to 'calibrating' so POST /{persona_id}/calibrate
+    can return immediately while the actual multi-LLM-call enrichment (often
+    30-180s+) runs in the background — see run_manual_calibration_background()
+    in manual_digital_brain_persona.py. A synchronous request that long was
+    getting killed by a reverse-proxy/gateway timeout before the backend could
+    respond, which the browser then misreports as a CORS error rather than the
+    actual 502 timeout."""
+    async with AsyncSession(async_engine) as session:
+        res = await session.execute(select(Persona).where(Persona.id == persona_id))
+        p = res.scalars().first()
+        if not p:
+            return None
+        p.calibration_status = "calibrating"
+        session.add(p)
+        await session.commit()
+        await session.refresh(p)
+        return persona_to_dict(p)
+
+
+async def reset_persona_after_calibration_failure(persona_id: str, error_message: str) -> None:
+    """Revert calibration_status to 'draft' and record the failure so the
+    polling client can show it and let the user retry (see
+    run_manual_calibration_background() in manual_digital_brain_persona.py)."""
+    async with AsyncSession(async_engine) as session:
+        res = await session.execute(select(Persona).where(Persona.id == persona_id))
+        p = res.scalars().first()
+        if not p:
+            return
+        p.calibration_status = "draft"
+        details = dict(p.persona_details or {})
+        details["last_calibration_error"] = error_message
+        p.persona_details = details
+        session.add(p)
+        await session.commit()
+
+
 async def list_personas(workspace_id: str, exploration_id: str) -> List[dict]:
     from app.models.user import User
     async with AsyncSession(async_engine) as session:

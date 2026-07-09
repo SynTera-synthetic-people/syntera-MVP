@@ -96,7 +96,10 @@ class Persona(SQLModel, table=True):
     # Lineage: set when this persona was replicated from another
     parent_persona_id: Optional[str] = Field(default=None)
 
-    # Lifecycle: "draft" (traits only, no AI) | "calibrated" (AI-enriched)
+    # Lifecycle: "draft" (traits only, no AI) | "calibrating" (background
+    # calibration job in progress, see run_manual_calibration_background) |
+    # "calibrated" (AI-enriched). A failed calibration reverts to "draft" with
+    # persona_details.last_calibration_error set, so the user can retry.
     # None means existing/legacy calibrated personas
     calibration_status: Optional[str] = Field(default=None)
 
