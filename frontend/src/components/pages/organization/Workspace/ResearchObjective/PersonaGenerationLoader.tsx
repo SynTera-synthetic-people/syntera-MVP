@@ -35,6 +35,14 @@ interface StepData {
 // Each item takes this long before being marked done and the next one appears
 const TICK_MS = 27_000;
 
+// /calibrate runs several sequential LLM calls (RO extraction, trait auto-fill,
+// evidence collection, brain assignment, predominant-pattern scoring) and can
+// legitimately take well over the default 30s axios timeout — give it room.
+// Measured real-world runs land around ~180s (one evidence-collection LLM call
+// alone can take 100s+), so 180s cut it too close — same order of magnitude as
+// REPLICATION_TIMEOUT_MS elsewhere in the codebase for another slow persona op.
+const CALIBRATION_TIMEOUT_MS = 300_000;
+
 const RING_RADIUS = 54;
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 
@@ -174,7 +182,9 @@ const PersonaGenerationLoader: React.FC<Props> = ({
         const runCalibration = async () => {
             try {
                 await axiosInstance.post(
-                    `/workspaces/${workspaceId}/explorations/${objectiveId}/personas/${draftPersonaId}/calibrate`
+                    `/workspaces/${workspaceId}/explorations/${objectiveId}/personas/${draftPersonaId}/calibrate`,
+                    undefined,
+                    { timeout: CALIBRATION_TIMEOUT_MS }
                 );
                 setCalibratedPersonaId(draftPersonaId);
             } catch (error) {
