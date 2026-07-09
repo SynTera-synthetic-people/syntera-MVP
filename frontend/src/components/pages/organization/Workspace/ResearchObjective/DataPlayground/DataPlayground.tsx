@@ -116,6 +116,15 @@ function moveItemDown<T>(arr: T[], index: number): T[] {
   return next;
 }
 
+/** Move the item at `from` to sit at index `to`, shifting the rest. */
+function reorderItem<T>(arr: T[], from: number, to: number): T[] {
+  if (from === to || from < 0 || to < 0 || from >= arr.length || to >= arr.length) return arr;
+  const next = [...arr];
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved!);
+  return next;
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 const DataPlayground: React.FC<DataPlaygroundProps> = ({ onClose }) => {
@@ -177,6 +186,15 @@ const DataPlayground: React.FC<DataPlaygroundProps> = ({ onClose }) => {
 
   const handleFreqMoveDown = useCallback((index: number) => {
     setSelectedVars((prev) => moveItemDown(prev, index));
+  }, []);
+
+  const handleFreqReorder = useCallback((from: number, to: number) => {
+    setSelectedVars((prev) => reorderItem(prev, from, to));
+  }, []);
+
+  const handleFreqVarAdd = useCallback((variable: Variable) => {
+    setHasResults(false);
+    setSelectedVars((prev) => (prev.find((v) => v.id === variable.id) ? prev : [...prev, variable]));
   }, []);
 
   // ── Cross tab handlers ────────────────────────────────────────────────────
@@ -266,11 +284,13 @@ const DataPlayground: React.FC<DataPlaygroundProps> = ({ onClose }) => {
             selectedVars={selectedVars}
             hasResults={hasResults}
             onVarToggle={handleFreqVarToggle}
+            onVarAdd={handleFreqVarAdd}
             onVarRemove={handleFreqVarRemove}
             onClearAll={handleFreqClearAll}
             onSelectAll={handleFreqSelectAll}
             onMoveUp={handleFreqMoveUp}
             onMoveDown={handleFreqMoveDown}
+            onReorder={handleFreqReorder}
           />
         );
       case 'crosstabs':

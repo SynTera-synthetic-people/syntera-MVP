@@ -15,11 +15,13 @@
 
 /* Modal */
 .dp-modal {
-  background: #121317;
+  background: #1e2126;
   border-radius: 16px;
-  width: 90vw;
-  max-width: 1220px;
-  height: 85vh;
+  width: 94vw;
+  max-width: 1600px;
+  height: 90vh;
+  max-height: 960px;
+  min-height: 600px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -37,7 +39,7 @@
   justify-content: space-between;
   gap: 12px;
   padding: 20px 24px 16px;
-  background: #1c1e23;
+  background: #1e2126;
   border-bottom: 1px solid #2a2d33;
   flex-shrink: 0;
 }
@@ -74,7 +76,7 @@
   align-items: center;
   gap: 7px;
   padding: 8px 16px;
-  background: #1c1e23;
+  background: #121317;
   border: 1px solid #3a3d44;
   border-radius: 8px;
   color: #e8e9ec;
@@ -114,7 +116,7 @@
   display: flex;
   gap: 6px;
   padding: 12px 24px;
-  background: #1c1e23;
+  background: #1e2126;
   border-bottom: 1px solid #2a2d33;
   flex-shrink: 0;
   overflow-x: auto;
@@ -157,7 +159,7 @@
   display: flex;
   overflow: hidden;
   min-height: 0;
-  background: #121317;
+  background: #1e2126;
 }
 
 /* ── Footer ── */
@@ -166,7 +168,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 14px 24px;
-  background: #1c1e23;
+  background: #1e2126;
   border-top: 1px solid #2a2d33;
   flex-shrink: 0;
 }
@@ -273,6 +275,7 @@
 .dp-panel {
   display: flex;
   flex-direction: column;
+  background: #121317;
   border-right: 1px solid #2a2d33;
   overflow: hidden;
   flex-shrink: 0;
@@ -288,11 +291,9 @@
 }
 
 .dp-panel-title {
-  font-size: 12px;
-  font-weight: 500;
-  color: #9a9eab;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  font-size: 13px;
+  font-weight: 600;
+  color: #e8e9ec;
 }
 
 .dp-panel-arrow-btn {
@@ -301,7 +302,7 @@
   justify-content: center;
   width: 26px;
   height: 26px;
-  background: #1c1e23;
+  background: #121317;
   border: 1px solid #2a2d33;
   border-radius: 6px;
   color: #9a9eab;
@@ -336,17 +337,23 @@
   border-radius: 2px;
 }
 
-/* ── Variable Pill ── */
+/* ── Variable Pill ──────────────────────────────────────────────────────────
+   Colors pixel-sampled from Figma:
+   - default fill  #393c45, text #e8e9ec
+   - added/mint fill #37ffce, text #0e0f12 (dark-on-mint, "source" list only)
+   - focused (selected-list) pill stays the neutral fill; a small solid-mint
+     arrow badge is what changes, not the whole chip
+   ── */
 .dp-pill {
   display: flex;
   align-items: center;
   width: 100%;
   padding: 7px 10px;
   margin: 2px 0;
-  background: #1c1e23;
-  border: 1px solid #2a2d33;
+  background: #393c45;
+  border: 1px solid #16181c;
   border-radius: 6px;
-  color: #c8cad0;
+  color: #e8e9ec;
   font-size: 12px;
   cursor: pointer;
   text-align: left;
@@ -356,18 +363,25 @@
 }
 
 .dp-pill:hover {
-  background: #23262c;
-  border-color: #454850;
+  background: #454850;
 }
 
-.dp-pill--selected {
-  background: #0c2c24;
+/* "source" pill (All Variables list) once added to a target list */
+.dp-pill--added {
+  background: #37ffce;
   border-color: #37ffce;
-  color: #37ffce;
+  color: #0e0f12;
+  font-weight: 500;
 }
 
-.dp-pill--selected:hover {
-  background: #103527;
+.dp-pill--added:hover {
+  background: #2ee6b8;
+}
+
+/* "selected" pill (Selected/Banner/Main lists) that Up/Down acts on */
+.dp-pill--focused {
+  outline: 1px solid #37ffce;
+  outline-offset: -1px;
 }
 
 .dp-pill-label {
@@ -378,10 +392,80 @@
   white-space: nowrap;
 }
 
-.dp-pill-arrow {
+/* Small solid-mint arrow badge shown on hover (source, not yet added) or
+   pinned permanently on the focused item in a selected-style list. */
+.dp-pill-arrow-badge {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  background: #37ffce;
+  color: #0e0f12;
   font-size: 11px;
-  color: #37ffce;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.dp-pill:hover .dp-pill-arrow-badge {
+  opacity: 1;
+}
+
+.dp-pill-arrow-badge--pinned {
+  opacity: 1;
+}
+
+/* Drag & drop affordances */
+.dp-pill[draggable='true'] {
+  cursor: grab;
+}
+
+.dp-pill--drag-over {
+  outline: 2px dashed #37ffce;
+  outline-offset: 2px;
+}
+
+.dp-pill--dragging {
+  opacity: 0.4;
+}
+
+/* ── "Add Variable" empty dropzone (Frequency Table, before any selection) ── */
+.dp-add-variable-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 8px;
+  padding: 24px 16px;
+  transition: background 0.15s, border-color 0.15s;
+  border: 1px dashed transparent;
+}
+
+.dp-add-variable-zone--active {
+  background: #17311f;
+  border-color: #37ffce;
+}
+
+.dp-add-variable-icon {
+  color: #6b6f7a;
+  margin-bottom: 4px;
+}
+
+.dp-add-variable-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #f5f6f7;
+}
+
+.dp-add-variable-subtitle {
+  font-size: 12px;
+  color: #9a9eab;
+  line-height: 1.5;
+  max-width: 160px;
 }
 
 /* ── Up/Down Bar ── */
@@ -405,7 +489,7 @@
   justify-content: center;
   width: 28px;
   height: 28px;
-  background: #1c1e23;
+  background: #121317;
   border: 1px solid #2a2d33;
   border-radius: 6px;
   color: #9a9eab;
@@ -504,7 +588,7 @@
 }
 
 .dp-freq-table th {
-  background: #1c1e23;
+  background: #121317;
   color: #9a9eab;
   font-weight: 500;
   font-size: 12px;
@@ -521,7 +605,7 @@
 }
 
 .dp-freq-table tbody tr:hover td {
-  background: #1c1e23;
+  background: #121317;
 }
 
 /* ── Cross Tab Table ── */
@@ -532,7 +616,7 @@
 }
 
 .dp-cross-table th {
-  background: #1c1e23;
+  background: #121317;
   color: #9a9eab;
   font-weight: 500;
   font-size: 11px;
@@ -558,7 +642,7 @@
 }
 
 .dp-cross-table tbody tr:hover td {
-  background: #1c1e23;
+  background: #121317;
 }
 
 .dp-cross-table .dp-cross-row--base td,
@@ -589,7 +673,7 @@
 }
 
 .dp-where-box {
-  background: #1c1e23;
+  background: #121317;
   border: 1px solid #3a3d44;
   border-radius: 12px;
   padding: 20px;
@@ -652,7 +736,7 @@
 }
 
 .dp-val-box {
-  background: #1c1e23;
+  background: #121317;
   border: 1px solid #3a3d44;
   border-radius: 12px;
   padding: 20px;
@@ -869,6 +953,7 @@
   flex-direction: column;
   width: 190px;
   flex-shrink: 0;
+  background: #121317;
   border-right: 1px solid #2a2d33;
   overflow: hidden;
 }
@@ -916,11 +1001,7 @@
   line-height: 1.5;
 }
 
-/* ── Pill focused state (for up/down tracking) ── */
-.dp-pill--focused {
-  outline: 2px solid #37ffce66;
-  outline-offset: 1px;
-}
+/* (dp-pill--focused is defined once, in the Variable Pill section above) */
 
 /* ── Cross tab toolbar ── */
 .dp-crosstab-toolbar {
@@ -974,7 +1055,7 @@
 /* Toolbar action buttons */
 .dp-toolbar-btn {
   padding: 5px 12px;
-  background: #1c1e23;
+  background: #121317;
   border: 1px solid #3a3d44;
   border-radius: 6px;
   color: #c8cad0;
@@ -1037,7 +1118,7 @@
 
 .dp-nett-input {
   padding: 5px 9px;
-  background: #1c1e23;
+  background: #121317;
   border: 1px solid #3a3d44;
   border-radius: 6px;
   color: #e8e9ec;
@@ -1103,7 +1184,7 @@
   min-width: 260px;
   font-size: 11px;
   color: #9a9eab;
-  background: #1c1e23;
+  background: #121317;
   padding: 7px 10px;
   border: 1px solid #2a2d33;
   font-weight: 500;
@@ -1114,7 +1195,7 @@
   white-space: nowrap;
   font-size: 11px;
   color: #9a9eab;
-  background: #1c1e23;
+  background: #121317;
   padding: 7px 10px;
   border: 1px solid #2a2d33;
   font-weight: 500;
@@ -1180,7 +1261,7 @@
 
 .dp-cross-table tbody tr:hover .dp-cross-td--label,
 .dp-cross-table tbody tr:hover .dp-cross-td--num {
-  background: #1c1e23;
+  background: #121317;
 }
 
 /* Row up/down hover controls (Table Behaviour spec) */
@@ -1258,7 +1339,7 @@
   align-items: center;
   gap: 2px;
   padding: 6px 12px;
-  background: #1c1e23;
+  background: #121317;
   border: 1px solid #2a2d33;
   border-radius: 7px;
   color: #9a9eab;
@@ -1383,7 +1464,7 @@
 .dp-prop-input {
   width: 100%;
   padding: 6px 8px;
-  background: #1c1e23;
+  background: #121317;
   border: 1px solid #3a3d44;
   border-radius: 6px;
   color: #e8e9ec;
@@ -1671,7 +1752,7 @@
 .dp-cb-input {
   width: 100%;
   padding: 9px 12px;
-  background: #1c1e23;
+  background: #121317;
   border: 1px solid #3a3d44;
   border-radius: 8px;
   color: #e8e9ec;
@@ -1699,7 +1780,7 @@
   align-items: center;
   gap: 6px;
   padding: 7px 12px;
-  background: #1c1e23;
+  background: #121317;
   border: 1px solid #3a3d44;
   border-radius: 7px;
   color: #c8cad0;
@@ -1727,7 +1808,7 @@
 }
 
 .dp-cb-map-table th {
-  background: #1c1e23;
+  background: #121317;
   color: #9a9eab;
   font-weight: 500;
   padding: 7px 10px;
@@ -1744,7 +1825,7 @@
 .dp-cb-map-chip {
   display: inline-flex;
   padding: 3px 8px;
-  background: #1c1e23;
+  background: #121317;
   border: 1px solid #3a3d44;
   border-radius: 5px;
   font-size: 11px;
@@ -1792,7 +1873,7 @@
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  background: #1c1e23;
+  background: #121317;
   border: 1px solid #3a3d44;
   border-radius: 8px;
   color: #6b6f7a;
@@ -1828,7 +1909,7 @@
 }
 
 .dp-gallery-type-btn:hover {
-  background: #1c1e23;
+  background: #121317;
 }
 
 .dp-gallery-type-btn--active {
@@ -1989,7 +2070,7 @@
 .dp-data-table th {
   position: sticky;
   top: 0;
-  background: #1c1e23;
+  background: #121317;
   color: #e8e9ec;
   font-weight: 600;
   padding: 9px 14px;
@@ -2013,7 +2094,7 @@
 }
 
 .dp-data-table tbody tr:hover td {
-  background: #1c1e23;
+  background: #121317;
 }
 
 /* ══════════════════════════════════════════════════════════════════════

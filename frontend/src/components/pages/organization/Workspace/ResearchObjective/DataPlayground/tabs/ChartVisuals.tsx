@@ -46,6 +46,11 @@ const CATEGORY_LABELS = ['Figma', 'Sketch', 'XD', 'Photoshop', 'Illustrator', 'A
 const SERIES_2023 = [56, 64, 76, 78, 70, 37];
 
 // ── Chart Gallery data ────────────────────────────────────────────────────────
+//
+// Colors pixel-sampled directly from the Figma "Bar Chart.png" reference:
+// purple #7947c4, green #45c276, orange #c37148, teal #2099ad. Two extra
+// tones (violet / gold) are added in the same family for the larger Pie
+// variants which use up to 8 categories.
 
 const GALLERY_TYPES = [
   { id: 'bar', label: 'Bar', icon: '▥' },
@@ -54,58 +59,191 @@ const GALLERY_TYPES = [
   { id: 'dual', label: 'Dual Axes', icon: '⇕' },
 ] as const;
 
-const GALLERY_PALETTE = ['#8b5cf6', '#34d399', '#f59e0b', '#38bdf8'];
+const GALLERY_PALETTE = ['#7947c4', '#45c276', '#c37148', '#2099ad', '#b347c3', '#c3a147', '#4763c3', '#c34774'];
 
 interface GalleryCardSpec {
   id: string;
+  kind: 'bar' | 'line' | 'pie' | 'dual';
   seriesCount: number;
-  horizontal: boolean;
+  horizontal?: boolean;
+  years: number[];
 }
 
-const GALLERY_CARDS: GalleryCardSpec[] = [
-  { id: 'g1', seriesCount: 1, horizontal: false },
-  { id: 'g2', seriesCount: 2, horizontal: false },
-  { id: 'g3', seriesCount: 3, horizontal: false },
-  { id: 'g4', seriesCount: 4, horizontal: false },
-  { id: 'g5', seriesCount: 1, horizontal: true },
-  { id: 'g6', seriesCount: 4, horizontal: true },
+const BAR_CARDS: GalleryCardSpec[] = [
+  { id: 'bar1', kind: 'bar', seriesCount: 1, horizontal: false, years: [2023] },
+  { id: 'bar2', kind: 'bar', seriesCount: 2, horizontal: false, years: [2023, 2024] },
+  { id: 'bar3', kind: 'bar', seriesCount: 3, horizontal: false, years: [2022, 2023, 2024] },
+  { id: 'bar4', kind: 'bar', seriesCount: 4, horizontal: false, years: [2021, 2022, 2023, 2024] },
+  { id: 'bar5', kind: 'bar', seriesCount: 1, horizontal: true, years: [2023] },
+  { id: 'bar6', kind: 'bar', seriesCount: 4, horizontal: true, years: [2021, 2022, 2023, 2024] },
 ];
 
-function seededValue(seed: number): number {
+const LINE_CARDS: GalleryCardSpec[] = [
+  { id: 'line1', kind: 'line', seriesCount: 1, years: [2023] },
+  { id: 'line2', kind: 'line', seriesCount: 2, years: [2023, 2024] },
+  { id: 'line3', kind: 'line', seriesCount: 3, years: [2022, 2023, 2024] },
+  { id: 'line4', kind: 'line', seriesCount: 4, years: [2021, 2022, 2023, 2024] },
+];
+
+const PIE_CARDS: GalleryCardSpec[] = [
+  { id: 'pie1', kind: 'pie', seriesCount: 2, years: [] },
+  { id: 'pie2', kind: 'pie', seriesCount: 3, years: [] },
+  { id: 'pie3', kind: 'pie', seriesCount: 4, years: [] },
+  { id: 'pie4', kind: 'pie', seriesCount: 5, years: [] },
+  { id: 'pie5', kind: 'pie', seriesCount: 6, years: [] },
+  { id: 'pie6', kind: 'pie', seriesCount: 8, years: [] },
+];
+
+const DUAL_CARDS: GalleryCardSpec[] = [
+  { id: 'dual1', kind: 'dual', seriesCount: 1, years: [2023] },
+  { id: 'dual2', kind: 'dual', seriesCount: 2, years: [2023, 2024] },
+];
+
+const CARDS_BY_TYPE: Record<ChartType, GalleryCardSpec[]> = {
+  bar: BAR_CARDS,
+  line: LINE_CARDS,
+  pie: PIE_CARDS,
+  dual: DUAL_CARDS,
+};
+
+function seededValue(seed: number, min = 15, max = 95): number {
   const x = Math.sin(seed) * 10000;
-  return Math.floor((x - Math.floor(x)) * 80) + 15;
+  const frac = x - Math.floor(x);
+  return Math.floor(frac * (max - min)) + min;
 }
 
-// Small representative bar-chart card preview — not a pixel copy of every
-// Figma variant, but structurally faithful (series count / orientation).
+/** Smooth a polyline into a natural curve (Catmull-Rom → cubic Bezier). */
+function smoothPath(points: { x: number; y: number }[]): string {
+  if (points.length === 0) return '';
+  if (points.length === 1) return `M ${points[0]!.x} ${points[0]!.y}`;
+
+  let d = `M ${points[0]!.x} ${points[0]!.y}`;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i - 1] ?? points[i]!;
+    const p1 = points[i]!;
+    const p2 = points[i + 1]!;
+    const p3 = points[i + 2] ?? p2;
+    const cp1x = p1.x + (p2.x - p0.x) / 6;
+    const cp1y = p1.y + (p2.y - p0.y) / 6;
+    const cp2x = p2.x - (p3.x - p1.x) / 6;
+    const cp2y = p2.y - (p3.y - p1.y) / 6;
+    d += ` C ${cp1x.toFixed(1)} ${cp1y.toFixed(1)}, ${cp2x.toFixed(1)} ${cp2y.toFixed(1)}, ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`;
+  }
+  return d;
+}
+
+function polarPoint(cx: number, cy: number, r: number, angleDeg: number) {
+  const rad = ((angleDeg - 90) * Math.PI) / 180;
+  return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+}
+
+/** SVG path for one donut segment between two angles. */
+function donutSegmentPath(cx: number, cy: number, rOuter: number, rInner: number, startDeg: number, endDeg: number): string {
+  const large = endDeg - startDeg > 180 ? 1 : 0;
+  const p0 = polarPoint(cx, cy, rOuter, startDeg);
+  const p1 = polarPoint(cx, cy, rOuter, endDeg);
+  const p2 = polarPoint(cx, cy, rInner, endDeg);
+  const p3 = polarPoint(cx, cy, rInner, startDeg);
+  return [
+    `M ${p0.x} ${p0.y}`,
+    `A ${rOuter} ${rOuter} 0 ${large} 1 ${p1.x} ${p1.y}`,
+    `L ${p2.x} ${p2.y}`,
+    `A ${rInner} ${rInner} 0 ${large} 0 ${p3.x} ${p3.y}`,
+    'Z',
+  ].join(' ');
+}
+
+// ── Per-type gallery card preview ─────────────────────────────────────────────
+// Structurally faithful to each Figma chart family (Bar / Line / Pie / Dual
+// Axes) using the sampled color palette — not a pixel copy of every one of
+// the ~20 individual card variants, but each TYPE renders as that type.
+
 const GalleryCardPreview: React.FC<{ spec: GalleryCardSpec }> = ({ spec }) => {
   const w = 220;
   const h = 120;
 
-  if (spec.horizontal) {
-    const barH = 10;
-    const gap = 6;
+  // ── Bar ──
+  if (spec.kind === 'bar') {
+    if (spec.horizontal) {
+      const barH = 8;
+      const rowGap = 4;
+      const groupGap = 8;
+      return (
+        <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h}>
+          {CATEGORY_LABELS.map((_, catIdx) => {
+            const groupH = spec.seriesCount * (barH + rowGap);
+            const groupY = 4 + catIdx * (groupH + groupGap - rowGap);
+            return (
+              <g key={catIdx}>
+                {Array.from({ length: spec.seriesCount }).map((_, s) => {
+                  const val = seededValue(catIdx * 7 + s * 3 + 1);
+                  return (
+                    <rect
+                      key={s}
+                      x={2}
+                      y={groupY + s * (barH + rowGap)}
+                      width={(val / 100) * (w - 10)}
+                      height={barH}
+                      fill={GALLERY_PALETTE[s % GALLERY_PALETTE.length]}
+                      rx={1.5}
+                    />
+                  );
+                })}
+              </g>
+            );
+          })}
+        </svg>
+      );
+    }
+
+    const groupW = (w - 16) / CATEGORY_LABELS.length;
+    const barW = Math.max(3, (groupW - 6) / spec.seriesCount);
     return (
       <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h}>
-        {CATEGORY_LABELS.map((_, catIdx) => {
-          const groupY = catIdx * (spec.seriesCount * (barH + 2) + gap);
+        {CATEGORY_LABELS.map((_, catIdx) => (
+          <g key={catIdx}>
+            {Array.from({ length: spec.seriesCount }).map((_, s) => {
+              const val = seededValue(catIdx * 5 + s * 2 + 3);
+              const barH = (val / 100) * (h - 24);
+              const x = 8 + catIdx * groupW + s * barW;
+              const y = h - 18 - barH;
+              return (
+                <rect
+                  key={s}
+                  x={x}
+                  y={y}
+                  width={barW - 1.5}
+                  height={barH}
+                  fill={GALLERY_PALETTE[s % GALLERY_PALETTE.length]}
+                  rx={1.5}
+                />
+              );
+            })}
+          </g>
+        ))}
+        <line x1={4} y1={h - 18} x2={w - 4} y2={h - 18} stroke="#2a2d33" strokeWidth={1} />
+      </svg>
+    );
+  }
+
+  // ── Line ──
+  if (spec.kind === 'line') {
+    const stepX = (w - 24) / (CATEGORY_LABELS.length - 1);
+    return (
+      <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h}>
+        <line x1={12} y1={h - 16} x2={w - 12} y2={h - 16} stroke="#2a2d33" strokeWidth={1} />
+        {Array.from({ length: spec.seriesCount }).map((_, s) => {
+          const points = CATEGORY_LABELS.map((_, i) => {
+            const val = seededValue(i * 4 + s * 11 + 2, 15, 92);
+            return { x: 12 + i * stepX, y: 6 + (1 - val / 100) * (h - 30) };
+          });
+          const color = GALLERY_PALETTE[s % GALLERY_PALETTE.length];
           return (
-            <g key={catIdx}>
-              {Array.from({ length: spec.seriesCount }).map((_, s) => {
-                const val = seededValue(catIdx * 7 + s * 3 + 1);
-                return (
-                  <rect
-                    key={s}
-                    x={40}
-                    y={groupY + s * (barH + 2)}
-                    width={(val / 100) * (w - 50)}
-                    height={barH}
-                    fill={GALLERY_PALETTE[s % GALLERY_PALETTE.length]}
-                    opacity={0.9}
-                    rx={2}
-                  />
-                );
-              })}
+            <g key={s}>
+              <path d={smoothPath(points)} fill="none" stroke={color} strokeWidth={2} />
+              {points.map((p, i) => (
+                <circle key={i} cx={p.x} cy={p.y} r={2.6} fill="#121317" stroke={color} strokeWidth={1.6} />
+              ))}
             </g>
           );
         })}
@@ -113,36 +251,81 @@ const GalleryCardPreview: React.FC<{ spec: GalleryCardSpec }> = ({ spec }) => {
     );
   }
 
-  const groupW = (w - 20) / CATEGORY_LABELS.length;
-  const barW = Math.max(4, (groupW - 6) / spec.seriesCount);
+  // ── Pie / Donut ──
+  if (spec.kind === 'pie') {
+    const cx = w / 2;
+    const cy = h / 2;
+    const rOuter = Math.min(w, h) / 2 - 4;
+    const rInner = rOuter * 0.55;
+    const n = spec.seriesCount;
+    const raw = Array.from({ length: n }).map((_, i) => seededValue(i * 9 + n * 3, 20, 100));
+    const total = raw.reduce((a, b) => a + b, 0);
+    let angle = 0;
+    const segments = raw.map((val, i) => {
+      const sweep = (val / total) * 360;
+      const seg = { start: angle, end: angle + sweep, color: GALLERY_PALETTE[i % GALLERY_PALETTE.length] };
+      angle += sweep;
+      return seg;
+    });
+    return (
+      <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h}>
+        {segments.map((seg, i) => (
+          <path key={i} d={donutSegmentPath(cx, cy, rOuter, rInner, seg.start, seg.end)} fill={seg.color} />
+        ))}
+        <text x={cx} y={cy + 5} textAnchor="middle" fontSize="15" fontWeight={700} fill="#f5f6f7">
+          {total}
+        </text>
+      </svg>
+    );
+  }
+
+  // ── Dual Axes (bars + overlaid line on a secondary axis) ──
+  const barSeriesCount = spec.seriesCount;
+  const groupW = (w - 16) / CATEGORY_LABELS.length;
+  const barW = Math.max(4, (groupW - 8) / barSeriesCount);
+  const linePoints = CATEGORY_LABELS.map((_, i) => {
+    const val = seededValue(i * 6 + 5, 15, 90);
+    return { x: 8 + i * groupW + (groupW - 8) / 2, y: 6 + (1 - val / 100) * (h - 28) };
+  });
+  const lineColor = GALLERY_PALETTE[barSeriesCount % GALLERY_PALETTE.length];
   return (
     <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h}>
       {CATEGORY_LABELS.map((_, catIdx) => (
         <g key={catIdx}>
-          {Array.from({ length: spec.seriesCount }).map((_, s) => {
-            const val = seededValue(catIdx * 5 + s * 2 + 3);
-            const barH = (val / 100) * (h - 20);
-            const x = 10 + catIdx * groupW + s * barW;
-            const y = h - 10 - barH;
+          {Array.from({ length: barSeriesCount }).map((_, s) => {
+            const val = seededValue(catIdx * 5 + s * 2 + 3, 15, 85);
+            const barH = (val / 100) * (h - 26);
+            const x = 8 + catIdx * groupW + s * barW;
+            const y = h - 18 - barH;
             return (
-              <rect
-                key={s}
-                x={x}
-                y={y}
-                width={barW - 2}
-                height={barH}
-                fill={GALLERY_PALETTE[s % GALLERY_PALETTE.length]}
-                opacity={0.9}
-                rx={2}
-              />
+              <rect key={s} x={x} y={y} width={barW - 1.5} height={barH} fill={GALLERY_PALETTE[s % GALLERY_PALETTE.length]} rx={1.5} />
             );
           })}
         </g>
       ))}
-      <line x1={8} y1={h - 10} x2={w - 8} y2={h - 10} stroke="#2a2d33" strokeWidth={1} />
+      <path d={smoothPath(linePoints)} fill="none" stroke={lineColor} strokeWidth={2} />
+      {linePoints.map((p, i) => (
+        <rect key={i} x={p.x - 2.5} y={p.y - 2.5} width={5} height={5} fill="#121317" stroke={lineColor} strokeWidth={1.4} transform={`rotate(45 ${p.x} ${p.y})`} />
+      ))}
+      <line x1={4} y1={h - 18} x2={w - 4} y2={h - 18} stroke="#2a2d33" strokeWidth={1} />
     </svg>
   );
 };
+
+/** Legend entries shown under each gallery card — years for time-series
+ * chart kinds, category names for pie/donut kinds. */
+function legendItemsFor(spec: GalleryCardSpec): { label: string; color: string }[] {
+  if (spec.kind === 'pie') {
+    return CATEGORY_LABELS.slice(0, spec.seriesCount).map((label, i) => ({
+      label,
+      color: GALLERY_PALETTE[i % GALLERY_PALETTE.length]!,
+    }));
+  }
+  return spec.years.map((year, i) => ({
+    label: String(year),
+    color: GALLERY_PALETTE[i % GALLERY_PALETTE.length]!,
+  }));
+}
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -172,7 +355,12 @@ const ChartVisuals: React.FC<ChartVisualsProps> = ({ allVariables }) => {
 
   // Chart Gallery state
   const [galleryType, setGalleryType] = useState<ChartType>('bar');
-  const [selectedCardId, setSelectedCardId] = useState<string>('g1');
+  const [selectedCardId, setSelectedCardId] = useState<string>('bar1');
+
+  const handleGalleryTypeChange = (type: ChartType) => {
+    setGalleryType(type);
+    setSelectedCardId(CARDS_BY_TYPE[type][0]!.id);
+  };
 
   const selectedIds = new Set(selectedVars.map((v) => v.id));
 
@@ -232,7 +420,7 @@ const ChartVisuals: React.FC<ChartVisualsProps> = ({ allVariables }) => {
             const y = chartH - barH + 10;
             return (
               <g key={i}>
-                <rect x={x} y={y} width={barW} height={barH} fill="#8b5cf6" rx={3} opacity={0.9} />
+                <rect x={x} y={y} width={barW} height={barH} fill="#7947c4" rx={3} opacity={0.9} />
                 {props.dataLabel !== 'counts' && (
                   <text x={x + barW / 2} y={y - 6} textAnchor="middle" fontSize="10" fill="#ccc">
                     {val}
@@ -250,7 +438,7 @@ const ChartVisuals: React.FC<ChartVisualsProps> = ({ allVariables }) => {
         {props.showLegend && (
           <div className="dp-chart-legend">
             <div className="dp-chart-legend-item">
-              <span className="dp-chart-legend-dot" style={{ background: '#8b5cf6' }} />
+              <span className="dp-chart-legend-dot" style={{ background: '#7947c4' }} />
               <span className="dp-chart-legend-label">2023</span>
             </div>
           </div>
@@ -326,7 +514,7 @@ const ChartVisuals: React.FC<ChartVisualsProps> = ({ allVariables }) => {
               <button
                 key={t.id}
                 className={`dp-gallery-type-btn${galleryType === t.id ? ' dp-gallery-type-btn--active' : ''}`}
-                onClick={() => setGalleryType(t.id as ChartType)}
+                onClick={() => handleGalleryTypeChange(t.id as ChartType)}
               >
                 <span className="dp-gallery-type-icon">{t.icon}</span>
                 {t.label}
@@ -340,7 +528,7 @@ const ChartVisuals: React.FC<ChartVisualsProps> = ({ allVariables }) => {
               {GALLERY_TYPES.find((t) => t.id === galleryType)?.label} Chart
             </div>
             <div className="dp-gallery-grid">
-              {GALLERY_CARDS.map((card) => (
+              {CARDS_BY_TYPE[galleryType].map((card) => (
                 <div
                   key={card.id}
                   className={`dp-gallery-card${selectedCardId === card.id ? ' dp-gallery-card--selected' : ''}`}
@@ -352,13 +540,10 @@ const ChartVisuals: React.FC<ChartVisualsProps> = ({ allVariables }) => {
                   <div className="dp-gallery-card-rule" />
                   <GalleryCardPreview spec={card} />
                   <div className="dp-gallery-card-legend">
-                    {Array.from({ length: card.seriesCount }).map((_, i) => (
+                    {legendItemsFor(card).map((item, i) => (
                       <span key={i} className="dp-chart-legend-item">
-                        <span
-                          className="dp-chart-legend-dot"
-                          style={{ background: GALLERY_PALETTE[i % GALLERY_PALETTE.length] }}
-                        />
-                        <span className="dp-chart-legend-label">{2021 + i}</span>
+                        <span className="dp-chart-legend-dot" style={{ background: item.color }} />
+                        <span className="dp-chart-legend-label">{item.label}</span>
                       </span>
                     ))}
                   </div>
@@ -397,7 +582,7 @@ const ChartVisuals: React.FC<ChartVisualsProps> = ({ allVariables }) => {
         </div>
         <div className="dp-var-list">
           {allVariables.map((v) => (
-            <VariablePill key={v.id} variable={v} selected={selectedIds.has(v.id)} onClick={handleVarToggle} />
+            <VariablePill key={v.id} variable={v} variant="source" added={selectedIds.has(v.id)} onClick={handleVarToggle} />
           ))}
         </div>
       </div>

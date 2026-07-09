@@ -247,7 +247,8 @@ const CrossTabs: React.FC<CrossTabsProps> = ({
             <VariablePill
               key={v.id}
               variable={v}
-              selected={allSelectedIds.has(v.id)}
+              variant="source"
+              added={allSelectedIds.has(v.id)}
               onClick={handleVarClick}
             />
           ))}
@@ -321,12 +322,13 @@ const CrossTabs: React.FC<CrossTabsProps> = ({
             {bannerVars.length === 0 ? (
               <p className="dp-panel-empty-hint">No banner variables</p>
             ) : (
-              bannerVars.map((v) => (
+              bannerVars.map((v, i) => (
                 <VariablePill
                   key={v.id}
                   variable={v}
-                  selected
-                  showLeftArrow
+                  variant="selected"
+                  focused={i === 0}
+                  arrowDirection="left"
                   onClick={() => onBannerRemove(v.id)}
                 />
               ))
@@ -355,12 +357,13 @@ const CrossTabs: React.FC<CrossTabsProps> = ({
             {mainVars.length === 0 ? (
               <p className="dp-panel-empty-hint">No main variables</p>
             ) : (
-              mainVars.map((v) => (
+              mainVars.map((v, i) => (
                 <VariablePill
                   key={v.id}
                   variable={v}
-                  selected
-                  showLeftArrow
+                  variant="selected"
+                  focused={i === 0}
+                  arrowDirection="left"
                   onClick={() => onMainRemove(v.id)}
                 />
               ))
