@@ -127,7 +127,7 @@ function buildFramerPayload(data: ROFramerData) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const framerDraftKey = (objectiveId?: string) => `ro_framer_draft_${objectiveId ?? "unknown"}`;
-
+const ARTIFACT_COMING_SOON = true;
 // ─────────────────────────────────────────────────────────────────────────────
 // Local "has this objective's Framer been submitted" flag.
 //
@@ -1385,11 +1385,18 @@ const MaterialTab: React.FC<MaterialTabProps> = ({
                         </div>
                     </div>
 
-                    {/* ── Section 2: Artifact ─────────────────────────────── */}
-                    <div className="rofp-material-section rofp-material-section--coming-soon">
-                        <div className="rofp-coming-soon-overlay">
-                            <span className="rofp-coming-soon-badge">Coming Soon</span>
-                        </div>
+{/* ── Section 2: Artifact ─────────────────────────────── */}
+                    <div
+                        className={[
+                            "rofp-material-section",
+                            ARTIFACT_COMING_SOON ? "rofp-material-section--coming-soon" : "",
+                        ].filter(Boolean).join(" ")}
+                    >
+                        {ARTIFACT_COMING_SOON && (
+                            <div className="rofp-coming-soon-overlay">
+                                <span className="rofp-coming-soon-badge">Coming Soon</span>
+                            </div>
+                        )}
                         <div className="rofp-material-section">
                             <div className="rofp-material-section-head">
                                 <h3 className="rofp-material-section-title">Artifact</h3>
