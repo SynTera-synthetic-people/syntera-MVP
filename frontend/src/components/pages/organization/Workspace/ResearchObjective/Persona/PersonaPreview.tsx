@@ -1575,8 +1575,6 @@ const PersonaPreview: React.FC = () => {
     rawData ?? {},
     manualPersona ?? {},
   );
-console.log('DEBUG BEHAVIORAL_DEPTH_PROFILE:', JSON.stringify(mergedTraits.BEHAVIORAL_DEPTH_PROFILE, null, 2));
-console.log('DEBUG predominant_patterns:', JSON.stringify(mergedTraits.predominant_patterns, null, 2));
   const calibrationStatus = String(
     mergedTraits.calibration_status ??
     rawData?.calibration_status ??
