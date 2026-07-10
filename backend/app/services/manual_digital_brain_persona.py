@@ -30,6 +30,7 @@ from app.services.persona import (
     generate_predominant_patterns,
     compute_master_calibration_confidence,
     _full_persona_info_for_scoring,
+    reset_persona_after_calibration_failure,
 )
 from app.services.ke_sourcebank_enrichment import enrich_persona_ke_sources
 from app.config import OPENAI_API_KEY
@@ -779,6 +780,8 @@ async def calibrate_manual_persona_with_brains(
 
             # Step 6: persist the completed persona.
             merged = dict(p.persona_details or {})
+            # Clear any failure recorded by a previous attempt — this run succeeded.
+            merged.pop("last_calibration_error", None)
             merged.update(enriched)
             merged["auto_fill_report"] = auto_fill_report
             merged["confidence_scoring"] = confidence_scoring
@@ -858,6 +861,68 @@ async def calibrate_manual_persona_with_brains(
             persona_id, str(e), exc_info=True,
         )
         return {"status": "error", "error_message": str(e)}
+
+
+async def run_manual_calibration_background(
+    persona_id: str,
+    exploration_id: str,
+    workspace_id: str,
+) -> None:
+    """
+    Background entry point for POST /{persona_id}/calibrate.
+
+    calibrate_manual_persona_with_brains() chains several sequential LLM calls
+    (RO extraction, trait auto-fill, evidence collection, brain assignment,
+    pattern scoring) and can legitimately take 30-180s+. Running that inside
+    the HTTP request/response cycle meant a slow calibration could exceed a
+    reverse-proxy/gateway timeout before the backend ever got to respond —
+    the connection gets killed and the browser reports it as a misleading
+    CORS error (no Access-Control-Allow-Origin header) instead of the actual
+    502 timeout. The router now returns immediately after flipping
+    calibration_status to "calibrating" and hands the real work to this
+    function via asyncio.create_task, exactly like enrich_persona_ke_sources.
+
+    Never raises: any failure flips calibration_status back to "draft" and
+    records persona_details.last_calibration_error so a polling client (GET
+    /{persona_id}) can show it and let the user retry.
+    """
+    from app.services import interview as interview_service
+    from app.services import report_orchestrator as report_cache
+
+    try:
+        result = await calibrate_manual_persona_with_brains(persona_id, exploration_id)
+    except Exception as e:
+        logger.error(
+            "manual_persona.calibrate_background:unhandled_error persona_id=%s error=%s",
+            persona_id, str(e), exc_info=True,
+        )
+        await reset_persona_after_calibration_failure(persona_id, str(e))
+        return
+
+    if result.get("status") == "error":
+        error_message = result.get("error_message", "Failed to calibrate persona")
+        logger.warning(
+            "manual_persona.calibrate_background:failed persona_id=%s error=%s",
+            persona_id, error_message,
+        )
+        await reset_persona_after_calibration_failure(persona_id, error_message)
+        return
+
+    # Calibration changes persona content; generated qualitative outputs must be
+    # rebuilt. The router's old synchronous version compared before/after status
+    # to decide this — here we always know it was a fresh calibration, since the
+    # router only ever starts this background job for personas that weren't
+    # already "calibrated".
+    try:
+        await interview_service.clear_qualitative_outputs(workspace_id, exploration_id)
+        await report_cache.invalidate_cache(exploration_id)
+    except Exception:
+        logger.exception(
+            "manual_persona.calibrate_background:cache_invalidation_failed persona_id=%s",
+            persona_id,
+        )
+
+    logger.info("manual_persona.calibrate_background:success persona_id=%s", persona_id)
 
 
 # ---------------------------------------------------------------------------
@@ -1212,13 +1277,24 @@ async def _collect_evidence_for_manual_persona(
     )
     import concurrent.futures as _cf
 
+    # fetch_action_data_all/search_evidence_based_web_tiered/search_hq_database are
+    # synchronous (blocking) functions, correctly offloaded to a thread pool — but
+    # calling .result() directly blocks the calling coroutine, which blocks the
+    # ENTIRE asyncio event loop until all three finish (often 60-100s+ for the web
+    # evidence tier). That froze every other request on this worker for the same
+    # window, including a client polling GET /{persona_id} for calibration status,
+    # which is why polling itself was timing out. asyncio.wrap_future() bridges the
+    # futures into awaitables so the event loop stays free for other requests while
+    # these three still run concurrently in their own threads.
     with _cf.ThreadPoolExecutor(max_workers=3) as executor:
         fut_action_df = executor.submit(fetch_action_data_all, 5000)
         fut_eb = executor.submit(search_evidence_based_web_tiered, validated_ro, activated_dimensions)
         fut_hq = executor.submit(search_hq_database, validated_ro, activated_dimensions)
-        action_df = fut_action_df.result()
-        result_3b = fut_eb.result()
-        hq_verdicts = fut_hq.result()
+        action_df, result_3b, hq_verdicts = await asyncio.gather(
+            asyncio.wrap_future(fut_action_df),
+            asyncio.wrap_future(fut_eb),
+            asyncio.wrap_future(fut_hq),
+        )
 
     # Unpack tiered web evidence result. The orchestrator already handles
     # Tier 2 (community forums) and Tier 3 (LLM fallback) internally, so
