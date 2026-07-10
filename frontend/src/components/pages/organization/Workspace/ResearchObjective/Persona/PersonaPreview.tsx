@@ -1575,6 +1575,8 @@ const PersonaPreview: React.FC = () => {
     rawData ?? {},
     manualPersona ?? {},
   );
+console.log('DEBUG BEHAVIORAL_DEPTH_PROFILE:', JSON.stringify(mergedTraits.BEHAVIORAL_DEPTH_PROFILE, null, 2));
+console.log('DEBUG predominant_patterns:', JSON.stringify(mergedTraits.predominant_patterns, null, 2));
   const calibrationStatus = String(
     mergedTraits.calibration_status ??
     rawData?.calibration_status ??
@@ -2197,7 +2199,9 @@ const PersonaPreview: React.FC = () => {
 
   // ── Real Actions Signal confidence (average of depth-layer / action-data
   // verdict confidence scores, when available) ───────────────────────────────
-  const actionDataVerdicts = (
+const actionDataVerdicts = (
+    (mergedTraits?.evidence_metadata as Record<string, unknown> | undefined)?.depth_layers ??
+    (rawData?.evidence_metadata as Record<string, unknown> | undefined)?.depth_layers ??
     (mergedTraits?.evidence as Record<string, unknown> | undefined)?.action_data ??
     rawData?.stage_3a_depth_layers ??
     mergedTraits?.stage_3a_depth_layers ??
@@ -2253,9 +2257,44 @@ const PersonaPreview: React.FC = () => {
       reasoning:
         'DL_010 (Peer Clustering): multiple users in the same city purchasing the same brands. EB_LINKEDIN mentions friend recommendations in 40% of threads — a weaker, secondary signal alongside the primary Explorer assignment.',
     };
+const behavioralDepthProfile = (
+    mergedTraits?.BEHAVIORAL_DEPTH_PROFILE ??
+    rawData?.BEHAVIORAL_DEPTH_PROFILE ??
+    personaDetails?.BEHAVIORAL_DEPTH_PROFILE
+  ) as Record<string, unknown> | undefined;
 
+const BEHAVIORAL_DEPTH_CATEGORY_LABELS: Record<string, string> = {
+    white_spaces: 'White Space',
+    cognitive_biases: 'Cognitive Bias',
+    adoption_frictions: 'Adoption Friction',
+    latent_motivations: 'Latent Motivation',
+    decision_heuristics: 'Decision Heuristic',
+    subconscious_drivers: 'Subconscious Driver',
+    contextual_influences: 'Contextual Influence',
+    behavioral_contradictions: 'Behavioral Contradiction',
+    ritual_habit_architecture: 'Ritual / Habit',
+  };
+
+const depthLayerEntries: string[] = [];
+if (behavioralDepthProfile) {
+    for (const [key, label] of Object.entries(BEHAVIORAL_DEPTH_CATEGORY_LABELS)) {
+      const arr = behavioralDepthProfile[key];
+      if (!Array.isArray(arr)) continue;
+      for (const item of arr) {
+        if (!item || typeof item !== 'object') continue;
+        const rec = item as Record<string, string>;
+        const summary =
+          rec.manifestation ?? rec.observed_behavior ?? rec.observable ??
+          rec.heuristic_rule ?? rec.bedrock_truth ??
+          Object.values(rec).find(v => typeof v === 'string') ?? '';
+        if (summary) depthLayerEntries.push(`${label}: ${summary}`);
+      }
+    }
+  }
   // ── Depth signal stats (Dimensions Triggered / Depth Layer / Predominant Patterns Extracted) ──
-  const dimensionsActivated = (
+const dimensionsActivated = (
+    (mergedTraits?.evidence_metadata as Record<string, unknown> | undefined)?.activated_dimensions ??
+    (rawData?.evidence_metadata as Record<string, unknown> | undefined)?.activated_dimensions ??
     (rawData?.stage_2_dimensions as Record<string, unknown> | undefined)?.activated_dimensions ??
     (mergedTraits?.stage_2_dimensions as Record<string, unknown> | undefined)?.activated_dimensions ??
     []
@@ -2265,8 +2304,8 @@ const PersonaPreview: React.FC = () => {
     ? dimensionsActivated.length
     : 8;
 
-  const depthLayerCount = Array.isArray(actionDataVerdicts) && actionDataVerdicts.length > 0
-    ? actionDataVerdicts.length
+const depthLayerCount = depthLayerEntries.length > 0
+    ? depthLayerEntries.length
     : 6;
 
   const patternsExtractedCount = Array.isArray(actionDataVerdicts) && actionDataVerdicts.length > 0
@@ -2292,11 +2331,11 @@ const PersonaPreview: React.FC = () => {
   // patAccuracy falls back through) keeps this pill in sync with the master ring
   // instead of showing an unrelated older score next to it. patAccuracy remains the
   // fallback for personas that don't have predominant_patterns generated yet.
-  const predominantPatterns = (
+const predominantPatterns = (
     rawData?.predominant_patterns ??
     mergedTraits?.predominant_patterns ??
     personaDetails?.predominant_patterns
-  ) as { score?: number } | undefined;
+  ) as { score?: number; patterns?: string[] } | undefined;
 
   const realActionsConfidenceScore =
     typeof predominantPatterns?.score === 'number' && !Number.isNaN(predominantPatterns.score)
@@ -2340,12 +2379,10 @@ const PersonaPreview: React.FC = () => {
   ];
 
   // ── Depth layer verdicts: use real pattern_detected strings for detail drawer ──
-  const depthLayerDetails = (Array.isArray(actionDataVerdicts) ? actionDataVerdicts : [])
-    .map(v => String(v?.pattern_detected ?? '').trim())
-    .filter(Boolean);
+const depthLayerDetails = depthLayerEntries;
   const fallbackDepthDetails = [
-    '8 users switch brands in this category',
-    '5 users show repeat-brand loyalty',
+    '2347 users switch brands in this category',
+    '2057 users show repeat-brand loyalty',
     'Average spend Rs 1,200 — mid-range tier',
     'Peak purchases at 21:00 — Evening (18–24)',
     'Data from 8 cities: 4 Tier-1, 4 Tier-2/3',
@@ -2355,9 +2392,9 @@ const PersonaPreview: React.FC = () => {
   // ── Patterns extracted: real pattern_detected values (same source); the
   // large UI-scaled numeric count is no longer shown in the header (only the
   // accuracy bar and the detail chips remain) ─────────────────────────────
-  const patternRealDetails = (Array.isArray(actionDataVerdicts) ? actionDataVerdicts : [])
-    .map(v => String(v?.behavioral_signal ?? v?.pattern_detected ?? '').trim())
-    .filter(Boolean);
+const patternRealDetails = Array.isArray(predominantPatterns?.patterns)
+    ? predominantPatterns.patterns.filter(Boolean)
+    : [];
   const fallbackPatternDetails = [
     'They regularly switch between brands, but claim to value brand loyalty when asked.',
     'Most purchases happen late at night, suggesting deliberate, reward-driven shopping sessions.',
