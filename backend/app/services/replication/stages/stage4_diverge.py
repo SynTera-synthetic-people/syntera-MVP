@@ -90,7 +90,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import Any, Optional
 
 from openai import AsyncOpenAI
 
@@ -102,6 +102,7 @@ from app.services.replication.models import (
 )
 from app.services.replication.prompts import STAGE4_SYSTEM, STAGE4_USER
 from app.services.replication.utils import parse_llm_json
+from app.services.llm_usage_tracker import record_llm_usage, extract_usage_openai_chat
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +128,11 @@ async def generate_divergence_flags(
     replicated_persona_json: dict[str, Any],
     psychographic_core: PsychographicCore,
     target_country: str,
+    *,
+    exploration_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
+    persona_id: Optional[str] = None,
+    created_by: Optional[str] = None,
 ) -> DivergenceReport:
     """
     Stage 4 entry point.
@@ -153,7 +159,11 @@ async def generate_divergence_flags(
     )
 
     # --- First LLM call ---
-    flags = await _call_and_parse(base_prompt, target_country)
+    flags = await _call_and_parse(
+        base_prompt, target_country,
+        exploration_id=exploration_id, workspace_id=workspace_id,
+        persona_id=persona_id, created_by=created_by,
+    )
 
     # --- Contract enforcement ---
     # All 6 split-trait categories must have at least one flag.
@@ -174,7 +184,11 @@ async def generate_divergence_flags(
 
         # --- Retry call — same prompt + explicit gap instruction ---
         retry_prompt = base_prompt + gap_note
-        retry_flags = await _call_and_parse(retry_prompt, target_country)
+        retry_flags = await _call_and_parse(
+            retry_prompt, target_country,
+            exploration_id=exploration_id, workspace_id=workspace_id,
+            persona_id=persona_id, created_by=created_by,
+        )
 
         # Merge: for each missing category, take the first retry flag that covers it.
         # One flag per category is enough; we don't need duplicates.
@@ -216,7 +230,11 @@ async def generate_divergence_flags(
     return report
 
 
-async def _call_and_parse(prompt: str, target_country: str) -> list[DivergenceFlag]:
+async def _call_and_parse(
+    prompt: str, target_country: str,
+    *, exploration_id: Optional[str] = None, workspace_id: Optional[str] = None,
+    persona_id: Optional[str] = None, created_by: Optional[str] = None,
+) -> list[DivergenceFlag]:
     """Single LLM call + parse cycle."""
     response = await _client.chat.completions.create(
         model="gpt-4o-mini",
@@ -226,6 +244,19 @@ async def _call_and_parse(prompt: str, target_country: str) -> list[DivergenceFl
         ],
         temperature=0.3,
         response_format={"type": "json_object"},
+    )
+    input_tokens, output_tokens, usage_raw = extract_usage_openai_chat(response)
+    await record_llm_usage(
+        exploration_id=exploration_id,
+        stage="replication_stage4",
+        provider="openai",
+        model="gpt-4o-mini",
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        usage_raw=usage_raw,
+        workspace_id=workspace_id,
+        persona_id=persona_id,
+        created_by=created_by,
     )
     parsed = parse_llm_json(response.choices[0].message.content, stage="Stage 4")
     return _parse_flags(parsed)

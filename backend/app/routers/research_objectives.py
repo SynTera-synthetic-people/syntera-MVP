@@ -228,7 +228,9 @@ async def submit_framer_material_section(
             raise HTTPException(status_code=400, detail=str(e))
         try:
             extracted_context = await material_extraction.process_material(
-                material_file_path(stored_name), ext, content_type, instruction or ""
+                material_file_path(stored_name), ext, content_type, instruction or "",
+                exploration_id=exploration_id, workspace_id=exploration.workspace_id,
+                created_by=current_user.id,
             )
         except Exception as e:
             # Extraction/summarization failing should not block the submission — the
@@ -246,7 +248,11 @@ async def submit_framer_material_section(
 
     for link in clean_links:
         try:
-            result = await material_extraction.process_material_url(link, instruction or "")
+            result = await material_extraction.process_material_url(
+                link, instruction or "",
+                exploration_id=exploration_id, workspace_id=exploration.workspace_id,
+                created_by=current_user.id,
+            )
         except Exception as e:
             print(f"Error processing Framer material link ({link}): {e}")
             result = {"extracted_context": "", "stored_name": None, "size": None, "content_type": None}
@@ -300,7 +306,10 @@ async def create_objective_from_framer(
     framer = body.model_dump()
     materials = await exp_service.get_unlinked_materials(session, exploration_id)
     try:
-        synthesis = await exp_service.synthesize_research_objective_from_framer(framer, materials)
+        synthesis = await exp_service.synthesize_research_objective_from_framer(
+            framer, materials,
+            exploration_id=exploration_id, workspace_id=exploration.workspace_id, created_by=current_user.id,
+        )
     except Exception as e:
         # Transient LLM failure (timeout/rate limit/network) — nothing was persisted
         # yet, the Framer's fields and any uploaded/linked materials are untouched,
@@ -331,6 +340,9 @@ async def create_objective_from_framer(
                 description=synthesis["final_objective"],
                 conversation=[],
                 materials=materials,
+                exploration_id=exploration_id,
+                workspace_id=exploration.workspace_id,
+                created_by=current_user.id,
             )
         except Exception as e:
             print(f"Error generating Omi follow-up for Framer submission: {e}")
@@ -486,7 +498,12 @@ async def update_objective(
         )
 
     if description is not None:
-        validation = await exp_service.validate_description_with_llm(description)
+        validation = await exp_service.validate_description_with_llm(
+            description,
+            exploration_id=exploration_id,
+            workspace_id=exploration.workspace_id,
+            created_by=current_user.id,
+        )
 
         if not validation.get("valid", False):
             missing = validation.get("missing", [])

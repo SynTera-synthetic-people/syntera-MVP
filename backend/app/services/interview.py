@@ -27,6 +27,11 @@ from app.services.interview_prompts import (
 
 
 from app.services.auto_generated_persona import get_description
+from app.services.llm_usage_tracker import (
+    record_llm_usage,
+    extract_usage_openai_chat,
+    extract_usage_anthropic_message,
+)
 
 
 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
@@ -525,6 +530,18 @@ async def generate_discussion_guide_with_llm(workspace_id: str, exploration_id: 
             {"role":"user","content":prompt}
         ]
     )
+    input_tokens, output_tokens, usage_raw = extract_usage_openai_chat(res)
+    await record_llm_usage(
+        exploration_id=exploration_id,
+        stage="interview_guide",
+        provider="openai",
+        model="gpt-4o-mini",
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        usage_raw=usage_raw,
+        workspace_id=workspace_id,
+        created_by=user_id,
+    )
     raw = res.choices[0].message.content
 
     data = raw if isinstance(raw, (dict, list)) else json.loads(raw)
@@ -655,6 +672,19 @@ async def start_interview(
                 "content": prompt
             }
         ]
+    )
+    input_tokens, output_tokens, usage_raw = extract_usage_openai_chat(res)
+    await record_llm_usage(
+        exploration_id=exploration_id,
+        stage="interview_run",
+        provider="openai",
+        model="gpt-4o-mini",
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        usage_raw=usage_raw,
+        workspace_id=workspace_id,
+        persona_id=persona_id,
+        created_by=user_id,
     )
 
     data = json.loads(res.choices[0].message.content)
@@ -834,6 +864,21 @@ async def add_user_message_and_get_persona_reply(
                     }
                 ],
                 temperature=0.8
+            )
+            # Recorded after the final (non-streaming) response is obtained —
+            # this call has no streaming loop, so there is no added latency
+            # on any token stream.
+            input_tokens, output_tokens, usage_raw = extract_usage_openai_chat(res_ai)
+            await record_llm_usage(
+                exploration_id=iv.exploration_id,
+                stage="interview_conversation_studio",
+                provider="openai",
+                model="gpt-4o-mini",
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                usage_raw=usage_raw,
+                workspace_id=iv.workspace_id,
+                persona_id=iv.persona_id,
             )
 
             data = json.loads(res_ai.choices[0].message.content)
@@ -1032,6 +1077,18 @@ async def create_guide_from_text(
             {"role": "user", "content": prompt},
         ],
     )
+    input_tokens, output_tokens, usage_raw = extract_usage_openai_chat(res)
+    await record_llm_usage(
+        exploration_id=exploration_id,
+        stage="interview_guide_upload_parse",
+        provider="openai",
+        model="gpt-4o-mini",
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        usage_raw=usage_raw,
+        workspace_id=workspace_id,
+        created_by=user_id,
+    )
     data = json.loads(res.choices[0].message.content)
     sections_data = data.get("sections", [])
 
@@ -1188,6 +1245,16 @@ async def generate_decision_intelligence_content(exploration_id: str) -> str:
         model="claude-sonnet-4-6",
         max_tokens=2000,
         messages=[{"role": "user", "content": prompt}],
+    )
+    input_tokens, output_tokens, usage_raw = extract_usage_anthropic_message(response)
+    await record_llm_usage(
+        exploration_id=exploration_id,
+        stage="interview_insights_di",
+        provider="anthropic",
+        model="claude-sonnet-4-6",
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        usage_raw=usage_raw,
     )
     return response.content[0].text
 

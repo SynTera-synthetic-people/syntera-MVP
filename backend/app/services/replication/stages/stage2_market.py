@@ -35,6 +35,7 @@ from app.config import OPENAI_API_KEY
 from app.services.replication.models import MarketContext, PsychographicCore
 from app.services.replication.prompts import STAGE2_SYSTEM, STAGE2_USER
 from app.services.replication.utils import parse_llm_json
+from app.services.llm_usage_tracker import record_llm_usage, extract_usage_openai_chat
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,11 @@ async def inject_market_context(
     psychographic_core: PsychographicCore,
     target_country: str,
     seed_inputs: Optional[str] = None,
+    *,
+    exploration_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
+    persona_id: Optional[str] = None,
+    created_by: Optional[str] = None,
 ) -> MarketContext:
     """
     Stage 2: generate target market environmental context.
@@ -84,6 +90,19 @@ async def inject_market_context(
         ],
         temperature=0.3,
         response_format={"type": "json_object"},
+    )
+    input_tokens, output_tokens, usage_raw = extract_usage_openai_chat(response)
+    await record_llm_usage(
+        exploration_id=exploration_id,
+        stage="replication_stage2",
+        provider="openai",
+        model="gpt-4o-mini",
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        usage_raw=usage_raw,
+        workspace_id=workspace_id,
+        persona_id=persona_id,
+        created_by=created_by,
     )
 
     parsed = parse_llm_json(response.choices[0].message.content, stage="Stage 2")

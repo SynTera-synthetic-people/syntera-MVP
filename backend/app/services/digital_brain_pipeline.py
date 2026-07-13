@@ -19,6 +19,11 @@ from typing import Any
 import pandas as pd
 
 from app.utils.anthropic_client import get_anthropic_client
+from app.services.llm_usage_tracker import (
+    UsageCollector,
+    extract_usage_anthropic_message,
+    extract_usage_openai_responses,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -262,7 +267,13 @@ def _set_cache(key: str, response: str) -> None:
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _llm(prompt: str, system: str = "") -> str:
+def _llm(
+    prompt: str,
+    system: str = "",
+    *,
+    operation: str | None = None,
+    usage_collector: UsageCollector | None = None,
+) -> str:
     """Call Claude synchronously with disk caching. Returns text response."""
     key = _cache_key(prompt, system)
     cached = _get_cached(key)
@@ -275,6 +286,17 @@ def _llm(prompt: str, system: str = "") -> str:
     if system:
         kwargs["system"] = system
     response = client.messages.create(**kwargs)
+    if usage_collector is not None:
+        input_tokens, output_tokens, usage_raw = extract_usage_anthropic_message(response)
+        usage_collector.record(
+            stage="digital_brain_pipeline",
+            operation=operation,
+            provider="anthropic",
+            model=MODEL,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            usage_raw=usage_raw,
+        )
     text = response.content[0].text
     _set_cache(key, text)
     logger.info("Cache miss [%s] — stored", key)
@@ -746,14 +768,20 @@ _SIMULATION_SYSTEM_PROMPT = (
 )
 
 
-def _simulate_fallback_content(prompt: str, default: dict) -> dict:
+def _simulate_fallback_content(
+    prompt: str,
+    default: dict,
+    *,
+    operation: str | None = None,
+    usage_collector: UsageCollector | None = None,
+) -> dict:
     """
     Ask the LLM to simulate plausible, category-typical content for an
     estimated-fallback verdict. Returns `default` unchanged if the LLM call
     or JSON parsing fails, so a flaky model never breaks the pipeline.
     """
     try:
-        raw = _llm(prompt, system=_SIMULATION_SYSTEM_PROMPT)
+        raw = _llm(prompt, system=_SIMULATION_SYSTEM_PROMPT, operation=operation, usage_collector=usage_collector)
         parsed = _parse_json_from_llm(raw)
         if isinstance(parsed, dict):
             return {**default, **{k: v for k, v in parsed.items() if k in default}}
@@ -762,7 +790,7 @@ def _simulate_fallback_content(prompt: str, default: dict) -> dict:
     return default
 
 
-def _estimate_action_data_verdict(category: str) -> dict:
+def _estimate_action_data_verdict(category: str, *, usage_collector: UsageCollector | None = None) -> dict:
     """Honest fallback when real action data for this category is sparse/absent."""
     import random
     lo, hi = _ESTIMATED_CONFIDENCE_RANGE
@@ -778,6 +806,8 @@ def _estimate_action_data_verdict(category: str) -> dict:
             "pattern_detected": "Users in this category consistently demonstrate repeat purchase behaviour after initial adoption.",
             "behavioral_signal": "Inferred from general category norms, not measured from this persona's own transactions.",
         },
+        operation="stage3a_estimated_fallback",
+        usage_collector=usage_collector,
     )
     return {
         "verdict_id": f"DL_{random.randint(100,999)}",
@@ -793,7 +823,7 @@ def _estimate_action_data_verdict(category: str) -> dict:
     }
 
 
-def _estimate_web_evidence_verdict(category: str) -> dict:
+def _estimate_web_evidence_verdict(category: str, *, usage_collector: UsageCollector | None = None) -> dict:
     """
     Honest fallback when real web citations are sparse/absent. Quote is
     synthesized, generic, category-typical phrasing — never attributed to a
@@ -813,6 +843,8 @@ def _estimate_web_evidence_verdict(category: str) -> dict:
             "key_discussion_theme": f"Category-typical consumer sentiment for {category}",
             "representative_quote": "Parents consistently prioritize durability and comfort when selecting children's eyewear.",
         },
+        operation="stage3b_estimated_fallback",
+        usage_collector=usage_collector,
     )
     return {
         "verdict_id": f"EB_{random.randint(100,999)}",
@@ -828,7 +860,7 @@ def _estimate_web_evidence_verdict(category: str) -> dict:
     }
 
 
-def _estimate_hq_verdict(category: str) -> dict:
+def _estimate_hq_verdict(category: str, *, usage_collector: UsageCollector | None = None) -> dict:
     """Honest fallback when real HQ source coverage is sparse/absent."""
     import random
     lo, hi = _ESTIMATED_CONFIDENCE_RANGE
@@ -844,6 +876,8 @@ def _estimate_hq_verdict(category: str) -> dict:
             "finding_summary": f"No specific internal research document matched '{category}'; this is a generic category-level estimate, not a citation.",
             "dimension_insight": "Estimated, not drawn from a real source document.",
         },
+        operation="stage3c_estimated_fallback",
+        usage_collector=usage_collector,
     )
     return {
         "verdict_id": f"HQ_{random.randint(100,999)}",
@@ -862,6 +896,8 @@ def scan_action_data(
     action_data_df: pd.DataFrame,
     activated_dimensions: list[int],
     validated_ro: dict,
+    *,
+    usage_collector: UsageCollector | None = None,
 ) -> list[dict]:
     """
     Analyse transaction data to produce Depth Layer verdicts.
@@ -872,7 +908,7 @@ def scan_action_data(
 
     if action_data_df is None or action_data_df.empty:
         logger.warning("Stage 3A: No action data provided — using honest estimated fallback.")
-        return [_estimate_action_data_verdict(category_for_estimate)]
+        return [_estimate_action_data_verdict(category_for_estimate, usage_collector=usage_collector)]
 
     df = action_data_df.copy()
     category = validated_ro.get("category", "").lower()
@@ -1158,7 +1194,7 @@ def scan_action_data(
     # pattern (e.g. category genuinely has rows but none match any of the
     # rule-based checks above) — honest estimate rather than an empty stream.
     if not depth_layers:
-        depth_layers.append(_estimate_action_data_verdict(category_for_estimate))
+        depth_layers.append(_estimate_action_data_verdict(category_for_estimate, usage_collector=usage_collector))
 
     # Final LLM enrichment: generate a synthesised depth layer from patterns
     if depth_layers:
@@ -1189,7 +1225,12 @@ Return ONLY a JSON object with these fields:
 - confidence_score: float (0.7–0.9)
 """
         try:
-            raw = _llm(summary_prompt, system="You are a consumer psychologist. Return only valid JSON.")
+            raw = _llm(
+                summary_prompt,
+                system="You are a consumer psychologist. Return only valid JSON.",
+                operation="stage3a_synthesis",
+                usage_collector=usage_collector,
+            )
             synth = _parse_json_from_llm(raw)
             # query_reference is built in code from the real rows that informed
             # this synthesis — the LLM never sees real subject_keys, so it
@@ -1576,7 +1617,7 @@ def _clean_citation_quote(raw_quote: str, full_text: str, start: int) -> str:
     return fragment if len(fragment) >= _MIN_QUOTE_LEN else cleaned
 
 
-def _search_reddit_real(query: str) -> list[dict]:
+def _search_reddit_real(query: str, *, usage_collector: UsageCollector | None = None) -> list[dict]:
     """
     Real Reddit search via OpenAI's web_search tool (Responses API).
 
@@ -1599,7 +1640,30 @@ def _search_reddit_real(query: str) -> list[dict]:
         )
     except Exception as e:
         logger.warning("Stage 3B (real): OpenAI web_search failed for Reddit — %s", e)
+        if usage_collector is not None:
+            usage_collector.record(
+                stage="digital_brain_pipeline",
+                operation="stage3b_reddit_search",
+                provider="openai",
+                model=_OPENAI_SEARCH_MODEL,
+                input_tokens=0,
+                output_tokens=0,
+                status="error",
+                error_message=str(e),
+            )
         return []
+
+    if usage_collector is not None:
+        input_tokens, output_tokens, usage_raw = extract_usage_openai_responses(response)
+        usage_collector.record(
+            stage="digital_brain_pipeline",
+            operation="stage3b_reddit_search",
+            provider="openai",
+            model=_OPENAI_SEARCH_MODEL,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            usage_raw=usage_raw,
+        )
 
     snippets: list[dict] = []
     for item in getattr(response, "output", []) or []:
@@ -1625,7 +1689,12 @@ def _search_reddit_real(query: str) -> list[dict]:
     return snippets
 
 
-def search_evidence_based_web_real(validated_ro: dict, activated_dimensions: list[int]) -> list[dict]:
+def search_evidence_based_web_real(
+    validated_ro: dict,
+    activated_dimensions: list[int],
+    *,
+    usage_collector: UsageCollector | None = None,
+) -> list[dict]:
     """
     Real evidence-based web search across all 6 platforms — no LLM fabrication.
 
@@ -1650,7 +1719,7 @@ def search_evidence_based_web_real(validated_ro: dict, activated_dimensions: lis
     by_platform: dict[str, list[dict]] = {p: [] for p, _ in _EB_REAL_PLATFORMS}
 
     # Reddit — OpenAI search.
-    by_platform["Reddit"] = _search_reddit_real(query)
+    by_platform["Reddit"] = _search_reddit_real(query, usage_collector=usage_collector)
 
     # The other 5 — single Anthropic search call covering all domains at once.
     client = get_anthropic_client()
@@ -1666,6 +1735,17 @@ def search_evidence_based_web_real(validated_ro: dict, activated_dimensions: lis
             }],
             messages=[{"role": "user", "content": query}],
         )
+        if usage_collector is not None:
+            input_tokens, output_tokens, usage_raw = extract_usage_anthropic_message(response)
+            usage_collector.record(
+                stage="digital_brain_pipeline",
+                operation="stage3b_web_search_batched",
+                provider="anthropic",
+                model=MODEL,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                usage_raw=usage_raw,
+            )
         for block in response.content:
             if getattr(block, "type", None) == "text":
                 for c in (getattr(block, "citations", None) or []):
@@ -1716,6 +1796,8 @@ key_discussion_themes, sentiment_distribution, digital_brain_signal.
         raw = _llm(
             synth_prompt,
             system="Extract only from the provided real quotes, per platform. Never add outside information or mix platforms. Return only valid JSON.",
+            operation="stage3b_web_search_synthesis",
+            usage_collector=usage_collector,
         )
         synth_by_platform = _parse_json_from_llm(raw)
         if not isinstance(synth_by_platform, dict):
@@ -1773,6 +1855,8 @@ key_discussion_themes, sentiment_distribution, digital_brain_signal.
 def search_community_forums_real(
     validated_ro: dict,
     activated_dimensions: list[int],
+    *,
+    usage_collector: UsageCollector | None = None,
 ) -> list[dict]:
     """
     Tier 2: Real web search on community forums, review sites, and aggregators.
@@ -1809,6 +1893,17 @@ def search_community_forums_real(
             }],
             messages=[{"role": "user", "content": query}],
         )
+        if usage_collector is not None:
+            input_tokens, output_tokens, usage_raw = extract_usage_anthropic_message(response)
+            usage_collector.record(
+                stage="digital_brain_pipeline",
+                operation="stage3b_tier2_forum_search",
+                provider="anthropic",
+                model=MODEL,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                usage_raw=usage_raw,
+            )
         for block in response.content:
             if getattr(block, "type", None) == "text":
                 for c in (getattr(block, "citations", None) or []):
@@ -1844,6 +1939,8 @@ Return ONLY valid JSON.
         raw = _llm(
             synth_prompt,
             system="Extract only from the provided real quotes. Never add outside information. Return only valid JSON.",
+            operation="stage3b_tier2_synthesis",
+            usage_collector=usage_collector,
         )
         synth = _parse_json_from_llm(raw)
         if not isinstance(synth, dict):
@@ -1883,6 +1980,8 @@ def search_evidence_based_web_tiered(
     validated_ro: dict,
     activated_dimensions: list[int],
     citation_threshold: int = 10,
+    *,
+    usage_collector: UsageCollector | None = None,
 ) -> dict:
     """
     Three-tier web evidence search orchestrator used by both the auto-generated
@@ -1910,7 +2009,7 @@ def search_evidence_based_web_tiered(
     """
     # Tier 1: 6-platform real search (always run).
     logger.info("Stage 3B Tier 1: searching 6 main platforms…")
-    tier1_verdicts = search_evidence_based_web_real(validated_ro, activated_dimensions)
+    tier1_verdicts = search_evidence_based_web_real(validated_ro, activated_dimensions, usage_collector=usage_collector)
     tier1_citations = sum(
         len(v.get("all_citations") or [])
         for v in tier1_verdicts
@@ -1927,7 +2026,7 @@ def search_evidence_based_web_tiered(
             "Stage 3B Tier 1 returned %d citations (< %d threshold). Activating Tier 2 (community forums)…",
             tier1_citations, citation_threshold,
         )
-        tier2_verdicts = search_community_forums_real(validated_ro, activated_dimensions)
+        tier2_verdicts = search_community_forums_real(validated_ro, activated_dimensions, usage_collector=usage_collector)
         tier2_citations = sum(len(v.get("all_citations") or []) for v in tier2_verdicts)
         all_verdicts.extend(tier2_verdicts)
         # Always mark as activated — it was invoked regardless of yield.
@@ -1942,7 +2041,8 @@ def search_evidence_based_web_tiered(
             tier1_citations + tier2_citations, citation_threshold,
         )
         estimated = _estimate_web_evidence_verdict(
-            validated_ro.get("category") or "this category"
+            validated_ro.get("category") or "this category",
+            usage_collector=usage_collector,
         )
         all_verdicts.append(estimated)
         tiers_activated.append("llm-estimated")
@@ -2020,6 +2120,8 @@ def _hq_dimension_alignment(snippet: str, activated_dimensions: list[int]) -> in
 async def _search_hq_database_async(
     validated_ro: dict,
     activated_dimensions: list[int],
+    *,
+    usage_collector: UsageCollector | None = None,
 ) -> list[dict]:
     from sqlalchemy.ext.asyncio import AsyncSession
     from app.services.syncdb_source import search_source_chunks
@@ -2056,7 +2158,7 @@ async def _search_hq_database_async(
 
     if not raw_results:
         logger.info("Stage 3C: no HQ source coverage found for this RO — using honest estimated fallback (no fabrication).")
-        estimated = _estimate_hq_verdict(validated_ro.get("category", "") or "this category")
+        estimated = _estimate_hq_verdict(validated_ro.get("category", "") or "this category", usage_collector=usage_collector)
         estimated["dimension_alignment"] = activated_dimensions[0] if activated_dimensions else 3
         return [estimated]
 
@@ -2091,14 +2193,19 @@ async def _search_hq_database_async(
     return verdicts
 
 
-def search_hq_database(validated_ro: dict, activated_dimensions: list[int]) -> list[dict]:
+def search_hq_database(
+    validated_ro: dict,
+    activated_dimensions: list[int],
+    *,
+    usage_collector: UsageCollector | None = None,
+) -> list[dict]:
     """
     Query REAL internal source content (sync_source.content_chunk / document) via
     Postgres full-text search. No LLM fabrication — every verdict traces back to
     an actual stored document and chunk_id.
     """
     try:
-        return asyncio.run(_search_hq_database_async(validated_ro, activated_dimensions))
+        return asyncio.run(_search_hq_database_async(validated_ro, activated_dimensions, usage_collector=usage_collector))
     except Exception as e:
         logger.error("Stage 3C failed: %s", e, exc_info=True)
         return [{
@@ -2123,6 +2230,8 @@ def master_brain_synthesis(
     eb_verdicts: list[dict],
     hq_verdicts: list[dict],
     activated_dimensions: list[int],
+    *,
+    usage_collector: UsageCollector | None = None,
 ) -> dict:
     """
     Cross-reference all three evidence streams and produce a Brain Assignment Matrix.
@@ -2176,7 +2285,12 @@ No two slots can share the same primary brain unless secondary brains differ sub
 Return ONLY the JSON object.
 """
     try:
-        raw = _llm(prompt, system="You are a master consumer psychologist. Return only valid JSON.")
+        raw = _llm(
+            prompt,
+            system="You are a master consumer psychologist. Return only valid JSON.",
+            operation="stage4_master_brain_synthesis",
+            usage_collector=usage_collector,
+        )
         result = _parse_json_from_llm(raw)
         logger.info("Stage 4: %d persona slots assigned.", len(result.get("persona_slots", [])))
         return result
@@ -2215,6 +2329,8 @@ def generate_persona(
     activated_dimensions: list[int],
     all_verdicts: list[dict],
     persona_index: int,
+    *,
+    usage_collector: UsageCollector | None = None,
 ) -> dict:
     """
     Build a complete 10-layer synthetic persona from a brain assignment slot.
@@ -2328,7 +2444,12 @@ Use the brain's core contradiction to build Layer 6.
 Return ONLY the JSON object.
 """
     try:
-        raw = _llm(prompt, system="You are a consumer psychologist. Return only valid JSON.")
+        raw = _llm(
+            prompt,
+            system="You are a consumer psychologist. Return only valid JSON.",
+            operation="stage5_persona_generation",
+            usage_collector=usage_collector,
+        )
         persona = _parse_json_from_llm(raw)
 
         # Ensure OCEAN blended values are set correctly
@@ -2425,6 +2546,8 @@ def generate_personas_batch(
     activated_dimensions: list[int],
     all_verdicts: list[dict],
     account_tier: str = "tier1",
+    *,
+    usage_collector: UsageCollector | None = None,
 ) -> list[dict]:
     """
     Generate the initial set of personas based on account tier.
@@ -2455,7 +2578,10 @@ def generate_personas_batch(
     personas_map: dict[int, dict] = {}
     with cf.ThreadPoolExecutor(max_workers=3) as executor:
         futures = {
-            executor.submit(generate_persona, slot, validated_ro, activated_dimensions, all_verdicts, i): i
+            executor.submit(
+                generate_persona, slot, validated_ro, activated_dimensions, all_verdicts, i,
+                usage_collector=usage_collector,
+            ): i
             for i, slot in enumerate(selected_slots, start=1)
         }
         for future in cf.as_completed(futures):
@@ -2468,11 +2594,11 @@ def generate_personas_batch(
                 logger.error("Persona %d generation failed: %s", idx, e)
 
     personas = [personas_map[i] for i in sorted(personas_map.keys())]
-    personas = _ensure_unique_titles(personas)
+    personas = _ensure_unique_titles(personas, usage_collector=usage_collector)
     return personas
 
 
-def _ensure_unique_titles(personas: list[dict]) -> list[dict]:
+def _ensure_unique_titles(personas: list[dict], *, usage_collector: UsageCollector | None = None) -> list[dict]:
     """Ensure every persona has a distinct persona_title."""
     used_titles: set[str] = set()
     for p in personas:
@@ -2487,7 +2613,11 @@ def _ensure_unique_titles(personas: list[dict]) -> list[dict]:
                 f"Return ONLY the title string."
             )
             try:
-                title = _llm(prompt).strip().strip('"').strip("'")
+                title = _llm(
+                    prompt,
+                    operation="stage5_title_dedup",
+                    usage_collector=usage_collector,
+                ).strip().strip('"').strip("'")
             except Exception:
                 title = f"The {brain} Archetype {len(used_titles) + 1}"
             p["persona_title"] = title
@@ -2508,6 +2638,8 @@ def generate_additional_personas(
     all_verdicts: list[dict],
     account_tier: str,
     count_to_add: int = 2,
+    *,
+    usage_collector: UsageCollector | None = None,
 ) -> list[dict]:
     """
     Generate NEW personas that don't duplicate existing brain combinations.
@@ -2570,7 +2702,8 @@ def generate_additional_personas(
         futures = {
             executor.submit(
                 generate_persona, slot, validated_ro, activated_dimensions,
-                all_verdicts, current_count + i
+                all_verdicts, current_count + i,
+                usage_collector=usage_collector,
             ): i
             for i, slot in enumerate(selected_slots, start=1)
         }
@@ -2584,7 +2717,7 @@ def generate_additional_personas(
                 logger.error("Additional persona %d generation failed: %s", idx, e)
 
     new_personas = [new_personas_map[i] for i in sorted(new_personas_map.keys())]
-    new_personas = _ensure_unique_titles(new_personas)
+    new_personas = _ensure_unique_titles(new_personas, usage_collector=usage_collector)
     return new_personas
 
 
@@ -2598,6 +2731,8 @@ def digital_brain_pipeline(
     account_tier: str = "tier1",  # "free" | "tier1" | "enterprise"
     exploration_id: str | None = None,
     action_dataset_id: str | None = None,
+    *,
+    usage_collector: UsageCollector | None = None,
 ) -> dict:
     """
     Full 5-stage pipeline: RO → Dimensions → [3A|3B|3C] → Synthesis → Personas.
@@ -2616,6 +2751,11 @@ def digital_brain_pipeline(
             (kept for signature/caller compatibility; see fetch_action_data_all).
         action_dataset_id: Currently unused for Stage 3A action-data resolution
             (kept for signature/caller compatibility; see fetch_action_data_all).
+        usage_collector: Optional UsageCollector, created and owned by the
+            caller (see app.services.llm_usage_tracker), passed into every
+            internal Anthropic/OpenAI call site so LLM token usage across
+            this pipeline run can be drained and persisted by the caller —
+            including on a mid-run failure. Never created internally here.
 
     Returns:
         Dict with pipeline metadata and list of personas for the given tier.
@@ -2646,11 +2786,19 @@ def digital_brain_pipeline(
     logger.info("Stages 3A/3B/3C: Running three evidence streams in parallel…")
 
     async def _run_parallel():
+        import functools
+
         loop = asyncio.get_event_loop()
 
-        fut_3a = loop.run_in_executor(None, scan_action_data, resolved_action_df, activated, validated_ro)
-        fut_3b = loop.run_in_executor(None, search_evidence_based_web_tiered, validated_ro, activated)
-        fut_3c = loop.run_in_executor(None, search_hq_database, validated_ro, activated)
+        fut_3a = loop.run_in_executor(
+            None, functools.partial(scan_action_data, resolved_action_df, activated, validated_ro, usage_collector=usage_collector)
+        )
+        fut_3b = loop.run_in_executor(
+            None, functools.partial(search_evidence_based_web_tiered, validated_ro, activated, usage_collector=usage_collector)
+        )
+        fut_3c = loop.run_in_executor(
+            None, functools.partial(search_hq_database, validated_ro, activated, usage_collector=usage_collector)
+        )
 
         depth_layers, result_3b, hq_verdicts = await asyncio.gather(fut_3a, fut_3b, fut_3c)
         return depth_layers, result_3b, hq_verdicts
@@ -2660,9 +2808,9 @@ def digital_brain_pipeline(
         if loop.is_running():
             import concurrent.futures as cf
             with cf.ThreadPoolExecutor(max_workers=3) as executor:
-                fut_3a = executor.submit(scan_action_data, resolved_action_df, activated, validated_ro)
-                fut_3b = executor.submit(search_evidence_based_web_tiered, validated_ro, activated)
-                fut_3c = executor.submit(search_hq_database, validated_ro, activated)
+                fut_3a = executor.submit(scan_action_data, resolved_action_df, activated, validated_ro, usage_collector=usage_collector)
+                fut_3b = executor.submit(search_evidence_based_web_tiered, validated_ro, activated, usage_collector=usage_collector)
+                fut_3c = executor.submit(search_hq_database, validated_ro, activated, usage_collector=usage_collector)
                 depth_layers = fut_3a.result()
                 result_3b = fut_3b.result()
                 hq_verdicts = fut_3c.result()
@@ -2671,9 +2819,9 @@ def digital_brain_pipeline(
     except RuntimeError:
         import concurrent.futures as cf
         with cf.ThreadPoolExecutor(max_workers=3) as executor:
-            fut_3a = executor.submit(scan_action_data, resolved_action_df, activated, validated_ro)
-            fut_3b = executor.submit(search_evidence_based_web_tiered, validated_ro, activated)
-            fut_3c = executor.submit(search_hq_database, validated_ro, activated)
+            fut_3a = executor.submit(scan_action_data, resolved_action_df, activated, validated_ro, usage_collector=usage_collector)
+            fut_3b = executor.submit(search_evidence_based_web_tiered, validated_ro, activated, usage_collector=usage_collector)
+            fut_3c = executor.submit(search_hq_database, validated_ro, activated, usage_collector=usage_collector)
             depth_layers = fut_3a.result()
             result_3b = fut_3b.result()
             hq_verdicts = fut_3c.result()
@@ -2686,12 +2834,12 @@ def digital_brain_pipeline(
 
     # --- Stage 4 ---
     logger.info("Stage 4: Master Brain synthesis…")
-    brain_matrix = master_brain_synthesis(depth_layers, eb_verdicts, hq_verdicts, activated)
+    brain_matrix = master_brain_synthesis(depth_layers, eb_verdicts, hq_verdicts, activated, usage_collector=usage_collector)
 
     # --- Stage 5 ---
     logger.info("Stage 5: Generating personas…")
     all_verdicts = depth_layers + eb_verdicts + hq_verdicts
-    personas = generate_personas_batch(brain_matrix, validated_ro, activated, all_verdicts, account_tier)
+    personas = generate_personas_batch(brain_matrix, validated_ro, activated, all_verdicts, account_tier, usage_collector=usage_collector)
 
     finished_at = datetime.now(tz=timezone.utc)
     duration_s = (finished_at - started_at).total_seconds()

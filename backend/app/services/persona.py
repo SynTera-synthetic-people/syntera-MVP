@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import delete
 from app.models.persona import Persona
+from app.services.llm_usage_tracker import record_llm_usage, extract_usage_openai_chat
 
 
 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
@@ -1362,7 +1363,11 @@ async def total_sample_size(workspace_id: str, exploration_id: str) -> int:
 
         return sum(r.sample_size for r in rows)
 
-async def generate_persona_confidence(persona: dict, research_objective: str = "") -> dict:
+async def generate_persona_confidence(
+    persona: dict, research_objective: str = "",
+    *, exploration_id: Optional[str] = None, workspace_id: Optional[str] = None,
+    persona_id: Optional[str] = None, created_by: Optional[str] = None,
+) -> dict:
     persona_json = safe_json(persona)
 
     prompt = f"""
@@ -1432,6 +1437,19 @@ NO text outside JSON. NO markdown. NO explanations.
             },
             {"role": "user", "content": prompt}
         ],
+    )
+    input_tokens, output_tokens, usage_raw = extract_usage_openai_chat(res)
+    await record_llm_usage(
+        exploration_id=exploration_id,
+        stage="persona_confidence_scoring",
+        provider="openai",
+        model="gpt-4o-mini",
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        usage_raw=usage_raw,
+        workspace_id=workspace_id,
+        persona_id=persona_id,
+        created_by=created_by,
     )
 
     raw = res.choices[0].message.content
@@ -1574,7 +1592,11 @@ OUTPUT — strict JSON only, no markdown:
 }}"""
 
 
-async def _generate_patterns_fallback(full_persona_info: dict, ro_text: str) -> dict:
+async def _generate_patterns_fallback(
+    full_persona_info: dict, ro_text: str,
+    *, exploration_id: Optional[str] = None, workspace_id: Optional[str] = None,
+    persona_id: Optional[str] = None, created_by: Optional[str] = None,
+) -> dict:
     """Minimal LLM call when main generation fails. Returns {patterns, score, error}."""
     name = full_persona_info.get("name", "")
     occupation = full_persona_info.get("occupation", "")
@@ -1610,6 +1632,19 @@ JSON: {{"patterns": [...], "ro_alignment_score": 70}}""",
                 },
             ],
         )
+        input_tokens, output_tokens, usage_raw = extract_usage_openai_chat(res)
+        await record_llm_usage(
+            exploration_id=exploration_id,
+            stage="persona_pattern_fallback",
+            provider="openai",
+            model="gpt-4o-mini",
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            usage_raw=usage_raw,
+            workspace_id=workspace_id,
+            persona_id=persona_id,
+            created_by=created_by,
+        )
         data = json.loads(res.choices[0].message.content)
         patterns = [
             _BRAIN_NAMES_RE.sub("", str(p)).strip(" ,")
@@ -1624,7 +1659,11 @@ JSON: {{"patterns": [...], "ro_alignment_score": 70}}""",
         return {"patterns": [], "score": 0, "error": True}
 
 
-async def generate_predominant_patterns(full_persona_info: dict) -> dict:
+async def generate_predominant_patterns(
+    full_persona_info: dict,
+    *, exploration_id: Optional[str] = None, workspace_id: Optional[str] = None,
+    persona_id: Optional[str] = None, created_by: Optional[str] = None,
+) -> dict:
     """Generate 10 clear, jargon-free behavioral patterns + RO Alignment score.
     Works for both digital brain personas (uses evidence streams) and manual
     personas (extracts signals from trait fields).
@@ -1688,6 +1727,19 @@ async def generate_predominant_patterns(full_persona_info: dict) -> dict:
                 {"role": "user", "content": prompt},
             ],
         )
+        input_tokens, output_tokens, usage_raw = extract_usage_openai_chat(res)
+        await record_llm_usage(
+            exploration_id=exploration_id,
+            stage="persona_pattern_generation",
+            provider="openai",
+            model="gpt-4o-mini",
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            usage_raw=usage_raw,
+            workspace_id=workspace_id,
+            persona_id=persona_id,
+            created_by=created_by,
+        )
         data = json.loads(res.choices[0].message.content)
         raw_patterns = data.get("patterns") or []
         patterns = [
@@ -1718,7 +1770,11 @@ async def generate_predominant_patterns(full_persona_info: dict) -> dict:
         return {"metric": "RO Alignment", "score": final_score, "patterns": patterns}
     except Exception:
         logger.exception("generate_predominant_patterns: main LLM call failed, trying fallback")
-        fallback = await _generate_patterns_fallback(full_persona_info or {}, ro_text)
+        fallback = await _generate_patterns_fallback(
+            full_persona_info or {}, ro_text,
+            exploration_id=exploration_id, workspace_id=workspace_id,
+            persona_id=persona_id, created_by=created_by,
+        )
         patterns = fallback.get("patterns", [])
         sanity_score = _compute_ro_alignment_sanity_check(patterns, ro if isinstance(ro, dict) else {})
         if fallback.get("error"):
@@ -1959,7 +2015,11 @@ No additional text. No explanations. No markdown.
 async def validate_persona_traits_with_omi(
     research_objective: str,
     trait_group: str,
-    traits: Dict[str, str]
+    traits: Dict[str, str],
+    *,
+    exploration_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
+    created_by: Optional[str] = None,
 ) -> dict:
     prompt = build_persona_validation_prompt(
         research_objective=research_objective,
@@ -1970,7 +2030,10 @@ async def validate_persona_traits_with_omi(
     result = await call_omi(
         system_prompt=PERSONA_VALIDATION_SYSTEM_PROMPT,
         user_prompt=prompt,
-        response_format="json"
+        response_format="json",
+        exploration_id=exploration_id,
+        workspace_id=workspace_id,
+        created_by=created_by,
     )
 
     reasons = [
