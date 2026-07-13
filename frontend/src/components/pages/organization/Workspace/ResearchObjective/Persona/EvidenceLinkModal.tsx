@@ -261,7 +261,7 @@ const WebPlatformCitationRow: React.FC<WebPlatformCitationRowProps> = ({ link })
                     </div>
                   </div>
                   <div className="elm-sub-source-right">
-                    {tierColor && (
+                    {/* {tierColor && (
                       <span
                         className="elm-tier-badge"
                         style={{ color: tierColor, borderColor: `${tierColor}33`, background: `${tierColor}0f` }}
@@ -271,7 +271,7 @@ const WebPlatformCitationRow: React.FC<WebPlatformCitationRowProps> = ({ link })
                     )}
                     {confidencePct && (
                       <span className="elm-sub-relevance">{confidencePct}</span>
-                    )}
+                    )} */}
                     {hasUrl && (
                       <a
                         href={citation.url}
@@ -396,7 +396,7 @@ const KECategoryRow: React.FC<KECategoryRowProps> = ({ link }) => {
                     </div>
                   </div>
                   <div className="elm-sub-source-right">
-                    <span
+                    {/* <span
                       className="elm-tier-badge"
                       style={{ color: tierColor, borderColor: `${tierColor}33`, background: `${tierColor}0f` }}
                     >
@@ -404,7 +404,7 @@ const KECategoryRow: React.FC<KECategoryRowProps> = ({ link }) => {
                     </span>
                     {relevancePct && (
                       <span className="elm-sub-relevance">{relevancePct}</span>
-                    )}
+                    )} */}
                     {hasUrl && (
                       <a
                         href={src.source_url}

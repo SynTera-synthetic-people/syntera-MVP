@@ -1829,23 +1829,46 @@ def _transcript_plain_text(value: Any) -> str:
     return text or "Not Available"
 
 
-def _derive_transcript_title(research_objective: Optional[str]) -> str:
+def _clean_research_objective_text(research_objective: Optional[str]) -> str:
+    """Plain, single-line objective text with legacy junk stripped out.
+
+    Some legacy descriptions were saved as the full Omi confirmation blob
+    ("Thanks! I've put everything together...") instead of the objective
+    itself — pull the real objective out from under the "Summary" header.
+    """
     text = _transcript_plain_text(research_objective)
-    for chunk in text.splitlines():
-        chunk = chunk.strip()
-        if not chunk:
-            continue
-        # Trim at first sentence boundary if short enough
-        for sep in (".", "?", "!"):
-            idx = chunk.find(sep)
-            if 0 < idx <= 100:
-                return chunk[: idx + 1].strip()
-        # Otherwise trim at last word boundary within 80 chars
-        if len(chunk) > 80:
-            trimmed = chunk[:80].rsplit(" ", 1)[0]
-            return trimmed + "…"
-        return chunk
-    return "Qualitative Discussion Guide"
+    marker = "Research Objective Summary:"
+    marker_idx = text.find(marker)
+    if marker_idx != -1:
+        text = text[marker_idx + len(marker):]
+        text = text.split("I’ll carry this forward")[0].split("I'll carry this forward")[0]
+        text = text.strip()
+    # Collapse to a single line — objectives are often one long paragraph,
+    # so looking only at the first splitlines() chunk let giant run-on
+    # paragraphs through untouched.
+    return " ".join(text.split())
+
+
+def _derive_transcript_title(research_objective: Optional[str]) -> str:
+    """Deterministic, zero-LLM title derivation — the safety-net fallback
+    used when the strategic (LLM) title is unavailable or fails."""
+    text = _clean_research_objective_text(research_objective)
+    if not text:
+        return "Qualitative Discussion Guide"
+
+    MAX_TITLE_LEN = 140
+    if len(text) <= MAX_TITLE_LEN:
+        return text
+
+    window = text[:MAX_TITLE_LEN]
+    last_sep_idx = max(window.rfind("."), window.rfind("?"), window.rfind("!"))
+    if last_sep_idx >= 40:
+        return window[: last_sep_idx + 1].strip()
+
+    # No sentence boundary close enough — trim at the last full word instead
+    # of cutting mid-word, so a long objective still reads like a title.
+    trimmed = window.rsplit(" ", 1)[0].rstrip(",;:")
+    return trimmed + "…"
 
 
 def _apply_run_style(run, *, bold: bool = False, size: int = 11, color: Optional[RGBColor] = None,
@@ -2016,14 +2039,12 @@ async def generate_qual_transcripts_docx(
 def _build_qual_transcripts_html(
     *,
     objective_id: str,
-    research_objective: Optional[str],
     interviews: List[Dict[str, Any]],
-    title: Optional[str] = None,
     metadata: Optional[Dict[str, Any]] = None,
 ) -> str:
     """Build a DI-style HTML transcript document from Q&A data — no LLM call."""
     meta = metadata or {}
-    effective_title = title or f"Interview Verbatim: {_derive_transcript_title(research_objective)}"
+    effective_title = "Interview Verbatim"
 
     def _esc(v: Any) -> str:
         return str(v).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
@@ -2141,14 +2162,13 @@ async def generate_qual_transcripts_pdf(
     objective_id: str,
     out_path: str,
     interview_id: Optional[str] = None,
-    title: Optional[str] = None,
 ) -> str:
     """Generate a transcript PDF — fast, deterministic, zero LLM/ML/RAG calls.
+    Cover title is always the static "Interview Verbatim".
 
     Metadata is computed directly (seeded values + lightweight DB reads) — same
     formula as DI/BA cover but without the per-persona ML lookups or RAG fetch.
     """
-    research_objective = await get_description(objective_id)
     interviews = await get_valid_interviews_for_exploration(objective_id, interview_id)
     if not interviews:
         raise ValueError("No interviews found for transcript export")
@@ -2195,9 +2215,7 @@ async def generate_qual_transcripts_pdf(
 
     html_body = _build_qual_transcripts_html(
         objective_id=objective_id,
-        research_objective=research_objective,
         interviews=prepared_interviews,
-        title=title,
         metadata=metadata,
     )
     return await asyncio.to_thread(

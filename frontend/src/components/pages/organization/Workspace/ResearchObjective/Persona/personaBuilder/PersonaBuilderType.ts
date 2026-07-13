@@ -32,6 +32,9 @@ export interface SavedPersona {
   };
   confidence_score?: number;
   calibration_confidence?: number;
+  // Backend-computed, persisted once by compute_master_calibration_confidence()
+  // so the grid card and the preview page show the same number.
+  master_calibration_confidence?: number;
   // New fields surfaced by persona_to_dict()
   auto_fill_report?: {
     total_sub_traits?: number;

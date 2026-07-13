@@ -35,6 +35,17 @@ interface StepData {
 // Each item takes this long before being marked done and the next one appears
 const TICK_MS = 27_000;
 
+// /calibrate runs several sequential LLM calls (RO extraction, trait auto-fill,
+// evidence collection, brain assignment, predominant-pattern scoring) and can
+// legitimately take well over 30s. It now returns immediately and does that
+// work in the background (see run_manual_calibration_background on the
+// backend), so this is no longer a single request timeout — it's the total
+// budget for the poll loop below. Measured real-world runs land around ~180s
+// (one evidence-collection LLM call alone can take 100s+), so 180s cut it too
+// close — same order of magnitude as REPLICATION_TIMEOUT_MS elsewhere in the
+// codebase for another slow persona op.
+const CALIBRATION_TIMEOUT_MS = 300_000;
+
 const RING_RADIUS = 54;
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 
@@ -173,10 +184,43 @@ const PersonaGenerationLoader: React.FC<Props> = ({
 
         const runCalibration = async () => {
             try {
-                await axiosInstance.post(
+                // /calibrate now returns immediately (calibration_status="calibrating")
+                // and runs the actual multi-LLM-call enrichment in the background —
+                // a synchronous 30-180s+ request was liable to get killed by a
+                // reverse-proxy/gateway timeout before the backend could respond,
+                // which the browser then misreports as a CORS error instead of the
+                // actual 502. Poll persona status instead of holding one long request.
+                const postResponse = await axiosInstance.post(
                     `/workspaces/${workspaceId}/explorations/${objectiveId}/personas/${draftPersonaId}/calibrate`
                 );
-                setCalibratedPersonaId(draftPersonaId);
+                if (postResponse.data?.data?.calibration_status === 'calibrated') {
+                    // Idempotent re-entry — already done, nothing to poll for.
+                    setCalibratedPersonaId(draftPersonaId);
+                    return;
+                }
+
+                const pollIntervalMs = 4_000;
+                const maxAttempts = Math.ceil(CALIBRATION_TIMEOUT_MS / pollIntervalMs);
+
+                for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+
+                    const statusResponse = await axiosInstance.get(
+                        `/workspaces/${workspaceId}/explorations/${objectiveId}/personas/${draftPersonaId}`
+                    );
+                    const persona = statusResponse.data?.data;
+
+                    if (persona?.calibration_status === 'calibrated') {
+                        setCalibratedPersonaId(draftPersonaId);
+                        return;
+                    }
+                    if (persona?.calibration_status === 'draft' && persona?.persona_details?.last_calibration_error) {
+                        console.error('Persona calibration failed:', persona.persona_details.last_calibration_error);
+                        return;
+                    }
+                    // calibration_status === 'calibrating' — keep polling
+                }
+                console.error('Persona calibration timed out waiting for the backend to finish.');
             } catch (error) {
                 console.error('Persona calibration failed:', error);
                 // Calibration failed — we'll navigate back to persona-builder so user can retry

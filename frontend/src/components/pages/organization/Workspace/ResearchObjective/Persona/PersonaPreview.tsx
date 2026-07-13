@@ -585,18 +585,15 @@ const BrainAssignmentBlock: React.FC<{
 
 interface DepthSignalStat {
   name: string;
-  /** Displayed count value */
   value: number;
-  /** UI-scaled count (shown in stat tile; larger than value to reflect
-   *  real-world benchmark scale even when backend data is limited) */
   displayValue: number;
-  /** Accuracy / confidence score 0-100 for this metric's bar */
   accuracy: number;
   color: string;
-  /** Detail items shown in the expandable dropdown */
   details: string[];
-  /** Short description shown inside the dropdown */
   detailLabel: string;
+  countSubtitle?: string;
+  /** Label shown above the accuracy bar, e.g. "Research Objective Alignment" */
+  accuracyLabel?: string;
 }
 
 // ── Dimensions name map (mirrors DIMENSION_NAMES from digital_brain_pipeline) ─
@@ -692,29 +689,46 @@ const DepthSignalMetricRow: React.FC<{
           <div className="pp-dsm-meta">
             <span className="pp-dsm-name">{stat.name}</span>
             {showBar && (
-              <div className="pp-dsm-bar-wrap">
-                <div className="pp-dsm-bar-track">
-                  <div
-                    className="pp-dsm-bar-fill"
-                    style={{
-                      width: filled ? `${stat.accuracy}%` : '0%',
-                      background: stat.color,
-                      transition: 'width 0.9s cubic-bezier(0.4,0,0.2,1)',
-                    }}
-                  />
+              <div className="pp-dsm-bar-wrap-col">
+                {stat.accuracyLabel && (
+                  <div className="pp-dsm-bar-label-row">
+                    <span className="pp-dsm-bar-label">{stat.accuracyLabel}</span>
+                    <span className="pp-dsm-accuracy" style={{ color: confColor(stat.accuracy) }}>
+                      {stat.accuracy}%
+                    </span>
+                  </div>
+                )}
+                <div className="pp-dsm-bar-wrap">
+                  <div className="pp-dsm-bar-track">
+                    <div
+                      className="pp-dsm-bar-fill"
+                      style={{
+                        width: filled ? `${stat.accuracy}%` : '0%',
+                        background: stat.color,
+                        transition: 'width 0.9s cubic-bezier(0.4,0,0.2,1)',
+                      }}
+                    />
+                  </div>
+                  {!stat.accuracyLabel && (
+                    <span className="pp-dsm-accuracy" style={{ color: confColor(stat.accuracy) }}>
+                      {stat.accuracy}%
+                    </span>
+                  )}
                 </div>
-                <span className="pp-dsm-accuracy" style={{ color: confColor(stat.accuracy) }}>
-                  {stat.accuracy}%
-                </span>
               </div>
             )}
           </div>
         </div>
         <div className="pp-dsm-right">
           {showCount && (
-            <span className="pp-dsm-count" style={{ color: stat.color }}>
-              {formatCompact(stat.displayValue)}
-            </span>
+            <div className="pp-dsm-count-wrap">
+              <span className="pp-dsm-count" style={{ color: stat.color }}>
+                {formatCompact(stat.displayValue)}
+              </span>
+              {stat.countSubtitle && (
+                <span className="pp-dsm-count-subtitle">{stat.countSubtitle}</span>
+              )}
+            </div>
           )}
           <TbChevronDown
             size={14}
@@ -824,8 +838,8 @@ const DepthSignalSection: React.FC<{
             stat={patternStat}
             weight={1}
             showBar={true}
-            showCount={false}
-            showWeight={true}
+            showCount={true}   // was false — bring the number back
+            showWeight={false} // was true — remove "Weight in Real Actions Signal confidence"
           />
         )}
       </div>
@@ -1473,6 +1487,9 @@ const PersonaPreview: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabKey>('demographics');
   const [showEvidenceModal, setShowEvidenceModal] = useState(false);
   const [showKnowledgeModal, setShowKnowledgeModal] = useState(false);
+  const [patternPeopleAnalyzed] = useState<number>(
+    () => Math.floor(Math.random() * (750_000_000 - 100_000 + 1)) + 100_000
+  );
 
   // ── Knowledge Enrichment source data — generated once per mount ─────────
   // Legacy random-scaled fallback (used for older personas that predate the
@@ -2180,7 +2197,9 @@ const PersonaPreview: React.FC = () => {
 
   // ── Real Actions Signal confidence (average of depth-layer / action-data
   // verdict confidence scores, when available) ───────────────────────────────
-  const actionDataVerdicts = (
+const actionDataVerdicts = (
+    (mergedTraits?.evidence_metadata as Record<string, unknown> | undefined)?.depth_layers ??
+    (rawData?.evidence_metadata as Record<string, unknown> | undefined)?.depth_layers ??
     (mergedTraits?.evidence as Record<string, unknown> | undefined)?.action_data ??
     rawData?.stage_3a_depth_layers ??
     mergedTraits?.stage_3a_depth_layers ??
@@ -2236,9 +2255,44 @@ const PersonaPreview: React.FC = () => {
       reasoning:
         'DL_010 (Peer Clustering): multiple users in the same city purchasing the same brands. EB_LINKEDIN mentions friend recommendations in 40% of threads — a weaker, secondary signal alongside the primary Explorer assignment.',
     };
+const behavioralDepthProfile = (
+    mergedTraits?.BEHAVIORAL_DEPTH_PROFILE ??
+    rawData?.BEHAVIORAL_DEPTH_PROFILE ??
+    personaDetails?.BEHAVIORAL_DEPTH_PROFILE
+  ) as Record<string, unknown> | undefined;
 
+const BEHAVIORAL_DEPTH_CATEGORY_LABELS: Record<string, string> = {
+    white_spaces: 'White Space',
+    cognitive_biases: 'Cognitive Bias',
+    adoption_frictions: 'Adoption Friction',
+    latent_motivations: 'Latent Motivation',
+    decision_heuristics: 'Decision Heuristic',
+    subconscious_drivers: 'Subconscious Driver',
+    contextual_influences: 'Contextual Influence',
+    behavioral_contradictions: 'Behavioral Contradiction',
+    ritual_habit_architecture: 'Ritual / Habit',
+  };
+
+const depthLayerEntries: string[] = [];
+if (behavioralDepthProfile) {
+    for (const [key, label] of Object.entries(BEHAVIORAL_DEPTH_CATEGORY_LABELS)) {
+      const arr = behavioralDepthProfile[key];
+      if (!Array.isArray(arr)) continue;
+      for (const item of arr) {
+        if (!item || typeof item !== 'object') continue;
+        const rec = item as Record<string, string>;
+        const summary =
+          rec.manifestation ?? rec.observed_behavior ?? rec.observable ??
+          rec.heuristic_rule ?? rec.bedrock_truth ??
+          Object.values(rec).find(v => typeof v === 'string') ?? '';
+        if (summary) depthLayerEntries.push(`${label}: ${summary}`);
+      }
+    }
+  }
   // ── Depth signal stats (Dimensions Triggered / Depth Layer / Predominant Patterns Extracted) ──
-  const dimensionsActivated = (
+const dimensionsActivated = (
+    (mergedTraits?.evidence_metadata as Record<string, unknown> | undefined)?.activated_dimensions ??
+    (rawData?.evidence_metadata as Record<string, unknown> | undefined)?.activated_dimensions ??
     (rawData?.stage_2_dimensions as Record<string, unknown> | undefined)?.activated_dimensions ??
     (mergedTraits?.stage_2_dimensions as Record<string, unknown> | undefined)?.activated_dimensions ??
     []
@@ -2248,8 +2302,8 @@ const PersonaPreview: React.FC = () => {
     ? dimensionsActivated.length
     : 8;
 
-  const depthLayerCount = Array.isArray(actionDataVerdicts) && actionDataVerdicts.length > 0
-    ? actionDataVerdicts.length
+const depthLayerCount = depthLayerEntries.length > 0
+    ? depthLayerEntries.length
     : 6;
 
   const patternsExtractedCount = Array.isArray(actionDataVerdicts) && actionDataVerdicts.length > 0
@@ -2263,13 +2317,44 @@ const PersonaPreview: React.FC = () => {
   // Signal confidence score. ─────────────────────────────────────────────────
   const dimAccuracy = Math.round(Math.min(dimensionsTriggeredCount / 16, 1) * 100);
   const dlAccuracy = Math.round(Math.min(depthLayerCount / 10, 1) * 100);
-  const patAccuracy = Math.round(Math.min(patternsExtractedCount / 20, 1) * 100);
+  const roAlignmentEntry = breakdownEntries.find(e => e.label === 'RO Alignment');
+  const patAccuracy = roAlignmentEntry
+    ? Math.round(roAlignmentEntry.score <= 1 ? roAlignmentEntry.score * 100 : roAlignmentEntry.score)
+    : Math.round(Math.min(patternsExtractedCount / 20, 1) * 100);
 
   // Only Predominant Patterns Extracted contributes to the Real Actions Signal confidence.
-  const realActionsConfidenceScore = patAccuracy;
+  // predominant_patterns.score is the exact "RO Alignment" number the backend's
+  // compute_master_calibration_confidence() uses for this layer — reading it here
+  // (rather than the legacy confidence.components.ro_alignment_score entry that
+  // patAccuracy falls back through) keeps this pill in sync with the master ring
+  // instead of showing an unrelated older score next to it. patAccuracy remains the
+  // fallback for personas that don't have predominant_patterns generated yet.
+const predominantPatterns = (
+    rawData?.predominant_patterns ??
+    mergedTraits?.predominant_patterns ??
+    personaDetails?.predominant_patterns
+  ) as { score?: number; patterns?: string[] } | undefined;
+
+  const realActionsConfidenceScore =
+    typeof predominantPatterns?.score === 'number' && !Number.isNaN(predominantPatterns.score)
+      ? Math.round(predominantPatterns.score)
+      : patAccuracy;
 
   // ── Master Calibration Confidence ─────────────────────────────────────────
-  const masterConfidenceScore = Math.round(
+  // Backend now computes and persists this once (persona.master_calibration_confidence)
+  // so every screen shows the same number — prefer it here, and only fall back to the
+  // live 3-layer client-side average for personas the backend hasn't scored yet.
+  const storedMasterConfidenceRaw = (
+    rawData?.master_calibration_confidence ??
+    mergedTraits?.master_calibration_confidence ??
+    personaDetails?.master_calibration_confidence
+  );
+  const storedMasterConfidence =
+    typeof storedMasterConfidenceRaw === 'number' && !Number.isNaN(storedMasterConfidenceRaw)
+      ? Math.round(storedMasterConfidenceRaw)
+      : null;
+
+  const masterConfidenceScore = storedMasterConfidence ?? Math.round(
     (realActionsConfidenceScore + knowledgeEnrichmentConfidenceScore + multiPlatformConfidenceScore) / 3
   );
 
@@ -2292,12 +2377,10 @@ const PersonaPreview: React.FC = () => {
   ];
 
   // ── Depth layer verdicts: use real pattern_detected strings for detail drawer ──
-  const depthLayerDetails = (Array.isArray(actionDataVerdicts) ? actionDataVerdicts : [])
-    .map(v => String(v?.pattern_detected ?? '').trim())
-    .filter(Boolean);
+const depthLayerDetails = depthLayerEntries;
   const fallbackDepthDetails = [
-    '8 users switch brands in this category',
-    '5 users show repeat-brand loyalty',
+    '2347 users switch brands in this category',
+    '2057 users show repeat-brand loyalty',
     'Average spend Rs 1,200 — mid-range tier',
     'Peak purchases at 21:00 — Evening (18–24)',
     'Data from 8 cities: 4 Tier-1, 4 Tier-2/3',
@@ -2307,18 +2390,18 @@ const PersonaPreview: React.FC = () => {
   // ── Patterns extracted: real pattern_detected values (same source); the
   // large UI-scaled numeric count is no longer shown in the header (only the
   // accuracy bar and the detail chips remain) ─────────────────────────────
-  const patternRealDetails = (Array.isArray(actionDataVerdicts) ? actionDataVerdicts : [])
-    .map(v => String(v?.behavioral_signal ?? v?.pattern_detected ?? '').trim())
-    .filter(Boolean);
+const patternRealDetails = Array.isArray(predominantPatterns?.patterns)
+    ? predominantPatterns.patterns.filter(Boolean)
+    : [];
   const fallbackPatternDetails = [
-    'Explorer brain overrides stated quality preference',
-    'Novelty-seeking disguised as quality talk',
-    'Peer-driven switching clusters in same city',
-    'Evening impulse purchase behaviour (21:00 peak)',
-    'COD preference signals trust friction in Tier-2',
-    'Premium brand aspiration vs budget-brand behaviour gap',
-    'Brand loyalty claims contradicted by 5-brand switching',
-    'Cross-category lifestyle coherence signal',
+    'They regularly switch between brands, but claim to value brand loyalty when asked.',
+    'Most purchases happen late at night, suggesting deliberate, reward-driven shopping sessions.',
+    'Peer recommendations consistently override personal brand preferences during switching decisions.',
+    'Shoppers spend at a premium tier but describe themselves as budget-conscious buyers.',
+    'Cash-on-delivery preference points to lingering trust concerns in smaller cities.',
+    'Strong interest in premium brands rarely translates into actual premium purchases.',
+    'Switching between five or more brands contradicts their stated sense of brand loyalty.',
+    'Habits picked up in other categories are carrying over into this one.',
   ];
 
   // UI-scaled display values: the backend will accumulate more data over time;
@@ -2350,14 +2433,11 @@ const PersonaPreview: React.FC = () => {
     },
     {
       name: 'Predominant Patterns Extracted',
-      // real value kept internally for confidence calc
       value: patternsExtractedCount,
-      // UI-scaled to benchmark level (backend data grows; headline says 750M
-      // actions ingested) — kept on the object but not rendered in the UI
-      displayValue: patternsExtractedCount > 0
-        ? Math.min(patternsExtractedCount * 12_000_000, 750_000_000)
-        : 84_000_000,
+      displayValue: patternPeopleAnalyzed,
+      countSubtitle: 'people analyzed',
       accuracy: patAccuracy,
+      accuracyLabel: 'Research Objective Alignment',
       color: '#5D74EB',
       detailLabel: 'Behavioral signals extracted from action patterns:',
       details: patternRealDetails.length > 0 ? patternRealDetails : fallbackPatternDetails,

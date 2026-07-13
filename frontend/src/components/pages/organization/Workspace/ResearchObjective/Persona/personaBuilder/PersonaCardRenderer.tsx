@@ -140,6 +140,10 @@ export interface PersonaCardData {
   calibration_status?: string;
   calibration_confidence?: number;
   confidence_score?: number;
+  // Backend-computed, persisted once by compute_master_calibration_confidence()
+  // so the card and the preview page show the same number. Preferred over the
+  // live 3-layer client-side average below when present.
+  master_calibration_confidence?: number;
   confidence_scoring?: ConfidenceScoring;
   auto_fill_report?: AutoFillReport;
 
@@ -352,45 +356,45 @@ const JARGON_MAP: Array<[RegExp, string]> = [
 ];
 
 const ML_FEATURES_CARD: { original: string; clientReady: string }[] = [
-  { original: 'orders_per_week',            clientReady: 'Weekly Action Frequency' },
-  { original: 'growth_rate',                clientReady: 'Behaviour Growth Momentum' },
+  { original: 'orders_per_week', clientReady: 'Weekly Action Frequency' },
+  { original: 'growth_rate', clientReady: 'Behaviour Growth Momentum' },
   { original: 'recency_weighted_frequency', clientReady: 'Recent Activity Intensity' },
-  { original: 'volatility',                 clientReady: 'Behaviour Variability Index' },
-  { original: 'trend_slope',                clientReady: 'Behaviour Direction Signal' },
-  { original: 'avg_order_value',            clientReady: 'Average Spend Level' },
-  { original: 'spending_trend',             clientReady: 'Spend Momentum' },
-  { original: 'price_sensitivity',          clientReady: 'Price Sensitivity Signal' },
-  { original: 'basket_size',                clientReady: 'Basket Depth' },
-  { original: 'discount_usage_rate',        clientReady: 'Discount Dependence Signal' },
-  { original: 'night_order_ratio',          clientReady: 'Time Activity Pattern' },
-  { original: 'weekend_ratio',              clientReady: 'Weekend Behaviour Skew' },
-  { original: 'peak_hour_preference',       clientReady: 'Peak Activity Window' },
-  { original: 'seasonality_index',          clientReady: 'Seasonal Behaviour Signal' },
-  { original: 'inter_order_time',           clientReady: 'Purchase Gap Pattern' },
-  { original: 'recency_score',              clientReady: 'Recency Strength Score' },
-  { original: 'frequency_score',            clientReady: 'Frequency Strength Score' },
-  { original: 'monetary_score',             clientReady: 'Monetary Strength Score' },
-  { original: 'rfm_score',                  clientReady: 'RFM Behaviour Score' },
-  { original: 'time_consistency',           clientReady: 'Routine Consistency Signal' },
-  { original: 'rush_hour_ratio',            clientReady: 'Rush-Hour Activity Skew' },
-  { original: 'weekday_preference',         clientReady: 'Weekday Preference Pattern' },
-  { original: 'tenure_days',               clientReady: 'Relationship Tenure' },
-  { original: 'activity_density',           clientReady: 'Engagement Density' },
-  { original: 'retention_rate',             clientReady: 'Retention Strength Signal' },
+  { original: 'volatility', clientReady: 'Behaviour Variability Index' },
+  { original: 'trend_slope', clientReady: 'Behaviour Direction Signal' },
+  { original: 'avg_order_value', clientReady: 'Average Spend Level' },
+  { original: 'spending_trend', clientReady: 'Spend Momentum' },
+  { original: 'price_sensitivity', clientReady: 'Price Sensitivity Signal' },
+  { original: 'basket_size', clientReady: 'Basket Depth' },
+  { original: 'discount_usage_rate', clientReady: 'Discount Dependence Signal' },
+  { original: 'night_order_ratio', clientReady: 'Time Activity Pattern' },
+  { original: 'weekend_ratio', clientReady: 'Weekend Behaviour Skew' },
+  { original: 'peak_hour_preference', clientReady: 'Peak Activity Window' },
+  { original: 'seasonality_index', clientReady: 'Seasonal Behaviour Signal' },
+  { original: 'inter_order_time', clientReady: 'Purchase Gap Pattern' },
+  { original: 'recency_score', clientReady: 'Recency Strength Score' },
+  { original: 'frequency_score', clientReady: 'Frequency Strength Score' },
+  { original: 'monetary_score', clientReady: 'Monetary Strength Score' },
+  { original: 'rfm_score', clientReady: 'RFM Behaviour Score' },
+  { original: 'time_consistency', clientReady: 'Routine Consistency Signal' },
+  { original: 'rush_hour_ratio', clientReady: 'Rush-Hour Activity Skew' },
+  { original: 'weekday_preference', clientReady: 'Weekday Preference Pattern' },
+  { original: 'tenure_days', clientReady: 'Relationship Tenure' },
+  { original: 'activity_density', clientReady: 'Engagement Density' },
+  { original: 'retention_rate', clientReady: 'Retention Strength Signal' },
 ];
 
 const FRESHNESS_CARD = [
-  { label: 'Last 3M',  pct: 35 },
-  { label: 'Last 6M',  pct: 30 },
+  { label: 'Last 3M', pct: 35 },
+  { label: 'Last 6M', pct: 30 },
   { label: 'Last 12M', pct: 22 },
-  { label: 'Older',    pct: 13 },
+  { label: 'Older', pct: 13 },
 ];
 
 // Same headline stats used in PersonaPreview's Real Actions Signal card.
 const ML_ACTIONS_STATS = [
-  { value: '55 Million',  label: 'People Behaviour Base' },
+  { value: '55 Million', label: 'People Behaviour Base' },
   { value: '750 Million', label: "People's Actions Ingested" },
-  { value: '400+',        label: 'Behaviour Signals Mapped' },
+  { value: '400+', label: 'Behaviour Signals Mapped' },
   { value: '100 Million', label: 'Intent Scenarios Simulated' },
 ];
 
@@ -424,31 +428,31 @@ const DIMENSION_NAMES_MAP: Record<number, string> = {
 
 const KE_TOP_STATS = [
   { value: '10,000+', label: 'Curated Source Links' },
-  { value: '250+',    label: 'Industries Covered'   },
-  { value: '1,500+',  label: 'Categories & Topics'  },
+  { value: '250+', label: 'Industries Covered' },
+  { value: '1,500+', label: 'Categories & Topics' },
 ];
 
 interface KESourceType { name: string; value: number; color: string; }
 
 const KE_SOURCE_TYPES: KESourceType[] = [
-  { name: 'Industry Reports',         value: 2400, color: '#0E63EC' },
-  { name: 'Consumer Studies',         value: 1800, color: '#24E5B6' },
-  { name: 'Academic Research',        value: 1600, color: '#5D74EB' },
-  { name: 'Market Reports',           value: 1400, color: '#24BCD3' },
+  { name: 'Industry Reports', value: 2400, color: '#0E63EC' },
+  { name: 'Consumer Studies', value: 1800, color: '#24E5B6' },
+  { name: 'Academic Research', value: 1600, color: '#5D74EB' },
+  { name: 'Market Reports', value: 1400, color: '#24BCD3' },
   { name: 'Behaviour Science Papers', value: 1100, color: '#EC0E7D' },
-  { name: 'Trend Reports',            value:  900, color: '#9355F0' },
-  { name: 'White Papers & Articles',  value:  700, color: '#FABC48' },
-  { name: 'Public Datasets',          value:  600, color: '#39B2CB' },
-  { name: 'Ethnographic Studies',     value:  500, color: '#37FFCE' },
+  { name: 'Trend Reports', value: 900, color: '#9355F0' },
+  { name: 'White Papers & Articles', value: 700, color: '#FABC48' },
+  { name: 'Public Datasets', value: 600, color: '#39B2CB' },
+  { name: 'Ethnographic Studies', value: 500, color: '#37FFCE' },
 ];
 
 const KE_CONFIDENCE_SCORE = 90;
 
 const KE_CONFIDENCE_COMPONENTS = [
-  { label: 'Volume',                       score: 88 },
-  { label: 'Recency',                      score: 82 },
+  { label: 'Volume', score: 88 },
+  { label: 'Recency', score: 82 },
   { label: 'Research Objective Alignment', score: 95 },
-  { label: 'Source Diversity',             score: 94 },
+  { label: 'Source Diversity', score: 94 },
 ];
 
 const KE_SOURCE_CHIPS = [
@@ -531,7 +535,7 @@ function computeRealActionsSignal(persona: PersonaCardData): RealActionsSignalRe
     : 14;
 
   const dimAccuracy = Math.round(Math.min(dimensionsTriggeredCount / 16, 1) * 100);
-  const dlAccuracy  = Math.round(Math.min(depthLayerCount / 10, 1) * 100);
+  const dlAccuracy = Math.round(Math.min(depthLayerCount / 10, 1) * 100);
   const patAccuracy = Math.round(Math.min(patternsExtractedCount / 20, 1) * 100);
   const confidenceScore = Math.round(dimAccuracy * 0.25 + dlAccuracy * 0.35 + patAccuracy * 0.40);
 
@@ -619,9 +623,9 @@ function computeMultiPlatform(persona: PersonaCardData): {
   const platformCounts: Record<string, number> = Object.keys(rawCompScores).length > 0
     ? rawCompScores
     : sourcesBreakdown.reduce<Record<string, number>>((acc, s) => {
-        if (s.platform) acc[s.platform] = (acc[s.platform] ?? 0) + (s.threads_or_posts ?? 1);
-        return acc;
-      }, {});
+      if (s.platform) acc[s.platform] = (acc[s.platform] ?? 0) + (s.threads_or_posts ?? 1);
+      return acc;
+    }, {});
 
   const rawConfidence =
     multiSection?.confidence_components ??
@@ -630,20 +634,29 @@ function computeMultiPlatform(persona: PersonaCardData): {
 
   const confidenceComponents: Record<string, number> = rawConfidence
     ? Object.entries(rawConfidence).reduce<Record<string, number>>((acc, [k, v]) => {
-        acc[k] = v <= 1 ? Math.round(v * 100) : v;
-        return acc;
-      }, {})
+      acc[k] = v <= 1 ? Math.round(v * 100) : v;
+      return acc;
+    }, {})
     : {};
 
   const vals = Object.values(confidenceComponents);
   const fallbackFromLevel =
     persona.evidence_confidence_level === 'High' ? 85 :
-    persona.evidence_confidence_level === 'Medium' ? 65 :
-    persona.evidence_confidence_level === 'Low' ? 40 : 70;
+      persona.evidence_confidence_level === 'Medium' ? 65 :
+        persona.evidence_confidence_level === 'Low' ? 40 : 70;
+
+  // evidence_confidence_score can arrive as either a 0–1 fraction or an
+  // already-scaled 0–100 score. Normalise it the same way the per-component
+  // values above are normalised, so it doesn't render as "0.93%" instead of
+  // "93%" when no component breakdown is available from the backend.
+  const rawFallbackScore = persona.evidence_confidence_score ?? fallbackFromLevel;
+  const normalisedFallbackScore = rawFallbackScore <= 1
+    ? Math.round(rawFallbackScore * 100)
+    : Math.round(rawFallbackScore);
 
   const confidenceScore = vals.length > 0
     ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length)
-    : (persona.evidence_confidence_score ?? fallbackFromLevel);
+    : normalisedFallbackScore;
 
   return { platformCounts, confidenceComponents, confidenceScore };
 }
@@ -1039,16 +1052,16 @@ function GroundTruthFoundation({
   const col2 = ML_FEATURES_CARD.slice(half);
 
   // Evidence / multi-platform data
-  const totalConvs      = persona.total_conversations_analyzed ?? 0;
+  const totalConvs = persona.total_conversations_analyzed ?? 0;
   const sourcesBreakdown = persona.sources_breakdown ?? [];
-  const evidenceSource  = persona.evidence_source ?? '';
-  const evidenceLevel   = persona.evidence_confidence_level ?? '';
-  const recencyPct      = persona.recency_percentage ?? null;
-  const monthsAnalyzed  = persona.months_analyzed ?? null;
-  const hasEvidence     = !!(totalConvs > 0 || sourcesBreakdown.length > 0 || evidenceSource);
+  const evidenceSource = persona.evidence_source ?? '';
+  const evidenceLevel = persona.evidence_confidence_level ?? '';
+  const recencyPct = persona.recency_percentage ?? null;
+  const monthsAnalyzed = persona.months_analyzed ?? null;
+  const hasEvidence = !!(totalConvs > 0 || sourcesBreakdown.length > 0 || evidenceSource);
 
   const sitesResearched = (persona as any).number_of_sites_researched ?? (persona as any).enrichment_layer ?? null;
-  const realPeople      = (persona as any).number_of_real_people ?? null;
+  const realPeople = (persona as any).number_of_real_people ?? null;
 
   const platformEntries = Object.entries(multiPlatform.platformCounts);
   const confidenceEntries = Object.entries(multiPlatform.confidenceComponents);
@@ -1401,9 +1414,15 @@ const PersonaCardRenderer = React.forwardRef<HTMLDivElement, Props>(
     );
     const multiPlatform = React.useMemo(() => computeMultiPlatform(persona), [persona]);
 
-    const masterConfidenceScore = Math.round(
-      (realActionsSignal.confidenceScore + knowledgeEnrichment.confidenceScore + multiPlatform.confidenceScore) / 3
-    );
+    // Prefer the backend-persisted score (same value the preview page shows);
+    // fall back to the live 3-layer client average only when it hasn't been
+    // computed for this persona yet.
+    const masterConfidenceScore = typeof persona.master_calibration_confidence === 'number'
+      && !Number.isNaN(persona.master_calibration_confidence)
+      ? Math.round(persona.master_calibration_confidence)
+      : Math.round(
+        (realActionsSignal.confidenceScore + knowledgeEnrichment.confidenceScore + multiPlatform.confidenceScore) / 3
+      );
 
     // Behavioral dim cards
     const dims: DimCardProps[] = [

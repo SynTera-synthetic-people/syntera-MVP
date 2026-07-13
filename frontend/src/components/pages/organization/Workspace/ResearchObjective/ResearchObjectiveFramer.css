@@ -1023,6 +1023,13 @@
   line-height: 1.5;
 }
 
+/* ─── Multi-file list (Artifact section, up to ARTIFACT_MAX_FILES) ──── */
+.rofp-artifact-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 /* ─── Uploaded file card ─────────────────────────────────────────── */
 .rofp-upload-file-card {
   width: 100%;
@@ -1638,4 +1645,51 @@
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   ARTIFACT CATEGORY CHIPS — Compare / Campaign Set / Sequence
+   ═══════════════════════════════════════════════════════════════════ */
+
+.rofp-artifact-cat-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rofp-artifact-cat-chip {
+  padding: 7px 14px;
+  border-radius: 9999px;
+  border: 1px solid rgba(36, 229, 182, 0.3);
+  background: rgba(36, 229, 182, 0.04);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12.5px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.rofp-artifact-cat-chip:hover:not(:disabled) {
+  border-color: rgba(36, 229, 182, 0.55);
+  color: #fff;
+}
+
+.rofp-artifact-cat-chip--active {
+  background: #24E5B6;
+  border-color: #24E5B6;
+  color: #0a0f14;
+  font-weight: 600;
+}
+
+.rofp-artifact-cat-chip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.rofp-artifact-cat-desc {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.4);
+  line-height: 1.5;
+  margin-top: 8px;
 }

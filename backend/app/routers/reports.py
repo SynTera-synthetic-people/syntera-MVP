@@ -635,29 +635,13 @@ async def share_qual_report(
     return {"message": "Report shared successfully"}
 
 
-def _extract_di_title_from_cache(di_cached) -> Optional[str]:
-    """Pull the report title out of a cached DI markdown string, if available."""
-    if not di_cached:
-        return None
-    md = _legacy_markdown(getattr(di_cached, "content_md", None))
-    if not md:
-        return None
-    import re as _re
-    m = _re.search(r'^#{1,2}\s+(.+)$', md, _re.MULTILINE)
-    return m.group(1).strip() if m else None
-
-
 @router.get("/qual/transcripts")
 async def qual_transcripts(
     workspace_id: str,
     exploration_id: str,
     current_user: User = Depends(get_current_active_user),
 ):
-    """Verbatim interview transcript PDF — deterministic, no LLM call, same speed as before.
-
-    Title is sourced from the cached DI report when available so it matches
-    the Decision Intelligence report for the same exploration.
-    """
+    """Verbatim interview transcript PDF — deterministic, no LLM call, same speed as before."""
     # Serve from cache if already generated.
     pdf_cached = await cache.get_cached_report(exploration_id, QUAL_TRANSCRIPTS_PDF_CACHE_KEY)
     if _cached_file_ready(pdf_cached):
@@ -668,16 +652,11 @@ async def qual_transcripts(
             headers={"Content-Disposition": f'attachment; filename="transcripts_{exploration_id}.pdf"'},
         )
 
-    # Try to get the DI title so the transcript cover matches the DI report.
-    di_cached = await cache.get_cached_report(exploration_id, QUAL_DI_CACHE_KEY)
-    di_title = _extract_di_title_from_cache(di_cached)
-
     out_path = generate_pdf_path(prefix="qual_transcripts_pdf")
     try:
         pdf_path = await generate_qual_transcripts_pdf(
             objective_id=exploration_id,
             out_path=out_path,
-            title=di_title,
         )
     except ValueError as exc:
         raise HTTPException(

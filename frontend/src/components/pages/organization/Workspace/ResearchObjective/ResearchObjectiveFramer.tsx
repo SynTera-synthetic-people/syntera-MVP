@@ -68,11 +68,18 @@ interface BriefSectionData {
     submitted: boolean;
 }
 
-// Artifact section — own instruction, up to ARTIFACT_MAX_LINKS URL fields, single file upload, own submit lifecycle.
+// How Omi should relate multiple artifacts in this section to each other.
+// Only meaningful once 2+ artifacts (links/file) are attached — with a
+// single artifact there's nothing to compare/group/sequence.
+type ArtifactCategory = "compare" | "campaign_set" ;
+
+// Artifact section — own instruction, up to ARTIFACT_MAX_LINKS URL fields,
+// up to ARTIFACT_MAX_FILES file uploads, own submit lifecycle.
 interface ArtifactSectionData {
     instruction: string;
     links: MaterialLink[];
-    file: MaterialSlot;
+    files: MaterialSlot[];
+    category: ArtifactCategory | null;
     submitted: boolean;
 }
 
@@ -127,7 +134,7 @@ function buildFramerPayload(data: ROFramerData) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const framerDraftKey = (objectiveId?: string) => `ro_framer_draft_${objectiveId ?? "unknown"}`;
-
+const ARTIFACT_COMING_SOON = true;
 // ─────────────────────────────────────────────────────────────────────────────
 // Local "has this objective's Framer been submitted" flag.
 //
@@ -184,9 +191,8 @@ const loadFramerSubmittedData = (objectiveId?: string): ROFramerData | null => {
         const saved = localStorage.getItem(framerSubmittedDataKey(objectiveId));
         if (!saved) return null;
         const parsed = JSON.parse(saved);
-        // minimal shape check so old/corrupt data doesn't crash the form
-        if (parsed && parsed.context && parsed.material) return parsed as ROFramerData;
-        return null;
+        if (!parsed || !parsed.context) return null;
+        return hydrateFramerData(parsed);
     } catch {
         return null;
     }
@@ -211,7 +217,8 @@ const emptyBriefSection = (): BriefSectionData => ({
 const emptyArtifactSection = (): ArtifactSectionData => ({
     instruction: "",
     links: [{ id: makeLinkIdForEmptySection(), value: "" }],
-    file: emptySlot(),
+    files: [],
+    category: null,
     submitted: false,
 });
 
@@ -241,19 +248,51 @@ const stripFilesForStorage = (data: ROFramerData): ROFramerData => ({
         },
         artifact: {
             ...data.material.artifact,
-            file: { ...data.material.artifact.file, file: null },
+            files: data.material.artifact.files.map(f => ({ ...f, file: null })),
         },
     },
 });
+
+const hydrateFramerData = (parsed: any): ROFramerData => {
+    const base = emptyFramerData();
+    if (!parsed || typeof parsed !== "object") return base;
+
+    return {
+        ...base,
+        ...parsed,
+        context: { ...base.context, ...parsed.context },
+        businessTrigger: { ...base.businessTrigger, ...parsed.businessTrigger },
+        customerUnknown: { ...base.customerUnknown, ...parsed.customerUnknown },
+        decisionMoment: { ...base.decisionMoment, ...parsed.decisionMoment },
+        audienceSegments: { ...base.audienceSegments, ...parsed.audienceSegments },
+        otherInformation: { ...base.otherInformation, ...parsed.otherInformation },
+        material: {
+            brief: {
+                ...base.material.brief,
+                ...parsed.material?.brief,
+                file: { ...base.material.brief.file, ...parsed.material?.brief?.file },
+            },
+            artifact: {
+                ...base.material.artifact,
+                ...parsed.material?.artifact,
+                links: Array.isArray(parsed.material?.artifact?.links) && parsed.material.artifact.links.length
+                    ? parsed.material.artifact.links
+                    : base.material.artifact.links,
+                files: Array.isArray(parsed.material?.artifact?.files)
+                    ? parsed.material.artifact.files
+                    : base.material.artifact.files,
+            },
+        },
+    };
+};
 
 const loadFramerDraft = (objectiveId?: string): ROFramerData | null => {
     try {
         const saved = localStorage.getItem(framerDraftKey(objectiveId));
         if (!saved) return null;
         const parsed = JSON.parse(saved);
-        // minimal shape check so old/corrupt data doesn't crash the form
-        if (parsed && parsed.context && parsed.material) return parsed as ROFramerData;
-        return null;
+        if (!parsed || !parsed.context) return null;
+        return hydrateFramerData(parsed);
     } catch {
         return null;
     }
@@ -935,6 +974,36 @@ const ARTIFACT_EXTENSIONS = [
 const ARTIFACT_MAX_BYTES = 10 * 1024 * 1024;
 
 const ARTIFACT_MAX_LINKS = 3;
+const ARTIFACT_MAX_FILES = 4;
+
+// How Omi should relate 2+ artifacts within this section to each other.
+// Only surfaced once a second artifact (link or file) is attached — a lone
+// artifact has nothing to be compared, unified, or sequenced against.
+const ARTIFACT_CATEGORIES: { id: ArtifactCategory; label: string; description: string }[] = [
+    {
+        id: "compare",
+        label: "Compare",
+        description: "Different concepts competing for the same spot. Omi shows personas the options together and finds out which one resonates more, and why.",
+    },
+    {
+        id: "campaign_set",
+        label: "Campaign Set",
+        description: "Assets from one campaign, meant to work together. Omi checks whether they feel consistent and tell one story, rather than picking a favorite.",
+    },
+    // {
+    //     id: "sequence",
+    //     label: "Sequence",
+    //     description: "Assets meant to be seen in order — a funnel, a teaser-to-reveal, or a multi-step flow. Omi tests whether each step earns the next.",
+    // },
+];
+
+const artifactCategoryLabel = (id: ArtifactCategory | null): string | null =>
+    id ? ARTIFACT_CATEGORIES.find(c => c.id === id)?.label ?? null : null;
+
+// Counts distinct artifacts attached so far (filled links + files), so the
+// category selector only appears once there's actually something to relate.
+const countArtifactItems = (artifact: ArtifactSectionData): number =>
+    artifact.links.filter(l => l.value.trim()).length + artifact.files.length;
 
 const MATERIAL_INSTRUCTION_MAX_LENGTH = 500;
 
@@ -1098,6 +1167,149 @@ const UploadSlot: React.FC<UploadSlotProps> = ({
     );
 };
 
+// ─── Multi-file upload slot — used by the Artifact section to accept up to
+// ARTIFACT_MAX_FILES files (e.g. multiple creative variants to compare, or
+// multiple assets from one campaign set). Each accepted file gets its own
+// removable card; the dropzone stays visible (with a running count) until
+// the max is reached.
+interface MultiUploadSlotProps {
+    label: string;
+    acceptExtensions: string[];
+    maxBytes: number;
+    maxFiles: number;
+    formatsLabel: string;
+    files: MaterialSlot[];
+    onFilesChange: (files: MaterialSlot[]) => void;
+    disabled?: boolean;
+    compact?: boolean;
+}
+
+const MultiUploadSlot: React.FC<MultiUploadSlotProps> = ({
+    label, acceptExtensions, maxBytes, maxFiles, formatsLabel,
+    files, onFilesChange, disabled, compact,
+}) => {
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const [isDragOver, setIsDragOver] = useState(false);
+    const [fileError, setFileError] = useState<string | null>(null);
+
+    const remainingSlots = Math.max(0, maxFiles - files.length);
+    const canAddMore = remainingSlots > 0 && !disabled;
+
+    const acceptFiles = (incoming: FileList | File[]) => {
+        const incomingArr = Array.from(incoming);
+        const toProcess = incomingArr.slice(0, remainingSlots);
+        const overflow = incomingArr.length > toProcess.length;
+
+        const accepted: MaterialSlot[] = [];
+        let error: string | null = overflow
+            ? `You can attach up to ${maxFiles} files — extra files were skipped.`
+            : null;
+
+        for (const file of toProcess) {
+            const ext = "." + (file.name.split(".").pop()?.toLowerCase() ?? "");
+            if (!acceptExtensions.includes(ext)) {
+                error = `Unsupported file type. Allowed: ${formatsLabel}`;
+                continue;
+            }
+            if (file.size > maxBytes) {
+                error = `File too large. Maximum size is ${formatFileSize(maxBytes)}.`;
+                continue;
+            }
+            accepted.push({ fileName: file.name, fileSizeLabel: formatFileSize(file.size), uploadStatus: "idle", file });
+        }
+
+        setFileError(error);
+        if (accepted.length) onFilesChange([...files, ...accepted]);
+    };
+
+    const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        // e.target.files is a LIVE FileList tied to the input, not a snapshot —
+        // resetting e.target.value below also empties this same FileList out
+        // from under us, so we must copy it into a plain array first.
+        const selected = e.target.files ? Array.from(e.target.files) : [];
+        e.target.value = "";
+        if (selected.length) acceptFiles(selected);
+    };
+
+    const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        setIsDragOver(false);
+        if (!canAddMore) return;
+        if (e.dataTransfer.files?.length) acceptFiles(e.dataTransfer.files);
+    };
+
+    const removeFileAt = (idx: number) => {
+        if (disabled) return;
+        setFileError(null);
+        onFilesChange(files.filter((_, i) => i !== idx));
+    };
+
+    return (
+        <div className={["rofp-upload-slot", compact ? "rofp-upload-slot--compact" : ""].filter(Boolean).join(" ")}>
+            {files.length > 0 && (
+                <div className="rofp-artifact-file-list">
+                    {files.map((slot, idx) => (
+                        <div className="rofp-upload-file-card" key={`${slot.fileName}-${idx}`}>
+                            <span className="rofp-upload-file-icon"><SpIcon name="sp-File-File_Blank" /></span>
+                            <div className="rofp-upload-file-info">
+                                <div className="rofp-upload-file-name">{slot.fileName}</div>
+                                {slot.fileSizeLabel && <div className="rofp-upload-file-meta">{slot.fileSizeLabel}</div>}
+                            </div>
+                            <button
+                                className="rofp-upload-file-remove"
+                                onClick={() => removeFileAt(idx)}
+                                disabled={disabled}
+                                type="button"
+                                aria-label={`Remove ${slot.fileName}`}
+                            >
+                                ×
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {canAddMore && (
+                <div
+                    className={[
+                        "rofp-upload-zone",
+                        compact ? "rofp-upload-zone--compact" : "",
+                        isDragOver ? "rofp-upload-zone--dragover" : "",
+                    ].filter(Boolean).join(" ")}
+                    onClick={() => fileInputRef.current?.click()}
+                    onDragOver={e => { e.preventDefault(); setIsDragOver(true); }}
+                    onDragLeave={() => setIsDragOver(false)}
+                    onDrop={handleDrop}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={e => { if (e.key === "Enter" || e.key === " ") fileInputRef.current?.click(); }}
+                >
+                    <span className="rofp-upload-zone-icon"><SpIcon name="sp-File-Cloud_Upload" /></span>
+                    <span className="rofp-upload-zone-title">
+                        {compact ? <>Click to upload {label.toLowerCase()}</> : <>Drop your files here,<br />or click to upload</>}
+                        {files.length > 0 && <> ({files.length}/{maxFiles})</>}
+                    </span>
+                    <input
+                        ref={fileInputRef}
+                        type="file"
+                        className="rofp-upload-zone-input"
+                        accept={acceptExtensions.join(",")}
+                        multiple
+                        onChange={handleFileInputChange}
+                        disabled={disabled}
+                    />
+                </div>
+            )}
+
+            {fileError && <p className="rofp-upload-slot-error">{fileError}</p>}
+
+            <p className="rofp-upload-formats">
+                <strong>Max {formatFileSize(maxBytes)} each</strong> · {formatsLabel} · up to {maxFiles} files
+            </p>
+        </div>
+    );
+};
+
 const OmiProcessingBar: React.FC<{ messageIndex: number }> = ({ messageIndex }) => (
     <div className="rofp-upload-omi-bar">
         <div className="rofp-upload-omi-avatar">
@@ -1169,6 +1381,38 @@ const LinkRow: React.FC<LinkRowProps> = ({ value, placeholder, onChange, onFocus
     );
 };
 
+interface ArtifactCategoryChipsProps {
+    value: ArtifactCategory | null;
+    onChange: (category: ArtifactCategory) => void;
+    disabled?: boolean;
+}
+
+const ArtifactCategoryChips: React.FC<ArtifactCategoryChipsProps> = ({ value, onChange, disabled }) => (
+    <div className="rofp-field-group">
+        <div className="rofp-field-label-row">
+            <label className="rofp-label">How should Omi treat these together?</label>
+        </div>
+        <div className="rofp-artifact-cat-row">
+            {ARTIFACT_CATEGORIES.map(cat => (
+                <button
+                    key={cat.id}
+                    type="button"
+                    className={[
+                        "rofp-artifact-cat-chip",
+                        value === cat.id ? "rofp-artifact-cat-chip--active" : "",
+                    ].filter(Boolean).join(" ")}
+                    onClick={() => !disabled && onChange(cat.id)}
+                    disabled={disabled}
+                    aria-pressed={value === cat.id}
+                >
+                    {cat.label}
+                </button>
+            ))}
+        </div>
+        {value && <p className="rofp-artifact-cat-desc">{ARTIFACT_CATEGORIES.find(c => c.id === value)?.description}</p>}
+    </div>
+);
+
 interface MaterialTabProps {
     data: MaterialData;
     onChange: (d: MaterialData) => void;
@@ -1197,7 +1441,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({
     const anyFieldFilled =
         !!data.brief.instruction || !!data.artifact.instruction ||
         !!data.brief.link || !!data.brief.file.fileName ||
-        data.artifact.links.some(l => l.value) || !!data.artifact.file.fileName;
+        data.artifact.links.some(l => l.value) || data.artifact.files.length > 0;
 
     const handleFieldFocus = () => onOmiStateChange("typing");
     const handleFieldBlur = () => { if (!anyFieldFilled) onOmiStateChange("idle"); };
@@ -1250,10 +1494,14 @@ const MaterialTab: React.FC<MaterialTabProps> = ({
 
     const handleEditBrief = () => updateBrief({ submitted: false, file: { ...data.brief.file, uploadStatus: "idle" } });
 
-    const artifactHasContent = data.artifact.links.some(l => l.value.trim()) || !!data.artifact.file.fileName;
+    const artifactHasContent = data.artifact.links.some(l => l.value.trim()) || data.artifact.files.length > 0;
     const artifactLinksValid = data.artifact.links.every(l => isLikelyValidUrl(l.value));
+    const artifactItemCount = countArtifactItems(data.artifact);
+    // With 2+ artifacts, a category is required — otherwise Omi doesn't know
+    // whether to compare, unify, or sequence them.
+    const artifactNeedsCategory = artifactItemCount >= 2 && !data.artifact.category;
     // Same reasoning as canSubmitBrief — not gated on artifactHasContent.
-    const canSubmitArtifact = artifactLinksValid && !artifactProcessing && !data.artifact.submitted;
+    const canSubmitArtifact = artifactLinksValid && !artifactProcessing && !data.artifact.submitted && !artifactNeedsCategory;
     const canAddArtifactLink = data.artifact.links.length < ARTIFACT_MAX_LINKS;
 
     const updateArtifact = (patch: Partial<ArtifactSectionData>) =>
@@ -1267,10 +1515,14 @@ const MaterialTab: React.FC<MaterialTabProps> = ({
             await submitArtifactSection({
                 kind: "artifact",
                 instruction: data.artifact.instruction,
-                file: data.artifact.file.file,
+                files: data.artifact.files.map(f => f.file).filter((f): f is File => f !== null),
                 links: data.artifact.links.map(l => l.value).filter(Boolean),
+                category: data.artifact.category,
             });
-            updateArtifact({ submitted: true, file: { ...data.artifact.file, uploadStatus: "done" } });
+            updateArtifact({
+                submitted: true,
+                files: data.artifact.files.map(f => ({ ...f, uploadStatus: "done" as MaterialUploadStatus })),
+            });
         } catch (error: any) {
             setArtifactError(
                 error?.response?.data?.detail ?? "Couldn't save this section. Please try again."
@@ -1280,7 +1532,10 @@ const MaterialTab: React.FC<MaterialTabProps> = ({
         }
     };
 
-    const handleEditArtifact = () => updateArtifact({ submitted: false, file: { ...data.artifact.file, uploadStatus: "idle" } });
+    const handleEditArtifact = () => updateArtifact({
+        submitted: false,
+        files: data.artifact.files.map(f => ({ ...f, uploadStatus: "idle" as MaterialUploadStatus })),
+    });
 
     const handleContinueClick = () => { onOmiStateChange("navigating"); setTimeout(onContinue, 400); };
     const handleBackClick = () => { if (briefProcessing || artifactProcessing) return; onOmiStateChange("navigating"); setTimeout(onBack, 400); };
@@ -1385,11 +1640,18 @@ const MaterialTab: React.FC<MaterialTabProps> = ({
                         </div>
                     </div>
 
-                    {/* ── Section 2: Artifact ─────────────────────────────── */}
-                    <div className="rofp-material-section rofp-material-section--coming-soon">
-                        <div className="rofp-coming-soon-overlay">
-                            <span className="rofp-coming-soon-badge">Coming Soon</span>
-                        </div>
+{/* ── Section 2: Artifact ─────────────────────────────── */}
+                    <div
+                        className={[
+                            "rofp-material-section",
+                            ARTIFACT_COMING_SOON ? "rofp-material-section--coming-soon" : "",
+                        ].filter(Boolean).join(" ")}
+                    >
+                        {ARTIFACT_COMING_SOON && (
+                            <div className="rofp-coming-soon-overlay">
+                                <span className="rofp-coming-soon-badge">Coming Soon</span>
+                            </div>
+                        )}
                         <div className="rofp-material-section">
                             <div className="rofp-material-section-head">
                                 <h3 className="rofp-material-section-title">Artifact</h3>
@@ -1454,16 +1716,25 @@ const MaterialTab: React.FC<MaterialTabProps> = ({
                                     </button>
                                 )}
 
-                                <UploadSlot
+                                <MultiUploadSlot
                                     label="Image"
                                     acceptExtensions={ARTIFACT_EXTENSIONS}
                                     maxBytes={ARTIFACT_MAX_BYTES}
+                                    maxFiles={ARTIFACT_MAX_FILES}
                                     formatsLabel="PNG, JPG, GIF, WEBP"
-                                    slot={data.artifact.file}
-                                    onSlotChange={file => updateArtifact({ file })}
+                                    files={data.artifact.files}
+                                    onFilesChange={files => updateArtifact({ files })}
                                     disabled={data.artifact.submitted}
                                     compact
                                 />
+
+                                {artifactItemCount >= 2 && (
+                                    <ArtifactCategoryChips
+                                        value={data.artifact.category}
+                                        onChange={category => updateArtifact({ category })}
+                                        disabled={data.artifact.submitted}
+                                    />
+                                )}
                             </div>
 
                             {artifactProcessing && <OmiProcessingBar messageIndex={artifactMsgIndex} />}
@@ -1495,6 +1766,9 @@ const MaterialTab: React.FC<MaterialTabProps> = ({
                                     {artifactProcessing ? "Saving…" : data.artifact.submitted ? "Saved" : "Submit"}
                                 </button>
                             </div>
+                            {artifactNeedsCategory && !artifactProcessing && (
+                                <p className="rofp-cta-hint" style={{ textAlign: "right" }}>Pick how these relate to continue</p>
+                            )}
                         </div>
                     </div>
 
@@ -1607,10 +1881,11 @@ const buildPreviewSections = (data: ROFramerData): PreviewSection[] => {
 
     const briefLink = data.material.brief.link.trim();
     const artifactLinks = data.material.artifact.links.map(l => l.value.trim()).filter(Boolean);
+    const artifactFileNames = data.material.artifact.files.map(f => f.fileName).filter((n): n is string => Boolean(n));
     const hasMaterial =
         data.material.brief.instruction.trim() || data.material.artifact.instruction.trim() ||
         briefLink || data.material.brief.file.fileName ||
-        artifactLinks.length || data.material.artifact.file.fileName;
+        artifactLinks.length || artifactFileNames.length;
 
     if (hasMaterial) {
         const lines: string[] = [];
@@ -1618,8 +1893,10 @@ const buildPreviewSections = (data: ROFramerData): PreviewSection[] => {
         if (data.material.brief.file.fileName) lines.push(`Research Brief file: ${data.material.brief.file.fileName}`);
         if (briefLink) lines.push(`Research Brief link: ${briefLink}`);
         if (data.material.artifact.instruction.trim()) lines.push(`Artifact instruction: ${data.material.artifact.instruction.trim()}`);
-        if (data.material.artifact.file.fileName) lines.push(`Artifact file: ${data.material.artifact.file.fileName}`);
+        artifactFileNames.forEach(name => lines.push(`Artifact file: ${name}`));
         artifactLinks.forEach(link => lines.push(`Artifact link: ${link}`));
+        const categoryLabel = artifactCategoryLabel(data.material.artifact.category);
+        if (categoryLabel) lines.push(`Artifact grouping: ${categoryLabel}`);
         sections.push({ heading: "Add Material", body: lines.join("\n") });
     }
 
