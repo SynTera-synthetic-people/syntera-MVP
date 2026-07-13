@@ -191,9 +191,8 @@ const loadFramerSubmittedData = (objectiveId?: string): ROFramerData | null => {
         const saved = localStorage.getItem(framerSubmittedDataKey(objectiveId));
         if (!saved) return null;
         const parsed = JSON.parse(saved);
-        // minimal shape check so old/corrupt data doesn't crash the form
-        if (parsed && parsed.context && parsed.material) return parsed as ROFramerData;
-        return null;
+        if (!parsed || !parsed.context) return null;
+        return hydrateFramerData(parsed);
     } catch {
         return null;
     }
@@ -254,14 +253,46 @@ const stripFilesForStorage = (data: ROFramerData): ROFramerData => ({
     },
 });
 
+const hydrateFramerData = (parsed: any): ROFramerData => {
+    const base = emptyFramerData();
+    if (!parsed || typeof parsed !== "object") return base;
+
+    return {
+        ...base,
+        ...parsed,
+        context: { ...base.context, ...parsed.context },
+        businessTrigger: { ...base.businessTrigger, ...parsed.businessTrigger },
+        customerUnknown: { ...base.customerUnknown, ...parsed.customerUnknown },
+        decisionMoment: { ...base.decisionMoment, ...parsed.decisionMoment },
+        audienceSegments: { ...base.audienceSegments, ...parsed.audienceSegments },
+        otherInformation: { ...base.otherInformation, ...parsed.otherInformation },
+        material: {
+            brief: {
+                ...base.material.brief,
+                ...parsed.material?.brief,
+                file: { ...base.material.brief.file, ...parsed.material?.brief?.file },
+            },
+            artifact: {
+                ...base.material.artifact,
+                ...parsed.material?.artifact,
+                links: Array.isArray(parsed.material?.artifact?.links) && parsed.material.artifact.links.length
+                    ? parsed.material.artifact.links
+                    : base.material.artifact.links,
+                files: Array.isArray(parsed.material?.artifact?.files)
+                    ? parsed.material.artifact.files
+                    : base.material.artifact.files,
+            },
+        },
+    };
+};
+
 const loadFramerDraft = (objectiveId?: string): ROFramerData | null => {
     try {
         const saved = localStorage.getItem(framerDraftKey(objectiveId));
         if (!saved) return null;
         const parsed = JSON.parse(saved);
-        // minimal shape check so old/corrupt data doesn't crash the form
-        if (parsed && parsed.context && parsed.material) return parsed as ROFramerData;
-        return null;
+        if (!parsed || !parsed.context) return null;
+        return hydrateFramerData(parsed);
     } catch {
         return null;
     }

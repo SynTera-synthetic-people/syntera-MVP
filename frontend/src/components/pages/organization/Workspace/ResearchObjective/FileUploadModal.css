@@ -226,7 +226,7 @@
 .fum-upload-slot {
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 8px;
 }
 
 .fum-upload-zone {
@@ -302,6 +302,13 @@
   font-weight: 600;
 }
 
+/* ── Multi-file list (Artifact section, up to ARTIFACT_MAX_FILES) ────── */
+.fum-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 /* ── Uploaded file card ─────────────────────────────────────────── */
 .fum-file-card {
   display: flex;
@@ -372,6 +379,59 @@
   color: #f87171;
 }
 
+/* ── Artifact category chips (Compare / Campaign Set / Sequence) ──── */
+.fum-cat-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.fum-cat-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.fum-cat-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.fum-cat-chip {
+  padding: 6px 12px;
+  border-radius: 9999px;
+  border: 1px solid rgba(36, 229, 182, 0.3);
+  background: rgba(36, 229, 182, 0.04);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 11.5px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.fum-cat-chip:hover {
+  border-color: rgba(36, 229, 182, 0.55);
+  color: #fff;
+}
+
+.fum-cat-chip--active {
+  background: #24E5B6;
+  border-color: #24E5B6;
+  color: #0a0f14;
+  font-weight: 600;
+}
+
+.fum-cat-desc {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+  line-height: 1.5;
+}
+
 /* ── Inline error text ───────────────────────────────────────────── */
 .fum-error {
   font-size: 11.5px;
@@ -403,6 +463,18 @@
   align-items: center;
   gap: 10px;
   flex-shrink: 0;
+}
+
+.fum-footer-done-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.fum-done-hint {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.32);
 }
 
 .fum-btn-cancel {
@@ -441,13 +513,19 @@
   transition: opacity 0.15s, transform 0.15s;
 }
 
-.fum-btn-done:hover {
+.fum-btn-done:hover:not(.fum-btn-done--disabled) {
   opacity: 0.9;
   transform: translateY(-1px);
 }
 
-.fum-btn-done:active {
+.fum-btn-done:active:not(.fum-btn-done--disabled) {
   transform: translateY(0);
+}
+
+.fum-btn-done--disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  transform: none;
 }
 
 /* ── Responsive ─────────────────────────────────────────────────── */
@@ -465,6 +543,11 @@
   .fum-footer-actions {
     flex-direction: column;
     gap: 8px;
+  }
+
+  .fum-footer-done-wrap {
+    align-items: stretch;
+    width: 100%;
   }
 
   .fum-btn-cancel,

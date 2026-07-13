@@ -11,7 +11,32 @@ const ARTIFACT_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"];
 const ARTIFACT_MAX_BYTES = 10 * 1024 * 1024;
 
 const ARTIFACT_MAX_LINKS = 3;
+const ARTIFACT_MAX_FILES = 4;
 const ARTIFACT_COMING_SOON = true;
+
+// How Omi should relate 2+ artifacts within this section to each other.
+// Only surfaced once a second artifact (link or file) is attached — a lone
+// artifact has nothing to be compared, unified, or sequenced against.
+// Kept in sync with ResearchObjectiveFramer's ARTIFACT_CATEGORIES.
+export type ArtifactCategory = "compare" | "campaign_set" ;
+
+const ARTIFACT_CATEGORIES: { id: ArtifactCategory; label: string; description: string }[] = [
+  {
+    id: "compare",
+    label: "Compare",
+    description: "Different concepts competing for the same spot. Omi shows personas the options together and finds out which one resonates more, and why.",
+  },
+  {
+    id: "campaign_set",
+    label: "Campaign Set",
+    description: "Assets from one campaign, meant to work together. Omi checks whether they feel consistent and tell one story, rather than picking a favorite.",
+  },
+  // {
+  //   id: "sequence",
+  //   label: "Sequence",
+  //   description: "Assets meant to be seen in order — a funnel, a teaser-to-reveal, or a multi-step flow. Omi tests whether each step earns the next.",
+  // },
+];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -50,8 +75,9 @@ interface LinkEntry {
 export interface FileUploadModalValue {
   briefFile: File | null;
   briefLink: string;
-  artifactFile: File | null;
+  artifactFiles: File[];
   artifactLinks: string[];
+  artifactCategory: ArtifactCategory | null;
 }
 
 interface FileUploadModalProps {
@@ -79,7 +105,7 @@ const PlusIcon: React.FC = () => (
   </svg>
 );
 
-// ─── Upload zone with drag-and-drop ──────────────────────────────────────────
+// ─── Upload zone with drag-and-drop (single file — used by Research Brief) ──
 
 interface UploadZoneProps {
   slot: SlotFile | null;
@@ -168,6 +194,9 @@ const UploadZone: React.FC<UploadZoneProps> = ({
           className="fum-hidden-input"
           accept={acceptExtensions.join(",")}
           onChange={e => {
+            // e.target.files is a LIVE FileList tied to the input, not a
+            // snapshot — extract the File we need BEFORE clearing the input,
+            // otherwise clearing it also empties this same FileList.
             const file = e.target.files?.[0];
             e.target.value = "";
             if (file) acceptFile(file);
@@ -181,6 +210,171 @@ const UploadZone: React.FC<UploadZoneProps> = ({
     </div>
   );
 };
+
+// ─── Multi upload zone (up to maxFiles — used by Artifact) ──────────────────
+// Mirrors ResearchObjectiveFramer's MultiUploadSlot: each accepted file gets
+// its own removable card, and the dropzone stays visible (with a running
+// count) until the cap is reached.
+
+interface MultiUploadZoneProps {
+  slots: SlotFile[];
+  acceptExtensions: string[];
+  maxBytes: number;
+  maxFiles: number;
+  formatsLabel: string;
+  compact?: boolean;
+  onFilesAccepted: (files: File[]) => void;
+  onRemoveAt: (index: number) => void;
+}
+
+const MultiUploadZone: React.FC<MultiUploadZoneProps> = ({
+  slots, acceptExtensions, maxBytes, maxFiles, formatsLabel, compact,
+  onFilesAccepted, onRemoveAt,
+}) => {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const remaining = Math.max(0, maxFiles - slots.length);
+  const canAddMore = remaining > 0;
+
+  const acceptFiles = (incoming: File[]) => {
+    const toProcess = incoming.slice(0, remaining);
+    const overflow = incoming.length > toProcess.length;
+
+    const accepted: File[] = [];
+    let nextError: string | null = overflow
+      ? `You can attach up to ${maxFiles} files — extra files were skipped.`
+      : null;
+
+    for (const file of toProcess) {
+      const ext = "." + (file.name.split(".").pop()?.toLowerCase() ?? "");
+      if (!acceptExtensions.includes(ext)) {
+        nextError = `Unsupported type. Allowed: ${formatsLabel}`;
+        continue;
+      }
+      if (file.size > maxBytes) {
+        nextError = `Too large. Max ${formatFileSize(maxBytes)}.`;
+        continue;
+      }
+      accepted.push(file);
+    }
+
+    setError(nextError);
+    if (accepted.length) onFilesAccepted(accepted);
+  };
+
+  return (
+    <div className="fum-upload-slot">
+      {slots.length > 0 && (
+        <div className="fum-file-list">
+          {slots.map((slot, i) => (
+            <div className="fum-file-card" key={`${slot.file.name}-${i}`}>
+              <span className="fum-file-icon">
+                <SpIcon name="sp-File-File_Blank" />
+              </span>
+              <div className="fum-file-info">
+                <span className="fum-file-name">{slot.file.name}</span>
+                <span className="fum-file-size">{slot.sizeLabel}</span>
+              </div>
+              <button
+                className="fum-file-remove"
+                onClick={() => onRemoveAt(i)}
+                type="button"
+                aria-label={`Remove ${slot.file.name}`}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {canAddMore && (
+        <div
+          className={[
+            "fum-upload-zone",
+            compact ? "fum-upload-zone--compact" : "",
+            isDragOver ? "fum-upload-zone--dragover" : "",
+          ].filter(Boolean).join(" ")}
+          onClick={() => inputRef.current?.click()}
+          onDragOver={e => { e.preventDefault(); setIsDragOver(true); }}
+          onDragLeave={() => setIsDragOver(false)}
+          onDrop={e => {
+            e.preventDefault();
+            setIsDragOver(false);
+            if (e.dataTransfer.files?.length) acceptFiles(Array.from(e.dataTransfer.files));
+          }}
+          role="button"
+          tabIndex={0}
+          onKeyDown={e => { if (e.key === "Enter" || e.key === " ") inputRef.current?.click(); }}
+        >
+          <span className="fum-upload-icon">
+            <SpIcon name="sp-File-Cloud_Upload" />
+          </span>
+          <span className="fum-upload-label">
+            {compact ? "Click to upload image" : <>Drop files here,<br />or click to upload</>}
+            {slots.length > 0 && <> ({slots.length}/{maxFiles})</>}
+          </span>
+          <input
+            ref={inputRef}
+            type="file"
+            className="fum-hidden-input"
+            accept={acceptExtensions.join(",")}
+            multiple
+            onChange={e => {
+              // Same live-FileList gotcha as the single-file zone above:
+              // snapshot into a plain array BEFORE clearing e.target.value,
+              // since clearing it also empties the live FileList in place.
+              const selected = e.target.files ? Array.from(e.target.files) : [];
+              e.target.value = "";
+              if (selected.length) acceptFiles(selected);
+            }}
+          />
+        </div>
+      )}
+
+      {error && <p className="fum-error">{error}</p>}
+      <p className="fum-formats">
+        <strong>Max {formatFileSize(maxBytes)} each</strong> · {formatsLabel} · up to {maxFiles} files
+      </p>
+    </div>
+  );
+};
+
+// ─── Artifact category chips (Compare / Campaign Set / Sequence) ────────────
+
+interface ArtifactCategoryChipsProps {
+  value: ArtifactCategory | null;
+  onChange: (category: ArtifactCategory) => void;
+}
+
+const ArtifactCategoryChips: React.FC<ArtifactCategoryChipsProps> = ({ value, onChange }) => (
+  <div className="fum-cat-group">
+    <label className="fum-cat-label">How should Omi treat these together?</label>
+    <div className="fum-cat-row">
+      {ARTIFACT_CATEGORIES.map(cat => (
+        <button
+          key={cat.id}
+          type="button"
+          className={[
+            "fum-cat-chip",
+            value === cat.id ? "fum-cat-chip--active" : "",
+          ].filter(Boolean).join(" ")}
+          onClick={() => onChange(cat.id)}
+          aria-pressed={value === cat.id}
+        >
+          {cat.label}
+        </button>
+      ))}
+    </div>
+    {value && (
+      <p className="fum-cat-desc">
+        {ARTIFACT_CATEGORIES.find(c => c.id === value)?.description}
+      </p>
+    )}
+  </div>
+);
 
 // ─── Link row ─────────────────────────────────────────────────────────────────
 
@@ -252,20 +446,31 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
       ? saved.map(v => ({ id: makeLinkId(), value: v }))
       : [{ id: makeLinkId(), value: "" }];
   });
-  const [artifactFile, setArtifactFile] = useState<SlotFile | null>(
-    initialValue?.artifactFile
-      ? { file: initialValue.artifactFile, sizeLabel: formatFileSize(initialValue.artifactFile.size) }
-      : null
+  const [artifactFiles, setArtifactFiles] = useState<SlotFile[]>(() =>
+    (initialValue?.artifactFiles ?? []).map(file => ({ file, sizeLabel: formatFileSize(file.size) }))
+  );
+  const [artifactCategory, setArtifactCategory] = useState<ArtifactCategory | null>(
+    initialValue?.artifactCategory ?? null
   );
 
   if (!isOpen) return null;
 
+  // Counts distinct artifacts attached so far (filled links + files), so the
+  // category selector only appears once there's actually something to relate.
+  const artifactItemCount =
+    artifactLinks.filter(l => l.value.trim()).length + artifactFiles.length;
+  // With 2+ artifacts, a category is required — otherwise Omi doesn't know
+  // whether to compare, unify, or sequence them.
+  const artifactNeedsCategory = artifactItemCount >= 2 && !artifactCategory;
+
   const handleDone = () => {
+    if (artifactNeedsCategory) return;
     onDone({
       briefFile: briefFile?.file ?? null,
       briefLink: briefLink.trim(),
-      artifactFile: artifactFile?.file ?? null,
+      artifactFiles: artifactFiles.map(s => s.file),
       artifactLinks: artifactLinks.map(l => l.value.trim()).filter(Boolean),
+      artifactCategory,
     });
     onClose();
   };
@@ -275,6 +480,15 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
 
   const removeArtifactLink = (id: string) =>
     setArtifactLinks(prev => prev.filter(l => l.id !== id));
+
+  const addArtifactFiles = (files: File[]) =>
+    setArtifactFiles(prev => [
+      ...prev,
+      ...files.map(file => ({ file, sizeLabel: formatFileSize(file.size) })),
+    ]);
+
+  const removeArtifactFileAt = (index: number) =>
+    setArtifactFiles(prev => prev.filter((_, i) => i !== index));
 
   const canAddArtifactLink = artifactLinks.length < ARTIFACT_MAX_LINKS;
 
@@ -375,17 +589,23 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                   </button>
                 )}
 
-                <UploadZone
-                  slot={artifactFile}
+                <MultiUploadZone
+                  slots={artifactFiles}
                   acceptExtensions={ARTIFACT_EXTENSIONS}
                   maxBytes={ARTIFACT_MAX_BYTES}
+                  maxFiles={ARTIFACT_MAX_FILES}
                   formatsLabel="PNG, JPG, GIF, WEBP"
                   compact
-                  onFileAccepted={file =>
-                    setArtifactFile({ file, sizeLabel: formatFileSize(file.size) })
-                  }
-                  onRemove={() => setArtifactFile(null)}
+                  onFilesAccepted={addArtifactFiles}
+                  onRemoveAt={removeArtifactFileAt}
                 />
+
+                {artifactItemCount >= 2 && (
+                  <ArtifactCategoryChips
+                    value={artifactCategory}
+                    onChange={setArtifactCategory}
+                  />
+                )}
               </div>
             </div>
 
@@ -399,9 +619,19 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
             <button className="fum-btn-cancel" onClick={onClose} type="button">
               Cancel
             </button>
-            <button className="fum-btn-done" onClick={handleDone} type="button">
-              Done
-            </button>
+            <div className="fum-footer-done-wrap">
+              <button
+                className={["fum-btn-done", artifactNeedsCategory ? "fum-btn-done--disabled" : ""].filter(Boolean).join(" ")}
+                onClick={handleDone}
+                disabled={artifactNeedsCategory}
+                type="button"
+              >
+                Done
+              </button>
+              {artifactNeedsCategory && (
+                <p className="fum-done-hint">Pick how the artifacts relate to continue</p>
+              )}
+            </div>
           </div>
         </div>
 
