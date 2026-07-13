@@ -17,6 +17,11 @@ import json
 from app.config import OPENAI_API_KEY
 from sqlalchemy import update
 from app.services import omi as omi_service
+from app.services.llm_usage_tracker import (
+    record_llm_usage,
+    extract_usage_openai_chat,
+    extract_usage_openai_responses,
+)
 
 
 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
@@ -73,6 +78,8 @@ async def generate_and_save_research_objective(
             final_objective,
             context_gathered,
             materials,
+            exploration_id=exploration_id,
+            created_by=created_by,
         )
 
     # -----------------------------------------
@@ -271,6 +278,9 @@ async def summarize_research_objective_from_conversation(
     final_objective: str,
     information_gathered: str,
     materials: Optional[List["ResearchObjectivesFile"]] = None,
+    *,
+    exploration_id: Optional[str] = None,
+    created_by: Optional[str] = None,
 ) -> str:
     materials_block = _build_materials_block(materials)
     materials_section = f"\n<UPLOADED_MATERIALS>\n{materials_block}\n</UPLOADED_MATERIALS>\n" if materials_block else ""
@@ -351,6 +361,18 @@ You are a research strategist. Your task is to create a detailed and clear resea
         model="gpt-4.1",
         temperature=0.5,
         input=f"{prompt}"
+    )
+    input_tokens, output_tokens, usage_raw = extract_usage_openai_responses(response)
+    await record_llm_usage(
+        exploration_id=exploration_id,
+        stage="research_objective_extraction",
+        operation="summarize_from_conversation",
+        provider="openai",
+        model="gpt-4.1",
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        usage_raw=usage_raw,
+        created_by=created_by,
     )
     raw_text = response.output[0].content[0].text
 
@@ -457,6 +479,10 @@ def _build_framer_structured_block(
 async def synthesize_research_objective_from_framer(
     framer: dict,
     materials: Optional[List["ResearchObjectivesFile"]] = None,
+    *,
+    exploration_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
+    created_by: Optional[str] = None,
 ) -> dict:
     """
     Turns the Research Objective Framer's structured fields (plus any uploaded
@@ -518,6 +544,19 @@ You are a research strategist. Your task is to create a detailed and clear resea
         model="gpt-4.1",
         temperature=0.5,
         input=prompt,
+    )
+    input_tokens, output_tokens, usage_raw = extract_usage_openai_responses(response)
+    await record_llm_usage(
+        exploration_id=exploration_id,
+        stage="research_objective_extraction",
+        operation="synthesize_from_framer",
+        provider="openai",
+        model="gpt-4.1",
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        usage_raw=usage_raw,
+        workspace_id=workspace_id,
+        created_by=created_by,
     )
     raw_text = response.output[0].content[0].text
 
@@ -766,7 +805,9 @@ async def save_research_objective_from_framer(
     framer: dict,
 ) -> ResearchObjectives:
     """Synthesizes and persists in one call — kept for callers that don't need the confidence score first."""
-    synthesis = await synthesize_research_objective_from_framer(framer)
+    synthesis = await synthesize_research_objective_from_framer(
+        framer, exploration_id=exploration_id, created_by=created_by,
+    )
     return await persist_framer_research_objective(
         session,
         exploration_id=exploration_id,
@@ -780,6 +821,10 @@ async def validate_description_with_llm(
     description: str,
     conversation: list[str] | None = None,
     materials: Optional[List["ResearchObjectivesFile"]] = None,
+    *,
+    exploration_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
+    created_by: Optional[str] = None,
 ) -> dict:
     """
     Validates:
@@ -821,6 +866,18 @@ Return STRICT JSON:
             {"role": "system", "content": "You evaluate feasibility using strict real-world logic. Do not hallucinate."},
             {"role": "user", "content": feasibility_prompt},
         ]
+    )
+    input_tokens, output_tokens, usage_raw = extract_usage_openai_chat(feas_res)
+    await record_llm_usage(
+        exploration_id=exploration_id,
+        stage="research_objective_feasibility_check",
+        provider="openai",
+        model="gpt-4o-mini",
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        usage_raw=usage_raw,
+        workspace_id=workspace_id,
+        created_by=created_by,
     )
     feas_raw = feas_res.choices[0].message.content
     try:
@@ -1377,6 +1434,18 @@ Output should be in JSON format:
             {"role": "system", "content": ""},
             {"role": "user", "content": structure_prompt},
         ]
+    )
+    input_tokens, output_tokens, usage_raw = extract_usage_openai_chat(struct_res)
+    await record_llm_usage(
+        exploration_id=exploration_id,
+        stage="research_objective_structured_extraction",
+        provider="openai",
+        model="gpt-4.1",
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        usage_raw=usage_raw,
+        workspace_id=workspace_id,
+        created_by=created_by,
     )
 
     struct_raw = struct_res.choices[0].message.content

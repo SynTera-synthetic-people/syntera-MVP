@@ -12,6 +12,7 @@ from app.services.exploration import get_exploration
 from app.services.questionnaire import get_full_questionnaire, get_questionnaire_by_simulation
 from app.config import OPENAI_API_KEY
 from openai import AsyncOpenAI
+from app.services.llm_usage_tracker import record_llm_usage, extract_usage_openai_chat
 
 
 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
@@ -147,7 +148,11 @@ Return JSON ONLY:
     return prompt
 
 
-async def _call_llm_for_starter(prompt: str) -> Tuple[Optional[str], Optional[str]]:
+async def _call_llm_for_starter(
+    prompt: str,
+    *, exploration_id: Optional[str] = None, workspace_id: Optional[str] = None,
+    persona_id: Optional[str] = None, created_by: Optional[str] = None,
+) -> Tuple[Optional[str], Optional[str]]:
     try:
         res = await client.chat.completions.create(
             model="gpt-4o-mini",
@@ -158,7 +163,34 @@ async def _call_llm_for_starter(prompt: str) -> Tuple[Optional[str], Optional[st
             ],
         )
     except Exception as e:
+        await record_llm_usage(
+            exploration_id=exploration_id,
+            stage="rebuttal_starter",
+            provider="openai",
+            model="gpt-4o-mini",
+            input_tokens=0,
+            output_tokens=0,
+            status="error",
+            error_message=str(e),
+            workspace_id=workspace_id,
+            persona_id=persona_id,
+            created_by=created_by,
+        )
         return None, f"LLM call failed: {e}"
+
+    input_tokens, output_tokens, usage_raw = extract_usage_openai_chat(res)
+    await record_llm_usage(
+        exploration_id=exploration_id,
+        stage="rebuttal_starter",
+        provider="openai",
+        model="gpt-4o-mini",
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        usage_raw=usage_raw,
+        workspace_id=workspace_id,
+        persona_id=persona_id,
+        created_by=created_by,
+    )
 
     raw = res.choices[0].message.content
     if isinstance(raw, dict):
@@ -281,7 +313,11 @@ Return JSON only:
 """
     return prompt
 
-async def _call_llm_for_reply(prompt: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+async def _call_llm_for_reply(
+    prompt: str,
+    *, exploration_id: Optional[str] = None, workspace_id: Optional[str] = None,
+    persona_id: Optional[str] = None, created_by: Optional[str] = None,
+) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     try:
         res = await client.chat.completions.create(
             model="gpt-4o-mini",
@@ -292,7 +328,34 @@ async def _call_llm_for_reply(prompt: str) -> Tuple[Optional[Dict[str, Any]], Op
             ],
         )
     except Exception as e:
+        await record_llm_usage(
+            exploration_id=exploration_id,
+            stage="rebuttal_reply",
+            provider="openai",
+            model="gpt-4o-mini",
+            input_tokens=0,
+            output_tokens=0,
+            status="error",
+            error_message=str(e),
+            workspace_id=workspace_id,
+            persona_id=persona_id,
+            created_by=created_by,
+        )
         return None, f"LLM call failed: {e}"
+
+    input_tokens, output_tokens, usage_raw = extract_usage_openai_chat(res)
+    await record_llm_usage(
+        exploration_id=exploration_id,
+        stage="rebuttal_reply",
+        provider="openai",
+        model="gpt-4o-mini",
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        usage_raw=usage_raw,
+        workspace_id=workspace_id,
+        persona_id=persona_id,
+        created_by=created_by,
+    )
 
     raw = res.choices[0].message.content
     if isinstance(raw, dict):
@@ -415,7 +478,11 @@ async def start_rebuttal_session(
     ro_desc = research_obj.description if research_obj else ""
 
     starter_prompt = _build_starter_prompt(ro_desc, persona_dict, found_question, survey_result, sample_size)
-    starter_text, err = await _call_llm_for_starter(starter_prompt)
+    starter_text, err = await _call_llm_for_starter(
+        starter_prompt,
+        exploration_id=exploration_id, workspace_id=workspace_id,
+        persona_id=persona_id if isinstance(persona_id, str) else None, created_by=user_id,
+    )
     if err or not starter_text:
         starter_text = f"Rebuttal mode is live. Please answer briefly: {found_question['text']}"
 
@@ -538,7 +605,12 @@ async def reply_rebuttal_session(session_id: str, user_message: str, user_id: st
         raise ValueError("Question details not found in questionnaire")
 
     reply_prompt = _build_reply_prompt(ro_desc, persona_dict, question_obj, survey_result, starter_message, user_message)
-    llm_out, err = await _call_llm_for_reply(reply_prompt)
+    llm_out, err = await _call_llm_for_reply(
+        reply_prompt,
+        exploration_id=session.exploration_id, workspace_id=session.workspace_id,
+        persona_id=session.persona_id if isinstance(session.persona_id, str) else None,
+        created_by=user_id,
+    )
     if err or not llm_out:
         llm_response = f"Thanks — your response was noted: {user_message}"
         explainers = ["fallback response due to LLM error"]

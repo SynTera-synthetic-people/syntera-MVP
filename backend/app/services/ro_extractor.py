@@ -7,9 +7,11 @@ ai_interpretation already stored on ResearchObjectives.
 import json
 import logging
 import re
+from typing import Optional
 
 from app.services.digital_brain_pipeline import RO_COMPONENTS
 from app.utils.anthropic_client import get_async_anthropic_client
+from app.services.llm_usage_tracker import record_llm_usage, extract_usage_anthropic_message
 
 logger = logging.getLogger(__name__)
 
@@ -39,10 +41,20 @@ def _strip_json_fences(raw: str) -> str:
     return match.group(0) if match else raw
 
 
-async def extract_ro_components_for_pipeline(description: str, ai_interpretation: dict) -> dict:
+async def extract_ro_components_for_pipeline(
+    description: str,
+    ai_interpretation: dict,
+    *,
+    exploration_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
+    created_by: Optional[str] = None,
+) -> dict:
     """Returns a dict with all RO_COMPONENTS keys populated as strings.
 
     Raises ValueError if Claude's output can't be parsed or is missing components.
+
+    Shared by both the auto-generate (Digital Brain) and manual persona
+    calibration flows — instrumenting here covers both.
     """
     client = get_async_anthropic_client()
     prompt = _PROMPT_TEMPLATE.format(
@@ -56,6 +68,18 @@ async def extract_ro_components_for_pipeline(description: str, ai_interpretation
         model=MODEL,
         max_tokens=2000,
         messages=[{"role": "user", "content": prompt}],
+    )
+    input_tokens, output_tokens, usage_raw = extract_usage_anthropic_message(response)
+    await record_llm_usage(
+        exploration_id=exploration_id,
+        stage="research_objective_extraction",
+        provider="anthropic",
+        model=MODEL,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        usage_raw=usage_raw,
+        workspace_id=workspace_id,
+        created_by=created_by,
     )
     raw_text = "".join(block.text for block in response.content if getattr(block, "type", None) == "text")
 

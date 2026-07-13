@@ -13,6 +13,7 @@ MODEL_MODULES = (
     "decision_room",
     "exploration",
     "interview",
+    "llm_usage",
     "omi",
     "organization",
     "persona",

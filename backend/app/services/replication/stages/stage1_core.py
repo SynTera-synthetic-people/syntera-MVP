@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import Any, Optional
 
 from openai import AsyncOpenAI
 
@@ -24,6 +24,7 @@ from app.services.replication.models import (
 )
 from app.services.replication.prompts import STAGE1_SYSTEM, STAGE1_USER
 from app.services.replication.utils import parse_llm_json
+from app.services.llm_usage_tracker import record_llm_usage, extract_usage_openai_chat
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,11 @@ def _try_extract_ocean(details: dict) -> OceanProfile | None:
 
 async def extract_psychographic_core(
     source_persona_details: dict[str, Any],
+    *,
+    exploration_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
+    persona_id: Optional[str] = None,
+    created_by: Optional[str] = None,
 ) -> PsychographicCore:
     """
     Stage 1: extract and lock the psychographic core from source persona.
@@ -82,6 +88,19 @@ async def extract_psychographic_core(
         ],
         temperature=0.2,   # low temperature — extraction, not generation
         response_format={"type": "json_object"},
+    )
+    input_tokens, output_tokens, usage_raw = extract_usage_openai_chat(response)
+    await record_llm_usage(
+        exploration_id=exploration_id,
+        stage="replication_stage1",
+        provider="openai",
+        model="gpt-4o-mini",
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        usage_raw=usage_raw,
+        workspace_id=workspace_id,
+        persona_id=persona_id,
+        created_by=created_by,
     )
 
     parsed = parse_llm_json(response.choices[0].message.content, stage="Stage 1")
