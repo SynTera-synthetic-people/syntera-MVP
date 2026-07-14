@@ -134,7 +134,7 @@ function buildFramerPayload(data: ROFramerData) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const framerDraftKey = (objectiveId?: string) => `ro_framer_draft_${objectiveId ?? "unknown"}`;
-const ARTIFACT_COMING_SOON = true;
+const ARTIFACT_COMING_SOON = false;
 // ─────────────────────────────────────────────────────────────────────────────
 // Local "has this objective's Framer been submitted" flag.
 //
@@ -976,34 +976,49 @@ const ARTIFACT_MAX_BYTES = 10 * 1024 * 1024;
 const ARTIFACT_MAX_LINKS = 3;
 const ARTIFACT_MAX_FILES = 4;
 
-// How Omi should relate 2+ artifacts within this section to each other.
-// Only surfaced once a second artifact (link or file) is attached — a lone
-// artifact has nothing to be compared, unified, or sequenced against.
-const ARTIFACT_CATEGORIES: { id: ArtifactCategory; label: string; description: string }[] = [
-    {
-        id: "compare",
-        label: "Compare",
-        description: "Different concepts competing for the same spot. Omi shows personas the options together and finds out which one resonates more, and why.",
-    },
-    {
-        id: "campaign_set",
-        label: "Campaign Set",
-        description: "Assets from one campaign, meant to work together. Omi checks whether they feel consistent and tell one story, rather than picking a favorite.",
-    },
-    // {
-    //     id: "sequence",
-    //     label: "Sequence",
-    //     description: "Assets meant to be seen in order — a funnel, a teaser-to-reveal, or a multi-step flow. Omi tests whether each step earns the next.",
-    // },
-];
+// ─────────────────────────────────────────────────────────────────────────────
+// DISABLED — artifact categorization (Compare / Campaign Set / Sequence)
+//
+// No immediate client requirement for this yet. Everything below (the
+// category config, the label helper, and the chip-selector component) is
+// left in place but unused so the feature can be turned back on later by:
+//   1. Uncommenting ARTIFACT_CATEGORIES / artifactCategoryLabel / countArtifactItems
+//      / ArtifactCategoryChipsProps / ArtifactCategoryChips below.
+//   2. Restoring `artifactItemCount` / `artifactNeedsCategory` in MaterialTab
+//      and adding `&& !artifactNeedsCategory` back into canSubmitArtifact.
+//   3. Uncommenting the <ArtifactCategoryChips /> render block and the
+//      "Pick how these relate to continue" hint in MaterialTab's JSX.
+//   4. Uncommenting the "Artifact grouping" line in buildPreviewSections.
+// The `category` field itself is left active on ArtifactSectionData/emptyArtifactSection
+// so stored/submitted data keeps a stable shape either way — it will just
+// always be `null` while this feature is off.
+// ─────────────────────────────────────────────────────────────────────────────
 
-const artifactCategoryLabel = (id: ArtifactCategory | null): string | null =>
-    id ? ARTIFACT_CATEGORIES.find(c => c.id === id)?.label ?? null : null;
+// const ARTIFACT_CATEGORIES: { id: ArtifactCategory; label: string; description: string }[] = [
+//     {
+//         id: "compare",
+//         label: "Compare",
+//         description: "Different concepts competing for the same spot. Omi shows personas the options together and finds out which one resonates more, and why.",
+//     },
+//     {
+//         id: "campaign_set",
+//         label: "Campaign Set",
+//         description: "Assets from one campaign, meant to work together. Omi checks whether they feel consistent and tell one story, rather than picking a favorite.",
+//     },
+//     // {
+//     //     id: "sequence",
+//     //     label: "Sequence",
+//     //     description: "Assets meant to be seen in order — a funnel, a teaser-to-reveal, or a multi-step flow. Omi tests whether each step earns the next.",
+//     // },
+// ];
 
-// Counts distinct artifacts attached so far (filled links + files), so the
-// category selector only appears once there's actually something to relate.
-const countArtifactItems = (artifact: ArtifactSectionData): number =>
-    artifact.links.filter(l => l.value.trim()).length + artifact.files.length;
+// const artifactCategoryLabel = (id: ArtifactCategory | null): string | null =>
+//     id ? ARTIFACT_CATEGORIES.find(c => c.id === id)?.label ?? null : null;
+
+// Counts distinct artifacts attached so far (filled links + files) — was used
+// to decide when the category selector should appear. Unused while disabled.
+// const countArtifactItems = (artifact: ArtifactSectionData): number =>
+//     artifact.links.filter(l => l.value.trim()).length + artifact.files.length;
 
 const MATERIAL_INSTRUCTION_MAX_LENGTH = 500;
 
@@ -1381,37 +1396,39 @@ const LinkRow: React.FC<LinkRowProps> = ({ value, placeholder, onChange, onFocus
     );
 };
 
-interface ArtifactCategoryChipsProps {
-    value: ArtifactCategory | null;
-    onChange: (category: ArtifactCategory) => void;
-    disabled?: boolean;
-}
-
-const ArtifactCategoryChips: React.FC<ArtifactCategoryChipsProps> = ({ value, onChange, disabled }) => (
-    <div className="rofp-field-group">
-        <div className="rofp-field-label-row">
-            <label className="rofp-label">How should Omi treat these together?</label>
-        </div>
-        <div className="rofp-artifact-cat-row">
-            {ARTIFACT_CATEGORIES.map(cat => (
-                <button
-                    key={cat.id}
-                    type="button"
-                    className={[
-                        "rofp-artifact-cat-chip",
-                        value === cat.id ? "rofp-artifact-cat-chip--active" : "",
-                    ].filter(Boolean).join(" ")}
-                    onClick={() => !disabled && onChange(cat.id)}
-                    disabled={disabled}
-                    aria-pressed={value === cat.id}
-                >
-                    {cat.label}
-                </button>
-            ))}
-        </div>
-        {value && <p className="rofp-artifact-cat-desc">{ARTIFACT_CATEGORIES.find(c => c.id === value)?.description}</p>}
-    </div>
-);
+// DISABLED alongside ARTIFACT_CATEGORIES above — see the block comment near
+// ARTIFACT_MAX_FILES for how to re-enable.
+// interface ArtifactCategoryChipsProps {
+//     value: ArtifactCategory | null;
+//     onChange: (category: ArtifactCategory) => void;
+//     disabled?: boolean;
+// }
+//
+// const ArtifactCategoryChips: React.FC<ArtifactCategoryChipsProps> = ({ value, onChange, disabled }) => (
+//     <div className="rofp-field-group">
+//         <div className="rofp-field-label-row">
+//             <label className="rofp-label">How should Omi treat these together?</label>
+//         </div>
+//         <div className="rofp-artifact-cat-row">
+//             {ARTIFACT_CATEGORIES.map(cat => (
+//                 <button
+//                     key={cat.id}
+//                     type="button"
+//                     className={[
+//                         "rofp-artifact-cat-chip",
+//                         value === cat.id ? "rofp-artifact-cat-chip--active" : "",
+//                     ].filter(Boolean).join(" ")}
+//                     onClick={() => !disabled && onChange(cat.id)}
+//                     disabled={disabled}
+//                     aria-pressed={value === cat.id}
+//                 >
+//                     {cat.label}
+//                 </button>
+//             ))}
+//         </div>
+//         {value && <p className="rofp-artifact-cat-desc">{ARTIFACT_CATEGORIES.find(c => c.id === value)?.description}</p>}
+//     </div>
+// );
 
 interface MaterialTabProps {
     data: MaterialData;
@@ -1496,12 +1513,11 @@ const MaterialTab: React.FC<MaterialTabProps> = ({
 
     const artifactHasContent = data.artifact.links.some(l => l.value.trim()) || data.artifact.files.length > 0;
     const artifactLinksValid = data.artifact.links.every(l => isLikelyValidUrl(l.value));
-    const artifactItemCount = countArtifactItems(data.artifact);
-    // With 2+ artifacts, a category is required — otherwise Omi doesn't know
-    // whether to compare, unify, or sequence them.
-    const artifactNeedsCategory = artifactItemCount >= 2 && !data.artifact.category;
+    // DISABLED alongside the categorization feature above:
+    // const artifactItemCount = countArtifactItems(data.artifact);
+    // const artifactNeedsCategory = artifactItemCount >= 2 && !data.artifact.category;
     // Same reasoning as canSubmitBrief — not gated on artifactHasContent.
-    const canSubmitArtifact = artifactLinksValid && !artifactProcessing && !data.artifact.submitted && !artifactNeedsCategory;
+    const canSubmitArtifact = artifactLinksValid && !artifactProcessing && !data.artifact.submitted;
     const canAddArtifactLink = data.artifact.links.length < ARTIFACT_MAX_LINKS;
 
     const updateArtifact = (patch: Partial<ArtifactSectionData>) =>
@@ -1728,6 +1744,8 @@ const MaterialTab: React.FC<MaterialTabProps> = ({
                                     compact
                                 />
 
+                                {/* DISABLED — artifact categorization UI. See the block
+                                    comment near ARTIFACT_MAX_FILES for how to re-enable.
                                 {artifactItemCount >= 2 && (
                                     <ArtifactCategoryChips
                                         value={data.artifact.category}
@@ -1735,6 +1753,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({
                                         disabled={data.artifact.submitted}
                                     />
                                 )}
+                                */}
                             </div>
 
                             {artifactProcessing && <OmiProcessingBar messageIndex={artifactMsgIndex} />}
@@ -1766,9 +1785,11 @@ const MaterialTab: React.FC<MaterialTabProps> = ({
                                     {artifactProcessing ? "Saving…" : data.artifact.submitted ? "Saved" : "Submit"}
                                 </button>
                             </div>
+                            {/* DISABLED alongside the categorization feature above.
                             {artifactNeedsCategory && !artifactProcessing && (
                                 <p className="rofp-cta-hint" style={{ textAlign: "right" }}>Pick how these relate to continue</p>
                             )}
+                            */}
                         </div>
                     </div>
 
@@ -1895,8 +1916,9 @@ const buildPreviewSections = (data: ROFramerData): PreviewSection[] => {
         if (data.material.artifact.instruction.trim()) lines.push(`Artifact instruction: ${data.material.artifact.instruction.trim()}`);
         artifactFileNames.forEach(name => lines.push(`Artifact file: ${name}`));
         artifactLinks.forEach(link => lines.push(`Artifact link: ${link}`));
-        const categoryLabel = artifactCategoryLabel(data.material.artifact.category);
-        if (categoryLabel) lines.push(`Artifact grouping: ${categoryLabel}`);
+        // DISABLED alongside the categorization feature above.
+        // const categoryLabel = artifactCategoryLabel(data.material.artifact.category);
+        // if (categoryLabel) lines.push(`Artifact grouping: ${categoryLabel}`);
         sections.push({ heading: "Add Material", body: lines.join("\n") });
     }
 

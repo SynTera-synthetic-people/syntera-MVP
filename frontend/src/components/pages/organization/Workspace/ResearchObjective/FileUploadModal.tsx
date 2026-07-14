@@ -12,31 +12,44 @@ const ARTIFACT_MAX_BYTES = 10 * 1024 * 1024;
 
 const ARTIFACT_MAX_LINKS = 3;
 const ARTIFACT_MAX_FILES = 4;
-const ARTIFACT_COMING_SOON = true;
+const ARTIFACT_COMING_SOON = false;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DISABLED — artifact categorization (Compare / Campaign Set / Sequence)
+//
+// No immediate client requirement for this yet. Kept in place but unused so
+// the feature can be turned back on later by:
+//   1. Uncommenting ARTIFACT_CATEGORIES and ArtifactCategoryChips below.
+//   2. Restoring `artifactNeedsCategory` in the modal component and adding
+//      it back to the Done button's disabled condition / handleDone guard.
+//   3. Uncommenting the <ArtifactCategoryChips /> render block and the
+//      "Pick how the artifacts relate to continue" hint.
+// `artifactCategory` itself is left active on FileUploadModalValue and in
+// state so the payload shape stays stable either way — it will just always
+// be `null` while this feature is off.
+// ─────────────────────────────────────────────────────────────────────────────
 
 // How Omi should relate 2+ artifacts within this section to each other.
-// Only surfaced once a second artifact (link or file) is attached — a lone
-// artifact has nothing to be compared, unified, or sequenced against.
-// Kept in sync with ResearchObjectiveFramer's ARTIFACT_CATEGORIES.
+// Kept in sync with ResearchObjectiveFramer's ArtifactCategory.
 export type ArtifactCategory = "compare" | "campaign_set" ;
 
-const ARTIFACT_CATEGORIES: { id: ArtifactCategory; label: string; description: string }[] = [
-  {
-    id: "compare",
-    label: "Compare",
-    description: "Different concepts competing for the same spot. Omi shows personas the options together and finds out which one resonates more, and why.",
-  },
-  {
-    id: "campaign_set",
-    label: "Campaign Set",
-    description: "Assets from one campaign, meant to work together. Omi checks whether they feel consistent and tell one story, rather than picking a favorite.",
-  },
-  // {
-  //   id: "sequence",
-  //   label: "Sequence",
-  //   description: "Assets meant to be seen in order — a funnel, a teaser-to-reveal, or a multi-step flow. Omi tests whether each step earns the next.",
-  // },
-];
+// const ARTIFACT_CATEGORIES: { id: ArtifactCategory; label: string; description: string }[] = [
+//   {
+//     id: "compare",
+//     label: "Compare",
+//     description: "Different concepts competing for the same spot. Omi shows personas the options together and finds out which one resonates more, and why.",
+//   },
+//   {
+//     id: "campaign_set",
+//     label: "Campaign Set",
+//     description: "Assets from one campaign, meant to work together. Omi checks whether they feel consistent and tell one story, rather than picking a favorite.",
+//   },
+//   // {
+//   //   id: "sequence",
+//   //   label: "Sequence",
+//   //   description: "Assets meant to be seen in order — a funnel, a teaser-to-reveal, or a multi-step flow. Omi tests whether each step earns the next.",
+//   // },
+// ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -342,39 +355,39 @@ const MultiUploadZone: React.FC<MultiUploadZoneProps> = ({
   );
 };
 
-// ─── Artifact category chips (Compare / Campaign Set / Sequence) ────────────
-
-interface ArtifactCategoryChipsProps {
-  value: ArtifactCategory | null;
-  onChange: (category: ArtifactCategory) => void;
-}
-
-const ArtifactCategoryChips: React.FC<ArtifactCategoryChipsProps> = ({ value, onChange }) => (
-  <div className="fum-cat-group">
-    <label className="fum-cat-label">How should Omi treat these together?</label>
-    <div className="fum-cat-row">
-      {ARTIFACT_CATEGORIES.map(cat => (
-        <button
-          key={cat.id}
-          type="button"
-          className={[
-            "fum-cat-chip",
-            value === cat.id ? "fum-cat-chip--active" : "",
-          ].filter(Boolean).join(" ")}
-          onClick={() => onChange(cat.id)}
-          aria-pressed={value === cat.id}
-        >
-          {cat.label}
-        </button>
-      ))}
-    </div>
-    {value && (
-      <p className="fum-cat-desc">
-        {ARTIFACT_CATEGORIES.find(c => c.id === value)?.description}
-      </p>
-    )}
-  </div>
-);
+// DISABLED alongside ARTIFACT_CATEGORIES above — see the block comment near
+// ARTIFACT_MAX_FILES for how to re-enable.
+// interface ArtifactCategoryChipsProps {
+//   value: ArtifactCategory | null;
+//   onChange: (category: ArtifactCategory) => void;
+// }
+//
+// const ArtifactCategoryChips: React.FC<ArtifactCategoryChipsProps> = ({ value, onChange }) => (
+//   <div className="fum-cat-group">
+//     <label className="fum-cat-label">How should Omi treat these together?</label>
+//     <div className="fum-cat-row">
+//       {ARTIFACT_CATEGORIES.map(cat => (
+//         <button
+//           key={cat.id}
+//           type="button"
+//           className={[
+//             "fum-cat-chip",
+//             value === cat.id ? "fum-cat-chip--active" : "",
+//           ].filter(Boolean).join(" ")}
+//           onClick={() => onChange(cat.id)}
+//           aria-pressed={value === cat.id}
+//         >
+//           {cat.label}
+//         </button>
+//       ))}
+//     </div>
+//     {value && (
+//       <p className="fum-cat-desc">
+//         {ARTIFACT_CATEGORIES.find(c => c.id === value)?.description}
+//       </p>
+//     )}
+//   </div>
+// );
 
 // ─── Link row ─────────────────────────────────────────────────────────────────
 
@@ -449,22 +462,18 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
   const [artifactFiles, setArtifactFiles] = useState<SlotFile[]>(() =>
     (initialValue?.artifactFiles ?? []).map(file => ({ file, sizeLabel: formatFileSize(file.size) }))
   );
-  const [artifactCategory, setArtifactCategory] = useState<ArtifactCategory | null>(
+  const [artifactCategory] = useState<ArtifactCategory | null>(
     initialValue?.artifactCategory ?? null
   );
 
   if (!isOpen) return null;
 
-  // Counts distinct artifacts attached so far (filled links + files), so the
-  // category selector only appears once there's actually something to relate.
-  const artifactItemCount =
-    artifactLinks.filter(l => l.value.trim()).length + artifactFiles.length;
-  // With 2+ artifacts, a category is required — otherwise Omi doesn't know
-  // whether to compare, unify, or sequence them.
-  const artifactNeedsCategory = artifactItemCount >= 2 && !artifactCategory;
+  // DISABLED alongside the categorization feature above:
+  // const artifactItemCount =
+  //   artifactLinks.filter(l => l.value.trim()).length + artifactFiles.length;
+  // const artifactNeedsCategory = artifactItemCount >= 2 && !artifactCategory;
 
   const handleDone = () => {
-    if (artifactNeedsCategory) return;
     onDone({
       briefFile: briefFile?.file ?? null,
       briefLink: briefLink.trim(),
@@ -600,12 +609,15 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                   onRemoveAt={removeArtifactFileAt}
                 />
 
+                {/* DISABLED — artifact categorization UI. See the block
+                    comment near ARTIFACT_MAX_FILES for how to re-enable.
                 {artifactItemCount >= 2 && (
                   <ArtifactCategoryChips
                     value={artifactCategory}
                     onChange={setArtifactCategory}
                   />
                 )}
+                */}
               </div>
             </div>
 
@@ -621,16 +633,17 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
             </button>
             <div className="fum-footer-done-wrap">
               <button
-                className={["fum-btn-done", artifactNeedsCategory ? "fum-btn-done--disabled" : ""].filter(Boolean).join(" ")}
+                className="fum-btn-done"
                 onClick={handleDone}
-                disabled={artifactNeedsCategory}
                 type="button"
               >
                 Done
               </button>
+              {/* DISABLED alongside the categorization feature above.
               {artifactNeedsCategory && (
                 <p className="fum-done-hint">Pick how the artifacts relate to continue</p>
               )}
+              */}
             </div>
           </div>
         </div>
