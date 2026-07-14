@@ -9,6 +9,7 @@ from importlib import import_module
 
 
 MODEL_MODULES = (
+    "artifact_pipeline",
     "billing",
     "decision_room",
     "exploration",

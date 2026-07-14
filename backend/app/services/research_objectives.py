@@ -594,6 +594,8 @@ def map_material_to_out(file: ResearchObjectivesFile) -> ResearchObjectiveMateri
         instruction=file.instruction,
         has_context=bool((file.extracted_context or "").strip()),
         uploaded_at=file.uploaded_at,
+        artifact_category=file.artifact_category,
+        comparison_mode=file.comparison_mode,
     )
 
 
@@ -609,6 +611,8 @@ async def create_framer_material(
     content_type: Optional[str] = None,
     size: Optional[int] = None,
     source_url: Optional[str] = None,
+    artifact_category: Optional[str] = None,
+    comparison_mode: Optional[str] = None,
 ) -> ResearchObjectivesFile:
     """Persists one uploaded/linked Framer material against exploration_id — no
     ResearchObjectives row exists yet at this point. research_objectives_id is
@@ -624,6 +628,8 @@ async def create_framer_material(
         source_url=source_url,
         instruction=instruction,
         extracted_context=extracted_context or None,
+        artifact_category=artifact_category,
+        comparison_mode=comparison_mode,
     )
     session.add(material)
     await session.commit()
@@ -637,37 +643,59 @@ async def replace_framer_materials_for_kind(
     exploration_id: str,
     material_kind: str,
     items: List[dict],
+    replace: bool = True,
 ) -> List[ResearchObjectivesFile]:
     """
-    Re-submitting a Framer "Add Material" section (Research Brief / Artifact)
-    replaces that section's previous materials for this exploration rather than
-    accumulating duplicates — there's only ever one current version per section,
-    matching the frontend's single submitted/not-submitted state per section.
-    Deletes only unlinked materials of this kind (never touches anything already
-    attached to a finalized objective) and creates fresh rows for `items`.
-    `items` may be empty — submitting an emptied-out section clears it.
-    """
-    existing = await session.execute(
-        select(ResearchObjectivesFile).where(
-            ResearchObjectivesFile.exploration_id == exploration_id,
-            ResearchObjectivesFile.material_kind == material_kind,
-            ResearchObjectivesFile.research_objectives_id.is_(None),
-        )
-    )
-    for row in existing.scalars().all():
-        await session.delete(row)
-    await session.commit()
+    Persists Framer "Add Material" section items (Research Brief / Artifact).
 
-    created = []
+    replace=True (default; used for "brief"): re-submitting replaces that
+    section's previous materials for this exploration rather than accumulating
+    duplicates — there's only ever one current version per section, matching
+    the frontend's single submitted/not-submitted state per section. `items`
+    may be empty — submitting an emptied-out section clears it.
+
+    replace=False (used for "artifact"): new items are appended to whatever
+    already exists for this exploration/kind instead of replacing it — an
+    artifact set can be built up across several submissions (e.g. uploading
+    2 files now, 2 more later) without losing what's already there. `items`
+    empty is a no-op.
+
+    Either way, only unlinked materials (research_objectives_id IS NULL) are
+    ever touched — nothing already attached to a finalized objective is
+    affected. Returns the full current set of unlinked materials for this
+    exploration/kind after the operation (for replace=True this is exactly
+    the newly created items, since the old ones were just deleted).
+    """
+    if replace:
+        existing = await session.execute(
+            select(ResearchObjectivesFile).where(
+                ResearchObjectivesFile.exploration_id == exploration_id,
+                ResearchObjectivesFile.material_kind == material_kind,
+                ResearchObjectivesFile.research_objectives_id.is_(None),
+            )
+        )
+        for row in existing.scalars().all():
+            await session.delete(row)
+        await session.commit()
+
     for item in items:
-        material = await create_framer_material(
+        await create_framer_material(
             session,
             exploration_id=exploration_id,
             material_kind=material_kind,
             **item,
         )
-        created.append(material)
-    return created
+
+    current = await session.execute(
+        select(ResearchObjectivesFile)
+        .where(
+            ResearchObjectivesFile.exploration_id == exploration_id,
+            ResearchObjectivesFile.material_kind == material_kind,
+            ResearchObjectivesFile.research_objectives_id.is_(None),
+        )
+        .order_by(ResearchObjectivesFile.uploaded_at)
+    )
+    return list(current.scalars().all())
 
 
 async def get_unlinked_materials(

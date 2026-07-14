@@ -37,6 +37,8 @@ _MODEL_RATES: dict[str, tuple[float, float]] = {
     "claude-sonnet-4-6":          (3.00, 15.00),
     "claude-sonnet-4-5":          (3.00, 15.00),
     "claude-haiku-4-5-20251001":  (1.00,  5.00),
+    # Gemini (verified against ai.google.dev/gemini-api/docs/pricing: 2026-07-13)
+    "gemini-2.5-flash": (0.30, 2.50),
 }
 
 logger.info("LLM usage rate table last verified: %s", RATES_LAST_VERIFIED)
@@ -103,6 +105,26 @@ def extract_usage_anthropic_message(response_or_final_message: Any) -> tuple[int
         return (usage.input_tokens, usage.output_tokens, _model_dump(usage))
     except Exception:
         logger.debug("Malformed/missing usage on Anthropic message response", exc_info=True)
+        return (0, 0, None)
+
+
+def extract_usage_gemini(response: Any) -> tuple[int, int, Optional[dict]]:
+    """Gemini (google-genai) generate_content response:
+    .usage_metadata.prompt_token_count/.candidates_token_count.
+
+    usage_metadata (or its individual token-count fields) can be None on
+    blocked/empty responses (e.g. a safety filter trip) — treated as zero
+    tokens rather than raised, with a warning logged since this is a
+    Gemini-specific failure mode the other providers don't hit.
+    """
+    try:
+        usage = response.usage_metadata
+        if usage is None:
+            logger.warning("Gemini response has no usage_metadata (blocked/empty response?) — recording zero tokens")
+            return (0, 0, None)
+        return (usage.prompt_token_count or 0, usage.candidates_token_count or 0, _model_dump(usage))
+    except Exception:
+        logger.debug("Malformed/missing usage on Gemini generate_content response", exc_info=True)
         return (0, 0, None)
 
 

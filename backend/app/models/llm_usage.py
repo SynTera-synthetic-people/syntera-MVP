@@ -15,7 +15,7 @@ class LLMUsageEvent(SQLModel, table=True):
 
     stage: str = Field(index=True)                   # coarse taxonomy, see plan docs/llm_usage_tracking_plan.md
     operation: Optional[str] = Field(default=None)    # fine-grained sub-label
-    provider: str = Field(index=True)                 # "openai" | "anthropic"
+    provider: str = Field(index=True)                 # "openai" | "anthropic" | "gemini"
     model: str = Field(index=True)                     # raw model string
 
     input_tokens: int = Field(default=0)

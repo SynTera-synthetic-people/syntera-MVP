@@ -611,6 +611,8 @@ async def _repair_research_objectives_file_schema(conn: AsyncConnection) -> None
         "source_url VARCHAR",
         "material_kind VARCHAR",
         "relevance_status VARCHAR NOT NULL DEFAULT 'pending'",
+        "artifact_category VARCHAR",
+        "comparison_mode VARCHAR",
     ):
         await ensure_column(conn, "research_objectives_file", column)
     await ensure_index(
