@@ -3,9 +3,127 @@ import type { Variable } from '../Index';
 import VariablePill from '../VariablePill';
 import '../DataPlayground.css';
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════
+// Icons — plain named components, rendered by explicit reference (never via
+// dot-notation JSX like <obj.Icon />) to keep this file as boring/portable
+// as possible across build setups.
+// ══════════════════════════════════════════════════════════════════════════
 
-type FlowState = 'choice' | 'omi-loading' | 'builder' | 'gallery';
+function IconColumnBars({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <rect x="3.5" y="10" width="4" height="10" rx="1" fill="currentColor" />
+      <rect x="10" y="5.5" width="4" height="14.5" rx="1" fill="currentColor" />
+      <rect x="16.5" y="13" width="4" height="7" rx="1" fill="currentColor" />
+    </svg>
+  );
+}
+
+function IconBarsHorizontal({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <rect x="3" y="4.5" width="13" height="4" rx="1" fill="currentColor" />
+      <rect x="3" y="10" width="18" height="4" rx="1" fill="currentColor" />
+      <rect x="3" y="15.5" width="9" height="4" rx="1" fill="currentColor" />
+    </svg>
+  );
+}
+
+function IconLineChart({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <path d="M3 15.5 8.5 9.5 12.5 13 21 4.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="21" cy="4.5" r="1.7" fill="currentColor" />
+    </svg>
+  );
+}
+
+function IconPie({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <path d="M12 3 A9 9 0 0 1 21 12 L12 12 Z" fill="currentColor" />
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.6" fill="none" />
+    </svg>
+  );
+}
+
+function IconDualAxes({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <rect x="4" y="12" width="3.5" height="8" rx="1" fill="currentColor" opacity="0.55" />
+      <rect x="10" y="8" width="3.5" height="12" rx="1" fill="currentColor" opacity="0.55" />
+      <path d="M4 8 10 12 14 6 20 9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    </svg>
+  );
+}
+
+function IconSparkle({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <path d="M12 2 L14.2 9.8 22 12 14.2 14.2 12 22 9.8 14.2 2 12 9.8 9.8 Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function IconSearch({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
+      <path d="M20 20 16 16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconArrowLeft({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <path d="M19 12H5M11 6l-6 6 6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** Returns the icon component for a given chart-family id — used by both
+ * the Gallery sidebar and anywhere else that needs to look one up by id. */
+function chartTypeIcon(id: ChartType, size = 15) {
+  switch (id) {
+    case 'bar': return <IconColumnBars size={size} />;
+    case 'line': return <IconLineChart size={size} />;
+    case 'pie': return <IconPie size={size} />;
+    case 'dual': return <IconDualAxes size={size} />;
+  }
+}
+
+/** Animated loader avatar for the Omi "Generating charts" step — a spinning
+ * ring around a small robot glyph, echoing the Figma reference illustration. */
+function LoaderAvatar() {
+  return (
+    <svg viewBox="0 0 64 64" width="56" height="56">
+      <circle cx="32" cy="32" r="27" fill="#0d0e14" />
+      <circle
+        cx="32"
+        cy="32"
+        r="27"
+        fill="none"
+        stroke="#2563eb"
+        strokeWidth="3"
+        strokeDasharray="127 170"
+        strokeLinecap="round"
+        className="dp-gen-ring"
+      />
+      <rect x="20" y="21" width="24" height="17" rx="7" fill="#3b82f6" />
+      <circle cx="26.5" cy="29.5" r="2.2" fill="#0d0e14" />
+      <circle cx="37.5" cy="29.5" r="2.2" fill="#0d0e14" />
+      <rect x="29" y="15" width="6" height="7" rx="2.5" fill="#3b82f6" />
+      <rect x="23" y="41" width="18" height="9" rx="3.5" fill="#2563eb" />
+    </svg>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// Types & constants
+// ══════════════════════════════════════════════════════════════════════════
+
+type FlowState = 'choice' | 'omi-loading' | 'preview' | 'builder' | 'gallery';
 type ChartType = 'bar' | 'line' | 'pie' | 'dual';
 type DataLabel = 'counts' | 'pct' | 'both';
 
@@ -25,13 +143,9 @@ interface MappingRow {
   linkedVars: string;
 }
 
-// ── Props ─────────────────────────────────────────────────────────────────────
-
 interface ChartVisualsProps {
   allVariables: Variable[];
 }
-
-// ── Sample loading steps (mirrors the "Generating charts" modal) ────────────
 
 const LOADING_STEPS = [
   'Analyzing selected variables...',
@@ -40,70 +154,67 @@ const LOADING_STEPS = [
   'Rendering your visualization...',
 ];
 
-// ── Sample series for the live chart preview ─────────────────────────────────
-
 const CATEGORY_LABELS = ['Figma', 'Sketch', 'XD', 'Photoshop', 'Illustrator', 'AfterEffect'];
 const SERIES_2023 = [56, 64, 76, 78, 70, 37];
 
-// ── Chart Gallery data ────────────────────────────────────────────────────────
-//
-// Colors pixel-sampled directly from the Figma "Bar Chart.png" reference:
-// purple #7947c4, green #45c276, orange #c37148, teal #2099ad. Two extra
-// tones (violet / gold) are added in the same family for the larger Pie
-// variants which use up to 8 categories.
+// Colors pixel-sampled from the Figma "Bar Chart.png" reference: purple
+// #7947c4, green #45c276, orange #c37148, teal #2099ad, plus two extra
+// tones in the same family for the larger Pie variants (up to 8 categories).
+const PALETTE = ['#7947c4', '#45c276', '#c37148', '#2099ad', '#b347c3', '#c3a147', '#4763c3', '#c34774'];
 
-const GALLERY_TYPES = [
-  { id: 'bar', label: 'Bar', icon: '▥' },
-  { id: 'line', label: 'Line', icon: '📈' },
-  { id: 'pie', label: 'Pie/Polar', icon: '◔' },
-  { id: 'dual', label: 'Dual Axes', icon: '⇕' },
-] as const;
+const CHART_TYPE_LIST: { id: ChartType; label: string }[] = [
+  { id: 'bar', label: 'Bar' },
+  { id: 'line', label: 'Line' },
+  { id: 'pie', label: 'Pie/Polar' },
+  { id: 'dual', label: 'Dual Axes' },
+];
 
-const GALLERY_PALETTE = ['#7947c4', '#45c276', '#c37148', '#2099ad', '#b347c3', '#c3a147', '#4763c3', '#c34774'];
+const BASE_MAPPING: MappingRow[] = [
+  { variable: 'S6', chartType: 'pie', linkedVars: 'S2, S6' },
+  { variable: 'S6', chartType: 'bar', linkedVars: 'S2, S6' },
+  { variable: 'S6', chartType: 'line', linkedVars: 'S2, S6' },
+  { variable: 'S6', chartType: 'select', linkedVars: 'S3, S6' },
+];
+
+// ══════════════════════════════════════════════════════════════════════════
+// Chart Gallery — card specs & tiny SVG preview renderer
+// ══════════════════════════════════════════════════════════════════════════
 
 interface GalleryCardSpec {
   id: string;
-  kind: 'bar' | 'line' | 'pie' | 'dual';
+  kind: ChartType;
   seriesCount: number;
   horizontal?: boolean;
   years: number[];
 }
 
-const BAR_CARDS: GalleryCardSpec[] = [
-  { id: 'bar1', kind: 'bar', seriesCount: 1, horizontal: false, years: [2023] },
-  { id: 'bar2', kind: 'bar', seriesCount: 2, horizontal: false, years: [2023, 2024] },
-  { id: 'bar3', kind: 'bar', seriesCount: 3, horizontal: false, years: [2022, 2023, 2024] },
-  { id: 'bar4', kind: 'bar', seriesCount: 4, horizontal: false, years: [2021, 2022, 2023, 2024] },
-  { id: 'bar5', kind: 'bar', seriesCount: 1, horizontal: true, years: [2023] },
-  { id: 'bar6', kind: 'bar', seriesCount: 4, horizontal: true, years: [2021, 2022, 2023, 2024] },
-];
-
-const LINE_CARDS: GalleryCardSpec[] = [
-  { id: 'line1', kind: 'line', seriesCount: 1, years: [2023] },
-  { id: 'line2', kind: 'line', seriesCount: 2, years: [2023, 2024] },
-  { id: 'line3', kind: 'line', seriesCount: 3, years: [2022, 2023, 2024] },
-  { id: 'line4', kind: 'line', seriesCount: 4, years: [2021, 2022, 2023, 2024] },
-];
-
-const PIE_CARDS: GalleryCardSpec[] = [
-  { id: 'pie1', kind: 'pie', seriesCount: 2, years: [] },
-  { id: 'pie2', kind: 'pie', seriesCount: 3, years: [] },
-  { id: 'pie3', kind: 'pie', seriesCount: 4, years: [] },
-  { id: 'pie4', kind: 'pie', seriesCount: 5, years: [] },
-  { id: 'pie5', kind: 'pie', seriesCount: 6, years: [] },
-  { id: 'pie6', kind: 'pie', seriesCount: 8, years: [] },
-];
-
-const DUAL_CARDS: GalleryCardSpec[] = [
-  { id: 'dual1', kind: 'dual', seriesCount: 1, years: [2023] },
-  { id: 'dual2', kind: 'dual', seriesCount: 2, years: [2023, 2024] },
-];
-
 const CARDS_BY_TYPE: Record<ChartType, GalleryCardSpec[]> = {
-  bar: BAR_CARDS,
-  line: LINE_CARDS,
-  pie: PIE_CARDS,
-  dual: DUAL_CARDS,
+  bar: [
+    { id: 'bar1', kind: 'bar', seriesCount: 1, horizontal: false, years: [2023] },
+    { id: 'bar2', kind: 'bar', seriesCount: 2, horizontal: false, years: [2023, 2024] },
+    { id: 'bar3', kind: 'bar', seriesCount: 3, horizontal: false, years: [2022, 2023, 2024] },
+    { id: 'bar4', kind: 'bar', seriesCount: 4, horizontal: false, years: [2021, 2022, 2023, 2024] },
+    { id: 'bar5', kind: 'bar', seriesCount: 1, horizontal: true, years: [2023] },
+    { id: 'bar6', kind: 'bar', seriesCount: 4, horizontal: true, years: [2021, 2022, 2023, 2024] },
+  ],
+  line: [
+    { id: 'line1', kind: 'line', seriesCount: 1, years: [2023] },
+    { id: 'line2', kind: 'line', seriesCount: 2, years: [2023, 2024] },
+    { id: 'line3', kind: 'line', seriesCount: 3, years: [2022, 2023, 2024] },
+    { id: 'line4', kind: 'line', seriesCount: 4, years: [2021, 2022, 2023, 2024] },
+  ],
+  pie: [
+    { id: 'pie1', kind: 'pie', seriesCount: 2, years: [] },
+    { id: 'pie2', kind: 'pie', seriesCount: 3, years: [] },
+    { id: 'pie3', kind: 'pie', seriesCount: 4, years: [] },
+    { id: 'pie4', kind: 'pie', seriesCount: 5, years: [] },
+    { id: 'pie5', kind: 'pie', seriesCount: 6, years: [] },
+    { id: 'pie6', kind: 'pie', seriesCount: 8, years: [] },
+  ],
+  dual: [
+    { id: 'dual1', kind: 'dual', seriesCount: 1, years: [2023] },
+    { id: 'dual2', kind: 'dual', seriesCount: 2, years: [2023, 2024] },
+  ],
 };
 
 function seededValue(seed: number, min = 15, max = 95): number {
@@ -112,11 +223,9 @@ function seededValue(seed: number, min = 15, max = 95): number {
   return Math.floor(frac * (max - min)) + min;
 }
 
-/** Smooth a polyline into a natural curve (Catmull-Rom → cubic Bezier). */
 function smoothPath(points: { x: number; y: number }[]): string {
   if (points.length === 0) return '';
   if (points.length === 1) return `M ${points[0]!.x} ${points[0]!.y}`;
-
   let d = `M ${points[0]!.x} ${points[0]!.y}`;
   for (let i = 0; i < points.length - 1; i++) {
     const p0 = points[i - 1] ?? points[i]!;
@@ -137,7 +246,6 @@ function polarPoint(cx: number, cy: number, r: number, angleDeg: number) {
   return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
 }
 
-/** SVG path for one donut segment between two angles. */
 function donutSegmentPath(cx: number, cy: number, rOuter: number, rInner: number, startDeg: number, endDeg: number): string {
   const large = endDeg - startDeg > 180 ? 1 : 0;
   const p0 = polarPoint(cx, cy, rOuter, startDeg);
@@ -153,16 +261,10 @@ function donutSegmentPath(cx: number, cy: number, rOuter: number, rInner: number
   ].join(' ');
 }
 
-// ── Per-type gallery card preview ─────────────────────────────────────────────
-// Structurally faithful to each Figma chart family (Bar / Line / Pie / Dual
-// Axes) using the sampled color palette — not a pixel copy of every one of
-// the ~20 individual card variants, but each TYPE renders as that type.
-
-const GalleryCardPreview: React.FC<{ spec: GalleryCardSpec }> = ({ spec }) => {
+function GalleryCardPreview({ spec }: { spec: GalleryCardSpec }) {
   const w = 220;
   const h = 120;
 
-  // ── Bar ──
   if (spec.kind === 'bar') {
     if (spec.horizontal) {
       const barH = 8;
@@ -184,7 +286,7 @@ const GalleryCardPreview: React.FC<{ spec: GalleryCardSpec }> = ({ spec }) => {
                       y={groupY + s * (barH + rowGap)}
                       width={(val / 100) * (w - 10)}
                       height={barH}
-                      fill={GALLERY_PALETTE[s % GALLERY_PALETTE.length]}
+                      fill={PALETTE[s % PALETTE.length]}
                       rx={1.5}
                     />
                   );
@@ -195,7 +297,6 @@ const GalleryCardPreview: React.FC<{ spec: GalleryCardSpec }> = ({ spec }) => {
         </svg>
       );
     }
-
     const groupW = (w - 16) / CATEGORY_LABELS.length;
     const barW = Math.max(3, (groupW - 6) / spec.seriesCount);
     return (
@@ -207,17 +308,7 @@ const GalleryCardPreview: React.FC<{ spec: GalleryCardSpec }> = ({ spec }) => {
               const barH = (val / 100) * (h - 24);
               const x = 8 + catIdx * groupW + s * barW;
               const y = h - 18 - barH;
-              return (
-                <rect
-                  key={s}
-                  x={x}
-                  y={y}
-                  width={barW - 1.5}
-                  height={barH}
-                  fill={GALLERY_PALETTE[s % GALLERY_PALETTE.length]}
-                  rx={1.5}
-                />
-              );
+              return <rect key={s} x={x} y={y} width={barW - 1.5} height={barH} fill={PALETTE[s % PALETTE.length]} rx={1.5} />;
             })}
           </g>
         ))}
@@ -226,7 +317,6 @@ const GalleryCardPreview: React.FC<{ spec: GalleryCardSpec }> = ({ spec }) => {
     );
   }
 
-  // ── Line ──
   if (spec.kind === 'line') {
     const stepX = (w - 24) / (CATEGORY_LABELS.length - 1);
     return (
@@ -237,7 +327,7 @@ const GalleryCardPreview: React.FC<{ spec: GalleryCardSpec }> = ({ spec }) => {
             const val = seededValue(i * 4 + s * 11 + 2, 15, 92);
             return { x: 12 + i * stepX, y: 6 + (1 - val / 100) * (h - 30) };
           });
-          const color = GALLERY_PALETTE[s % GALLERY_PALETTE.length];
+          const color = PALETTE[s % PALETTE.length]!;
           return (
             <g key={s}>
               <path d={smoothPath(points)} fill="none" stroke={color} strokeWidth={2} />
@@ -251,19 +341,17 @@ const GalleryCardPreview: React.FC<{ spec: GalleryCardSpec }> = ({ spec }) => {
     );
   }
 
-  // ── Pie / Donut ──
   if (spec.kind === 'pie') {
     const cx = w / 2;
     const cy = h / 2;
     const rOuter = Math.min(w, h) / 2 - 4;
     const rInner = rOuter * 0.55;
-    const n = spec.seriesCount;
-    const raw = Array.from({ length: n }).map((_, i) => seededValue(i * 9 + n * 3, 20, 100));
+    const raw = Array.from({ length: spec.seriesCount }).map((_, i) => seededValue(i * 9 + spec.seriesCount * 3, 20, 100));
     const total = raw.reduce((a, b) => a + b, 0);
     let angle = 0;
     const segments = raw.map((val, i) => {
       const sweep = (val / total) * 360;
-      const seg = { start: angle, end: angle + sweep, color: GALLERY_PALETTE[i % GALLERY_PALETTE.length] };
+      const seg = { start: angle, end: angle + sweep, color: PALETTE[i % PALETTE.length]! };
       angle += sweep;
       return seg;
     });
@@ -279,27 +367,24 @@ const GalleryCardPreview: React.FC<{ spec: GalleryCardSpec }> = ({ spec }) => {
     );
   }
 
-  // ── Dual Axes (bars + overlaid line on a secondary axis) ──
-  const barSeriesCount = spec.seriesCount;
+  // dual
   const groupW = (w - 16) / CATEGORY_LABELS.length;
-  const barW = Math.max(4, (groupW - 8) / barSeriesCount);
+  const barW = Math.max(4, (groupW - 8) / spec.seriesCount);
   const linePoints = CATEGORY_LABELS.map((_, i) => {
     const val = seededValue(i * 6 + 5, 15, 90);
     return { x: 8 + i * groupW + (groupW - 8) / 2, y: 6 + (1 - val / 100) * (h - 28) };
   });
-  const lineColor = GALLERY_PALETTE[barSeriesCount % GALLERY_PALETTE.length];
+  const lineColor = PALETTE[spec.seriesCount % PALETTE.length]!;
   return (
     <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h}>
       {CATEGORY_LABELS.map((_, catIdx) => (
         <g key={catIdx}>
-          {Array.from({ length: barSeriesCount }).map((_, s) => {
+          {Array.from({ length: spec.seriesCount }).map((_, s) => {
             const val = seededValue(catIdx * 5 + s * 2 + 3, 15, 85);
             const barH = (val / 100) * (h - 26);
             const x = 8 + catIdx * groupW + s * barW;
             const y = h - 18 - barH;
-            return (
-              <rect key={s} x={x} y={y} width={barW - 1.5} height={barH} fill={GALLERY_PALETTE[s % GALLERY_PALETTE.length]} rx={1.5} />
-            );
+            return <rect key={s} x={x} y={y} width={barW - 1.5} height={barH} fill={PALETTE[s % PALETTE.length]} rx={1.5} />;
           })}
         </g>
       ))}
@@ -310,39 +395,30 @@ const GalleryCardPreview: React.FC<{ spec: GalleryCardSpec }> = ({ spec }) => {
       <line x1={4} y1={h - 18} x2={w - 4} y2={h - 18} stroke="#2a2d33" strokeWidth={1} />
     </svg>
   );
-};
-
-/** Legend entries shown under each gallery card — years for time-series
- * chart kinds, category names for pie/donut kinds. */
-function legendItemsFor(spec: GalleryCardSpec): { label: string; color: string }[] {
-  if (spec.kind === 'pie') {
-    return CATEGORY_LABELS.slice(0, spec.seriesCount).map((label, i) => ({
-      label,
-      color: GALLERY_PALETTE[i % GALLERY_PALETTE.length]!,
-    }));
-  }
-  return spec.years.map((year, i) => ({
-    label: String(year),
-    color: GALLERY_PALETTE[i % GALLERY_PALETTE.length]!,
-  }));
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
+function legendItemsFor(spec: GalleryCardSpec): { label: string; color: string }[] {
+  if (spec.kind === 'pie') {
+    return CATEGORY_LABELS.slice(0, spec.seriesCount).map((label, i) => ({ label, color: PALETTE[i % PALETTE.length]! }));
+  }
+  return spec.years.map((year, i) => ({ label: String(year), color: PALETTE[i % PALETTE.length]! }));
+}
 
-const ChartVisuals: React.FC<ChartVisualsProps> = ({ allVariables }) => {
+// ══════════════════════════════════════════════════════════════════════════
+// Component
+// ══════════════════════════════════════════════════════════════════════════
+
+export default function ChartVisuals({ allVariables }: ChartVisualsProps) {
   const [flow, setFlow] = useState<FlowState>('choice');
   const [loadingStep, setLoadingStep] = useState(0);
-  const [showReadyToast, setShowReadyToast] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [toastVisible, setToastVisible] = useState(false);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stepTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Chart Builder state
   const [selectedVars, setSelectedVars] = useState<Variable[]>([]);
-  const [mapping] = useState<MappingRow[]>([
-    { variable: 'S6', chartType: 'pie', linkedVars: 'S2, S6' },
-    { variable: 'S6', chartType: 'bar', linkedVars: 'S2, S6' },
-    { variable: 'S6', chartType: 'line', linkedVars: 'S2, S6' },
-    { variable: 'S6', chartType: 'select', linkedVars: 'S3, S6' },
-  ]);
+  const [galleryType, setGalleryType] = useState<ChartType>('bar');
+  const [selectedCardId, setSelectedCardId] = useState<string>('bar1');
+
   const [props, setProps] = useState<ChartProperties>({
     showLegend: true,
     dataLabel: 'pct',
@@ -353,36 +429,37 @@ const ChartVisuals: React.FC<ChartVisualsProps> = ({ allVariables }) => {
     footnote2: '',
   });
 
-  // Chart Gallery state
-  const [galleryType, setGalleryType] = useState<ChartType>('bar');
-  const [selectedCardId, setSelectedCardId] = useState<string>('bar1');
-
-  const handleGalleryTypeChange = (type: ChartType) => {
-    setGalleryType(type);
-    setSelectedCardId(CARDS_BY_TYPE[type][0]!.id);
-  };
-
-  const selectedIds = new Set(selectedVars.map((v) => v.id));
-
   useEffect(() => {
     return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
+      if (toastTimer.current) clearTimeout(toastTimer.current);
+      if (stepTimer.current) clearTimeout(stepTimer.current);
     };
   }, []);
 
-  const setProp = <K extends keyof ChartProperties>(key: K, value: ChartProperties[K]) => {
+  function setProp<K extends keyof ChartProperties>(key: K, value: ChartProperties[K]) {
     setProps((prev) => ({ ...prev, [key]: value }));
-  };
+  }
 
-  const handleVarToggle = (v: Variable) => {
-    setSelectedVars((prev) => {
-      const exists = prev.find((x) => x.id === v.id);
-      if (exists) return prev.filter((x) => x.id !== v.id);
-      return [...prev, v];
-    });
-  };
+  function toggleVariable(v: Variable) {
+    setSelectedVars((prev) => (prev.some((x) => x.id === v.id) ? prev.filter((x) => x.id !== v.id) : [...prev, v]));
+  }
 
-  const runOmiGeneration = () => {
+  function flashToast(ms = 3200) {
+    setToastVisible(true);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToastVisible(false), ms);
+  }
+
+  function goToChoice() {
+    if (stepTimer.current) clearTimeout(stepTimer.current);
+    setFlow('choice');
+  }
+
+  function goToGallery() {
+    setFlow('gallery');
+  }
+
+  function startOmiGeneration() {
     setFlow('omi-loading');
     setLoadingStep(0);
     let step = 0;
@@ -390,25 +467,36 @@ const ChartVisuals: React.FC<ChartVisualsProps> = ({ allVariables }) => {
       step += 1;
       if (step < LOADING_STEPS.length) {
         setLoadingStep(step);
-        timerRef.current = setTimeout(advance, 900);
+        stepTimer.current = setTimeout(advance, 900);
       } else {
-        setFlow('builder');
-        setShowReadyToast(true);
-        timerRef.current = setTimeout(() => setShowReadyToast(false), 3200);
+        setFlow('preview');
+        flashToast();
       }
     };
-    timerRef.current = setTimeout(advance, 900);
-  };
+    stepTimer.current = setTimeout(advance, 900);
+  }
 
-  // ── Live preview chart for the Chart Builder ──────────────────────────────
+  function selectGalleryType(id: ChartType) {
+    setGalleryType(id);
+    const first = CARDS_BY_TYPE[id][0];
+    if (first) setSelectedCardId(first.id);
+  }
 
-  const renderLivePreview = () => {
+  function addChartFromGallery() {
+    setFlow('builder');
+    flashToast();
+  }
+
+  const selectedIds = new Set(selectedVars.map((v) => v.id));
+
+  // ── Live chart preview shared by Preview & Builder ────────────────────────
+
+  function LivePreview() {
     const chartH = 140;
     const barW = 34;
     const gap = 18;
     const totalW = CATEGORY_LABELS.length * (barW + gap);
     const maxVal = 100;
-
     return (
       <div className="dp-chart-preview-wrap">
         {props.title1 && <div className="dp-chart-title">{props.title1}</div>}
@@ -422,13 +510,9 @@ const ChartVisuals: React.FC<ChartVisualsProps> = ({ allVariables }) => {
               <g key={i}>
                 <rect x={x} y={y} width={barW} height={barH} fill="#7947c4" rx={3} opacity={0.9} />
                 {props.dataLabel !== 'counts' && (
-                  <text x={x + barW / 2} y={y - 6} textAnchor="middle" fontSize="10" fill="#ccc">
-                    {val}
-                  </text>
+                  <text x={x + barW / 2} y={y - 6} textAnchor="middle" fontSize="10" fill="#ccc">{val}</text>
                 )}
-                <text x={x + barW / 2} y={chartH + 24} textAnchor="middle" fontSize="9" fill="#9a9eab">
-                  {CATEGORY_LABELS[i]}
-                </text>
+                <text x={x + barW / 2} y={chartH + 24} textAnchor="middle" fontSize="9" fill="#9a9eab">{CATEGORY_LABELS[i]}</text>
               </g>
             );
           })}
@@ -447,30 +531,32 @@ const ChartVisuals: React.FC<ChartVisualsProps> = ({ allVariables }) => {
         {props.footnote2 && <div className="dp-chart-footnote">{props.footnote2}</div>}
       </div>
     );
-  };
+  }
 
-  // ── Screen: initial choice ────────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════════════
+  // Screen: initial choice
+  // ══════════════════════════════════════════════════════════════════════
 
   if (flow === 'choice') {
     return (
       <div className="dp-content-area">
         <div className="dp-chart-choice">
           <div className="dp-chart-choice-icons">
-            <span>▤</span>
-            <span>▥</span>
-            <span>📈</span>
-            <span>◔</span>
+            <IconColumnBars size={22} />
+            <IconBarsHorizontal size={22} />
+            <IconLineChart size={22} />
+            <IconPie size={22} />
           </div>
           <h3 className="dp-chart-choice-title">Generate Charts</h3>
           <p className="dp-chart-choice-subtitle">
             Build a chart yourself, or let Omi generate one from your selected variables
           </p>
           <div className="dp-chart-choice-actions">
-            <button className="dp-chart-choice-btn dp-chart-choice-btn--outline" onClick={() => setFlow('gallery')}>
-              ◔ Create Custom Charts
+            <button type="button" className="dp-chart-choice-btn dp-chart-choice-btn--outline" onClick={goToGallery}>
+              <IconPie size={15} /> Create Custom Charts
             </button>
-            <button className="dp-chart-choice-btn dp-chart-choice-btn--primary" onClick={runOmiGeneration}>
-              ✦ Generate Chart using Omi
+            <button type="button" className="dp-chart-choice-btn dp-chart-choice-btn--primary" onClick={startOmiGeneration}>
+              <IconSparkle size={15} /> Generate Chart using Omi
             </button>
           </div>
         </div>
@@ -478,7 +564,9 @@ const ChartVisuals: React.FC<ChartVisualsProps> = ({ allVariables }) => {
     );
   }
 
-  // ── Screen: Omi loading ───────────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════════════
+  // Screen: Omi loading
+  // ══════════════════════════════════════════════════════════════════════
 
   if (flow === 'omi-loading') {
     return (
@@ -488,7 +576,7 @@ const ChartVisuals: React.FC<ChartVisualsProps> = ({ allVariables }) => {
           <p className="dp-gen-loader-subtitle">Content goes here...</p>
           <div className="dp-gen-step">
             <div className="dp-gen-step-left">
-              <div className="dp-gen-step-avatar">🤖</div>
+              <div className="dp-gen-step-avatar"><LoaderAvatar /></div>
               <div className="dp-gen-step-label">Step {loadingStep + 1}/4</div>
             </div>
             <div className="dp-gen-step-right">{LOADING_STEPS[loadingStep]}</div>
@@ -498,25 +586,34 @@ const ChartVisuals: React.FC<ChartVisualsProps> = ({ allVariables }) => {
     );
   }
 
-  // ── Screen: Chart Gallery ("Create Custom Charts") ────────────────────────
+  // ══════════════════════════════════════════════════════════════════════
+  // Screen: Chart Gallery ("Create Custom Charts")
+  // ══════════════════════════════════════════════════════════════════════
 
   if (flow === 'gallery') {
+    const cards = CARDS_BY_TYPE[galleryType];
+    const activeLabel = CHART_TYPE_LIST.find((t) => t.id === galleryType)?.label ?? '';
+
     return (
       <div className="dp-content-area">
         <div className="dp-gallery">
           <div className="dp-gallery-sidebar">
+            <button type="button" className="dp-gallery-back-btn" onClick={goToChoice}>
+              <IconArrowLeft size={13} /> Back
+            </button>
             <div className="dp-gallery-sidebar-title">Types of Charts</div>
             <div className="dp-gallery-search">
-              <span>🔍</span>
+              <IconSearch />
               <input placeholder="Search" readOnly />
             </div>
-            {GALLERY_TYPES.map((t) => (
+            {CHART_TYPE_LIST.map((t) => (
               <button
                 key={t.id}
-                className={`dp-gallery-type-btn${galleryType === t.id ? ' dp-gallery-type-btn--active' : ''}`}
-                onClick={() => handleGalleryTypeChange(t.id as ChartType)}
+                type="button"
+                className={'dp-gallery-type-btn' + (galleryType === t.id ? ' dp-gallery-type-btn--active' : '')}
+                onClick={() => selectGalleryType(t.id)}
               >
-                <span className="dp-gallery-type-icon">{t.icon}</span>
+                <span className="dp-gallery-type-icon">{chartTypeIcon(t.id)}</span>
                 {t.label}
                 {t.id === 'dual' && <span className="dp-gallery-type-caret">⌄</span>}
               </button>
@@ -524,19 +621,15 @@ const ChartVisuals: React.FC<ChartVisualsProps> = ({ allVariables }) => {
           </div>
 
           <div className="dp-gallery-main">
-            <div className="dp-gallery-main-title">
-              {GALLERY_TYPES.find((t) => t.id === galleryType)?.label} Chart
-            </div>
+            <div className="dp-gallery-main-title">{activeLabel} Chart</div>
             <div className="dp-gallery-grid">
-              {CARDS_BY_TYPE[galleryType].map((card) => (
+              {cards.map((card) => (
                 <div
                   key={card.id}
-                  className={`dp-gallery-card${selectedCardId === card.id ? ' dp-gallery-card--selected' : ''}`}
+                  className={'dp-gallery-card' + (selectedCardId === card.id ? ' dp-gallery-card--selected' : '')}
                   onClick={() => setSelectedCardId(card.id)}
                 >
-                  <div className="dp-gallery-card-label">
-                    {GALLERY_TYPES.find((t) => t.id === galleryType)?.label}
-                  </div>
+                  <div className="dp-gallery-card-label">{activeLabel}</div>
                   <div className="dp-gallery-card-rule" />
                   <GalleryCardPreview spec={card} />
                   <div className="dp-gallery-card-legend">
@@ -554,7 +647,7 @@ const ChartVisuals: React.FC<ChartVisualsProps> = ({ allVariables }) => {
         </div>
 
         <div className="dp-gallery-footer">
-          <button className="dp-gallery-add-btn" onClick={() => setFlow('builder')}>
+          <button type="button" className="dp-gallery-add-btn" onClick={addChartFromGallery}>
             + Add Chart
           </button>
         </div>
@@ -562,36 +655,49 @@ const ChartVisuals: React.FC<ChartVisualsProps> = ({ allVariables }) => {
     );
   }
 
-  // ── Screen: Chart Builder ──────────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════════════
+  // Screens: Preview (Omi result) / Chart Builder (manual, full editing)
+  //
+  // Both render the same underlying chart mapping. Preview is the
+  // read-mostly view Omi lands you on (3 rows, no Slicer column, no filter
+  // chips). Builder is the fully editable view, reached either via
+  // Preview's "Switch to Custom Charts" or via the Gallery's "+ Add Chart"
+  // (adds a 4th Select/slicer row plus Filter 1–4 chips).
+  // ══════════════════════════════════════════════════════════════════════
+
+  const isBuilder = flow === 'builder';
+  const visibleMapping = isBuilder ? BASE_MAPPING : BASE_MAPPING.filter((row) => row.chartType !== 'select');
 
   return (
     <>
-      {showReadyToast && (
+      {toastVisible && (
         <div className="dp-toast">
           <span className="dp-toast-icon">✓</span>
           Your chart is ready
-          <button className="dp-toast-close" onClick={() => setShowReadyToast(false)}>✕</button>
+          <button type="button" className="dp-toast-close" onClick={() => setToastVisible(false)}>✕</button>
         </div>
       )}
 
-      {/* All Variables panel */}
       <div className="dp-panel dp-panel--all">
         <div className="dp-panel-header">
-          <span className="dp-panel-title">All Variables</span>
-          <button className="dp-panel-arrow-btn" aria-label="Select all">→</button>
+          <div className="dp-panel-header-left">
+            <button type="button" className="dp-panel-back-btn" onClick={goToChoice} aria-label="Back to chart options" title="Back to chart options">
+              <IconArrowLeft size={13} />
+            </button>
+            <span className="dp-panel-title">All Variables</span>
+          </div>
         </div>
         <div className="dp-var-list">
           {allVariables.map((v) => (
-            <VariablePill key={v.id} variable={v} variant="source" added={selectedIds.has(v.id)} onClick={handleVarToggle} />
+            <VariablePill key={v.id} variable={v} variant="source" added={selectedIds.has(v.id)} onClick={toggleVariable} />
           ))}
         </div>
       </div>
 
-      {/* Selected Variable mapping panel */}
       <div className="dp-panel" style={{ width: 260 }}>
         <div className="dp-panel-header">
           <span className="dp-panel-title">Selected Variable</span>
-          <button className="dp-panel-arrow-btn" onClick={() => setSelectedVars([])} aria-label="Clear">←</button>
+          <button type="button" className="dp-panel-arrow-btn" onClick={() => setSelectedVars([])} aria-label="Clear">←</button>
         </div>
         <div className="dp-var-list" style={{ padding: 0 }}>
           <table className="dp-cb-map-table">
@@ -599,11 +705,11 @@ const ChartVisuals: React.FC<ChartVisualsProps> = ({ allVariables }) => {
               <tr>
                 <th>Variables</th>
                 <th>Chart Type</th>
-                <th>Variables</th>
+                <th>{isBuilder ? 'Slicer/Filter' : 'Variables'}</th>
               </tr>
             </thead>
             <tbody>
-              {mapping.map((row, i) => (
+              {visibleMapping.map((row, i) => (
                 <tr key={i}>
                   <td><span className="dp-cb-map-chip">{row.variable}</span></td>
                   <td style={{ textTransform: 'capitalize' }}>{row.chartType}</td>
@@ -615,64 +721,49 @@ const ChartVisuals: React.FC<ChartVisualsProps> = ({ allVariables }) => {
         </div>
       </div>
 
-      {/* Chart Builder main area */}
       <div className="dp-chart-builder">
         <div className="dp-cb-header">
-          <span className="dp-cb-title">Chart Builder</span>
-          <button className="dp-cb-switch-btn" onClick={() => setFlow('gallery')}>
-            Switch to Custom Charts
-          </button>
+          <span className="dp-cb-title">{isBuilder ? 'Chart Builder' : 'Preview'}</span>
+          {isBuilder ? (
+            <button type="button" className="dp-cb-switch-btn" onClick={() => setFlow('preview')}>
+              Switch to Omi Generated Charts
+            </button>
+          ) : (
+            <button type="button" className="dp-cb-switch-btn" onClick={() => setFlow('builder')}>
+              Switch to Custom Charts
+            </button>
+          )}
         </div>
         <div className="dp-cb-body">
           <div>
             <div className="dp-cb-field-label">Title 1</div>
-            <input
-              className="dp-cb-input"
-              placeholder="Enter text"
-              value={props.title1}
-              onChange={(e) => setProp('title1', e.target.value)}
-            />
+            <input className="dp-cb-input" placeholder="Enter text" value={props.title1} onChange={(e) => setProp('title1', e.target.value)} />
           </div>
           <div>
             <div className="dp-cb-field-label">Title 2</div>
-            <input
-              className="dp-cb-input"
-              placeholder="Enter text"
-              value={props.title2}
-              onChange={(e) => setProp('title2', e.target.value)}
-            />
+            <input className="dp-cb-input" placeholder="Enter text" value={props.title2} onChange={(e) => setProp('title2', e.target.value)} />
           </div>
 
-          <div className="dp-cb-filters">
-            {['Filter 1', 'Filter 2', 'Filter 3', 'Filter 4'].map((f) => (
-              <button key={f} className="dp-cb-filter-chip">{f} ⌄</button>
-            ))}
-          </div>
+          {isBuilder && (
+            <div className="dp-cb-filters">
+              {['Filter 1', 'Filter 2', 'Filter 3', 'Filter 4'].map((f) => (
+                <button key={f} type="button" className="dp-cb-filter-chip">{f} ⌄</button>
+              ))}
+            </div>
+          )}
 
-          <div className="dp-cb-preview-box">{renderLivePreview()}</div>
+          <div className="dp-cb-preview-box"><LivePreview /></div>
 
           <div>
             <div className="dp-cb-field-label">Footer 1</div>
-            <input
-              className="dp-cb-input"
-              placeholder="Footer text"
-              value={props.footnote1}
-              onChange={(e) => setProp('footnote1', e.target.value)}
-            />
+            <input className="dp-cb-input" placeholder="Footer text" value={props.footnote1} onChange={(e) => setProp('footnote1', e.target.value)} />
           </div>
           <div>
             <div className="dp-cb-field-label">Title 2</div>
-            <input
-              className="dp-cb-input"
-              placeholder="Enter text"
-              value={props.footnote2}
-              onChange={(e) => setProp('footnote2', e.target.value)}
-            />
+            <input className="dp-cb-input" placeholder="Enter text" value={props.footnote2} onChange={(e) => setProp('footnote2', e.target.value)} />
           </div>
         </div>
       </div>
     </>
   );
-};
-
-export default ChartVisuals;
+}

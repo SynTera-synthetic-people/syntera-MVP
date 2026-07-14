@@ -639,11 +639,12 @@ const AddResearchObjective: React.FC = () => {
         links: value.briefLink ? [value.briefLink] : [],
       }));
     }
-    if (value.artifactFile || value.artifactLinks.length > 0) {
+    if (value.artifactFiles.length > 0 || value.artifactLinks.length > 0) {
       tasks.push(submitMaterialSection({
         kind: "artifact",
-        file: value.artifactFile,
+        files: value.artifactFiles,
         links: value.artifactLinks,
+        category: value.artifactCategory,
       }));
     }
 
@@ -698,20 +699,26 @@ const AddResearchObjective: React.FC = () => {
         onRemove: () => setUploadedMaterial(prev => prev ? { ...prev, briefLink: '' } : null),
       });
     }
-    if (uploadedMaterial.artifactFile) {
+        uploadedMaterial.artifactFiles.forEach((file, i) => {
       materialItems.push({
-        key: 'af', type: 'file', label: uploadedMaterial.artifactFile.name, badge: 'Artifact',
-        onRemove: () => setUploadedMaterial(prev => prev ? { ...prev, artifactFile: null } : null),
+        key: `af-${i}`, type: 'file', label: file.name, badge: 'Artifact',
+        onRemove: () => setUploadedMaterial(prev => {
+          if (!prev) return null;
+          const updated = prev.artifactFiles.filter((_, idx) => idx !== i);
+          const isEmpty = !prev.briefFile && !prev.briefLink?.trim() &&
+            updated.length === 0 && prev.artifactLinks.filter(Boolean).length === 0;
+          return isEmpty ? null : { ...prev, artifactFiles: updated };
+        }),
       });
-    }
+    });
     uploadedMaterial.artifactLinks.filter(Boolean).forEach((link, i) => {
       materialItems.push({
         key: `al-${i}`, type: 'link', label: truncateHostname(link), badge: 'Artifact',
         onRemove: () => setUploadedMaterial(prev => {
           if (!prev) return null;
           const updated = prev.artifactLinks.filter((_, idx) => idx !== i);
-          // if nothing left at all, null out entirely
-          const isEmpty = !prev.briefFile && !prev.briefLink?.trim() && !prev.artifactFile && updated.filter(Boolean).length === 0;
+          const isEmpty = !prev.briefFile && !prev.briefLink?.trim() &&
+            prev.artifactFiles.length === 0 && updated.filter(Boolean).length === 0;
           return isEmpty ? null : { ...prev, artifactLinks: updated };
         }),
       });

@@ -279,7 +279,7 @@ const FrequencyTable: React.FC<FrequencyTableProps> = ({
           <div className="dp-updown-bar">
             <span className="dp-updown-label">Up/Down</span>
             <button
-              className="dp-updown-btn"
+              className="dp-updown-btn dp-updown-btn--accent"
               onClick={handleMoveDown}
               disabled={selectedVars.length < 2}
               title="Move selected item down"

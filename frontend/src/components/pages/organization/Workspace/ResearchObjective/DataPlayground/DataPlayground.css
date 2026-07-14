@@ -300,14 +300,14 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 32px;
+  height: 32px;
   background: #121317;
-  border: 1px solid #2a2d33;
-  border-radius: 6px;
-  color: #9a9eab;
+  border: 1px solid #3a3d44;
+  border-radius: 8px;
+  color: #e8e9ec;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 14px;
   transition: background 0.15s, color 0.15s;
 }
 
@@ -319,7 +319,12 @@
 .dp-var-list {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
   scrollbar-width: thin;
   scrollbar-color: #3a3d44 transparent;
 }
@@ -347,14 +352,16 @@
 .dp-pill {
   display: flex;
   align-items: center;
-  width: 100%;
-  padding: 7px 10px;
-  margin: 2px 0;
+  width: auto;
+  max-width: 100%;
+  flex-shrink: 0;
+  padding: 8px 16px;
+  margin: 0;
   background: #393c45;
   border: 1px solid #16181c;
-  border-radius: 6px;
+  border-radius: 8px;
   color: #e8e9ec;
-  font-size: 12px;
+  font-size: 13px;
   cursor: pointer;
   text-align: left;
   transition: all 0.15s;
@@ -487,25 +494,35 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   background: #121317;
-  border: 1px solid #2a2d33;
-  border-radius: 6px;
-  color: #9a9eab;
+  border: 1px solid #3a3d44;
+  border-radius: 8px;
+  color: #e8e9ec;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 13px;
   transition: background 0.15s, color 0.15s;
 }
 
 .dp-updown-btn:hover {
   background: #2a2d33;
-  color: #e8e9ec;
+  color: #f5f6f7;
 }
 
 .dp-updown-btn:disabled {
-  opacity: 0.3;
+  opacity: 0.35;
   cursor: not-allowed;
+}
+
+.dp-updown-btn--accent {
+  color: #37ffce;
+}
+
+.dp-updown-btn--accent:hover {
+  color: #37ffce;
+  background: #103527;
+  border-color: #37ffce;
 }
 
 /* ── Content Area ── */
@@ -651,13 +668,154 @@
   color: #e0e0e0;
 }
 
+.dp-cross-block {
+  margin-bottom: 32px;
+}
+
+.dp-cross-block-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #2a2d33;
+  margin-bottom: 12px;
+}
+
 .dp-cross-block-title {
   font-size: 13px;
   font-weight: 500;
   color: #ccc;
-  padding-bottom: 10px;
-  border-bottom: 1px solid #2a2d33;
-  margin-bottom: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.dp-nett-hint {
+  font-size: 11px;
+  color: #37ffce;
+  margin: -6px 0 10px;
+}
+
+/* Sigma / Mean statistic toggle pills */
+.dp-cross-stat-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px 0;
+}
+
+.dp-cross-stat-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  background: #121317;
+  border: 1px solid #3a3d44;
+  border-radius: 8px;
+  color: #e8e9ec;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+
+.dp-cross-stat-pill:hover {
+  background: #1c1e23;
+  border-color: #4a4d54;
+}
+
+.dp-cross-stat-pill--active {
+  background: #0c2c24;
+  border-color: #37ffce;
+  color: #37ffce;
+}
+
+.dp-cross-stat-pill--disabled,
+.dp-cross-stat-pill:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.dp-cross-stat-info {
+  font-size: 12px;
+  color: #6b6f7a;
+  cursor: help;
+}
+
+.dp-cross-stat-pill--active .dp-cross-stat-info {
+  color: #37ffce;
+}
+
+/* Minus-to-remove icon inline in Sigma/Mean/NETT row labels */
+.dp-row-remove-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-left: 8px;
+  background: transparent;
+  border: 1px solid #3a3d44;
+  border-radius: 4px;
+  color: #9a9eab;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+.dp-row-remove-btn:hover {
+  background: #3a1418;
+  border-color: #e5484d;
+  color: #e5484d;
+}
+
+/* Mean Factors popup */
+.dp-mean-box {
+  background: #1c1e23;
+  border: 1px solid #3a3d44;
+  border-radius: 12px;
+  padding: 20px;
+  min-width: 420px;
+  max-width: 90vw;
+}
+
+.dp-mean-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin: 14px 0;
+}
+
+.dp-mean-table th {
+  background: #121317;
+  color: #9a9eab;
+  font-weight: 500;
+  padding: 8px 10px;
+  border: 1px solid #2a2d33;
+  text-align: left;
+}
+
+.dp-mean-table td {
+  padding: 6px 10px;
+  border: 1px solid #2a2d33;
+  color: #c8cad0;
+}
+
+.dp-mean-factor-input {
+  width: 70px;
+  padding: 5px 8px;
+  background: #121317;
+  border: 1px solid #3a3d44;
+  border-radius: 6px;
+  color: #e8e9ec;
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.dp-mean-factor-input:focus {
+  outline: none;
+  border-color: #37ffce;
 }
 
 /* ── Where Modal (inline in panel) ── */
@@ -1673,11 +1831,19 @@
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  border: 2px solid #0e63ec;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 24px;
+}
+
+.dp-gen-ring {
+  transform-origin: 32px 32px;
+  animation: dp-spin 1.4s linear infinite;
+}
+
+@keyframes dp-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .dp-gen-step-label {
@@ -1859,6 +2025,54 @@
   border-right: 1px solid #2a2d33;
   padding: 16px;
   overflow-y: auto;
+}
+
+.dp-gallery-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  margin-bottom: 14px;
+  background: transparent;
+  border: 1px solid #3a3d44;
+  border-radius: 7px;
+  color: #9a9eab;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+
+.dp-gallery-back-btn:hover {
+  background: #1c1e23;
+  color: #e8e9ec;
+}
+
+.dp-panel-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.dp-panel-back-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid #3a3d44;
+  border-radius: 7px;
+  color: #9a9eab;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.dp-panel-back-btn:hover {
+  background: #1c1e23;
+  color: #e8e9ec;
 }
 
 .dp-gallery-sidebar-title {
