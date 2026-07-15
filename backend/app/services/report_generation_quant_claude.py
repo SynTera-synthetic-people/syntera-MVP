@@ -454,7 +454,7 @@ async def _compute_quant_metadata(
             domains_to_try = [inferred_domain] if inferred_domain else list(VALID_DOMAINS)
             for d in domains_to_try:
                 try:
-                    subject_key = await find_subject_key(workspace_id, d)
+                    subject_key = await find_subject_key(d, workspace_id=workspace_id)
                 except Exception as exc:
                     print(f"[ML:quant_persona] find_subject_key failed domain={d!r}: {exc}")
                     break

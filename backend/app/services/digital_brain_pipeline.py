@@ -12,6 +12,8 @@ import hashlib
 import json
 import logging
 import pickle
+import re
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -317,6 +319,226 @@ def _detect_category_group(category: str) -> str:
 
 def _city_tier(city: str) -> str:
     return "Tier 1" if city.lower() in TIER1_CITIES else "Tier 2/3"
+
+
+# Ordered per-country metro pools used to fill out persona geography when the
+# RO doesn't name enough cities on its own. Order = major-hub-first, so the
+# first N entries are handed out before secondary markets.
+COUNTRY_CITY_POOLS: dict[str, list[str]] = {
+    "India": ["Mumbai", "Bangalore", "Delhi", "Pune", "Hyderabad", "Chennai", "Kolkata", "Ahmedabad", "Surat"],
+    "USA": ["New York", "Los Angeles", "Chicago", "Houston", "San Francisco", "Seattle", "Boston", "Austin"],
+    "UK": ["London", "Manchester", "Birmingham", "Leeds"],
+    "Brazil": ["São Paulo", "Rio de Janeiro", "Brasília", "Belo Horizonte"],
+    "Germany": ["Berlin", "Munich", "Hamburg", "Frankfurt"],
+    "Australia": ["Sydney", "Melbourne", "Brisbane", "Perth"],
+    "Canada": ["Toronto", "Vancouver", "Montreal", "Calgary"],
+    "Singapore": ["Singapore"],
+    "UAE": ["Dubai", "Abu Dhabi", "Sharjah"],
+}
+
+# Country name/alias -> canonical country label. "US" is deliberately excluded
+# (too short, collides with ordinary words like "us"/"bonus"); use "USA" instead.
+COUNTRY_ALIASES: dict[str, str] = {
+    "india": "India",
+    "usa": "USA", "united states": "USA", "america": "USA",
+    "uk": "UK", "united kingdom": "UK", "britain": "UK",
+    "brazil": "Brazil",
+    "germany": "Germany",
+    "australia": "Australia",
+    "canada": "Canada",
+    "singapore": "Singapore",
+    "uae": "UAE", "united arab emirates": "UAE", "emirates": "UAE",
+}
+
+
+def _normalize_text(s: str) -> str:
+    """Lowercase + strip diacritics so 'Sao Paulo' matches 'São Paulo'."""
+    return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii").lower()
+
+
+# city (normalized, accent-stripped) -> (canonical display name, country)
+_CITY_LOOKUP: dict[str, tuple[str, str]] = {
+    _normalize_text(city): (city, country)
+    for country, cities in COUNTRY_CITY_POOLS.items()
+    for city in cities
+}
+
+
+def _extract_geography_meta(validated_ro: dict) -> dict:
+    """
+    Parse the RO's geography field for countries, per-country explicit
+    cities, and a coarse tier signal.
+
+    Returns:
+        {
+          "countries": list[str],  # deduped, ordered by first mention; defaults to ["India"]
+          "explicit_cities_by_country": dict[str, list[str]],
+          "explicit_regions": list[str],
+          "tier_signal": "tier1" | "tier2" | "unknown",
+        }
+    """
+    geography_text = str(validated_ro.get("geography", "") or "")
+    result: dict = {
+        "countries": [],
+        "explicit_cities_by_country": {},
+        "explicit_regions": [],
+        "tier_signal": "unknown",
+    }
+    if not geography_text:
+        result["countries"] = ["India"]
+        return result
+
+    normalized = _normalize_text(geography_text)
+
+    if re.search(r"\btier[\s-]?1\b", normalized):
+        result["tier_signal"] = "tier1"
+    elif re.search(r"\btier[\s-]?2\b", normalized):
+        result["tier_signal"] = "tier2"
+
+    # (position, canonical_country) hits from explicit country mentions
+    hits: list[tuple[int, str]] = []
+    for alias, canonical in COUNTRY_ALIASES.items():
+        m = re.search(r"\b" + re.escape(alias) + r"\b", normalized)
+        if m:
+            hits.append((m.start(), canonical))
+
+    # (position, display_city, country) hits from known city names
+    city_hits: list[tuple[int, str, str]] = []
+    for norm_city, (display_city, country) in _CITY_LOOKUP.items():
+        m = re.search(r"\b" + re.escape(norm_city) + r"\b", normalized)
+        if m:
+            city_hits.append((m.start(), display_city, country))
+            if not any(c == country for _, c in hits):
+                hits.append((m.start(), country))
+
+    seen_countries: set[str] = set()
+    countries: list[str] = []
+    for _, country in sorted(hits, key=lambda h: h[0]):
+        if country not in seen_countries:
+            countries.append(country)
+            seen_countries.add(country)
+    if not countries:
+        countries = ["India"]
+
+    explicit_cities_by_country: dict[str, list[str]] = {}
+    seen_pairs: set[tuple[str, str]] = set()
+    for _, city, country in sorted(city_hits, key=lambda h: h[0]):
+        if (city, country) in seen_pairs:
+            continue
+        seen_pairs.add((city, country))
+        explicit_cities_by_country.setdefault(country, []).append(city)
+
+    result["countries"] = countries
+    result["explicit_cities_by_country"] = explicit_cities_by_country
+    return result
+
+
+def _assign_cities_to_personas(
+    validated_ro: dict,
+    num_personas: int,
+    exclude_city_country_pairs: set[tuple[str, str]] | None = None,
+) -> list[tuple[str | None, str]]:
+    """
+    Deterministically assign a distinct (city, country) pair to each of
+    num_personas slots so persona generation spreads across geography
+    instead of collapsing onto a single inferred city.
+
+    - 1 country detected: all personas in that country (existing single-country behavior).
+    - 2+ countries detected: personas are split round-robin across countries in
+      mention order, so counts come out as even as possible (remainder goes to
+      the first-mentioned countries).
+    - Within a country, explicit RO-named cities are used first, then the
+      country's fallback metro pool, honoring exclude_city_country_pairs.
+    - If a country's pool is exhausted, its remaining slot(s) get city=None
+      (caller falls back to a geography-agnostic prompt for that persona).
+    Never returns a duplicate (city, country) pair.
+    """
+    if num_personas <= 0:
+        return []
+
+    exclude_pairs = exclude_city_country_pairs or set()
+    geo_meta = _extract_geography_meta(validated_ro)
+    countries = geo_meta["countries"]
+    explicit_cities_by_country = geo_meta["explicit_cities_by_country"]
+
+    # Only as many countries as we have personas for; round-robin the rest.
+    active_countries = countries[:num_personas] if num_personas < len(countries) else countries
+    personas_per_country: dict[str, int] = {c: 0 for c in active_countries}
+    for i in range(num_personas):
+        personas_per_country[active_countries[i % len(active_countries)]] += 1
+
+    logger.info("Multi-country setup: countries=%s, distribution=%s", active_countries, personas_per_country)
+
+    cities_by_country: dict[str, list[str]] = {}
+    for country in active_countries:
+        needed = personas_per_country[country]
+        candidates: list[str] = []
+        seen_candidates: set[str] = set()
+        for city in explicit_cities_by_country.get(country, []) + COUNTRY_CITY_POOLS.get(country, []):
+            if city.lower() not in seen_candidates:
+                candidates.append(city)
+                seen_candidates.add(city.lower())
+
+        assigned: list[str] = []
+        for city in candidates:
+            if len(assigned) >= needed:
+                break
+            if (city, country) in exclude_pairs:
+                continue
+            assigned.append(city)
+        if len(assigned) < needed:
+            logger.warning(
+                "Country %s pool exhausted; %d persona(s) may fall back to geography-agnostic prompt",
+                country, needed - len(assigned),
+            )
+        cities_by_country[country] = assigned
+
+    result: list[tuple[str | None, str]] = []
+    cursors: dict[str, int] = {c: 0 for c in active_countries}
+    remaining = dict(personas_per_country)
+    i = 0
+    while len(result) < num_personas:
+        country = active_countries[i % len(active_countries)]
+        i += 1
+        if remaining[country] <= 0:
+            continue
+        cursor = cursors[country]
+        pool = cities_by_country.get(country, [])
+        city = pool[cursor] if cursor < len(pool) else None
+        cursors[country] += 1
+        remaining[country] -= 1
+        result.append((city, country))
+
+    logger.info("City-Country assignments: %s", result)
+    return result
+
+
+# Concrete income/occupation guidance for the India persona-generation prompt,
+# kept literal since it was tuned against real evidence signals. Other
+# countries fall back to a generic hub-vs-secondary-market heuristic below.
+_INDIA_DEMOGRAPHIC_GUIDANCE = """- Mumbai (Tier 1, premium markets): typical Professional, 8-15 LPA
+- Bangalore (Tier 1, tech hub): typical Software Engineer/Professional, 7-14 LPA
+- Pune (Tier 1): typical Professional, 6-12 LPA
+- Hyderabad (Tier 1): typical Professional, 6-12 LPA
+- Tier-2 cities: adjust downward, more diversity in occupations"""
+
+
+def _is_major_hub(city: str, country: str) -> bool:
+    pool = COUNTRY_CITY_POOLS.get(country, [])
+    if not pool:
+        return True
+    return city in pool[: max(1, len(pool) // 2)]
+
+
+def _country_demographic_guidance(city: str, country: str) -> str:
+    if country == "India":
+        return _INDIA_DEMOGRAPHIC_GUIDANCE
+    tier_label = "major hub" if _is_major_hub(city, country) else "secondary market"
+    return (
+        f"- {city} ({tier_label}, {country}): use realistic local salary norms for a "
+        f"{tier_label} in {country}; state income_range in the local annual-salary "
+        f"convention (e.g. USD/year, GBP/year, AUD/year) rather than LPA."
+    )
 
 
 def _decode_epoch(ts: Any) -> dict:
@@ -2215,6 +2437,8 @@ def generate_persona(
     activated_dimensions: list[int],
     all_verdicts: list[dict],
     persona_index: int,
+    assigned_city: str | None = None,
+    assigned_country: str | None = None,
 ) -> dict:
     """
     Build a complete 10-layer synthetic persona from a brain assignment slot.
@@ -2237,6 +2461,22 @@ def generate_persona(
         for v in all_verdicts[:6]
     ]
 
+    if assigned_city:
+        country_label = assigned_country or "India"
+        tier_or_hub = (
+            _city_tier(assigned_city) if country_label == "India"
+            else ("major hub" if _is_major_hub(assigned_city, country_label) else "secondary market")
+        )
+        location_section = f"\nPERSONA LOCATION: {assigned_city}, {country_label} ({tier_or_hub})\n"
+        city_demographic_guidance = f"""
+This persona lives in {assigned_city}, {country_label}. Adjust occupation and income_range accordingly:
+{_country_demographic_guidance(assigned_city, country_label)}
+"""
+    else:
+        logger.warning("No assigned_city provided; inferring from behavioral data")
+        location_section = ""
+        city_demographic_guidance = ""
+
     prompt = f"""
 You are the Persona Generation engine for Synthetic People AI.
 
@@ -2256,7 +2496,7 @@ BRAIN ASSIGNMENT:
 - Primary Confidence: {slot.get('primary_confidence', 0.80)}
 - Key Insight: {slot.get('key_insight', '')}
 - Say-Do Gap: {slot.get('say_do_gap', 'None identified')}
-
+{location_section}
 EVIDENCE SIGNALS:
 {json.dumps(verdict_summary, indent=2)}
 
@@ -2287,7 +2527,7 @@ Inference guidance:
 - income_range: Derive from spend level/price tier signals in the evidence (e.g. "premium tier",
   "budget tier", average order value). Use buckets appropriate to {validated_ro.get('geography', 'India')}'s
   currency (e.g. LPA for India, USD/year for US). Default to the mid-range bucket if signals are weak.
-
+{city_demographic_guidance}
 Confidence calibration (be honest, do not inflate):
 - 0.90-1.00: multiple reinforcing signals point the same way
 - 0.75-0.89: one clear behavioral pattern supports this value
@@ -2341,6 +2581,8 @@ Return ONLY the JSON object.
                 "neuroticism": ocean.get("N", 0.35),
             }
 
+        persona["assigned_city"] = assigned_city or "Unspecified"
+        persona["assigned_country"] = assigned_country or "Unspecified"
         persona = _flatten_demographics_inference(persona)
 
         logger.info("Stage 5: Persona %d generated — %s", persona_index, persona.get("persona_title", ""))
@@ -2357,6 +2599,8 @@ Return ONLY the JSON object.
                 "secondary_brain": secondary,
                 "secondary_confidence": slot.get("secondary_confidence"),
             },
+            "assigned_city": assigned_city or "Unspecified",
+            "assigned_country": assigned_country or "Unspecified",
             "error": str(e),
         }
         return _flatten_demographics_inference(fallback)
@@ -2452,10 +2696,21 @@ def generate_personas_batch(
     logger.info("Tier '%s': generating %d initial persona(s) (max %d).",
                 account_tier, len(selected_slots), tier_config["max"])
 
+    city_country_assignments = _assign_cities_to_personas(validated_ro, len(selected_slots))
+    logger.info(
+        "Multi-country persona generation: %d personas across %d countries",
+        len(city_country_assignments), len({country for _, country in city_country_assignments}),
+    )
+    logger.info("Assignments: %s", city_country_assignments)
+
     personas_map: dict[int, dict] = {}
     with cf.ThreadPoolExecutor(max_workers=3) as executor:
         futures = {
-            executor.submit(generate_persona, slot, validated_ro, activated_dimensions, all_verdicts, i): i
+            executor.submit(
+                generate_persona, slot, validated_ro, activated_dimensions, all_verdicts, i,
+                assigned_city=city_country_assignments[i - 1][0],
+                assigned_country=city_country_assignments[i - 1][1],
+            ): i
             for i, slot in enumerate(selected_slots, start=1)
         }
         for future in cf.as_completed(futures):
@@ -2464,6 +2719,7 @@ def generate_personas_batch(
                 persona = future.result()
                 persona["slot_number"] = idx
                 personas_map[idx] = persona
+                logger.info("Persona %d assigned to %s", idx, city_country_assignments[idx - 1])
             except Exception as e:
                 logger.error("Persona %d generation failed: %s", idx, e)
 
@@ -2565,12 +2821,34 @@ def generate_additional_personas(
     logger.info("Generating %d additional persona(s) for tier '%s' (%d/%d used).",
                 can_add, account_tier, current_count, max_total)
 
+    existing_city_country_pairs: set[tuple[str, str]] = {
+        (p.get("assigned_city"), p.get("assigned_country"))
+        for p in existing_personas
+        if p.get("assigned_city") and p.get("assigned_city") != "Unspecified"
+        and p.get("assigned_country") and p.get("assigned_country") != "Unspecified"
+    }
+    new_city_country_assignments = _assign_cities_to_personas(
+        validated_ro, can_add, exclude_city_country_pairs=existing_city_country_pairs,
+    )
+    logger.info(
+        "Expansion: existing pairs=%s, new assignments=%s",
+        existing_city_country_pairs, new_city_country_assignments,
+    )
+
     new_personas_map: dict[int, dict] = {}
     with cf.ThreadPoolExecutor(max_workers=3) as executor:
         futures = {
             executor.submit(
                 generate_persona, slot, validated_ro, activated_dimensions,
-                all_verdicts, current_count + i
+                all_verdicts, current_count + i,
+                assigned_city=(
+                    new_city_country_assignments[i - 1][0]
+                    if i - 1 < len(new_city_country_assignments) else None
+                ),
+                assigned_country=(
+                    new_city_country_assignments[i - 1][1]
+                    if i - 1 < len(new_city_country_assignments) else None
+                ),
             ): i
             for i, slot in enumerate(selected_slots, start=1)
         }
