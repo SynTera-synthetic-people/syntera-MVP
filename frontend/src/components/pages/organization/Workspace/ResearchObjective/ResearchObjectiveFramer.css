@@ -447,6 +447,25 @@
   line-height: 1.6;
 }
 
+.rofp-select {
+  width: 100%;
+  background: #060606;
+  border: 1px solid #393C45;
+  border-radius: 13px;
+  padding: 13px 16px;
+  color: #fff;
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.18s, background 0.18s;
+  box-sizing: border-box;
+}
+
+.rofp-select:focus {
+  border-color: #0E63EC;
+  background: rgba(14, 99, 236, 0.05);
+}
+
 .rofp-textarea:disabled {
   opacity: 0.5;
   cursor: not-allowed;

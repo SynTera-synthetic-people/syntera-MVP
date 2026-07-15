@@ -24,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from dotenv import load_dotenv
 
+from app.schemas.artifact_pipeline import ComparisonMode
 from app.services.artifact_dissection import AssetDissectionService
 from app.services.dimension_extraction import DimensionExtractionService
 from app.services.discussion_guide import DiscussionGuideService
@@ -44,7 +45,7 @@ RO_DESCRIPTION = (
 )
 INSTRUCTION = "Evaluate this 30-second Nike ad for brand impact and persuasion strength."
 ARTIFACT_CATEGORY = "ad_creative"
-COMPARISON_MODE = "campaign_set"
+COMPARISON_MODE = ComparisonMode.CAMPAIGN_SET
 
 
 def _print_stage(title: str, payload: object) -> None:
@@ -62,7 +63,7 @@ async def main() -> None:
     print(f"Testing URL artifact_type with: {YOUTUBE_URL}")
 
     # ---- Stage 1: Asset Dissection (url path) ----
-    dissection_service = AssetDissectionService(gemini_api_key=gemini_key)
+    dissection_service = AssetDissectionService(gemini_api_key=gemini_key, model="gemini-2.5-flash")
     asset_dissections = await dissection_service.dissect_assets(
         assets=[YOUTUBE_URL],
         instruction=INSTRUCTION,
@@ -74,29 +75,29 @@ async def main() -> None:
     print(f"\n[CHECK] Number of timestamped moments extracted from video: {len(moments)} (expect 4-8 for a real video, not 1 like a static image)")
 
     # ---- Stage 2: Dimension Extraction ----
-    dimension_service = DimensionExtractionService(openai_api_key=openai_key)
-    selected_dimensions, dimension_details = await dimension_service.extract_dimensions(
+    dimension_service = DimensionExtractionService(openai_api_key=openai_key, model="gpt-4o-mini")
+    dim_selection = await dimension_service.extract_dimensions(
         ro_description=RO_DESCRIPTION,
         instruction=INSTRUCTION,
         artifact_type=ARTIFACT_CATEGORY,
     )
-    _print_stage("STAGE 2: DIMENSION EXTRACTION", selected_dimensions)
+    _print_stage("STAGE 2: DIMENSION EXTRACTION", dim_selection.selected_codes)
 
     # ---- Stage 3: Discussion Guide Generation ----
-    guide_service = DiscussionGuideService(openai_api_key=openai_key)
+    guide_service = DiscussionGuideService(openai_api_key=openai_key, model="gpt-4o-mini")
     discussion_guide = await guide_service.generate_guide(
         ro_description=RO_DESCRIPTION,
         instruction=INSTRUCTION,
-        selected_dimensions=selected_dimensions,
-        dimension_details=dimension_details,
+        selected_dimensions=dim_selection.selected_codes,
+        dimension_details={k: v.model_dump() for k, v in dim_selection.details.items()},
         comparison_mode=COMPARISON_MODE,
         num_assets=1,
         is_qual=True,
     )
-    _print_stage("STAGE 3: DISCUSSION GUIDE (sections only)", [s["dimension"] for s in discussion_guide.get("sections", [])])
+    _print_stage("STAGE 3: DISCUSSION GUIDE (sections only)", [s.dimension for s in discussion_guide.sections])
 
     # ---- Stage 4: Persona Responses (just one persona, to keep this quick) ----
-    response_service = PersonaResponseService(openai_api_key=openai_key)
+    response_service = PersonaResponseService(openai_api_key=openai_key, model="gpt-4o-mini")
     persona = MOCK_PERSONAS[0]
     result = await response_service.generate_persona_responses(
         persona=persona,
@@ -104,7 +105,7 @@ async def main() -> None:
         discussion_guide=discussion_guide,
         comparison_mode=COMPARISON_MODE,
     )
-    _print_stage("STAGE 4: PERSONA RESPONSE (1 persona)", result)
+    _print_stage("STAGE 4: PERSONA RESPONSE (1 persona)", result.model_dump())
 
     print("\n\n[RESULT] Full pipeline succeeded end-to-end using a real YouTube URL as the artifact source.")
 

@@ -27,6 +27,7 @@ from dotenv import load_dotenv
 # Imported directly (not through app.config) to avoid the AWS-SSM-at-import
 # crash: app.config imports app.parameters, which calls out to AWS SSM at
 # import time and requires AWS credentials that aren't available locally.
+from app.schemas.artifact_pipeline import ComparisonMode
 from app.services.artifact_dissection import AssetDissectionService
 from app.services.dimension_extraction import DimensionExtractionService
 from app.services.discussion_guide import DiscussionGuideService
@@ -45,7 +46,7 @@ RO_DESCRIPTION = (
 INSTRUCTION = "Test this ad creative for a 30-second social campaign awareness push."
 ARTIFACT_CATEGORY = "ad_creative"   # key into the dimension library
 MEDIA_TYPE = "image"                # what Gemini needs to know how to read the file
-COMPARISON_MODE = "campaign_set"    # single asset
+COMPARISON_MODE = ComparisonMode.CAMPAIGN_SET  # single asset
 
 
 def _print_stage(title: str, payload: object) -> None:
@@ -65,7 +66,7 @@ async def main() -> None:
     print(f"Generated sample artifact: {sample_image_path}")
 
     # ---- Stage 1: Asset Dissection ----
-    dissection_service = AssetDissectionService(gemini_api_key=gemini_key)
+    dissection_service = AssetDissectionService(gemini_api_key=gemini_key, model="gemini-2.5-flash")
     asset_dissections = await dissection_service.dissect_assets(
         assets=[str(sample_image_path)],
         instruction=INSTRUCTION,
@@ -74,32 +75,29 @@ async def main() -> None:
     _print_stage("STAGE 1: ASSET DISSECTION", asset_dissections)
 
     # ---- Stage 2: Dimension Extraction ----
-    dimension_service = DimensionExtractionService(openai_api_key=openai_key)
-    selected_dimensions, dimension_details = await dimension_service.extract_dimensions(
+    dimension_service = DimensionExtractionService(openai_api_key=openai_key, model="gpt-4o-mini")
+    dim_selection = await dimension_service.extract_dimensions(
         ro_description=RO_DESCRIPTION,
         instruction=INSTRUCTION,
         artifact_type=ARTIFACT_CATEGORY,
     )
-    _print_stage(
-        "STAGE 2: DIMENSION EXTRACTION",
-        {"selected_dimensions": selected_dimensions, "dimension_details": dimension_details},
-    )
+    _print_stage("STAGE 2: DIMENSION EXTRACTION", dim_selection.model_dump())
 
     # ---- Stage 3: Discussion Guide Generation ----
-    guide_service = DiscussionGuideService(openai_api_key=openai_key)
+    guide_service = DiscussionGuideService(openai_api_key=openai_key, model="gpt-4o-mini")
     discussion_guide = await guide_service.generate_guide(
         ro_description=RO_DESCRIPTION,
         instruction=INSTRUCTION,
-        selected_dimensions=selected_dimensions,
-        dimension_details=dimension_details,
+        selected_dimensions=dim_selection.selected_codes,
+        dimension_details={k: v.model_dump() for k, v in dim_selection.details.items()},
         comparison_mode=COMPARISON_MODE,
         num_assets=1,
         is_qual=True,
     )
-    _print_stage("STAGE 3: DISCUSSION GUIDE", discussion_guide)
+    _print_stage("STAGE 3: DISCUSSION GUIDE", discussion_guide.model_dump())
 
     # ---- Stage 4: Persona Responses ----
-    response_service = PersonaResponseService(openai_api_key=openai_key)
+    response_service = PersonaResponseService(openai_api_key=openai_key, model="gpt-4o-mini")
     persona_responses = {}
     for persona in MOCK_PERSONAS:
         result = await response_service.generate_persona_responses(
@@ -108,7 +106,7 @@ async def main() -> None:
             discussion_guide=discussion_guide,
             comparison_mode=COMPARISON_MODE,
         )
-        persona_responses[persona["name"]] = result
+        persona_responses[persona["name"]] = result.model_dump()
 
     _print_stage("STAGE 4: PERSONA RESPONSES", persona_responses)
 

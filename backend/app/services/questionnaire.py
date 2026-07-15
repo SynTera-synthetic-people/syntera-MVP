@@ -28,6 +28,7 @@ from pathlib import Path
 from uuid import uuid4
 import aiofiles
 import mimetypes
+from app.services.llm_usage_tracker import record_llm_usage, extract_usage_openai_chat
 
 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 logger = logging.getLogger(__name__)
@@ -1656,14 +1657,34 @@ async def generate_questionnaire(objective, personas_list, population, explorati
             ]
         )
     except Exception as e:
+        await record_llm_usage(
+            exploration_id=exploration_id,
+            stage="questionnaire_generation",
+            provider="openai",
+            model="gpt-4o",
+            input_tokens=0,
+            output_tokens=0,
+            status="error",
+            error_message=str(e),
+        )
         return None, f"LLM Error: {str(e)}"
 
     raw = res.choices[0].message.content
 
-    # DEBUG: log token usage and question counts per section
-    usage = res.usage
+    input_tokens, output_tokens, usage_raw = extract_usage_openai_chat(res)
+    await record_llm_usage(
+        exploration_id=exploration_id,
+        stage="questionnaire_generation",
+        provider="openai",
+        model="gpt-4o",
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        usage_raw=usage_raw,
+    )
+
+    # DEBUG: log question counts per section (token usage now persisted via record_llm_usage above)
     finish_reason = res.choices[0].finish_reason
-    print(f"[DEBUG] finish_reason={finish_reason} | prompt_tokens={usage.prompt_tokens} | completion_tokens={usage.completion_tokens} | total_tokens={usage.total_tokens}")
+    print(f"[DEBUG] finish_reason={finish_reason}")
     try:
         _debug_data = json.loads(raw)
         for _sec in _debug_data.get("sections", []):

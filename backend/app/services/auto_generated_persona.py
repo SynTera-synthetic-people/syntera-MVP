@@ -34,6 +34,7 @@ from app.services.digital_brain_pipeline import (
     _extract_geography_meta,
     _assign_cities_to_personas,
 )
+from app.services.llm_usage_tracker import record_llm_usage, extract_usage_openai_responses
 
 from app.services.auto_generated_persona_prompts import (
     PERSONA_GENERATION_PROMPT,
@@ -288,6 +289,11 @@ async def _generate_persona_themes(
     description: str,
     needed_count: int,
     existing_names: Optional[List[str]] = None,
+    *,
+    exploration_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
+    created_by: Optional[str] = None,
+    request_id: Optional[str] = None,
 ) -> List[str]:
     """
     Stage 1 of persona generation: brainstorm `needed_count` distinct
@@ -343,6 +349,20 @@ Return ONLY this JSON, no markdown, no explanations:
                 },
                 {"role": "user", "content": prompt},
             ],
+        )
+        input_tokens, output_tokens, usage_raw = extract_usage_openai_responses(response)
+        await record_llm_usage(
+            exploration_id=exploration_id,
+            stage="persona_auto_generate",
+            operation="theme_brainstorm",
+            provider="openai",
+            model="gpt-5",
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            usage_raw=usage_raw,
+            workspace_id=workspace_id,
+            created_by=created_by,
+            request_id=request_id,
         )
         data = _load_json_object(response.output_text)
         segments = data.get("segments", [])
@@ -826,6 +846,7 @@ async def ai_generate_persona(
     starting_persona_number: int = 1,
     _attempt: int = 1,
     assigned_themes: Optional[Dict[int, str]] = None,
+    request_id: Optional[str] = None,
 ):
     """
     Generate the requested number of Omi personas in parallel.
@@ -835,6 +856,12 @@ async def ai_generate_persona(
     total_persona_goal = int(total_persona_goal or target_count or 0)
     if target_count <= 0:
         return {"personas": [], "consumer_personas": []}
+
+    # One request_id per logical batch (including retries) so every LLM
+    # usage row from this call — and any recursive retry below — can be
+    # correlated together.
+    if request_id is None:
+        request_id = uuid.uuid4().hex
 
     description = await get_description(exploration_id)
 
@@ -877,7 +904,11 @@ async def ai_generate_persona(
         except Exception as exc:
             print(f"[Themes] Could not fetch existing persona names ({type(exc).__name__}: {exc}); continuing without them")
 
-        themes = await _generate_persona_themes(description or "", target_count, existing_names)
+        themes = await _generate_persona_themes(
+            description or "", target_count, existing_names,
+            exploration_id=exploration_id, workspace_id=workspace_id,
+            created_by=current_user_id, request_id=request_id,
+        )
         assigned_themes = {
             num: themes[i] for i, num in enumerate(persona_numbers) if i < len(themes)
         }
@@ -959,7 +990,22 @@ Return exactly one item inside consumer_personas.
                 }
             ],
         )
-        
+
+        input_tokens, output_tokens, usage_raw = extract_usage_openai_responses(response)
+        await record_llm_usage(
+            exploration_id=exploration_id,
+            stage="persona_auto_generate",
+            operation="persona_generation",
+            provider="openai",
+            model="gpt-5",
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            usage_raw=usage_raw,
+            workspace_id=workspace_id,
+            created_by=current_user_id,
+            request_id=request_id,
+        )
+
         return response.output_text
 
     # ============================================================================
@@ -1110,6 +1156,7 @@ Return exactly one item inside consumer_personas.
             starting_persona_number=starting_persona_number + len(response["personas"]),
             _attempt=_attempt + 1,
             assigned_themes=assigned_themes,
+            request_id=request_id,
         )
         response["personas"].extend(retry_response.get("personas", []))
         response["consumer_personas"].extend(retry_response.get("consumer_personas", []))

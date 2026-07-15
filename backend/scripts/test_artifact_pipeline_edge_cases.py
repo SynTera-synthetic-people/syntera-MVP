@@ -25,6 +25,7 @@ from dotenv import load_dotenv
 from PIL import Image, ImageDraw, ImageFont
 
 from app.ml.artifact_dimensions_library import artifact_dimension_library
+from app.schemas.artifact_pipeline import ComparisonMode
 from app.services.artifact_dissection import AssetDissectionService
 from app.services.dimension_extraction import DimensionExtractionService
 from app.services.discussion_guide import DiscussionGuideService
@@ -69,7 +70,7 @@ async def test_comparison_mode(gemini_key: str, openai_key: str) -> None:
     build_sample_ad_image(voltra_path)
     _build_stridex_ad(stridex_path)
 
-    dissection_service = AssetDissectionService(gemini_api_key=gemini_key)
+    dissection_service = AssetDissectionService(gemini_api_key=gemini_key, model="gemini-2.5-flash")
     asset_dissections = await dissection_service.dissect_assets(
         assets=[str(voltra_path), str(stridex_path)],
         instruction="Compare these two sneaker ads for a competitive positioning study.",
@@ -78,48 +79,49 @@ async def test_comparison_mode(gemini_key: str, openai_key: str) -> None:
     assert set(asset_dissections.keys()) == {"asset_0", "asset_1"}, "expected 2 dissected assets"
     _print("A1: dissections (both assets present)", list(asset_dissections.keys()))
 
-    dimension_service = DimensionExtractionService(openai_api_key=openai_key)
-    selected, details = await dimension_service.extract_dimensions(
+    dimension_service = DimensionExtractionService(openai_api_key=openai_key, model="gpt-4o-mini")
+    dim_selection = await dimension_service.extract_dimensions(
         ro_description="Determine which sneaker ad drives more purchase consideration.",
         instruction="Compare Voltra vs Stridex creative executions.",
         artifact_type="ad_creative",
     )
+    selected = dim_selection.selected_codes
     assert 3 <= len(selected) <= 10, f"expected a reasonable dimension count, got {len(selected)}"
     _print("A2: selected dimensions", selected)
 
-    guide_service = DiscussionGuideService(openai_api_key=openai_key)
+    guide_service = DiscussionGuideService(openai_api_key=openai_key, model="gpt-4o-mini")
     guide = await guide_service.generate_guide(
         ro_description="Determine which sneaker ad drives more purchase consideration.",
         instruction="Compare Voltra vs Stridex creative executions.",
         selected_dimensions=selected,
-        dimension_details=details,
-        comparison_mode="comparison",
+        dimension_details={k: v.model_dump() for k, v in dim_selection.details.items()},
+        comparison_mode=ComparisonMode.COMPARISON,
         num_assets=2,
         is_qual=True,
     )
-    assert guide.get("comparison_mode") == "comparison"
-    assert guide.get("num_assets") == 2
-    _print("A3: guide metadata", {"comparison_mode": guide.get("comparison_mode"), "num_assets": guide.get("num_assets"), "sections": len(guide.get("sections", []))})
+    assert guide.comparison_mode == ComparisonMode.COMPARISON
+    assert guide.num_assets == 2
+    _print("A3: guide metadata", {"comparison_mode": guide.comparison_mode.value, "num_assets": guide.num_assets, "sections": len(guide.sections)})
 
-    response_service = PersonaResponseService(openai_api_key=openai_key)
+    response_service = PersonaResponseService(openai_api_key=openai_key, model="gpt-4o-mini")
     persona = MOCK_PERSONAS[0]
     result = await response_service.generate_persona_responses(
         persona=persona,
         asset_dissections=asset_dissections,
         discussion_guide=guide,
-        comparison_mode="comparison",
+        comparison_mode=ComparisonMode.COMPARISON,
     )
-    responses_text = json.dumps(result).lower()
+    responses_text = json.dumps(result.model_dump()).lower()
     mentions_both = ("voltra" in responses_text or "asset 1" in responses_text) and (
         "stridex" in responses_text or "asset 2" in responses_text
     )
-    _print("A4: persona comparison response (first 2)", result.get("responses", [])[:2])
+    _print("A4: persona comparison response (first 2)", [r.model_dump() for r in result.responses[:2]])
     print(f"\n[CHECK] Response text references both assets: {mentions_both}")
 
 
 async def test_error_handling(gemini_key: str) -> None:
     print("\n\n#### TEST B: ERROR HANDLING (nonexistent file) ####")
-    dissection_service = AssetDissectionService(gemini_api_key=gemini_key)
+    dissection_service = AssetDissectionService(gemini_api_key=gemini_key, model="gemini-2.5-flash")
     try:
         await dissection_service.dissect_assets(
             assets=["scripts/fixtures/does_not_exist.png"],
@@ -152,8 +154,8 @@ def test_unknown_artifact_type_fallback() -> None:
 
 async def test_hook_strength_selection(openai_key: str) -> None:
     print("\n\n#### TEST E: TYPE-SPECIFIC DIMENSION ACTUALLY GETS SELECTED ####")
-    dimension_service = DimensionExtractionService(openai_api_key=openai_key)
-    selected, details = await dimension_service.extract_dimensions(
+    dimension_service = DimensionExtractionService(openai_api_key=openai_key, model="gpt-4o-mini")
+    dim_selection = await dimension_service.extract_dimensions(
         ro_description=(
             "This is a 15-second pre-roll video ad. We specifically need to know whether the "
             "opening hook grabs attention in the first 3 seconds, whether the story is easy to "
@@ -162,6 +164,7 @@ async def test_hook_strength_selection(openai_key: str) -> None:
         instruction="Evaluate the hook, story clarity, and brand linkage of this video ad concept.",
         artifact_type="ad_creative",
     )
+    selected = dim_selection.selected_codes
     type_specific_codes = {"hook_strength", "story_clarity", "brand_linkage", "creative_distinctiveness", "cta_strength", "shareability", "media_fit"}
     picked_type_specific = [c for c in selected if c in type_specific_codes]
     _print("E1: selected dimensions", selected)

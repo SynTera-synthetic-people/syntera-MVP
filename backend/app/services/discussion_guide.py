@@ -9,17 +9,27 @@ import logging
 from typing import Optional
 
 from openai import AsyncOpenAI
+from pydantic import ValidationError
+
+from app.config import settings
+from app.schemas.artifact_pipeline import ComparisonMode, DiscussionGuide, PipelineStageError
+from app.services.llm_usage_tracker import extract_usage_openai_chat, record_llm_usage
 
 logger = logging.getLogger(__name__)
+
+
+_REQUEST_TIMEOUT_SECONDS = 60.0
 
 
 class DiscussionGuideService:
     """Generates a curated discussion guide/questionnaire from selected dimensions."""
 
-    def __init__(self, openai_api_key: Optional[str] = None, model: str = "gpt-4o-mini"):
+    def __init__(self, openai_api_key: Optional[str] = None, model: Optional[str] = None):
+        openai_api_key = openai_api_key if openai_api_key is not None else settings.OPENAI_API_KEY
+        model = model if model is not None else settings.ARTIFACT_REASONING_MODEL
         if not openai_api_key:
             raise ValueError("openai_api_key is required")
-        self._client = AsyncOpenAI(api_key=openai_api_key)
+        self._client = AsyncOpenAI(api_key=openai_api_key, timeout=_REQUEST_TIMEOUT_SECONDS)
         self._model = model
 
     async def generate_guide(
@@ -28,14 +38,19 @@ class DiscussionGuideService:
         instruction: str,
         selected_dimensions: list[str],
         dimension_details: dict[str, dict],
-        comparison_mode: str,
+        comparison_mode: ComparisonMode,
         num_assets: int = 1,
         is_qual: bool = True,
-    ) -> dict:
+        *,
+        exploration_id: Optional[str] = None,
+        workspace_id: Optional[str] = None,
+        created_by: Optional[str] = None,
+        session_id: Optional[str] = None,
+    ) -> DiscussionGuide:
         """
-        comparison_mode: "campaign_set" (1 asset) or "comparison" (2+ assets)
+        comparison_mode: ComparisonMode.CAMPAIGN_SET (1 asset) or ComparisonMode.COMPARISON (2+ assets)
 
-        Returns:
+        Returns a validated DiscussionGuide:
         {
           "title": "...", "introduction": "...",
           "comparison_mode": "...", "num_assets": N,
@@ -44,10 +59,15 @@ class DiscussionGuideService:
              "questions": [{"question": "...", "type": "open"|"rating"|"choice", "scale": "1-5"?, "intent": "..."}]}
           ]
         }
+
+        exploration_id/workspace_id/created_by/session_id are optional
+        LLM-usage-tracking context (see AssetDissectionService.dissect_assets);
+        omitted entirely, no usage row is written.
         """
+        comparison_mode = ComparisonMode(comparison_mode)
         dimension_block = json.dumps(dimension_details, indent=2)
 
-        if comparison_mode == "comparison" and num_assets > 1:
+        if comparison_mode == ComparisonMode.COMPARISON and num_assets > 1:
             mode_instruction = f"""
 The user wants to COMPARE {num_assets} assets side-by-side. Each question should ask about:
 - Asset 1 vs Asset 2 (etc.) comparison
@@ -94,7 +114,7 @@ Respond with ONLY valid JSON (no markdown, no extra text):
 {{
   "title": "Discussion Guide: [Artifact Type]",
   "introduction": "Brief intro that explains what respondent will do",
-  "comparison_mode": "{comparison_mode}",
+  "comparison_mode": "{comparison_mode.value}",
   "num_assets": {num_assets},
   "sections": [
     {{
@@ -122,6 +142,29 @@ Respond with ONLY valid JSON (no markdown, no extra text):
             messages=[{"role": "user", "content": prompt}],
         )
 
-        guide = json.loads(response.choices[0].message.content)
-        logger.info("Generated discussion guide with %d sections", len(guide.get("sections", [])))
+        if exploration_id is not None:
+            input_tokens, output_tokens, usage_raw = extract_usage_openai_chat(response)
+            await record_llm_usage(
+                exploration_id=exploration_id,
+                stage="artifact_discussion_guide",
+                provider="openai",
+                model=self._model,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                usage_raw=usage_raw,
+                workspace_id=workspace_id,
+                created_by=created_by,
+                session_id=session_id,
+            )
+
+        raw = response.choices[0].message.content
+        try:
+            guide = DiscussionGuide.model_validate(json.loads(raw))
+        except (json.JSONDecodeError, ValidationError) as exc:
+            logger.error("Failed to parse discussion guide response: %s", (raw or "")[:2000])
+            raise PipelineStageError(
+                "discussion_guide", "Discussion guide response was not valid JSON/schema"
+            ) from exc
+
+        logger.info("Generated discussion guide with %d sections", len(guide.sections))
         return guide
