@@ -1816,7 +1816,6 @@ const MaterialTab: React.FC<MaterialTabProps> = ({
                                 <span className="rofp-coming-soon-badge">Coming Soon</span>
                             </div>
                         )}
-                        <div className="rofp-material-section">
                             <div className="rofp-material-section-head">
                                 <h3 className="rofp-material-section-title">Artifact</h3>
                                 <p className="rofp-material-section-sub">
@@ -1949,7 +1948,6 @@ const MaterialTab: React.FC<MaterialTabProps> = ({
                                 <p className="rofp-cta-hint" style={{ textAlign: "right" }}>Pick how these relate to continue</p>
                             )}
                             */}
-                        </div>
                     </div>
 
                 </div>{/* END .rofp-material-sections-row */}
