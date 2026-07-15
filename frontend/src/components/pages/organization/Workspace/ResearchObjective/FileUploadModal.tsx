@@ -14,6 +14,8 @@ const ARTIFACT_MAX_LINKS = 3;
 const ARTIFACT_MAX_FILES = 4;
 const ARTIFACT_COMING_SOON = false;
 
+const MATERIAL_INSTRUCTION_MAX_LENGTH = 500;
+
 // How Omi should relate 2+ artifacts within this section to each other.
 // Only surfaced once a second artifact (link or file) is attached — a lone
 // artifact has nothing to be compared, unified, or sequenced against.
@@ -73,8 +75,10 @@ interface LinkEntry {
 }
 
 export interface FileUploadModalValue {
+  briefInstruction: string;
   briefFile: File | null;
   briefLink: string;
+  artifactInstruction: string;
   artifactFiles: File[];
   artifactLinks: string[];
   artifactCategory: ArtifactCategory | null;
@@ -104,6 +108,45 @@ const PlusIcon: React.FC = () => (
     <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
   </svg>
 );
+
+// ─── Tooltip — fixed: rendered outside normal flow so it never gets clipped
+// by the modal's overflow-y: auto scroll container.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const Tooltip: React.FC<{ text: string }> = ({ text }) => {
+  const [visible, setVisible] = useState(false);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const iconRef = useRef<HTMLSpanElement>(null);
+
+  const showTooltip = () => {
+    if (iconRef.current) {
+      const rect = iconRef.current.getBoundingClientRect();
+      setPos({
+        top: rect.top - 8,   // 8px gap above the icon
+        left: rect.left + rect.width / 2,
+      });
+    }
+    setVisible(true);
+  };
+
+  return (
+    <span
+      className="fum-tooltip-wrap"
+      onMouseEnter={showTooltip}
+      onMouseLeave={() => setVisible(false)}
+    >
+      <span ref={iconRef} className="fum-tooltip-icon" aria-label="More info">?</span>
+      {visible && (
+        <span
+          className="fum-tooltip-bubble"
+          style={{ top: pos.top, left: pos.left }}
+        >
+          {text}
+        </span>
+      )}
+    </span>
+  );
+};
 
 // ─── Upload zone with drag-and-drop (single file — used by Research Brief) ──
 
@@ -432,6 +475,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
   isOpen, onClose, onDone, initialValue,
 }) => {
   // Brief
+  const [briefInstruction, setBriefInstruction] = useState(initialValue?.briefInstruction ?? "");
   const [briefLink, setBriefLink] = useState(initialValue?.briefLink ?? "");
   const [briefFile, setBriefFile] = useState<SlotFile | null>(
     initialValue?.briefFile
@@ -440,6 +484,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
   );
 
   // Artifact
+  const [artifactInstruction, setArtifactInstruction] = useState(initialValue?.artifactInstruction ?? "");
   const [artifactLinks, setArtifactLinks] = useState<LinkEntry[]>(() => {
     const saved = initialValue?.artifactLinks?.filter(Boolean) ?? [];
     return saved.length
@@ -466,8 +511,10 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
   const handleDone = () => {
     if (artifactNeedsCategory) return;
     onDone({
+      briefInstruction: briefInstruction.trim(),
       briefFile: briefFile?.file ?? null,
       briefLink: briefLink.trim(),
+      artifactInstruction: artifactInstruction.trim(),
       artifactFiles: artifactFiles.map(s => s.file),
       artifactLinks: artifactLinks.map(l => l.value.trim()).filter(Boolean),
       artifactCategory,
@@ -524,8 +571,29 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
               <div className="fum-section-head">
                 <h3 className="fum-section-title">Research Brief</h3>
                 <p className="fum-section-sub">
-                  Documents, reports, or references to help Omi understand the business context.
+                  Share documents that help Omi understand the business problem,
+                  category, audience, key unknowns, or research scope.
                 </p>
+              </div>
+
+              <div className="fum-field-group">
+                <div className="fum-field-label-row">
+                  <label className="fum-label" htmlFor="fum-brief-instruction">
+                    What should Omi understand about this document?
+                    <span className="fum-label-optional">Optional</span>
+                  </label>
+                  <Tooltip text="Tell Omi what to take from this document and how to use it." />
+                </div>
+                <textarea
+                  id="fum-brief-instruction"
+                  className="fum-textarea"
+                  placeholder="This is a research brief. Use it to understand the category, audience, key unknowns, hypotheses, and decisions this exploration should support…"
+                  value={briefInstruction}
+                  maxLength={MATERIAL_INSTRUCTION_MAX_LENGTH}
+                  onChange={e => setBriefInstruction(e.target.value.slice(0, MATERIAL_INSTRUCTION_MAX_LENGTH))}
+                  rows={3}
+                />
+                <p className="fum-field-charcount">{briefInstruction.length}/{MATERIAL_INSTRUCTION_MAX_LENGTH}</p>
               </div>
 
               <LinkRow
@@ -558,55 +626,76 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                   <span className="fum-coming-soon-badge">Coming Soon</span>
                 </div>
               )}
-              <div className="fum-section">
-                <div className="fum-section-head">
-                  <h3 className="fum-section-title">Artifact</h3>
-                  <p className="fum-section-sub">
-                    Creatives, videos, images, or landing pages for Omi to test with personas.
-                  </p>
-                </div>
 
-                {artifactLinks.map((link, idx) => (
-                  <LinkRow
-                    key={link.id}
-                    value={link.value}
-                    placeholder="Paste a YouTube, video, image, or page URL"
-                    onChange={value => updateArtifactLink(link.id, value)}
-                    removable={artifactLinks.length > 1 || idx > 0}
-                    onRemove={() => removeArtifactLink(link.id)}
-                  />
-                ))}
-
-                {canAddArtifactLink && (
-                  <button
-                    type="button"
-                    className="fum-add-link-btn"
-                    onClick={() =>
-                      setArtifactLinks(prev => [...prev, { id: makeLinkId(), value: "" }])
-                    }
-                  >
-                    <PlusIcon /> Add another link
-                  </button>
-                )}
-
-                <MultiUploadZone
-                  slots={artifactFiles}
-                  acceptExtensions={ARTIFACT_EXTENSIONS}
-                  maxBytes={ARTIFACT_MAX_BYTES}
-                  maxFiles={ARTIFACT_MAX_FILES}
-                  formatsLabel="PNG, JPG, GIF, WEBP"
-                  compact
-                  onFilesAccepted={addArtifactFiles}
-                  onRemoveAt={removeArtifactFileAt}
-                />
-
-                {artifactItemCount >= 2 && (
-                  <ArtifactCategoryChips
-                    value={artifactCategory}
-                    onChange={setArtifactCategory}
-                  />
-                )}
+              <div className="fum-section-head">
+                <h3 className="fum-section-title">Artifact</h3>
+                <p className="fum-section-sub">
+                  Share creatives, videos, images, landing pages, claims,
+                  storyboards, prototypes, product flows, or anything you want
+                  Omi to test with personas.
+                </p>
               </div>
+
+              <div className="fum-field-group">
+                <div className="fum-field-label-row">
+                  <label className="fum-label" htmlFor="fum-artifact-instruction">
+                    What should Omi do with this artifact?
+                    <span className="fum-label-optional">Optional</span>
+                  </label>
+                  <Tooltip text="Tell Omi what to test, decode, or react to in this artifact." />
+                </div>
+                <textarea
+                  id="fum-artifact-instruction"
+                  className="fum-textarea"
+                  placeholder="This is a campaign creative. Test whether the message is clear, believable, distinctive, and likely to drive interest or purchase intent…."
+                  value={artifactInstruction}
+                  maxLength={MATERIAL_INSTRUCTION_MAX_LENGTH}
+                  onChange={e => setArtifactInstruction(e.target.value.slice(0, MATERIAL_INSTRUCTION_MAX_LENGTH))}
+                  rows={3}
+                />
+                <p className="fum-field-charcount">{artifactInstruction.length}/{MATERIAL_INSTRUCTION_MAX_LENGTH}</p>
+              </div>
+
+              {artifactLinks.map((link, idx) => (
+                <LinkRow
+                  key={link.id}
+                  value={link.value}
+                  placeholder="Paste a YouTube, video, image, or page URL"
+                  onChange={value => updateArtifactLink(link.id, value)}
+                  removable={artifactLinks.length > 1 || idx > 0}
+                  onRemove={() => removeArtifactLink(link.id)}
+                />
+              ))}
+
+              {canAddArtifactLink && (
+                <button
+                  type="button"
+                  className="fum-add-link-btn"
+                  onClick={() =>
+                    setArtifactLinks(prev => [...prev, { id: makeLinkId(), value: "" }])
+                  }
+                >
+                  <PlusIcon /> Add another link
+                </button>
+              )}
+
+              <MultiUploadZone
+                slots={artifactFiles}
+                acceptExtensions={ARTIFACT_EXTENSIONS}
+                maxBytes={ARTIFACT_MAX_BYTES}
+                maxFiles={ARTIFACT_MAX_FILES}
+                formatsLabel="PNG, JPG, GIF, WEBP"
+                compact
+                onFilesAccepted={addArtifactFiles}
+                onRemoveAt={removeArtifactFileAt}
+              />
+
+              {artifactItemCount >= 2 && (
+                <ArtifactCategoryChips
+                  value={artifactCategory}
+                  onChange={setArtifactCategory}
+                />
+              )}
             </div>
 
           </div>

@@ -838,8 +838,10 @@ const DepthSignalSection: React.FC<{
             stat={patternStat}
             weight={1}
             showBar={true}
-            showCount={true}   // was false — bring the number back
-            showWeight={false} // was true — remove "Weight in Real Actions Signal confidence"
+            // showCount={true} — commented out: no longer showing the "X Million
+            // people analyzed" figure next to this row, per design feedback.
+            showCount={false}
+            showWeight={false}
           />
         )}
       </div>
@@ -2197,7 +2199,7 @@ const PersonaPreview: React.FC = () => {
 
   // ── Real Actions Signal confidence (average of depth-layer / action-data
   // verdict confidence scores, when available) ───────────────────────────────
-const actionDataVerdicts = (
+  const actionDataVerdicts = (
     (mergedTraits?.evidence_metadata as Record<string, unknown> | undefined)?.depth_layers ??
     (rawData?.evidence_metadata as Record<string, unknown> | undefined)?.depth_layers ??
     (mergedTraits?.evidence as Record<string, unknown> | undefined)?.action_data ??
@@ -2255,13 +2257,13 @@ const actionDataVerdicts = (
       reasoning:
         'DL_010 (Peer Clustering): multiple users in the same city purchasing the same brands. EB_LINKEDIN mentions friend recommendations in 40% of threads — a weaker, secondary signal alongside the primary Explorer assignment.',
     };
-const behavioralDepthProfile = (
+  const behavioralDepthProfile = (
     mergedTraits?.BEHAVIORAL_DEPTH_PROFILE ??
     rawData?.BEHAVIORAL_DEPTH_PROFILE ??
     personaDetails?.BEHAVIORAL_DEPTH_PROFILE
   ) as Record<string, unknown> | undefined;
 
-const BEHAVIORAL_DEPTH_CATEGORY_LABELS: Record<string, string> = {
+  const BEHAVIORAL_DEPTH_CATEGORY_LABELS: Record<string, string> = {
     white_spaces: 'White Space',
     cognitive_biases: 'Cognitive Bias',
     adoption_frictions: 'Adoption Friction',
@@ -2273,8 +2275,8 @@ const BEHAVIORAL_DEPTH_CATEGORY_LABELS: Record<string, string> = {
     ritual_habit_architecture: 'Ritual / Habit',
   };
 
-const depthLayerEntries: string[] = [];
-if (behavioralDepthProfile) {
+  const depthLayerEntries: string[] = [];
+  if (behavioralDepthProfile) {
     for (const [key, label] of Object.entries(BEHAVIORAL_DEPTH_CATEGORY_LABELS)) {
       const arr = behavioralDepthProfile[key];
       if (!Array.isArray(arr)) continue;
@@ -2290,7 +2292,7 @@ if (behavioralDepthProfile) {
     }
   }
   // ── Depth signal stats (Dimensions Triggered / Depth Layer / Predominant Patterns Extracted) ──
-const dimensionsActivated = (
+  const dimensionsActivated = (
     (mergedTraits?.evidence_metadata as Record<string, unknown> | undefined)?.activated_dimensions ??
     (rawData?.evidence_metadata as Record<string, unknown> | undefined)?.activated_dimensions ??
     (rawData?.stage_2_dimensions as Record<string, unknown> | undefined)?.activated_dimensions ??
@@ -2302,7 +2304,7 @@ const dimensionsActivated = (
     ? dimensionsActivated.length
     : 8;
 
-const depthLayerCount = depthLayerEntries.length > 0
+  const depthLayerCount = depthLayerEntries.length > 0
     ? depthLayerEntries.length
     : 6;
 
@@ -2329,7 +2331,7 @@ const depthLayerCount = depthLayerEntries.length > 0
   // patAccuracy falls back through) keeps this pill in sync with the master ring
   // instead of showing an unrelated older score next to it. patAccuracy remains the
   // fallback for personas that don't have predominant_patterns generated yet.
-const predominantPatterns = (
+  const predominantPatterns = (
     rawData?.predominant_patterns ??
     mergedTraits?.predominant_patterns ??
     personaDetails?.predominant_patterns
@@ -2377,7 +2379,7 @@ const predominantPatterns = (
   ];
 
   // ── Depth layer verdicts: use real pattern_detected strings for detail drawer ──
-const depthLayerDetails = depthLayerEntries;
+  const depthLayerDetails = depthLayerEntries;
   const fallbackDepthDetails = [
     '2347 users switch brands in this category',
     '2057 users show repeat-brand loyalty',
@@ -2390,7 +2392,7 @@ const depthLayerDetails = depthLayerEntries;
   // ── Patterns extracted: real pattern_detected values (same source); the
   // large UI-scaled numeric count is no longer shown in the header (only the
   // accuracy bar and the detail chips remain) ─────────────────────────────
-const patternRealDetails = Array.isArray(predominantPatterns?.patterns)
+  const patternRealDetails = Array.isArray(predominantPatterns?.patterns)
     ? predominantPatterns.patterns.filter(Boolean)
     : [];
   const fallbackPatternDetails = [
