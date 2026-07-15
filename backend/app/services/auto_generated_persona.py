@@ -30,6 +30,10 @@ from app.db import async_engine
 from app.models.persona import Persona
 from app.utils.id_generator import generate_id
 from app.services.ke_sourcebank_enrichment import enrich_persona_ke_sources
+from app.services.digital_brain_pipeline import (
+    _extract_geography_meta,
+    _assign_cities_to_personas,
+)
 from app.services.llm_usage_tracker import record_llm_usage, extract_usage_openai_responses
 
 from app.services.auto_generated_persona_prompts import (
@@ -196,35 +200,89 @@ async def _resolve_domain_and_subject_key(
     return None, None
 
 
-async def _fetch_ml_context(
+async def _fetch_ml_contexts_per_persona(
     description: str,
-) -> tuple[str | None, str | None, str | None]:
+    persona_numbers: list[int],
+) -> dict[int, dict]:
     """
-    Resolve domain → fetch features → run ML prediction → build context string.
-    Returns (domain, subject_key, ml_context_string).
-    Returns (None, None, None) on any failure — generation always falls back gracefully.
+    Resolve one domain for this RO, then ground each persona_number in a
+    DIFFERENT real transactor's behavior (top-N by transaction count) instead
+    of the whole batch sharing one profile — otherwise every persona (and,
+    since find_subject_key always picks the single busiest transactor
+    platform-wide, every exploration in the same domain) converges on
+    identical AOV/orders-per-week figures.
+
+    Returns {persona_number: {"domain", "subject_key", "context"}}. Any
+    persona_number whose lookup fails gets all-None values — generation
+    always falls back gracefully to an LLM-only prompt for that persona.
     """
+    empty = {"domain": None, "subject_key": None, "context": None}
     try:
-        from app.ml.feature_fetch import get_user_features
+        from app.ml.feature_fetch import find_subject_keys, get_user_features
         from app.ml.predictor import predict_from_features
 
-        domain, subject_key = await _resolve_domain_and_subject_key(description)
-        if not domain or not subject_key:
-            return None, None, None
+        domain, _ = await _resolve_domain_and_subject_key(description)
+        if not domain:
+            return {n: dict(empty) for n in persona_numbers}
 
-        features = await get_user_features(subject_key, domain)
-        prediction = await asyncio.to_thread(predict_from_features, domain, features)
+        subject_keys = await find_subject_keys(domain, limit=len(persona_numbers))
+        if not subject_keys:
+            return {n: dict(empty) for n in persona_numbers}
 
-        context = _build_ml_context_string(domain, features, prediction)
-        print(
-            f"[ML] Context ready — domain={domain!r} pred={prediction['prediction']:.2f} "
-            f"conf={prediction['confidence_label']}"
-        )
-        return domain, subject_key, context
+        results: dict[int, dict] = {}
+        for i, persona_number in enumerate(persona_numbers):
+            subject_key = subject_keys[i % len(subject_keys)]
+            try:
+                features = await get_user_features(subject_key, domain)
+                prediction = await asyncio.to_thread(predict_from_features, domain, features)
+                context = _build_ml_context_string(domain, features, prediction)
+                results[persona_number] = {"domain": domain, "subject_key": subject_key, "context": context}
+                print(
+                    f"[ML] Context ready — persona={persona_number} domain={domain!r} "
+                    f"subject_key={subject_key!r} pred={prediction['prediction']:.2f} "
+                    f"conf={prediction['confidence_label']}"
+                )
+            except Exception as exc:
+                print(
+                    f"[ML] Context fetch failed for persona {persona_number} "
+                    f"({type(exc).__name__}: {exc}) — using LLM-only fallback"
+                )
+                results[persona_number] = dict(empty)
+        return results
 
     except Exception as exc:
         print(f"[ML] Context fetch failed ({type(exc).__name__}: {exc}) — using LLM-only fallback")
-        return None, None, None
+        return {n: dict(empty) for n in persona_numbers}
+
+
+def _assign_cities_for_personas(
+    description: str,
+    persona_numbers: list[int],
+) -> dict[int, tuple[str | None, str | None]]:
+    """
+    Reuses digital_brain_pipeline's battle-tested geography round-robin so Omi
+    personas stop independently converging on the same city (e.g. Bangalore
+    x3) — each parallel generation call had no visibility into what city any
+    other call picked. Maps persona_number -> (assigned_city, assigned_country).
+
+    Falls back to (None, None) for every persona on any failure — geographic
+    diversity is a nice-to-have, never worth blocking generation over.
+    """
+    pseudo_ro = {"geography": description}
+    try:
+        geo_meta = _extract_geography_meta(pseudo_ro)
+        print(f"[Geo] Omi geography detected: countries={geo_meta['countries']}")
+
+        city_country_pairs = _assign_cities_to_personas(pseudo_ro, len(persona_numbers))
+        assignments = {
+            persona_number: city_country_pairs[i]
+            for i, persona_number in enumerate(persona_numbers)
+        }
+        print(f"[Geo] Omi city assignments: {assignments}")
+        return assignments
+    except Exception as exc:
+        print(f"[Geo] City assignment failed ({type(exc).__name__}: {exc}) — using generic locations")
+        return {n: (None, None) for n in persona_numbers}
 
 
 async def _generate_persona_themes(
@@ -813,12 +871,20 @@ async def ai_generate_persona(
         RESEARCH_OBJECTIVE_PROMPT
     )
 
-    # ============================================================================
-    # ML CONTEXT — fetch once, reuse across all parallel persona calls
-    # ============================================================================
-    ml_domain, ml_subject_key, ml_context = await _fetch_ml_context(description or "")
-
     persona_numbers = list(range(starting_persona_number, starting_persona_number + target_count))
+
+    # ============================================================================
+    # GEOGRAPHIC DIVERSITY — pre-assign a distinct city per persona so the
+    # independent parallel generation calls below don't all converge on the
+    # same city (reuses digital_brain_pipeline's round-robin + dedup logic)
+    # ============================================================================
+    city_assignments = _assign_cities_for_personas(description or "", persona_numbers)
+
+    # ============================================================================
+    # ML CONTEXT — ground each persona in a DIFFERENT real transactor's
+    # behavior instead of the whole batch sharing one profile
+    # ============================================================================
+    ml_contexts = await _fetch_ml_contexts_per_persona(description or "", persona_numbers)
 
     # ============================================================================
     # STAGE 1 — assign each persona slot a distinct behavioral segment up front
@@ -855,6 +921,7 @@ async def ai_generate_persona(
         """
         Generate a single persona via API call.
         """
+        ml_context = ml_contexts.get(persona_number, {}).get("context")
         ml_section = f"\n\n{ml_context}\n" if ml_context else ""
 
         assigned_theme = assigned_themes.get(persona_number)
@@ -866,6 +933,15 @@ async def ai_generate_persona(
             else "Ensure this persona represents a distinct behavioral segment from other personas."
         )
 
+        assigned_city, assigned_country = city_assignments.get(persona_number, (None, None))
+        location_instruction = (
+            f"PERSONA LOCATION: {assigned_city}, {assigned_country}\n"
+            "Ground this persona's demographics, occupation, and lifestyle details in this "
+            "specific city — do not substitute a different city."
+            if assigned_city
+            else "Location: City/neighborhood in India"
+        )
+
         # Format dynamic prompt - specify this persona's position in the full plan limit
         dynamic_prompt = f"""
 {RESEARCH_OBJECTIVE_PROMPT.format(research_objective=description)}
@@ -873,6 +949,7 @@ async def ai_generate_persona(
 Generate exactly 1 high-quality persona (Persona #{persona_number} of {total_persona_goal} total).
 Return exactly one item inside consumer_personas.
 {diversity_instruction}
+{location_instruction}
 """
 
         # API call with caching
@@ -973,6 +1050,13 @@ Return exactly one item inside consumer_personas.
                     break
 
                 persona["auto_generated_persona"] = True
+
+                assigned_city, assigned_country = city_assignments.get(
+                    persona_numbers[idx - 1], (None, None)
+                )
+                persona["assigned_city"] = assigned_city or "Unspecified"
+                persona["assigned_country"] = assigned_country or "India"
+
                 reference_sites = persona.get("reference_sites_with_usage", [])
                 site_counter = dict(
                     Counter(urlparse(url).netloc for url in reference_sites)
@@ -1025,8 +1109,8 @@ Return exactly one item inside consumer_personas.
                         persona_details=db_persona["persona_details"],
                         auto_generated_persona=True,
                         calibration_confidence=_extract_calibration_confidence(persona),
-                        subject_key=ml_subject_key,
-                        ml_domain=ml_domain,
+                        subject_key=ml_contexts.get(persona_numbers[idx - 1], {}).get("subject_key"),
+                        ml_domain=ml_contexts.get(persona_numbers[idx - 1], {}).get("domain"),
                     )
 
                     session.add(p)

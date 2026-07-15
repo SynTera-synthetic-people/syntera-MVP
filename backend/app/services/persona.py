@@ -762,6 +762,8 @@ def persona_to_dict(p: Persona, creator_full_name: Optional[str] = None) -> dict
         "industry": persona_details.get("industry"),
         "family_structure": persona_details.get("family_structure"),
         "occupation_level": persona_details.get("occupation_level"),
+        "assigned_city": persona_details.get("assigned_city"),
+        "assigned_country": persona_details.get("assigned_country"),
         # Replication Engine v5.0 fields live inside persona_details so existing
         # deployments do not require new persona table columns.
         "replication_mode": persona_details.get("replication_mode"),
