@@ -1462,7 +1462,86 @@ const LinkRow: React.FC<LinkRowProps> = ({ value, placeholder, onChange, onFocus
 //         {value && <p className="rofp-artifact-cat-desc">{ARTIFACT_CATEGORIES.find(c => c.id === value)?.description}</p>}
 //     </div>
 // );
+interface CustomSelectOption<T extends string> {
+    id: T;
+    label: string;
+}
 
+interface CustomSelectProps<T extends string> {
+    id?: string | undefined;
+    value: T | null;
+    placeholder: string;
+    options: CustomSelectOption<T>[];
+    onChange: (value: T) => void;
+    disabled?: boolean | undefined;
+}
+
+function CustomSelect<T extends string>({
+    id, value, placeholder, options, onChange, disabled,
+}: CustomSelectProps<T>) {
+    const [open, setOpen] = useState(false);
+    const wrapRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (!open) return;
+        const handleClick = (e: MouseEvent) => {
+            if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+        };
+        const handleKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+        document.addEventListener("mousedown", handleClick);
+        document.addEventListener("keydown", handleKey);
+        return () => {
+            document.removeEventListener("mousedown", handleClick);
+            document.removeEventListener("keydown", handleKey);
+        };
+    }, [open]);
+
+    const selectedLabel = options.find(o => o.id === value)?.label ?? null;
+
+    return (
+        <div className="rofp-custom-select" ref={wrapRef}>
+            <button
+                type="button"
+                id={id}
+                className={[
+                    "rofp-custom-select-trigger",
+                    !selectedLabel ? "rofp-custom-select-trigger--placeholder" : "",
+                    open ? "rofp-custom-select-trigger--open" : "",
+                ].filter(Boolean).join(" ")}
+                onClick={() => !disabled && setOpen(o => !o)}
+                disabled={disabled}
+                aria-haspopup="listbox"
+                aria-expanded={open}
+            >
+                <span>{selectedLabel ?? placeholder}</span>
+                <svg className="rofp-custom-select-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+            </button>
+            {open && (
+                <ul className="rofp-custom-select-menu" role="listbox">
+                    {options.map(opt => (
+                        <li
+                            key={opt.id}
+                            role="option"
+                            aria-selected={opt.id === value}
+                            className={[
+                                "rofp-custom-select-option",
+                                opt.id === value ? "rofp-custom-select-option--active" : "",
+                            ].filter(Boolean).join(" ")}
+                            onClick={() => { onChange(opt.id); setOpen(false); }}
+                        >
+                            {opt.id === value && (
+                                <span className="rofp-custom-select-option-check"><MaterialCheckIcon /></span>
+                            )}
+                            {opt.label}
+                        </li>
+                    ))}
+                </ul>
+            )}
+        </div>
+    );
+}
 interface ArtifactContentCategorySelectProps {
     value: ArtifactContentCategory | null;
     onChange: (category: ArtifactContentCategory) => void;
@@ -1481,18 +1560,14 @@ const ArtifactContentCategorySelect: React.FC<ArtifactContentCategorySelectProps
             </label>
             <Tooltip text="What kind of creative asset is this? Drives which questions Omi asks personas about it." />
         </div>
-        <select
+        <CustomSelect
             id="rof-artifact-content-category"
-            className="rofp-select"
-            value={value ?? ""}
+            value={value}
+            placeholder="Select a category…"
+            options={ARTIFACT_CONTENT_CATEGORIES}
+            onChange={onChange}
             disabled={disabled}
-            onChange={e => onChange(e.target.value as ArtifactContentCategory)}
-        >
-            <option value="" disabled>Select a category…</option>
-            {ARTIFACT_CONTENT_CATEGORIES.map(cat => (
-                <option key={cat.id} value={cat.id}>{cat.label}</option>
-            ))}
-        </select>
+        />
     </div>
 );
 
