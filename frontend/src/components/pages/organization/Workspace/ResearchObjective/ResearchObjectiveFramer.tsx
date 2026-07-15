@@ -73,6 +73,20 @@ interface BriefSectionData {
 // single artifact there's nothing to compare/group/sequence.
 type ArtifactCategory = "compare" | "campaign_set" ;
 
+// The kind of creative asset this is — separate from ArtifactCategory
+// (comparison mode) above. Drives dimension selection in the artifact
+// stimulus pipeline (Stage 2) — must match one of the artifact_types keys
+// in backend/app/data/artifact_dimensions_library.json. Required whenever
+// at least one artifact (file or link) is attached, regardless of count.
+type ArtifactContentCategory =
+    | "ad_creative"
+    | "product_concept"
+    | "packaging"
+    | "landing_page"
+    | "pricing_offer"
+    | "claim"
+    | "script_storyboard";
+
 // Artifact section — own instruction, up to ARTIFACT_MAX_LINKS URL fields,
 // up to ARTIFACT_MAX_FILES file uploads, own submit lifecycle.
 interface ArtifactSectionData {
@@ -80,6 +94,7 @@ interface ArtifactSectionData {
     links: MaterialLink[];
     files: MaterialSlot[];
     category: ArtifactCategory | null;
+    contentCategory: ArtifactContentCategory | null;
     submitted: boolean;
 }
 
@@ -134,7 +149,7 @@ function buildFramerPayload(data: ROFramerData) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const framerDraftKey = (objectiveId?: string) => `ro_framer_draft_${objectiveId ?? "unknown"}`;
-const ARTIFACT_COMING_SOON = true;
+const ARTIFACT_COMING_SOON = false;
 // ─────────────────────────────────────────────────────────────────────────────
 // Local "has this objective's Framer been submitted" flag.
 //
@@ -219,6 +234,7 @@ const emptyArtifactSection = (): ArtifactSectionData => ({
     links: [{ id: makeLinkIdForEmptySection(), value: "" }],
     files: [],
     category: null,
+    contentCategory: null,
     submitted: false,
 });
 
@@ -976,32 +992,64 @@ const ARTIFACT_MAX_BYTES = 10 * 1024 * 1024;
 const ARTIFACT_MAX_LINKS = 3;
 const ARTIFACT_MAX_FILES = 4;
 
-// How Omi should relate 2+ artifacts within this section to each other.
-// Only surfaced once a second artifact (link or file) is attached — a lone
-// artifact has nothing to be compared, unified, or sequenced against.
-const ARTIFACT_CATEGORIES: { id: ArtifactCategory; label: string; description: string }[] = [
-    {
-        id: "compare",
-        label: "Compare",
-        description: "Different concepts competing for the same spot. Omi shows personas the options together and finds out which one resonates more, and why.",
-    },
-    {
-        id: "campaign_set",
-        label: "Campaign Set",
-        description: "Assets from one campaign, meant to work together. Omi checks whether they feel consistent and tell one story, rather than picking a favorite.",
-    },
-    // {
-    //     id: "sequence",
-    //     label: "Sequence",
-    //     description: "Assets meant to be seen in order — a funnel, a teaser-to-reveal, or a multi-step flow. Omi tests whether each step earns the next.",
-    // },
+// ─────────────────────────────────────────────────────────────────────────────
+// DISABLED — artifact categorization (Compare / Campaign Set / Sequence)
+//
+// No immediate client requirement for this yet. Everything below (the
+// category config, the label helper, and the chip-selector component) is
+// left in place but unused so the feature can be turned back on later by:
+//   1. Uncommenting ARTIFACT_CATEGORIES / artifactCategoryLabel / countArtifactItems
+//      / ArtifactCategoryChipsProps / ArtifactCategoryChips below.
+//   2. Restoring `artifactItemCount` / `artifactNeedsCategory` in MaterialTab
+//      and adding `&& !artifactNeedsCategory` back into canSubmitArtifact.
+//   3. Uncommenting the <ArtifactCategoryChips /> render block and the
+//      "Pick how these relate to continue" hint in MaterialTab's JSX.
+//   4. Uncommenting the "Artifact grouping" line in buildPreviewSections.
+// The `category` field itself is left active on ArtifactSectionData/emptyArtifactSection
+// so stored/submitted data keeps a stable shape either way — it will just
+// always be `null` while this feature is off.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// const ARTIFACT_CATEGORIES: { id: ArtifactCategory; label: string; description: string }[] = [
+//     {
+//         id: "compare",
+//         label: "Compare",
+//         description: "Different concepts competing for the same spot. Omi shows personas the options together and finds out which one resonates more, and why.",
+//     },
+//     {
+//         id: "campaign_set",
+//         label: "Campaign Set",
+//         description: "Assets from one campaign, meant to work together. Omi checks whether they feel consistent and tell one story, rather than picking a favorite.",
+//     },
+//     // {
+//     //     id: "sequence",
+//     //     label: "Sequence",
+//     //     description: "Assets meant to be seen in order — a funnel, a teaser-to-reveal, or a multi-step flow. Omi tests whether each step earns the next.",
+//     // },
+// ];
+
+// Comparison-mode label lookup — unused while ArtifactCategoryChips is
+// disabled (see the DISABLED block near ARTIFACT_MAX_FILES for how to
+// re-enable both together).
+// const artifactCategoryLabel = (id: ArtifactCategory | null): string | null =>
+//     id ? ARTIFACT_CATEGORIES.find(c => c.id === id)?.label ?? null : null;
+
+// What kind of creative asset this is — feeds the artifact pipeline's
+// Stage 2 dimension selection. Values must match
+// backend/app/data/artifact_dimensions_library.json's artifact_types keys.
+const ARTIFACT_CONTENT_CATEGORIES: { id: ArtifactContentCategory; label: string }[] = [
+    { id: "ad_creative", label: "Ad Creative" },
+    { id: "landing_page", label: "Landing Page" },
+    { id: "packaging", label: "Packaging" },
+    { id: "product_concept", label: "Product Concept" },
+    { id: "pricing_offer", label: "Pricing Offer" },
+    { id: "claim", label: "Claim" },
+    { id: "script_storyboard", label: "Script / Storyboard" },
 ];
 
-const artifactCategoryLabel = (id: ArtifactCategory | null): string | null =>
-    id ? ARTIFACT_CATEGORIES.find(c => c.id === id)?.label ?? null : null;
-
-// Counts distinct artifacts attached so far (filled links + files), so the
-// category selector only appears once there's actually something to relate.
+// Counts distinct artifacts attached so far (filled links + files) — still
+// active (unlike the comparison-mode chips above): the content-category
+// selector below needs it even while comparison mode is disabled.
 const countArtifactItems = (artifact: ArtifactSectionData): number =>
     artifact.links.filter(l => l.value.trim()).length + artifact.files.length;
 
@@ -1381,35 +1429,145 @@ const LinkRow: React.FC<LinkRowProps> = ({ value, placeholder, onChange, onFocus
     );
 };
 
-interface ArtifactCategoryChipsProps {
-    value: ArtifactCategory | null;
-    onChange: (category: ArtifactCategory) => void;
+// DISABLED alongside ARTIFACT_CATEGORIES above — see the block comment near
+// ARTIFACT_MAX_FILES for how to re-enable.
+// interface ArtifactCategoryChipsProps {
+//     value: ArtifactCategory | null;
+//     onChange: (category: ArtifactCategory) => void;
+//     disabled?: boolean;
+// }
+//
+// const ArtifactCategoryChips: React.FC<ArtifactCategoryChipsProps> = ({ value, onChange, disabled }) => (
+//     <div className="rofp-field-group">
+//         <div className="rofp-field-label-row">
+//             <label className="rofp-label">How should Omi treat these together?</label>
+//         </div>
+//         <div className="rofp-artifact-cat-row">
+//             {ARTIFACT_CATEGORIES.map(cat => (
+//                 <button
+//                     key={cat.id}
+//                     type="button"
+//                     className={[
+//                         "rofp-artifact-cat-chip",
+//                         value === cat.id ? "rofp-artifact-cat-chip--active" : "",
+//                     ].filter(Boolean).join(" ")}
+//                     onClick={() => !disabled && onChange(cat.id)}
+//                     disabled={disabled}
+//                     aria-pressed={value === cat.id}
+//                 >
+//                     {cat.label}
+//                 </button>
+//             ))}
+//         </div>
+//         {value && <p className="rofp-artifact-cat-desc">{ARTIFACT_CATEGORIES.find(c => c.id === value)?.description}</p>}
+//     </div>
+// );
+interface CustomSelectOption<T extends string> {
+    id: T;
+    label: string;
+}
+
+interface CustomSelectProps<T extends string> {
+    id?: string | undefined;
+    value: T | null;
+    placeholder: string;
+    options: CustomSelectOption<T>[];
+    onChange: (value: T) => void;
+    disabled?: boolean | undefined;
+}
+
+function CustomSelect<T extends string>({
+    id, value, placeholder, options, onChange, disabled,
+}: CustomSelectProps<T>) {
+    const [open, setOpen] = useState(false);
+    const wrapRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (!open) return;
+        const handleClick = (e: MouseEvent) => {
+            if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+        };
+        const handleKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+        document.addEventListener("mousedown", handleClick);
+        document.addEventListener("keydown", handleKey);
+        return () => {
+            document.removeEventListener("mousedown", handleClick);
+            document.removeEventListener("keydown", handleKey);
+        };
+    }, [open]);
+
+    const selectedLabel = options.find(o => o.id === value)?.label ?? null;
+
+    return (
+        <div className="rofp-custom-select" ref={wrapRef}>
+            <button
+                type="button"
+                id={id}
+                className={[
+                    "rofp-custom-select-trigger",
+                    !selectedLabel ? "rofp-custom-select-trigger--placeholder" : "",
+                    open ? "rofp-custom-select-trigger--open" : "",
+                ].filter(Boolean).join(" ")}
+                onClick={() => !disabled && setOpen(o => !o)}
+                disabled={disabled}
+                aria-haspopup="listbox"
+                aria-expanded={open}
+            >
+                <span>{selectedLabel ?? placeholder}</span>
+                <svg className="rofp-custom-select-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+            </button>
+            {open && (
+                <ul className="rofp-custom-select-menu" role="listbox">
+                    {options.map(opt => (
+                        <li
+                            key={opt.id}
+                            role="option"
+                            aria-selected={opt.id === value}
+                            className={[
+                                "rofp-custom-select-option",
+                                opt.id === value ? "rofp-custom-select-option--active" : "",
+                            ].filter(Boolean).join(" ")}
+                            onClick={() => { onChange(opt.id); setOpen(false); }}
+                        >
+                            {opt.id === value && (
+                                <span className="rofp-custom-select-option-check"><MaterialCheckIcon /></span>
+                            )}
+                            {opt.label}
+                        </li>
+                    ))}
+                </ul>
+            )}
+        </div>
+    );
+}
+interface ArtifactContentCategorySelectProps {
+    value: ArtifactContentCategory | null;
+    onChange: (category: ArtifactContentCategory) => void;
     disabled?: boolean;
 }
 
-const ArtifactCategoryChips: React.FC<ArtifactCategoryChipsProps> = ({ value, onChange, disabled }) => (
+// Required whenever at least one artifact (file or link) is attached —
+// unlike ArtifactCategoryChips (comparison mode) above, which only applies
+// once there are 2+. A single artifact still needs a content category for
+// Stage 2 dimension selection to make sense.
+const ArtifactContentCategorySelect: React.FC<ArtifactContentCategorySelectProps> = ({ value, onChange, disabled }) => (
     <div className="rofp-field-group">
         <div className="rofp-field-label-row">
-            <label className="rofp-label">How should Omi treat these together?</label>
+            <label className="rofp-label" htmlFor="rof-artifact-content-category">
+                Artifact Content Category
+            </label>
+            <Tooltip text="What kind of creative asset is this? Drives which questions Omi asks personas about it." />
         </div>
-        <div className="rofp-artifact-cat-row">
-            {ARTIFACT_CATEGORIES.map(cat => (
-                <button
-                    key={cat.id}
-                    type="button"
-                    className={[
-                        "rofp-artifact-cat-chip",
-                        value === cat.id ? "rofp-artifact-cat-chip--active" : "",
-                    ].filter(Boolean).join(" ")}
-                    onClick={() => !disabled && onChange(cat.id)}
-                    disabled={disabled}
-                    aria-pressed={value === cat.id}
-                >
-                    {cat.label}
-                </button>
-            ))}
-        </div>
-        {value && <p className="rofp-artifact-cat-desc">{ARTIFACT_CATEGORIES.find(c => c.id === value)?.description}</p>}
+        <CustomSelect
+            id="rof-artifact-content-category"
+            value={value}
+            placeholder="Select a category…"
+            options={ARTIFACT_CONTENT_CATEGORIES}
+            onChange={onChange}
+            disabled={disabled}
+        />
     </div>
 );
 
@@ -1497,11 +1655,16 @@ const MaterialTab: React.FC<MaterialTabProps> = ({
     const artifactHasContent = data.artifact.links.some(l => l.value.trim()) || data.artifact.files.length > 0;
     const artifactLinksValid = data.artifact.links.every(l => isLikelyValidUrl(l.value));
     const artifactItemCount = countArtifactItems(data.artifact);
-    // With 2+ artifacts, a category is required — otherwise Omi doesn't know
-    // whether to compare, unify, or sequence them.
-    const artifactNeedsCategory = artifactItemCount >= 2 && !data.artifact.category;
+    // DISABLED alongside the comparison-mode chips below — see the block
+    // comment near ARTIFACT_MAX_FILES for how to re-enable:
+    // const artifactNeedsCategory = artifactItemCount >= 2 && !data.artifact.category;
+    // Content category (separate from comparison mode) is required as soon as
+    // there's anything to categorize at all — Stage 2 dimension selection
+    // needs it even for a single artifact, independent of comparison mode.
+    const artifactNeedsContentCategory = artifactItemCount >= 1 && !data.artifact.contentCategory;
     // Same reasoning as canSubmitBrief — not gated on artifactHasContent.
-    const canSubmitArtifact = artifactLinksValid && !artifactProcessing && !data.artifact.submitted && !artifactNeedsCategory;
+    const canSubmitArtifact = artifactLinksValid && !artifactProcessing && !data.artifact.submitted
+        && !artifactNeedsContentCategory;
     const canAddArtifactLink = data.artifact.links.length < ARTIFACT_MAX_LINKS;
 
     const updateArtifact = (patch: Partial<ArtifactSectionData>) =>
@@ -1517,7 +1680,8 @@ const MaterialTab: React.FC<MaterialTabProps> = ({
                 instruction: data.artifact.instruction,
                 files: data.artifact.files.map(f => f.file).filter((f): f is File => f !== null),
                 links: data.artifact.links.map(l => l.value).filter(Boolean),
-                category: data.artifact.category,
+                comparison_mode: data.artifact.category,
+                artifact_category: data.artifact.contentCategory,
             });
             updateArtifact({
                 submitted: true,
@@ -1728,6 +1892,16 @@ const MaterialTab: React.FC<MaterialTabProps> = ({
                                     compact
                                 />
 
+                                {artifactItemCount >= 1 && (
+                                    <ArtifactContentCategorySelect
+                                        value={data.artifact.contentCategory}
+                                        onChange={contentCategory => updateArtifact({ contentCategory })}
+                                        disabled={data.artifact.submitted}
+                                    />
+                                )}
+
+                                {/* DISABLED — comparison-mode categorization UI. See the
+                                    block comment near ARTIFACT_MAX_FILES for how to re-enable.
                                 {artifactItemCount >= 2 && (
                                     <ArtifactCategoryChips
                                         value={data.artifact.category}
@@ -1735,6 +1909,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({
                                         disabled={data.artifact.submitted}
                                     />
                                 )}
+                                */}
                             </div>
 
                             {artifactProcessing && <OmiProcessingBar messageIndex={artifactMsgIndex} />}
@@ -1766,9 +1941,14 @@ const MaterialTab: React.FC<MaterialTabProps> = ({
                                     {artifactProcessing ? "Saving…" : data.artifact.submitted ? "Saved" : "Submit"}
                                 </button>
                             </div>
+                            {artifactNeedsContentCategory && !artifactProcessing && (
+                                <p className="rofp-cta-hint" style={{ textAlign: "right" }}>Pick an artifact content category to continue</p>
+                            )}
+                            {/* DISABLED alongside the comparison-mode chips above.
                             {artifactNeedsCategory && !artifactProcessing && (
                                 <p className="rofp-cta-hint" style={{ textAlign: "right" }}>Pick how these relate to continue</p>
                             )}
+                            */}
                         </div>
                     </div>
 
@@ -1895,8 +2075,9 @@ const buildPreviewSections = (data: ROFramerData): PreviewSection[] => {
         if (data.material.artifact.instruction.trim()) lines.push(`Artifact instruction: ${data.material.artifact.instruction.trim()}`);
         artifactFileNames.forEach(name => lines.push(`Artifact file: ${name}`));
         artifactLinks.forEach(link => lines.push(`Artifact link: ${link}`));
-        const categoryLabel = artifactCategoryLabel(data.material.artifact.category);
-        if (categoryLabel) lines.push(`Artifact grouping: ${categoryLabel}`);
+        // DISABLED alongside the categorization feature above.
+        // const categoryLabel = artifactCategoryLabel(data.material.artifact.category);
+        // if (categoryLabel) lines.push(`Artifact grouping: ${categoryLabel}`);
         sections.push({ heading: "Add Material", body: lines.join("\n") });
     }
 

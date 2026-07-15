@@ -35,6 +35,17 @@ class Settings(BaseSettings):
     # OpenAI model for combined survey simulation (gpt-4o-mini is fast; gpt-4.1 is slower, often richer)
     SURVEY_SIMULATION_MODEL: str = "gpt-4o-mini"
 
+    # Artifact stimulus pipeline (asset dissection via Gemini, dimension
+    # extraction/discussion guide/persona response via OpenAI). Model strings
+    # here must exactly match the _MODEL_RATES keys in
+    # app/services/llm_usage_tracker.py, or cost tracking for this pipeline
+    # silently records cost_usd=NULL for every call.
+    GEMINI_API_KEY: Optional[str] = None
+    ARTIFACT_DISSECTION_MODEL: str = "gemini-2.5-flash"
+    ARTIFACT_REASONING_MODEL: str = "gpt-4o-mini"
+    # Bound on concurrent Stage-4 (persona response) LLM calls per pipeline run
+    ARTIFACT_PERSONA_CONCURRENCY: int = 5
+
     # Exploration limits per pricing tier (overridable via environment)
     TIER1_EXPLORATION_LIMIT: int = 3
     ENTERPRISE_EXPLORATION_LIMIT: int = 10

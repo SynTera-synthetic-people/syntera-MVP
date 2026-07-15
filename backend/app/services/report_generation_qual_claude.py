@@ -42,6 +42,7 @@ from app.services.persona import get_persona
 from app.utils.anthropic_client import get_async_anthropic_client
 from app.ml.predictor import predict_from_features, VALID_DOMAINS
 from app.ml.feature_fetch import get_user_features, find_subject_key
+from app.services.llm_usage_tracker import record_llm_usage, extract_usage_anthropic_message
 
 load_dotenv()
 
@@ -1006,10 +1007,11 @@ def _annotate_report_html(html_body: str) -> str:
 async def _generate_report_markdown_once(
     payload: Dict[str, Any],
     system_prompt: str,
+    exploration_id: Optional[str] = None,
 ) -> str:
     try:
         response = await asyncio.wait_for(
-            call_anthropic(payload=payload, system_prompt=system_prompt),
+            call_anthropic(payload=payload, system_prompt=system_prompt, exploration_id=exploration_id),
             timeout=REPORT_LLM_TIMEOUT_SECONDS,
         )
     except asyncio.TimeoutError as exc:
@@ -1190,6 +1192,8 @@ async def call_anthropic(
     model: str = "claude-sonnet-4-5",
     max_tokens: int = 30000,
     temperature: float = 0.9,
+    *,
+    exploration_id: Optional[str] = None,
 ):
     client = get_async_anthropic_client()
     async with client.messages.stream(
@@ -1204,7 +1208,18 @@ async def call_anthropic(
             }
         ],
     ) as stream:
-        return await stream.get_final_message()
+        final_message = await stream.get_final_message()
+        input_tokens, output_tokens, usage_raw = extract_usage_anthropic_message(final_message)
+        await record_llm_usage(
+            exploration_id=exploration_id,
+            stage="qual_report",
+            provider="anthropic",
+            model=model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            usage_raw=usage_raw,
+        )
+        return final_message
 
 _DOMAIN_KEYWORDS: dict[str, tuple[str, ...]] = {
     "food":     ("swiggy", "zomato", "food", "restaurant", "meal", "dining", "delivery"),
@@ -1437,7 +1452,7 @@ async def build_llm_payload(
             )
             for d in domains_to_try:
                 try:
-                    subject_key = await find_subject_key(workspace_id, d)
+                    subject_key = await find_subject_key(d, workspace_id=workspace_id)
                 except Exception as exc:
                     # ML DB lookup is optional — a connection error must not kill report generation.
                     print(f"[ML:persona] ✗ find_subject_key failed domain={d!r}: {exc}")
@@ -1542,6 +1557,7 @@ async def generate_report_markdown(
     md = await _generate_report_markdown_once(
         payload=payload,
         system_prompt=BIG_BEHAVIORAL_PROMPT.replace("{REPORT_DATE}", _current_report_date()),
+        exploration_id=objective_id,
     )
     md = _normalize_cover_header(md)
     md = _fix_cover_linebreaks(md)
@@ -1573,6 +1589,7 @@ async def generate_report_markdown(
     repaired_md = await _generate_report_markdown_once(
         payload=repair_payload,
         system_prompt=repair_prompt,
+        exploration_id=objective_id,
     )
     repaired_md = _normalize_cover_header(repaired_md)
     repaired_md = _fix_cover_linebreaks(repaired_md)

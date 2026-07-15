@@ -12,7 +12,7 @@ const ARTIFACT_MAX_BYTES = 10 * 1024 * 1024;
 
 const ARTIFACT_MAX_LINKS = 3;
 const ARTIFACT_MAX_FILES = 4;
-const ARTIFACT_COMING_SOON = true;
+const ARTIFACT_COMING_SOON = false;
 
 // How Omi should relate 2+ artifacts within this section to each other.
 // Only surfaced once a second artifact (link or file) is attached — a lone

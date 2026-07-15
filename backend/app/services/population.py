@@ -1,5 +1,6 @@
 import asyncio
 import json
+import uuid
 from typing import Dict, List, Optional, Callable
 from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +12,7 @@ from app.utils.id_generator import generate_id
 from app.config import OPENAI_API_KEY
 from openai import AsyncOpenAI
 from datetime import datetime
+from app.services.llm_usage_tracker import record_llm_usage, extract_usage_openai_chat
 
 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
@@ -572,7 +574,15 @@ RETURN STRICT JSON:
 """
 
 
-async def _call_llm(persona, research_obj, sample_n):
+async def _call_llm(
+    persona, research_obj, sample_n,
+    *,
+    exploration_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
+    persona_id: Optional[str] = None,
+    created_by: Optional[str] = None,
+    request_id: Optional[str] = None,
+):
     prompt = _build_insight_prompt(persona, research_obj, sample_n)
 
     try:
@@ -585,12 +595,41 @@ async def _call_llm(persona, research_obj, sample_n):
             ],
         )
     except Exception as e:
+        await record_llm_usage(
+            exploration_id=exploration_id,
+            stage="population_simulation",
+            provider="openai",
+            model="gpt-4o-mini",
+            input_tokens=0,
+            output_tokens=0,
+            status="error",
+            error_message=str(e),
+            workspace_id=workspace_id,
+            persona_id=persona_id,
+            created_by=created_by,
+            request_id=request_id,
+        )
         return {
             "analysis": f"LLM error: {e}",
             "sources_used": [],
             "final_estimate_range": "0 – 0",
             "confidence_score": 0.0
         }
+
+    input_tokens, output_tokens, usage_raw = extract_usage_openai_chat(res)
+    await record_llm_usage(
+        exploration_id=exploration_id,
+        stage="population_simulation",
+        provider="openai",
+        model="gpt-4o-mini",
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        usage_raw=usage_raw,
+        workspace_id=workspace_id,
+        persona_id=persona_id,
+        created_by=created_by,
+        request_id=request_id,
+    )
 
     raw = res.choices[0].message.content
 
@@ -623,10 +662,21 @@ async def get_research_objective(
     return result.scalars().first()
 
 
-async def _score_persona(pid: str, research_obj, sample_distribution: dict) -> tuple:
+async def _score_persona(
+    pid: str, research_obj, sample_distribution: dict,
+    *,
+    exploration_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
+    created_by: Optional[str] = None,
+    request_id: Optional[str] = None,
+) -> tuple:
     persona = await get_persona(pid)
     sample_n = sample_distribution.get(pid, 50)
-    llm_result = await _call_llm(persona, research_obj, sample_n)
+    llm_result = await _call_llm(
+        persona, research_obj, sample_n,
+        exploration_id=exploration_id, workspace_id=workspace_id,
+        persona_id=pid, created_by=created_by, request_id=request_id,
+    )
     return pid, llm_result
 
 
@@ -634,10 +684,20 @@ async def create_population_simulation(workspace_id, exploration_id, persona_ids
                                        sample_distribution, user_id, session: AsyncSession):
     research_obj = await get_research_objective(session, exploration_id)
 
+    # One request_id per simulation batch, correlating every persona's row.
+    request_id = uuid.uuid4().hex
+
     # Run all per-persona LLM calls in parallel — sequential calls were causing
     # 30 s Axios timeouts when persona_count >= 4 (4 × ~8 s = 32 s > 30 s limit).
     results = await asyncio.gather(
-        *[_score_persona(pid, research_obj, sample_distribution) for pid in persona_ids]
+        *[
+            _score_persona(
+                pid, research_obj, sample_distribution,
+                exploration_id=exploration_id, workspace_id=workspace_id,
+                created_by=user_id, request_id=request_id,
+            )
+            for pid in persona_ids
+        ]
     )
 
     persona_scores = {}

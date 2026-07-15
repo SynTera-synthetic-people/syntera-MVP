@@ -611,6 +611,8 @@ async def _repair_research_objectives_file_schema(conn: AsyncConnection) -> None
         "source_url VARCHAR",
         "material_kind VARCHAR",
         "relevance_status VARCHAR NOT NULL DEFAULT 'pending'",
+        "artifact_category VARCHAR",
+        "comparison_mode VARCHAR",
     ):
         await ensure_column(conn, "research_objectives_file", column)
     await ensure_index(
@@ -1533,6 +1535,50 @@ async def _repair_decision_room_schema(conn: AsyncConnection) -> None:
     )
 
 
+async def _repair_llm_usage_schema(conn: AsyncConnection) -> None:
+    # Append-only LLM token/cost usage log, one row per provider API call.
+    # No FK constraints by design: this is an audit table and usage history
+    # should outlive the persona/exploration/session rows it references.
+    await ensure_table(
+        conn,
+        """
+        CREATE TABLE IF NOT EXISTS llm_usage_event (
+            id              VARCHAR PRIMARY KEY,
+            exploration_id  VARCHAR NOT NULL,
+            workspace_id    VARCHAR,
+            stage           VARCHAR NOT NULL,
+            operation       VARCHAR,
+            provider        VARCHAR NOT NULL,
+            model           VARCHAR NOT NULL,
+            input_tokens    INTEGER NOT NULL DEFAULT 0,
+            output_tokens   INTEGER NOT NULL DEFAULT 0,
+            cost_usd        DOUBLE PRECISION,
+            latency_ms      INTEGER,
+            usage_raw       JSONB,
+            status          VARCHAR NOT NULL DEFAULT 'success',
+            error_message   TEXT,
+            persona_id      VARCHAR,
+            session_id      VARCHAR,
+            request_id      VARCHAR,
+            created_by      VARCHAR,
+            created_at      TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
+        )
+        """,
+    )
+    for index_sql in (
+        "CREATE INDEX IF NOT EXISTS ix_lue_exploration_id ON llm_usage_event (exploration_id)",
+        "CREATE INDEX IF NOT EXISTS ix_lue_workspace_id ON llm_usage_event (workspace_id)",
+        "CREATE INDEX IF NOT EXISTS ix_lue_stage ON llm_usage_event (stage)",
+        "CREATE INDEX IF NOT EXISTS ix_lue_provider ON llm_usage_event (provider)",
+        "CREATE INDEX IF NOT EXISTS ix_lue_model ON llm_usage_event (model)",
+        "CREATE INDEX IF NOT EXISTS ix_lue_persona_id ON llm_usage_event (persona_id)",
+        "CREATE INDEX IF NOT EXISTS ix_lue_session_id ON llm_usage_event (session_id)",
+        "CREATE INDEX IF NOT EXISTS ix_lue_request_id ON llm_usage_event (request_id)",
+        "CREATE INDEX IF NOT EXISTS ix_lue_created_at ON llm_usage_event (created_at)",
+    ):
+        await ensure_index(conn, index_sql)
+
+
 _MIGRATION_STEPS: tuple[tuple[str, str, MigrationStep], ...] = (
     ("base", "create_sqlmodel_tables", _create_sqlmodel_tables),
     ("public", "repair_core_public_schema", _repair_core_public_schema),
@@ -1543,4 +1589,5 @@ _MIGRATION_STEPS: tuple[tuple[str, str, MigrationStep], ...] = (
     ("billing", "repair_billing_schema", _repair_billing_schema),
     ("settings", "repair_settings_schema", _repair_settings_schema),
     ("decision_room", "repair_decision_room_schema", _repair_decision_room_schema),
+    ("llm_usage", "repair_llm_usage_schema", _repair_llm_usage_schema),
 )

@@ -63,3 +63,5 @@ class ResearchObjectiveMaterialOut(BaseModel):
     instruction: Optional[str]
     has_context: bool
     uploaded_at: datetime
+    artifact_category: Optional[str] = None
+    comparison_mode: Optional[str] = None
