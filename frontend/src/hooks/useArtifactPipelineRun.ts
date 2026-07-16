@@ -11,12 +11,50 @@ export interface ArtifactRunPersonaProgress {
   total: number;
 }
 
+export type ArtifactRunStage = 'dissecting' | 'selecting_dimensions' | 'generating_guide' | 'generating_responses';
+
 export interface ArtifactRunStatus {
-  run_id: string;
-  status: 'pending' | 'running' | 'completed' | 'failed' | string;
-  stages_completed?: string[];
+  id: string;
+  status: ArtifactRunStage | 'completed' | 'failed' | string;
+  error_stage?: string | null;
+  error_message?: string | null;
+  // Backend sends this as an object of booleans per stage, not an array —
+  // e.g. { dissecting: false, selecting_dimensions: false, ... }.
+  stages_completed?: Partial<Record<ArtifactRunStage, boolean>>;
   persona_progress?: ArtifactRunPersonaProgress;
+  created_at?: string;
+  updated_at?: string;
   [key: string]: unknown;
+}
+
+// Ordered so we can find the furthest-along stage for display purposes.
+export const ARTIFACT_RUN_STAGE_ORDER: ArtifactRunStage[] = [
+  'dissecting',
+  'selecting_dimensions',
+  'generating_guide',
+  'generating_responses',
+];
+
+const STAGE_LABELS: Record<ArtifactRunStage, string> = {
+  dissecting: 'Dissecting artifact',
+  selecting_dimensions: 'Selecting dimensions',
+  generating_guide: 'Generating guide',
+  generating_responses: 'Generating responses',
+};
+
+/** Human-readable label for the current stage, given the raw status payload. */
+export function getArtifactRunStageLabel(status: ArtifactRunStatus | null): string {
+  if (!status) return 'Preparing artifact context for your personas…';
+  if (status.status === 'failed') {
+    return `Artifact processing failed${status.error_stage ? ` at "${status.error_stage}"` : ''}.`;
+  }
+  const completed = status.stages_completed ?? {};
+  // Last stage that's true, or fall back to whatever `status.status` says is in progress.
+  const lastDone = [...ARTIFACT_RUN_STAGE_ORDER].reverse().find((s) => completed[s]);
+  const current = (status.status as ArtifactRunStage) in STAGE_LABELS
+    ? STAGE_LABELS[status.status as ArtifactRunStage]
+    : (lastDone ? STAGE_LABELS[lastDone] : 'Preparing artifact context for your personas…');
+  return `${current}…`;
 }
 
 export interface SourceFileRef {
