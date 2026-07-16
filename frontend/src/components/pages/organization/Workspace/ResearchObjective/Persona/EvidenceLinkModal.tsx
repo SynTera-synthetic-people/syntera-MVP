@@ -21,7 +21,10 @@ import SpIcon from '../../../../../SPIcon';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-/** A single document retrieved from the Sourcebank for a KE category. */
+/** A single document retrieved from the Sourcebank for a KE category — or,
+ * when `origin === 'web'`, a credibility-ranked live web result used to top
+ * up thin Sourcebank coverage. All origin/tier fields are optional so old
+ * personas generated before this existed keep rendering unchanged. */
 export interface KESourceEntry {
   document_id?: string;
   chunk_id?: string;
@@ -33,6 +36,14 @@ export interface KESourceEntry {
   authority_label?: string;
   relevance_score?: number;
   usage_context?: string;
+  /** "web" for search-topup sources; absent/undefined means Sourcebank (default). */
+  origin?: 'sourcebank' | 'web';
+  /** Display label for origin transparency — e.g. "Company Knowledge", "Web Source". */
+  origin_label?: string;
+  /** 0-1, unified scale across Sourcebank (authority_tier-derived) and web (credibility-tier-derived) sources. */
+  credibility_score?: number;
+  /** Human label for a web-origin source's credibility tier, e.g. "Tier 2". */
+  source_tier?: string;
 }
 
 /**
@@ -89,6 +100,80 @@ const isValidUrl = (url: string): boolean => {
     return false;
   }
 };
+
+/**
+ * Scraped Sourcebank documents never get a real extracted title — the title
+ * column is set to the raw URL at scrape time and is never backfilled. If we
+ * fall back to hostname-only, two different articles from the same domain
+ * (different document_id, different URL) render as an identical-looking row.
+ * Keep the last path segment so distinct pages stay visually distinct.
+ */
+const formatUrlAsTitle = (url: string): string => {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace(/^www\./, '');
+    const segments = u.pathname.split('/').filter(Boolean);
+    if (segments.length === 0) return host;
+    const lastSegment = decodeURIComponent(segments[segments.length - 1])
+      .replace(/[-_]+/g, ' ')
+      .replace(/\.[a-z0-9]{2,5}$/i, '');
+    return `${host} › ${lastSegment}`;
+  } catch {
+    return url;
+  }
+};
+
+/** Same identity precedence as resolve_source_identity() in app.rag.retrieve. */
+const normalizeSourceUrl = (url: string): string => {
+  try {
+    const u = new URL(url.trim());
+    const path = u.pathname.replace(/\/+$/, '');
+    return `${u.hostname.toLowerCase()}${path}${u.search}`;
+  } catch {
+    return url.trim().toLowerCase();
+  }
+};
+
+const resolveKeSourceIdentity = (src: KESourceEntry): string => {
+  // url first: re-scraping a URL creates a NEW document_id in Postgres for
+  // identical content, so two different document_ids can be the same source.
+  if (src.source_url) return `url:${normalizeSourceUrl(src.source_url)}`;
+  if (src.document_id) return `doc:${src.document_id}`;
+  if (src.chunk_id) return `chunk:${src.chunk_id}`;
+  if (src.title) return `title:${src.title.trim().toLowerCase()}`;
+  return '';
+};
+
+/**
+ * Runs for every persona, old and new — it's the only fix that applies to
+ * personas whose ke_sources_used was already persisted before the backend
+ * dedup fix (that data won't be recomputed without regenerating the persona).
+ * For newly generated personas the backend also dedupes at source, so this
+ * becomes pure defense-in-depth there.
+ */
+const dedupeKeSources = (sources: KESourceEntry[]): KESourceEntry[] => {
+  const seen = new Set<string>();
+  const result: KESourceEntry[] = [];
+  for (const src of sources) {
+    const key = resolveKeSourceIdentity(src);
+    if (key && seen.has(key)) continue;
+    if (key) seen.add(key);
+    result.push(src);
+  }
+  return result;
+};
+
+/**
+ * Near-exact match against generic helper/reference labels (mirrors
+ * _looks_like_generic_label in ke_sourcebank_enrichment.py). Client-side
+ * because personas generated before that backend filter existed already
+ * have these baked into their persisted ke_sources_used — this is the only
+ * fix that reaches them without regenerating the persona.
+ */
+const GENERIC_LABEL_TITLE_RE = /^(taxonomy|glossary|reference(\s+doc(ument)?)?|internal reference|template|methodology|style guide|codebook|index|appendix|master list|misc|draft|notes|b2b|b2c)(\s+v?\d+)?$/i;
+
+const isGenericLabelSource = (src: KESourceEntry): boolean =>
+  GENERIC_LABEL_TITLE_RE.test((src.title || '').trim());
 
 // ── Platform icon / colour resolvers ─────────────────────────────────────────
 
@@ -302,7 +387,8 @@ interface KECategoryRowProps {
 
 const KECategoryRow: React.FC<KECategoryRowProps> = ({ link }) => {
   const [expanded, setExpanded] = useState(false);
-  const hasSources = (link.ke_sources?.length ?? 0) > 0;
+  const sources = dedupeKeSources(link.ke_sources ?? []).filter(s => !isGenericLabelSource(s));
+  const hasSources = sources.length > 0;
 
   return (
     <div className="elm-ke-category-block">
@@ -326,9 +412,9 @@ const KECategoryRow: React.FC<KECategoryRowProps> = ({ link }) => {
         </div>
 
         <div className="elm-link-right">
-          {(link.count ?? 0) > 0 && (
+          {sources.length > 0 && (
             <span className="elm-link-count">
-              {link.count!.toLocaleString('en-IN')}
+              {sources.length.toLocaleString('en-IN')}
               <span className="elm-link-count-label"> sources</span>
             </span>
           )}
@@ -352,17 +438,19 @@ const KECategoryRow: React.FC<KECategoryRowProps> = ({ link }) => {
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.2, ease: 'easeInOut' }}
           >
-            {link.ke_sources!.map((src, idx) => {
+            {sources.map((src, idx) => {
               const hasUrl = isValidUrl(src.source_url ?? '');
               const tier   = src.authority_label || src.authority_tier || 'Curated';
               const tierColor = getTierColor(src.authority_tier || '');
               const relevancePct = src.relevance_score != null
                 ? `${Math.round(src.relevance_score * 100)}%`
                 : null;
-              // When Sourcebank stores URL as the title field, derive a readable label.
+              // When Sourcebank stores URL as the title field, derive a readable label
+              // that keeps the path segment — hostname alone collapses distinct
+              // articles from the same domain into identical-looking rows.
               const isTitleUrl = src.title && isValidUrl(src.title);
               const displayTitle = isTitleUrl
-                ? (() => { try { return new URL(src.title!).hostname.replace(/^www\./, ''); } catch { return src.title; } })()
+                ? formatUrlAsTitle(src.title!)
                 : (src.title || 'Untitled Source');
 
               return (
