@@ -21,7 +21,12 @@ export interface ArtifactRunStatus {
 
 export interface SourceFileRef {
   id: string;
-  extension?: string;
+  // Shape returned by artifactPipelineService.getAvailableFiles() —
+  // see list_artifact_files() in artifact_pipeline_orchestrator.py.
+  has_file?: boolean;
+  source_url?: string | null;
+  artifact_category?: string | null;
+  comparison_mode?: string | null;
   [key: string]: unknown;
 }
 
@@ -87,20 +92,31 @@ export function useArtifactPipelineRun(workspaceId: string, objectiveId: string)
     setError(null);
     setIsRunning(true);
     try {
-      const isComparison = sourceFileIds.length > 1;
-      const firstFile = sourceFileIds[0];
-      const artifactType = sourceFileIds.length === 1
-        ? ((typeof firstFile === 'object' && firstFile?.extension) || 'unknown')
-        : 'mixed';
+      // Uploaded files are always images today — video artifacts only exist
+      // as pasted links (see _resolve_asset's KNOWN GAP comment in
+      // artifact_pipeline_orchestrator.py: the upload allowlist doesn't
+      // accept video files yet). has_file distinguishes the two.
+      const artifactType = sourceFileIds.every(
+        (f) => typeof f === 'object' && f !== null && (f as SourceFileRef).has_file === false
+      ) ? 'url' : 'image';
 
-      const createRes = await artifactPipelineService.createRun(workspaceId, objectiveId, {
+      // artifact_category / comparison_mode are intentionally omitted unless
+      // the caller explicitly knows them. create_run() already derives both
+      // from the selected files' own stored ResearchObjectivesFile values
+      // (set once at Framer upload time) when omitted, and raises a clear
+      // 400 if the selected files disagree. Guessing here (e.g. a hardcoded
+      // 'general' category, or file-count > 1 => comparison_mode) would
+      // either fail schema validation (comparison_mode is a strict enum,
+      // not a boolean) or silently produce a wrong run.
+      const payload: Record<string, unknown> = {
         source_file_ids: sourceFileIds.map((f) => (typeof f === 'object' ? f.id : f)),
         persona_ids: personaIds,
         instruction: instruction ?? 'Evaluate this artifact against the persona.',
         artifact_type: artifactType,
-        artifact_category: artifactCategory ?? 'general',
-        comparison_mode: isComparison,
-      });
+      };
+      if (artifactCategory) payload.artifact_category = artifactCategory;
+
+      const createRes = await artifactPipelineService.createRun(workspaceId, objectiveId, payload);
 
       const runId: string | undefined = createRes?.data?.run_id ?? createRes?.run_id;
       if (!runId) throw new Error('Artifact run did not return a run_id');

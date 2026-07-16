@@ -483,11 +483,6 @@ const DepthInterview: React.FC = () => {
   // becomes a hard blocker.
 
   const handleStartInterview = async () => {
-     console.log('[artifact-pipeline] handleStartInterview fired');
-  console.log('[artifact-pipeline] calling getAvailableFiles', workspaceId, objectiveId);
-  const res = await artifactPipelineService.getAvailableFiles(workspaceId, objectiveId);
-  console.log('[artifact-pipeline] availableFiles response', res);
-    
     if (objectiveId) localStorage.setItem(`qualitative_sub1_${objectiveId}`, '1');
 
     const goToInterview = () => {
