@@ -23,6 +23,7 @@ import { useArtifactPipelineRun } from '../../../../../../hooks/useArtifactPipel
 import { artifactPipelineService } from '../../../../../../services/artifactPipelineService';
 import { getAxiosErrorMessage } from '../../../../../../utils/axiosBlobError';
 import DiscussionGuideLoader from './DiscussionGuideLoader';
+import OmiKeyboard from "../../../../../../assets/Omi Animations/OmiKeyboard.mp4";
 import './DepthInterview.css';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -588,25 +589,34 @@ const DepthInterview: React.FC = () => {
   // Artifact pipeline running ahead of the interview — blocks this screen
   // until the run reaches a terminal state, then handleStartInterview
   // navigates into ChatView on its own.
-  if (preparingArtifact) {
-    return (
-      <div className="di-page di-page--centered">
-        <div className="di-loading">
-          <TbLoader className="di-loading__spinner" />
-          <p className="di-loading__text">
-            {artifactRunStatus?.stages_completed?.length
-              ? `Processing artifact — ${artifactRunStatus.stages_completed.at(-1)}…`
-              : 'Preparing artifact context for your personas…'}
-          </p>
-          {artifactRunStatus?.persona_progress && (
-            <p className="di-loading__subtext">
-              {artifactRunStatus.persona_progress.completed}/{artifactRunStatus.persona_progress.total} personas processed
-            </p>
-          )}
+if (preparingArtifact) {
+  return (
+    <div className="di-page di-page--centered">
+      <div className="di-loading">
+        <div className="di-loading__omi-wrap">
+          <video
+            className="di-loading__omi-video"
+            src={OmiKeyboard}
+            autoPlay
+            loop
+            muted
+            playsInline
+          />
         </div>
+        <p className="di-loading__text">
+          {artifactRunStatus?.stages_completed?.length
+            ? `Processing artifact — ${artifactRunStatus.stages_completed.at(-1)}…`
+            : 'Preparing artifact context for your personas…'}
+        </p>
+        {artifactRunStatus?.persona_progress && (
+          <p className="di-loading__subtext">
+            {artifactRunStatus.persona_progress.completed}/{artifactRunStatus.persona_progress.total} personas processed
+          </p>
+        )}
       </div>
-    );
-  }
+    </div>
+  );
+}
 
   if (showLoader) return (
     <>
