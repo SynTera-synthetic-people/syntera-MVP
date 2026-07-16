@@ -19,8 +19,9 @@ import {
 } from '../../../../../../hooks/useDiscussionGuide';
 import { useOmniWorkflow } from '../../../../../../hooks/useOmiWorkflow';
 import { usePersonaBuilder } from '../../../../../../hooks/usePersonaBuilder';
-import { useArtifactPipelineRun } from '../../../../../../hooks/useArtifactPipelineRun';
+import { useArtifactPipelineRun, getArtifactRunStageLabel } from '../../../../../../hooks/useArtifactPipelineRun';
 import { artifactPipelineService } from '../../../../../../services/artifactPipelineService';
+import { interviewService } from '../../../../../../services/interviewService';
 import { getAxiosErrorMessage } from '../../../../../../utils/axiosBlobError';
 import DiscussionGuideLoader from './DiscussionGuideLoader';
 import OmiKeyboard from "../../../../../../assets/Omi Animations/OmiKeyboard.mp4";
@@ -482,6 +483,13 @@ const DepthInterview: React.FC = () => {
   // interview flow exactly as before. If there's nothing to run, or the fetch
   // of available files fails, we skip straight to interviews so this never
   // becomes a hard blocker.
+  //
+  // Re-visit guard: checked against the BACKEND, not localStorage. If
+  // interviews already exist for this objective (i.e. the user has already
+  // been through this step before — visible as green checkmarks in the
+  // sidebar), the artifact pipeline is skipped entirely and no loader is
+  // ever shown. This is authoritative across browsers/sessions/reloads,
+  // unlike a client-side flag.
 
   const handleStartInterview = async () => {
     if (objectiveId) localStorage.setItem(`qualitative_sub1_${objectiveId}`, '1');
@@ -496,6 +504,21 @@ const DepthInterview: React.FC = () => {
     if (isViewOnly || !workspaceId || !objectiveId) {
       goToInterview();
       return;
+    }
+
+    // Already past this step — interviews exist for this objective already,
+    // so don't touch the artifact pipeline at all, don't show its loader.
+    try {
+      const interviewsRes = await interviewService.getInterviews(workspaceId, objectiveId);
+      const existingInterviews = (interviewsRes as any)?.data ?? interviewsRes;
+      if (Array.isArray(existingInterviews) && existingInterviews.length > 0) {
+        goToInterview();
+        return;
+      }
+    } catch (err) {
+      // If we can't tell, don't block on it — fall through to the normal
+      // artifact-pipeline-then-interview flow below.
+      console.error('Could not check for existing interviews:', err);
     }
 
     let availableFiles: any[] = [];
@@ -532,7 +555,6 @@ const DepthInterview: React.FC = () => {
     }
 
     goToInterview();
-    
   };
 
   const handleDownloadGuide = async () => {
@@ -589,34 +611,35 @@ const DepthInterview: React.FC = () => {
   // Artifact pipeline running ahead of the interview — blocks this screen
   // until the run reaches a terminal state, then handleStartInterview
   // navigates into ChatView on its own.
-if (preparingArtifact) {
-  return (
-    <div className="di-page di-page--centered">
-      <div className="di-loading">
-        <div className="di-loading__omi-wrap">
-          <video
-            className="di-loading__omi-video"
-            src={OmiKeyboard}
-            autoPlay
-            loop
-            muted
-            playsInline
-          />
-        </div>
-        <p className="di-loading__text">
-          {artifactRunStatus?.stages_completed?.length
-            ? `Processing artifact — ${artifactRunStatus.stages_completed.at(-1)}…`
-            : 'Preparing artifact context for your personas…'}
-        </p>
-        {artifactRunStatus?.persona_progress && (
-          <p className="di-loading__subtext">
-            {artifactRunStatus.persona_progress.completed}/{artifactRunStatus.persona_progress.total} personas processed
+  if (preparingArtifact) {
+    return (
+      <div className="di-page di-page--centered">
+        <div className="di-loading">
+          <div className="di-loading__omi-wrap">
+            <video
+              className="di-loading__omi-video"
+              src={OmiKeyboard}
+              autoPlay
+              loop
+              muted
+              playsInline
+            />
+          </div>
+          <p className="di-loading__text">
+            {getArtifactRunStageLabel(artifactRunStatus)}
           </p>
-        )}
+          {artifactRunStatus?.status === 'failed' && artifactRunStatus?.error_message && (
+            <p className="di-loading__subtext">{artifactRunStatus.error_message}</p>
+          )}
+          {artifactRunStatus?.status !== 'failed' && artifactRunStatus?.persona_progress && (
+            <p className="di-loading__subtext">
+              {artifactRunStatus.persona_progress.completed}/{artifactRunStatus.persona_progress.total} personas processed
+            </p>
+          )}
+        </div>
       </div>
-    </div>
-  );
-}
+    );
+  }
 
   if (showLoader) return (
     <>
