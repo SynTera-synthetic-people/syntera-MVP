@@ -36,9 +36,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+import re
 from typing import Optional
 
-from app.rag.retrieve import controlled_sourcebank_search
+from app.config import settings
+from app.rag.retrieve import controlled_sourcebank_search, resolve_source_identity
+from app.services.web_evidence_search import get_additional_web_sources
 
 logger = logging.getLogger(__name__)
 
@@ -145,6 +148,23 @@ _AUTHORITY_TIER_RECENCY_PROXY: dict[str, int] = {
 # Total number of KE categories (must match len(KE_SOURCE_TYPES) in frontend).
 _KE_TOTAL_CATEGORY_COUNT = 9
 
+# All 9 KE category names, derived from the two mappings above rather than
+# re-listed, so this can't drift out of sync with them.
+_ALL_KE_CATEGORIES: frozenset[str] = frozenset(
+    cat for _, cat in _KE_CATEGORY_KEYWORD_MAP
+) | frozenset(_SOURCE_GROUP_TO_KE_CATEGORY.values())
+
+# Near-exact generic-category title patterns (Goal 1, Rule 2). Deliberately
+# NOT a substring match — "Internal Growth Strategy 2025" must not match just
+# because it contains the word "internal"; only a title that IS (up to an
+# optional trailing version number) one of these generic labels matches.
+_GENERIC_LABEL_TITLE_RE = re.compile(
+    r"^(taxonomy|glossary|reference(\s+doc(ument)?)?|internal reference|"
+    r"template|methodology|style guide|codebook|index|appendix|"
+    r"master list|misc|draft|notes|b2b|b2c)(\s+v?\d+)?$",
+    re.IGNORECASE,
+)
+
 
 # ── Private helpers ────────────────────────────────────────────────────────────
 
@@ -169,6 +189,128 @@ def _classify_source_into_ke_category(
 
     group_key = str(source_group or "").lower().strip()
     return _SOURCE_GROUP_TO_KE_CATEGORY.get(group_key, "Industry Reports")
+
+
+def _looks_like_generic_label(title: str) -> bool:
+    """Near-exact match against a small generic-category word list — not a
+    substring or shape/length check, so a real document with a normal
+    sentence-like title (however short) never matches."""
+    return bool(_GENERIC_LABEL_TITLE_RE.match((title or "").strip()))
+
+
+async def _load_content_stats(document_ids: list[str], db) -> dict[str, dict]:
+    """
+    Batched content-substance lookup for Goal-1 filtering: total indexed
+    characters + chunk count per document_id. One indexed query
+    (idx_sync_source_chunk_document already exists), not N+1.
+    """
+    if not document_ids:
+        return {}
+    from sqlalchemy import text as _text
+
+    result = await db.execute(
+        _text("""
+            SELECT document_id, COUNT(*) AS chunk_count, SUM(LENGTH(content)) AS total_chars
+            FROM sync_source.content_chunk
+            WHERE document_id = ANY(:ids)
+            GROUP BY document_id
+        """),
+        {"ids": document_ids},
+    )
+    return {
+        row.document_id: {"chunk_count": row.chunk_count, "total_chars": row.total_chars or 0}
+        for row in result
+    }
+
+
+def _is_low_value_upload(source: dict, stats_by_doc: dict) -> bool:
+    """
+    Goal 1 hide-decision. Deliberately NOT gated on authority_tier alone —
+    see the plan doc for why "user_uploaded" cannot mean "low quality" in
+    this system (proprietary research/customer studies/internal reports are
+    uploaded exactly the same way as a throwaway "B2B" stub).
+
+    RULE 1 (universal, any authority_tier): nothing citable fits under
+    KE_HARD_FLOOR_CHARS — this is about informational emptiness, not upload
+    method, so it also cleans up degenerate/broken scraped content.
+
+    RULE 2 (user_uploaded only, conjunctive): thin content AND a near-exact
+    generic-category title. Both must hold — a short-but-real proprietary
+    note ("NPS Q3") fails the title check; a document literally titled
+    "Internal Growth Strategy 2025" fails because that title doesn't match
+    the generic-label pattern even though it contains "internal".
+
+    Explicit override: source_group == "internal_reference" always hides,
+    regardless of authority_tier — a deliberate admin tag wins outright.
+
+    Fail-open: missing stats (document_id absent, e.g. no source_url content
+    ever indexed) never hides anything.
+    """
+    if str(source.get("source_group") or "").strip().lower() == "internal_reference":
+        return True
+
+    stats = stats_by_doc.get(source.get("document_id"))
+    if stats is None:
+        return False
+
+    total_chars = stats.get("total_chars") or 0
+    chunk_count = stats.get("chunk_count") or 0
+
+    if total_chars < settings.KE_HARD_FLOOR_CHARS:
+        return True
+
+    authority_tier = str(source.get("authority_tier") or "").strip().lower()
+    if (
+        authority_tier == "user_uploaded"
+        and total_chars < settings.KE_SOFT_THRESHOLD_CHARS
+        and chunk_count <= 1
+        and _looks_like_generic_label(source.get("title") or "")
+    ):
+        return True
+
+    return False
+
+
+def filter_low_value_sources(sources: list[dict], stats_by_doc: dict) -> list[dict]:
+    return [s for s in sources if not _is_low_value_upload(s, stats_by_doc)]
+
+
+def assign_origin_label(source: dict) -> Optional[str]:
+    """
+    Option-C transparency layer: label origin even for sources we chose not
+    to hide, without duplicating what source_type/authority_label already
+    convey. Only adds a label where it's genuinely new information.
+    """
+    if source.get("origin") == "web":
+        return "Web Source"
+    if str(source.get("authority_tier") or "").strip().lower() == "user_uploaded":
+        return "Company Knowledge"
+    return None
+
+
+def _source_type_breakdown(sources: list[dict]) -> dict[str, int]:
+    breakdown: dict[str, int] = {}
+    for source in sources:
+        cat = source["source_type"]
+        breakdown[cat] = breakdown.get(cat, 0) + 1
+    return breakdown
+
+
+def _build_evidence_coverage(sourcebank_count: int, web_supplement_count: int) -> dict:
+    """
+    Completeness metric, tracked separately from ke_confidence (which stays
+    Sourcebank-only — see amendment in the plan doc: adding web sources must
+    never be able to lower confidence, so it never enters that calculation).
+    """
+    total = sourcebank_count + web_supplement_count
+    target = settings.KE_MIN_EVIDENCE_SOURCES
+    return {
+        "sourcebank_count": sourcebank_count,
+        "web_supplement_count": web_supplement_count,
+        "total_count": total,
+        "target": target,
+        "status": "full" if total >= target else "partial",
+    }
 
 
 def _build_source_usage_context(ke_category: str, research_objective: str) -> str:
@@ -381,12 +523,18 @@ def fetch_ke_sources(
             continue
 
         for source in sourcebank_result.get("sources", []):
-            # Dedup key: prefer document_id, fall back to chunk_id or title.
-            dedup_key = str(
-                source.get("document_id")
-                or source.get("chunk_id")
-                or source.get("title")
-                or ""
+            # Same identity rule used by _dedupe_sources() in app.rag.retrieve —
+            # prefer document_id, fall back to normalized URL (catches legacy
+            # points missing document_id, and re-scraped duplicates sharing a
+            # URL under different document_ids), then chunk_id/title as a last
+            # resort. Must stay a shared function: this loop merges results
+            # across multiple retrieval calls, so "same source" needs the same
+            # meaning here as it does within a single controlled_sourcebank_search().
+            dedup_key = resolve_source_identity(
+                document_id=source.get("document_id"),
+                url=source.get("url"),
+                chunk_id=source.get("chunk_id"),
+                title=source.get("title"),
             )
             if not dedup_key or dedup_key in seen_document_ids:
                 continue
@@ -423,15 +571,9 @@ def fetch_ke_sources(
                 ),
             })
 
-    # Category → document count (preserves retrieval order = relevance order).
-    source_type_breakdown: dict[str, int] = {}
-    for source in deduplicated_sources:
-        cat = source["source_type"]
-        source_type_breakdown[cat] = source_type_breakdown.get(cat, 0) + 1
-
     return {
         "ke_sources_used":          deduplicated_sources,
-        "ke_source_type_breakdown": source_type_breakdown,
+        "ke_source_type_breakdown": _source_type_breakdown(deduplicated_sources),
         "ke_confidence":            _compute_ke_confidence_from_sources(deduplicated_sources),
     }
 
@@ -473,8 +615,69 @@ async def enrich_persona_ke_sources(
                 exploration_id=exploration_id,
             ),
         )
+        raw_sources: list[dict] = ke_enrichment_data["ke_sources_used"]
 
         async with AsyncSession(async_engine) as db_session:
+            # Goal 1: filter generic helper/reference uploads (see
+            # filter_low_value_sources for the exact rule — never gated on
+            # authority_tier alone).
+            document_ids = [s["document_id"] for s in raw_sources if s.get("document_id")]
+            stats_by_doc = await _load_content_stats(document_ids, db_session)
+            filtered_sources = filter_low_value_sources(raw_sources, stats_by_doc)
+
+            # Goal 2: top up with credibility-ranked web sources only for the
+            # gap, only when Sourcebank (post-filter) falls short of the
+            # minimum. Sourcebank always has priority — this only ever adds,
+            # never replaces, and dedup is seeded with filtered_sources first
+            # inside get_additional_web_sources().
+            web_sources: list[dict] = []
+            needed = settings.KE_MIN_EVIDENCE_SOURCES - len(filtered_sources)
+            if needed > 0:
+                covered_categories = {
+                    s.get("source_type") for s in filtered_sources if s.get("source_type")
+                }
+                gap_topics = list(_ALL_KE_CATEGORIES - covered_categories)
+                try:
+                    # Web topup is a best-effort enhancement on top of the
+                    # already-successful Sourcebank fetch above — a failure
+                    # here (bad/missing API key, network error, anything
+                    # unanticipated) must degrade to Sourcebank-only sources,
+                    # never discard the filtering work already done.
+                    raw_web_sources = await get_additional_web_sources(
+                        research_objective=research_objective,
+                        persona_name=persona_name,
+                        existing_sources=filtered_sources,
+                        needed_count=needed,
+                        gap_topics=gap_topics,
+                        exploration_id=exploration_id,
+                        db=db_session,
+                    )
+                except Exception:
+                    logger.warning(
+                        "KE enrichment: web topup failed for persona %s — continuing with "
+                        "Sourcebank-only sources (%d/%d)",
+                        persona_id, len(filtered_sources), settings.KE_MIN_EVIDENCE_SOURCES,
+                        exc_info=True,
+                    )
+                    raw_web_sources = []
+                for w in raw_web_sources:
+                    ke_category = _classify_source_into_ke_category(
+                        source_type="", source_group="", document_title=w.get("title") or "",
+                    )
+                    w["source_type"] = ke_category
+                    w["usage_context"] = _build_source_usage_context(ke_category, research_objective)
+                    web_sources.append(w)
+
+            final_sources = filtered_sources + web_sources
+            for s in final_sources:
+                s["origin_label"] = assign_origin_label(s)
+
+            # ke_confidence is computed from Sourcebank-only sources — web
+            # sources must never be able to lower it (see plan amendment).
+            # Completeness is tracked separately via ke_evidence_coverage.
+            ke_confidence = _compute_ke_confidence_from_sources(filtered_sources)
+            evidence_coverage = _build_evidence_coverage(len(filtered_sources), len(web_sources))
+
             query_result = await db_session.execute(
                 select(Persona).where(Persona.id == persona_id)
             )
@@ -489,9 +692,10 @@ async def enrich_persona_ke_sources(
 
             # Patch ke_* keys into persona_details without touching other fields.
             updated_details: dict = dict(persona.persona_details or {})
-            updated_details["ke_sources_used"]          = ke_enrichment_data["ke_sources_used"]
-            updated_details["ke_source_type_breakdown"] = ke_enrichment_data["ke_source_type_breakdown"]
-            updated_details["ke_confidence"]             = ke_enrichment_data["ke_confidence"]
+            updated_details["ke_sources_used"]          = final_sources
+            updated_details["ke_source_type_breakdown"] = _source_type_breakdown(final_sources)
+            updated_details["ke_confidence"]            = ke_confidence
+            updated_details["ke_evidence_coverage"]     = evidence_coverage
             persona.persona_details = updated_details
 
             # KE confidence is one of the three master-confidence inputs and lands
@@ -510,10 +714,13 @@ async def enrich_persona_ke_sources(
             await db_session.commit()
 
         logger.info(
-            "KE enrichment: persona %s — %d sources across %d categories",
+            "KE enrichment: persona %s — %d sources (%d Sourcebank + %d web) across %d categories, coverage=%s",
             persona_id,
-            len(ke_enrichment_data["ke_sources_used"]),
-            len(ke_enrichment_data["ke_source_type_breakdown"]),
+            len(final_sources),
+            len(filtered_sources),
+            len(web_sources),
+            len(_source_type_breakdown(final_sources)),
+            evidence_coverage["status"],
         )
 
     except Exception as exc:

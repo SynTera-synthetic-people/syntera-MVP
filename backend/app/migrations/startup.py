@@ -269,6 +269,56 @@ async def ensure_foreign_key(
     )
 
 
+async def _fk_delete_rule(conn: AsyncConnection, schema: str, constraint_name: str) -> str | None:
+    result = await _exec(
+        conn,
+        """
+        SELECT rc.delete_rule
+        FROM information_schema.referential_constraints rc
+        WHERE rc.constraint_schema = :schema AND rc.constraint_name = :constraint_name
+        """,
+        {"schema": schema, "constraint_name": constraint_name},
+    )
+    row = result.scalar_one_or_none()
+    return row.upper() if row else None
+
+
+async def ensure_fk_on_delete(
+    conn: AsyncConnection,
+    *,
+    table_sql: str,
+    schema: str,
+    column: str,
+    referenced_table: str,
+    referenced_column: str = "id",
+    constraint_name: str,
+    on_delete: str,
+) -> None:
+    """
+    Fixes an ALREADY-EXISTING foreign key's ON DELETE behavior — unlike
+    ensure_foreign_key() (which only adds a constraint when none exists at
+    all and never inspects delete_rule), this checks the current delete_rule
+    of `constraint_name` and only drops+recreates it if it doesn't already
+    match, so repeated startups are true no-ops once fixed.
+    """
+    current_rule = await _fk_delete_rule(conn, schema, constraint_name)
+    if current_rule == on_delete.upper():
+        return
+    referenced_table_sql = f'"{referenced_table}"' if referenced_table == "user" else referenced_table
+    await _exec(conn, f"ALTER TABLE {table_sql} DROP CONSTRAINT IF EXISTS {constraint_name}")
+    await _exec(
+        conn,
+        f"""
+        ALTER TABLE {table_sql}
+        ADD CONSTRAINT {constraint_name}
+        FOREIGN KEY ({column})
+        REFERENCES {schema}.{referenced_table_sql}({referenced_column})
+        ON DELETE {on_delete}
+        NOT VALID
+        """,
+    )
+
+
 async def ensure_unique_index_after_dedupe(
     conn: AsyncConnection,
     *,
@@ -581,6 +631,33 @@ async def _repair_persona_schema(conn: AsyncConnection) -> None:
             END $$;
             """,
         )
+
+    # Both FKs were created by SQLModel's create_all() with the default
+    # NO ACTION/RESTRICT delete rule, which blocks persona deletion with an
+    # IntegrityError the moment a child row exists (persona_artifact_response
+    # is NOT NULL, so this fires on every artifact-pipeline persona delete).
+    # persona_artifact_response rows are meaningless without their persona,
+    # so CASCADE is correct; interview.persona_id is nullable and an
+    # interview transcript has value independent of the persona, so SET NULL
+    # preserves the row instead of deleting it.
+    await ensure_fk_on_delete(
+        conn,
+        table_sql="persona_artifact_response",
+        schema="public",
+        column="persona_id",
+        referenced_table="persona",
+        constraint_name="persona_artifact_response_persona_id_fkey",
+        on_delete="CASCADE",
+    )
+    await ensure_fk_on_delete(
+        conn,
+        table_sql="interview",
+        schema="public",
+        column="persona_id",
+        referenced_table="persona",
+        constraint_name="interview_persona_id_fkey",
+        on_delete="SET NULL",
+    )
 
 
 async def _repair_research_objectives_schema(conn: AsyncConnection) -> None:
@@ -964,6 +1041,19 @@ async def _repair_sync_source_schema(conn: AsyncConnection) -> None:
     await ensure_table(
         conn,
         """
+        CREATE TABLE IF NOT EXISTS sync_source.ke_web_source_cache (
+            id VARCHAR PRIMARY KEY,
+            exploration_id VARCHAR,
+            query_hash VARCHAR NOT NULL,
+            sources JSONB NOT NULL DEFAULT '[]'::jsonb,
+            created_at TIMESTAMP NOT NULL DEFAULT now(),
+            expires_at TIMESTAMP NOT NULL
+        )
+        """,
+    )
+    await ensure_table(
+        conn,
+        """
         CREATE TABLE IF NOT EXISTS sync_source.scrape_url (
             id VARCHAR PRIMARY KEY,
             source_document_id VARCHAR REFERENCES sync_source.document(id) ON DELETE CASCADE,
@@ -1093,6 +1183,8 @@ async def _repair_sync_source_schema(conn: AsyncConnection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_sync_source_scrape_url_status ON sync_source.scrape_url (status)",
         "CREATE INDEX IF NOT EXISTS idx_sync_source_scrape_url_domain ON sync_source.scrape_url (domain)",
         "CREATE INDEX IF NOT EXISTS idx_sync_source_scrape_attempt_url ON sync_source.scrape_url_attempt (scrape_url_id)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_ke_web_source_cache_lookup ON sync_source.ke_web_source_cache (exploration_id, query_hash)",
+        "CREATE INDEX IF NOT EXISTS idx_ke_web_source_cache_expires ON sync_source.ke_web_source_cache (expires_at)",
     ):
         await ensure_index(conn, index_sql)
 

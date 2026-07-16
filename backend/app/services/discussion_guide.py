@@ -159,7 +159,16 @@ Respond with ONLY valid JSON (no markdown, no extra text):
 
         raw = response.choices[0].message.content
         try:
-            guide = DiscussionGuide.model_validate(json.loads(raw))
+            data = json.loads(raw)
+            # comparison_mode/num_assets are shown in the prompt's example JSON
+            # as formatting cues, but the model isn't reliable about echoing
+            # them back verbatim (observed: "campaign_set" in the example ->
+            # "single_asset" in the response, which then fails the strict
+            # ComparisonMode enum). The caller already knows both values
+            # authoritatively — no need to trust the model's copy of them.
+            data["comparison_mode"] = comparison_mode.value
+            data["num_assets"] = num_assets
+            guide = DiscussionGuide.model_validate(data)
         except (json.JSONDecodeError, ValidationError) as exc:
             logger.error("Failed to parse discussion guide response: %s", (raw or "")[:2000])
             raise PipelineStageError(

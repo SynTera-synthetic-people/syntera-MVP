@@ -18,8 +18,12 @@ import {
   useDownloadDiscussionGuide,
 } from '../../../../../../hooks/useDiscussionGuide';
 import { useOmniWorkflow } from '../../../../../../hooks/useOmiWorkflow';
+import { usePersonaBuilder } from '../../../../../../hooks/usePersonaBuilder';
+import { useArtifactPipelineRun } from '../../../../../../hooks/useArtifactPipelineRun';
+import { artifactPipelineService } from '../../../../../../services/artifactPipelineService';
 import { getAxiosErrorMessage } from '../../../../../../utils/axiosBlobError';
 import DiscussionGuideLoader from './DiscussionGuideLoader';
+import OmiKeyboard from "../../../../../../assets/Omi Animations/OmiKeyboard.mp4";
 import './DepthInterview.css';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -242,14 +246,29 @@ const DepthInterview: React.FC = () => {
   const { trigger } = useOmniWorkflow();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // ── Artifact pipeline (runs before interviews start) ────────────────────────
+
+  const { personas: fetchedPersonas } = usePersonaBuilder(workspaceId, objectiveId);
+  const personaIds: string[] = ((fetchedPersonas as any)?.data ?? []).map((p: any) => p.id);
+
+  const {
+    startAndAwaitRun,
+    status: artifactRunStatus,
+  } = useArtifactPipelineRun(workspaceId!, objectiveId!);
+
+  const [preparingArtifact, setPreparingArtifact] = useState(false);
+
   // ── UI state ──────────────────────────────────────────────────────────────
 
   const [showChat, setShowChat] = useState(false);
   const [showLoader, setShowLoader] = useState(false);
 
   // Sync loader visibility with the layout so StepSidebar hides Back button
-  // while the discussion guide is being generated or uploaded.
-  useEffect(() => { setLoaderActive(showLoader); }, [showLoader, setLoaderActive]);
+  // while the discussion guide is being generated/uploaded, or while the
+  // artifact pipeline is running ahead of the interview.
+  useEffect(() => {
+    setLoaderActive(showLoader || preparingArtifact);
+  }, [showLoader, preparingArtifact, setLoaderActive]);
   useEffect(() => () => setLoaderActive(false), [setLoaderActive]);
   const [showReadyToast, setShowReadyToast] = useState(false);
   const [openKebabId, setOpenKebabId] = useState<string | null>(null);
@@ -458,10 +477,62 @@ const DepthInterview: React.FC = () => {
   };
 
   // ── Start Interview ───────────────────────────────────────────────────────
+  // Sequential flow: run the artifact pipeline to completion first (if there
+  // are artifact files + personas to run it against), THEN navigate into the
+  // interview flow exactly as before. If there's nothing to run, or the fetch
+  // of available files fails, we skip straight to interviews so this never
+  // becomes a hard blocker.
 
-  const handleStartInterview = () => {
+  const handleStartInterview = async () => {
     if (objectiveId) localStorage.setItem(`qualitative_sub1_${objectiveId}`, '1');
-    navigate(`/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/chatview`, { state: { viewOnly: isViewOnly } });
+
+    const goToInterview = () => {
+      navigate(
+        `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/chatview`,
+        { state: { viewOnly: isViewOnly } }
+      );
+    };
+
+    if (isViewOnly || !workspaceId || !objectiveId) {
+      goToInterview();
+      return;
+    }
+
+    let availableFiles: any[] = [];
+    try {
+      const res = await artifactPipelineService.getAvailableFiles(workspaceId, objectiveId);
+      availableFiles = res?.data ?? [];
+    } catch (err) {
+      console.error('Could not fetch available artifact files, skipping artifact pipeline:', err);
+      goToInterview();
+      return;
+    }
+
+    if (!availableFiles.length || !personaIds.length) {
+      goToInterview();
+      return;
+    }
+
+    setPreparingArtifact(true);
+    try {
+      const finalStatus = await startAndAwaitRun({
+        sourceFileIds: availableFiles,
+        personaIds,
+      });
+
+      // Even on failure we don't hard-block interviews — the run failing
+      // shouldn't trap the user on this screen. Surface it, but proceed.
+      if (!finalStatus || finalStatus.status === 'failed') {
+        console.warn('Artifact pipeline did not complete successfully; proceeding to interviews anyway.');
+      }
+    } catch (err) {
+      console.error('Artifact pipeline threw unexpectedly; proceeding to interviews anyway:', err);
+    } finally {
+      setPreparingArtifact(false);
+    }
+
+    goToInterview();
+    
   };
 
   const handleDownloadGuide = async () => {
@@ -514,6 +585,38 @@ const DepthInterview: React.FC = () => {
   // ── Render guards ─────────────────────────────────────────────────────────
 
   if (showChat) return <ChatView />;
+
+  // Artifact pipeline running ahead of the interview — blocks this screen
+  // until the run reaches a terminal state, then handleStartInterview
+  // navigates into ChatView on its own.
+if (preparingArtifact) {
+  return (
+    <div className="di-page di-page--centered">
+      <div className="di-loading">
+        <div className="di-loading__omi-wrap">
+          <video
+            className="di-loading__omi-video"
+            src={OmiKeyboard}
+            autoPlay
+            loop
+            muted
+            playsInline
+          />
+        </div>
+        <p className="di-loading__text">
+          {artifactRunStatus?.stages_completed?.length
+            ? `Processing artifact — ${artifactRunStatus.stages_completed.at(-1)}…`
+            : 'Preparing artifact context for your personas…'}
+        </p>
+        {artifactRunStatus?.persona_progress && (
+          <p className="di-loading__subtext">
+            {artifactRunStatus.persona_progress.completed}/{artifactRunStatus.persona_progress.total} personas processed
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
 
   if (showLoader) return (
     <>

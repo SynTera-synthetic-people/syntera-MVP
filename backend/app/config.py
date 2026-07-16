@@ -72,6 +72,21 @@ class Settings(BaseSettings):
     # Background ingestion worker: how often to check for pending chunks (seconds)
     INGEST_POLL_INTERVAL_SECONDS: int = 60
 
+    # ============================================================
+    # KE Evidence Sources — quality filter + web-search topup
+    # ============================================================
+    KE_MIN_EVIDENCE_SOURCES: int = 10
+    # Rule 1 (universal): hide any source whose indexed content is under this
+    # many characters — nothing citable fits in less than this, regardless of
+    # authority_tier.
+    KE_HARD_FLOOR_CHARS: int = 50
+    # Rule 2 (user_uploaded only, conjunctive with a generic-category title
+    # match): hide only if content is ALSO under this stricter bar.
+    KE_SOFT_THRESHOLD_CHARS: int = 300
+    # Max web-search-origin sources allowed per domain in the topup selection.
+    KE_MAX_PER_DOMAIN: int = 2
+    KE_WEB_SOURCE_CACHE_TTL_HOURS: int = 48
+
     class Config:
         env_file = ".env"
         case_sensitive = True

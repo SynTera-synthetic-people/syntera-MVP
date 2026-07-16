@@ -738,22 +738,22 @@ function computeRealActionsSignal(persona: PersonaCardData): RealActionsSignalRe
       // Context-only row — no numeric confidence bar, matching PersonaPreview.
       showAccuracy: false,
     },
-{
-  name: 'Predominant Patterns Extracted',
-  value: patternsExtractedCount,
-  displayValue: patternsExtractedCount > 0
-    ? Math.min(patternsExtractedCount * 12_000_000, 750_000_000)
-    : 84_000_000,
-  accuracy: patAccuracy,
-  color: PURPLE,
-  detailLabel: 'Behavioral signals extracted from action patterns',
-  details: patternDetails,
-  showAccuracy: true,
-  accuracyLabel: 'Research Objective Alignment',
-  // Commented out per design feedback — no longer showing the large
-  // "X Million" figure next to this row, matching PersonaPreview.
-  showCount: false,
-},
+    {
+      name: 'Predominant Patterns Extracted',
+      value: patternsExtractedCount,
+      displayValue: patternsExtractedCount > 0
+        ? Math.min(patternsExtractedCount * 12_000_000, 750_000_000)
+        : 84_000_000,
+      accuracy: patAccuracy,
+      color: PURPLE,
+      detailLabel: 'Behavioral signals extracted from action patterns',
+      details: patternDetails,
+      showAccuracy: true,
+      accuracyLabel: 'Research Objective Alignment',
+      // Commented out per design feedback — no longer showing the large
+      // "X Million" figure next to this row, matching PersonaPreview.
+      showCount: false,
+    },
   ];
 
   return { dimensionsTriggeredCount, depthLayerCount, patternsExtractedCount, confidenceScore, stats };
