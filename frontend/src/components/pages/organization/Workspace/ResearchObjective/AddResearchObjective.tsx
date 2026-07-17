@@ -645,6 +645,7 @@ const AddResearchObjective: React.FC = () => {
         files: value.artifactFiles,
         links: value.artifactLinks,
         category: value.artifactCategory,
+        artifact_category: value.artifactContentCategory,
       }));
     }
 

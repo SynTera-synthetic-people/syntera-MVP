@@ -432,6 +432,120 @@
   line-height: 1.5;
 }
 
+/* ── Custom select (Artifact Content Category dropdown) ─────────── */
+.fum-custom-select {
+  position: relative;
+  width: 100%;
+}
+
+.fum-custom-select-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: #060606;
+  border: 1px solid #393C45;
+  border-radius: 11px;
+  padding: 11px 13px;
+  color: #fff;
+  font-size: 12px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.18s, background 0.18s;
+  box-sizing: border-box;
+}
+
+.fum-custom-select-trigger:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+.fum-custom-select-trigger--open,
+.fum-custom-select-trigger:focus-visible {
+  border-color: #0E63EC;
+  background: rgba(14, 99, 236, 0.05);
+}
+
+.fum-custom-select-trigger--placeholder {
+  color: #808591;
+}
+
+.fum-custom-select-trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.fum-custom-select-chevron {
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.4);
+  transition: transform 0.18s, color 0.18s;
+}
+
+.fum-custom-select-trigger--open .fum-custom-select-chevron {
+  transform: rotate(180deg);
+  color: #24E5B6;
+}
+
+.fum-custom-select-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: #0E0F12;
+  border: 1px solid #393C45;
+  border-radius: 11px;
+  padding: 6px;
+  margin: 0;
+  list-style: none;
+  max-height: 220px;
+  overflow-y: auto;
+  z-index: 30;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  animation: fum-select-menu-in 0.14s ease;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.fum-custom-select-menu::-webkit-scrollbar { width: 6px; }
+.fum-custom-select-menu::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 9999px;
+}
+
+@keyframes fum-select-menu-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fum-custom-select-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.75);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.fum-custom-select-option:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+}
+
+.fum-custom-select-option--active {
+  background: rgba(36, 229, 182, 0.12);
+  color: #24E5B6;
+}
+
+.fum-custom-select-option--active:hover {
+  background: rgba(36, 229, 182, 0.18);
+}
+
 /* ── Inline error text ───────────────────────────────────────────── */
 .fum-error {
   font-size: 11.5px;
