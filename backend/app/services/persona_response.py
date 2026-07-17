@@ -21,6 +21,7 @@ from app.schemas.artifact_pipeline import (
     PersonaResponseSet,
     PipelineStageError,
 )
+from app.services.anti_sycophancy_rules import ANTI_SYCOPHANCY_RULES
 from app.services.llm_usage_tracker import extract_usage_openai_chat, record_llm_usage
 
 logger = logging.getLogger(__name__)
@@ -160,6 +161,8 @@ ASSET(S) TO EVALUATE:
 
 DISCUSSION GUIDE / QUESTIONNAIRE:
 {guide_block}
+
+{ANTI_SYCOPHANCY_RULES}
 
 Your task:
 1. Answer EVERY question in the discussion guide, AS THIS PERSONA would

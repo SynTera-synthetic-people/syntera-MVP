@@ -1671,6 +1671,13 @@ async def _repair_llm_usage_schema(conn: AsyncConnection) -> None:
         await ensure_index(conn, index_sql)
 
 
+async def _repair_artifact_pipeline_schema(conn: AsyncConnection) -> None:
+    # run_type added after artifact_pipeline_run's initial release — additive
+    # column so every pre-existing run (all qual, before this feature shipped)
+    # gets a safe default instead of requiring a backfill.
+    await ensure_column(conn, "artifact_pipeline_run", "run_type VARCHAR NOT NULL DEFAULT 'qual'")
+
+
 _MIGRATION_STEPS: tuple[tuple[str, str, MigrationStep], ...] = (
     ("base", "create_sqlmodel_tables", _create_sqlmodel_tables),
     ("public", "repair_core_public_schema", _repair_core_public_schema),
@@ -1682,4 +1689,5 @@ _MIGRATION_STEPS: tuple[tuple[str, str, MigrationStep], ...] = (
     ("settings", "repair_settings_schema", _repair_settings_schema),
     ("decision_room", "repair_decision_room_schema", _repair_decision_room_schema),
     ("llm_usage", "repair_llm_usage_schema", _repair_llm_usage_schema),
+    ("artifact_pipeline", "repair_artifact_pipeline_schema", _repair_artifact_pipeline_schema),
 )

@@ -24,6 +24,15 @@ class ComparisonMode(str, Enum):
     COMPARISON = "comparison"
 
 
+class RunType(str, Enum):
+    """Whether Stage 3/4 produce an open-ended discussion guide + free-text
+    answers (qual) or a rating-scale questionnaire + numeric scores (quant).
+    Stages 1 (dissection) and 2 (dimension extraction) are identical either way."""
+
+    QUAL = "qual"
+    QUANT = "quant"
+
+
 class PipelineStageError(Exception):
     """Raised when an LLM stage's JSON output fails schema validation."""
 
@@ -88,12 +97,15 @@ class GuideSection(BaseModel):
 class DiscussionGuide(BaseModel):
     title: str
     introduction: str = ""
+    run_type: RunType = RunType.QUAL
     comparison_mode: ComparisonMode
     num_assets: int = 1
     sections: List[GuideSection] = Field(default_factory=list)
 
 
-# ---- Stage 4: Persona Responses (persona_response.py) ----
+# ---- Stage 4 (qual only): Persona Responses (persona_response.py) ----
+# Quant's Stage 4 is population simulation, not individual persona
+# responses — see PopulationSimulationResult below.
 
 class PersonaAnswer(BaseModel):
     dimension: str
@@ -105,3 +117,28 @@ class PersonaAnswer(BaseModel):
 class PersonaResponseSet(BaseModel):
     persona_name: str
     responses: List[PersonaAnswer] = Field(default_factory=list)
+
+
+# ---- Stage 4 (quant only): Population Simulation (artifact_population_simulation.py) ----
+
+class PopulationOptionResult(BaseModel):
+    option: str
+    count: int
+    pct: float
+
+
+class PersonaSimulated(BaseModel):
+    persona_id: str
+    persona_name: str
+    sample_size: int
+    percentage: float
+
+
+class PopulationSimulationResult(BaseModel):
+    """One combined, sample-size-weighted result set across all selected
+    persona cohorts. results maps question text -> its option distribution."""
+
+    total_sample_size: int
+    results: Dict[str, List[PopulationOptionResult]] = Field(default_factory=dict)
+    personas_simulated: List[PersonaSimulated] = Field(default_factory=list)
+    narrative: Dict[str, object] = Field(default_factory=dict)

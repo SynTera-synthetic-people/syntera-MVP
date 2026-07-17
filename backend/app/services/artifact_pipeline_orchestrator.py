@@ -1,18 +1,32 @@
-"""Orchestrates the artifact stimulus pipeline (Stages 1-4) end-to-end.
+"""Orchestrates the artifact stimulus pipeline (Stages 1-4) in two phases.
 
-Does not reimplement any stage's LLM logic — it sequences the four existing
-services (artifact_dissection, dimension_extraction, discussion_guide,
-persona_response), resolves source assets/personas from the existing
-ResearchObjectivesFile/Persona tables, checkpoints each stage's validated
-output to ArtifactPipelineRun/PersonaArtifactResponse before starting the
-next stage, and fans Stage 4 out across personas with bounded concurrency
-and per-persona failure isolation.
+Does not reimplement any stage's LLM logic — it sequences the existing
+services (artifact_dissection, dimension_extraction, discussion_guide, and
+either persona_response or artifact_population_simulation for Stage 4),
+resolves source assets/personas from the existing
+ResearchObjectivesFile/Persona tables, and checkpoints each stage's
+validated output to ArtifactPipelineRun/PersonaArtifactResponse/
+ArtifactPopulationResult before starting the next stage.
 
-Resumability: run_artifact_pipeline(run_id) is safe to call again on a run
-that previously failed. Stages 1-3 are skipped entirely if their output is
-already persisted (no LLM re-call, no re-billing). Stage 4 has its own
-finer-grained per-persona resume, since it produces one row per persona
-rather than one monolithic stage output.
+Phase 1 — run_artifact_pipeline_stages_1_to_3(run_id): dissection ->
+dimension extraction -> guide/questionnaire generation, run automatically
+right after create_run(), no persona involved. Pauses at
+status="questionnaire_ready".
+
+Phase 2 — triggered separately once the user reviews the guide/questionnaire
+and selects personas:
+  - qual:  start_persona_response_stage() + run_persona_response_stage()
+           fan Stage 4 out across personas with bounded concurrency and
+           per-persona failure isolation (one PersonaArtifactResponse row
+           each).
+  - quant: start_population_simulation_stage() + run_population_simulation_stage()
+           produce one combined, sample-size-weighted ArtifactPopulationResult
+           row for the whole run.
+
+Resumability: run_artifact_pipeline_stages_1_to_3(run_id) is safe to call
+again on a run that previously failed there — stages already persisted are
+skipped (no LLM re-call, no re-billing). Qual's Stage 4 has its own
+finer-grained per-persona resume, since it produces one row per persona.
 
 Each stage function opens and closes its own AsyncSession rather than
 sharing one across the whole run, so there is no cross-stage ORM-object
@@ -32,7 +46,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db import async_engine
-from app.models.artifact_pipeline import ArtifactPipelineRun, PersonaArtifactResponse
+from app.models.artifact_pipeline import ArtifactPipelineRun, ArtifactPopulationResult, PersonaArtifactResponse
 from app.models.persona import Persona
 from app.models.research_objectives import ResearchObjectives, ResearchObjectivesFile
 from app.schemas.artifact_pipeline import (
@@ -41,6 +55,7 @@ from app.schemas.artifact_pipeline import (
     DimensionSelection,
     DiscussionGuide,
     PipelineStageError,
+    RunType,
 )
 from app.utils.id_generator import generate_id
 from app.services.artifact_dissection import AssetDissectionService
@@ -75,17 +90,17 @@ async def create_run(
     exploration_id: str,
     created_by: str,
     source_file_ids: list[str],
-    persona_ids: list[str],
     instruction: str,
     artifact_type: str,
     artifact_category: Optional[str] = None,
     comparison_mode: Optional[ComparisonMode] = None,
+    run_type: RunType = RunType.QUAL,
 ) -> str:
     """Validates the request against this exploration's own data, snapshots
     the exploration's current ResearchObjectives.description onto the run
     (see ArtifactPipelineRun.ro_description), creates the row, and returns
     its id. Does not start the pipeline — the caller (router) schedules
-    run_artifact_pipeline(run_id) itself, e.g. via BackgroundTasks.
+    run_artifact_pipeline_stages_1_to_3(run_id) itself, e.g. via BackgroundTasks.
 
     artifact_category/comparison_mode are optional: when omitted, both are
     derived from the selected source_file_ids' own stored
@@ -94,11 +109,19 @@ async def create_run(
     submit_framer_material_section). Passing either explicitly always wins,
     which also keeps this backward compatible with legacy artifact files
     that predate those columns and have them NULL.
+
+    run_type: RunType.QUAL (default, open-ended discussion guide + free-text
+    answers) or RunType.QUANT (rating-scale questionnaire + population
+    simulation). Only Stages 3/4 branch on it — Stages 1/2 behave identically
+    either way.
+
+    No persona_ids here: Stages 1-3 run automatically with no persona
+    involved. Persona selection (and Stage 4) happens afterwards, once the
+    guide/questionnaire is ready — see run_persona_response_stage() (qual)
+    and run_population_simulation_stage() (quant) below.
     """
     if not source_file_ids:
         raise ArtifactRunValidationError("source_file_ids must not be empty")
-    if not persona_ids:
-        raise ArtifactRunValidationError("persona_ids must not be empty")
 
     async with AsyncSession(async_engine) as db:
         file_result = await db.execute(
@@ -160,16 +183,6 @@ async def create_run(
         if comparison_mode == ComparisonMode.CAMPAIGN_SET and len(source_file_ids) != 1:
             raise ArtifactRunValidationError("campaign_set mode requires exactly 1 source_file_id")
 
-        persona_result = await db.execute(
-            select(Persona).where(Persona.id.in_(persona_ids), Persona.exploration_id == exploration_id)
-        )
-        found_persona_ids = {p.id for p in persona_result.scalars().all()}
-        missing_personas = set(persona_ids) - found_persona_ids
-        if missing_personas:
-            raise ArtifactRunValidationError(
-                f"persona_ids not found for this exploration: {sorted(missing_personas)}"
-            )
-
         ro_result = await db.execute(
             select(ResearchObjectives)
             .where(ResearchObjectives.exploration_id == exploration_id)
@@ -188,11 +201,11 @@ async def create_run(
             artifact_type=artifact_type,
             artifact_category=artifact_category,
             comparison_mode=comparison_mode.value,
+            run_type=RunType(run_type).value,
             num_assets=len(source_file_ids),
             instruction=instruction,
             ro_description=ro.description,
             source_file_ids=list(source_file_ids),
-            persona_ids=list(persona_ids),
         )
         db.add(run)
         await db.commit()
@@ -241,18 +254,30 @@ async def get_run_status(run_id: str) -> Optional[dict]:
         completed = sum(1 for r in persona_rows if r.status == "completed")
         failed = sum(1 for r in persona_rows if r.status == "failed")
 
+        # Quant runs don't produce PersonaArtifactResponse rows at all — Stage
+        # 4 output is one combined ArtifactPopulationResult row instead.
+        population_result = (
+            await db.execute(select(ArtifactPopulationResult).where(ArtifactPopulationResult.run_id == run_id))
+        ).scalars().first()
+
+        is_quant = RunType(run.run_type) == RunType.QUANT
+        generating_responses_done = (
+            population_result is not None if is_quant else (total > 0 and (completed + failed) >= total)
+        )
+
         return {
             "id": run.id,
             "workspace_id": run.workspace_id,
             "exploration_id": run.exploration_id,
             "status": run.status,
+            "run_type": run.run_type,
             "error_stage": run.error_stage,
             "error_message": run.error_message,
             "stages_completed": {
                 "dissecting": run.asset_dissections is not None,
                 "selecting_dimensions": run.dimension_selection is not None,
                 "generating_guide": run.discussion_guide is not None,
-                "generating_responses": total > 0 and (completed + failed) >= total,
+                "generating_responses": generating_responses_done,
             },
             "persona_progress": {
                 "total": total,
@@ -277,12 +302,16 @@ async def get_run_results(run_id: str) -> Optional[dict]:
         persona_rows = (
             await db.execute(select(PersonaArtifactResponse).where(PersonaArtifactResponse.run_id == run_id))
         ).scalars().all()
+        population_result = (
+            await db.execute(select(ArtifactPopulationResult).where(ArtifactPopulationResult.run_id == run_id))
+        ).scalars().first()
 
         return {
             "id": run.id,
             "workspace_id": run.workspace_id,
             "exploration_id": run.exploration_id,
             "status": run.status,
+            "run_type": run.run_type,
             "error_stage": run.error_stage,
             "error_message": run.error_message,
             "asset_dissections": run.asset_dissections,
@@ -297,6 +326,15 @@ async def get_run_results(run_id: str) -> Optional[dict]:
                 }
                 for r in persona_rows
             ],
+            "population_result": (
+                {
+                    "total_sample_size": population_result.total_sample_size,
+                    "results": population_result.results,
+                    "personas_simulated": population_result.personas_simulated,
+                    "narrative": population_result.narrative,
+                }
+                if population_result is not None else None
+            ),
         }
 
 
@@ -403,7 +441,7 @@ async def _run_guide_stage(run_id: str) -> None:
             dimension_details={k: v.model_dump() for k, v in dim_selection.details.items()},
             comparison_mode=ComparisonMode(run.comparison_mode),
             num_assets=run.num_assets,
-            is_qual=True,
+            is_qual=(RunType(run.run_type) == RunType.QUAL),
             exploration_id=run.exploration_id,
             workspace_id=run.workspace_id,
             created_by=run.created_by,
@@ -526,7 +564,6 @@ _STAGE_PLAN: tuple[tuple[str, Callable[[str], Awaitable[None]]], ...] = (
     ("dissecting", _run_dissection_stage),
     ("selecting_dimensions", _run_dimension_stage),
     ("generating_guide", _run_guide_stage),
-    ("generating_responses", _run_persona_stage),
 )
 
 
@@ -537,32 +574,34 @@ def _stage_already_done(run: ArtifactPipelineRun, stage_name: str) -> bool:
         return run.dimension_selection is not None
     if stage_name == "generating_guide":
         return run.discussion_guide is not None
-    # "generating_responses": always re-entered — its resume granularity is
-    # per-persona (see _run_persona_stage), not per-stage. Re-entering a run
-    # where every persona already succeeded is a cheap no-op (two SELECTs,
-    # then an asyncio.gather of immediate skips).
     return False
 
 
-async def run_artifact_pipeline(run_id: str) -> None:
-    """Entry point: executes the run's remaining stages in order, checkpointing
-    status + validated output after each one. See module docstring for the
-    resumability/concurrency/isolation guarantees.
+async def run_artifact_pipeline_stages_1_to_3(run_id: str) -> None:
+    """Entry point for the automatic part of the pipeline: dissection ->
+    dimension extraction -> guide/questionnaire generation. Checkpoints
+    status + validated output after each stage, then pauses at
+    status="questionnaire_ready" — no persona is involved yet.
+
+    Safe to call again on a run that previously failed (stages already
+    persisted are skipped, no LLM re-call/re-billing). Does not touch Stage 4
+    — see run_persona_response_stage() (qual) / run_population_simulation_stage()
+    (quant), triggered separately once the user selects personas.
     """
     async with AsyncSession(async_engine) as db:
         run = await db.get(ArtifactPipelineRun, run_id)
         if run is None:
-            logger.error("run_artifact_pipeline: no ArtifactPipelineRun with id %s", run_id)
+            logger.error("run_artifact_pipeline_stages_1_to_3: no ArtifactPipelineRun with id %s", run_id)
             return
-        if run.status == "completed":
-            logger.info("Run %s already completed, nothing to do", run_id)
+        if run.discussion_guide is not None:
+            logger.info("Run %s: Stages 1-3 already complete, nothing to do", run_id)
             return
 
     for stage_name, stage_fn in _STAGE_PLAN:
         async with AsyncSession(async_engine) as db:
             run = await db.get(ArtifactPipelineRun, run_id)
             if run is None:
-                logger.error("run_artifact_pipeline: ArtifactPipelineRun %s disappeared mid-run", run_id)
+                logger.error("run_artifact_pipeline_stages_1_to_3: ArtifactPipelineRun %s disappeared mid-run", run_id)
                 return
             if _stage_already_done(run, stage_name):
                 logger.info("Run %s: stage %s already has persisted output, skipping (resume)", run_id, stage_name)
@@ -592,9 +631,203 @@ async def run_artifact_pipeline(run_id: str) -> None:
     async with AsyncSession(async_engine) as db:
         run = await db.get(ArtifactPipelineRun, run_id)
         if run is not None:
+            run.status = "questionnaire_ready"
+            run.error_stage = None
+            run.error_message = None
+            run.updated_at = datetime.utcnow()
+            db.add(run)
+            await db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Stage 4 — triggered separately, once the user has reviewed the
+# guide/questionnaire and selected personas
+# ---------------------------------------------------------------------------
+
+async def start_persona_response_stage(run_id: str, persona_ids: list[str]) -> None:
+    """Qual Stage 4, part 1 (sync): validates persona_ids against this run's
+    exploration and records them. Raises ArtifactRunValidationError on bad
+    input — call this (awaited) before scheduling run_persona_response_stage()
+    as a background task, mirroring create_run()'s validate-then-schedule split.
+    """
+    if not persona_ids:
+        raise ArtifactRunValidationError("persona_ids must not be empty")
+
+    async with AsyncSession(async_engine) as db:
+        run = await db.get(ArtifactPipelineRun, run_id)
+        if run is None:
+            raise ArtifactRunValidationError(f"run {run_id} not found")
+        if RunType(run.run_type) != RunType.QUAL:
+            raise ArtifactRunValidationError(f"run {run_id} is run_type={run.run_type!r}, not qual")
+        if run.discussion_guide is None:
+            raise ArtifactRunValidationError(f"run {run_id} has no discussion guide yet — Stages 1-3 not complete")
+
+        persona_result = await db.execute(
+            select(Persona).where(Persona.id.in_(persona_ids), Persona.exploration_id == run.exploration_id)
+        )
+        found_persona_ids = {p.id for p in persona_result.scalars().all()}
+        missing_personas = set(persona_ids) - found_persona_ids
+        if missing_personas:
+            raise ArtifactRunValidationError(
+                f"persona_ids not found for this exploration: {sorted(missing_personas)}"
+            )
+
+        run.persona_ids = list(persona_ids)
+        run.status = "generating_responses"
+        run.error_stage = None
+        run.error_message = None
+        run.updated_at = datetime.utcnow()
+        db.add(run)
+        await db.commit()
+
+
+async def run_persona_response_stage(run_id: str) -> None:
+    """Qual Stage 4, part 2 (background task): runs after
+    start_persona_response_stage() has validated + recorded persona_ids.
+    Reuses _run_persona_stage()'s existing per-persona fan-out, bounded
+    concurrency, and per-persona failure isolation unchanged."""
+    try:
+        await _run_persona_stage(run_id)
+    except Exception as exc:
+        logger.exception("Run %s failed at stage generating_responses", run_id)
+        async with AsyncSession(async_engine) as db:
+            run = await db.get(ArtifactPipelineRun, run_id)
+            if run is not None:
+                run.status = "failed"
+                run.error_stage = "generating_responses"
+                run.error_message = str(exc)[:4000]
+                run.updated_at = datetime.utcnow()
+                db.add(run)
+                await db.commit()
+        return
+
+    async with AsyncSession(async_engine) as db:
+        run = await db.get(ArtifactPipelineRun, run_id)
+        if run is not None:
             run.status = "completed"
             run.error_stage = None
             run.error_message = None
             run.updated_at = datetime.utcnow()
             db.add(run)
             await db.commit()
+
+
+async def start_population_simulation_stage(run_id: str, personas_selection: list[dict]) -> None:
+    """Quant Stage 4, part 1 (sync): validates personas_selection
+    ([{persona_id, sample_size}, ...]) against this run's exploration and
+    records the persona_ids. Raises ArtifactRunValidationError on bad input —
+    call this (awaited) before scheduling run_population_simulation_stage()
+    as a background task."""
+    if not personas_selection:
+        raise ArtifactRunValidationError("personas_selection must not be empty")
+    total_sample = sum(int(p.get("sample_size") or 0) for p in personas_selection)
+    if total_sample <= 0:
+        raise ArtifactRunValidationError("total sample size (sum of personas_selection[].sample_size) must be > 0")
+
+    persona_ids = [p["persona_id"] for p in personas_selection]
+
+    async with AsyncSession(async_engine) as db:
+        run = await db.get(ArtifactPipelineRun, run_id)
+        if run is None:
+            raise ArtifactRunValidationError(f"run {run_id} not found")
+        if RunType(run.run_type) != RunType.QUANT:
+            raise ArtifactRunValidationError(f"run {run_id} is run_type={run.run_type!r}, not quant")
+        if run.discussion_guide is None:
+            raise ArtifactRunValidationError(f"run {run_id} has no questionnaire yet — Stages 1-3 not complete")
+
+        persona_result = await db.execute(
+            select(Persona).where(Persona.id.in_(persona_ids), Persona.exploration_id == run.exploration_id)
+        )
+        found_persona_ids = {p.id for p in persona_result.scalars().all()}
+        missing_personas = set(persona_ids) - found_persona_ids
+        if missing_personas:
+            raise ArtifactRunValidationError(
+                f"persona_ids not found for this exploration: {sorted(missing_personas)}"
+            )
+
+        run.persona_ids = persona_ids
+        run.status = "generating_responses"
+        run.error_stage = None
+        run.error_message = None
+        run.updated_at = datetime.utcnow()
+        db.add(run)
+        await db.commit()
+
+
+async def run_population_simulation_stage(run_id: str, personas_selection: list[dict]) -> None:
+    """Quant Stage 4, part 2 (background task): runs after
+    start_population_simulation_stage() has validated persona_ids.
+    personas_selection is passed straight through from the router (not
+    re-read from the DB — ArtifactPipelineRun.persona_ids only stores plain
+    ids, not each cohort's sample_size)."""
+    from app.services.artifact_population_simulation import simulate_artifact_population_responses
+
+    try:
+        async with AsyncSession(async_engine) as db:
+            run = await db.get(ArtifactPipelineRun, run_id)
+            if run is None:
+                logger.error("run_population_simulation_stage: ArtifactPipelineRun %s not found", run_id)
+                return
+            exploration_id = run.exploration_id
+            workspace_id = run.workspace_id
+            created_by = run.created_by
+            ro_description = run.ro_description
+            asset_dissections = run.asset_dissections or {}
+            questionnaire = run.discussion_guide or {}
+            comparison_mode = ComparisonMode(run.comparison_mode)
+
+        result = await simulate_artifact_population_responses(
+            run_id=run_id,
+            exploration_id=exploration_id,
+            workspace_id=workspace_id,
+            ro_description=ro_description,
+            asset_dissections=asset_dissections,
+            questionnaire=questionnaire,
+            comparison_mode=comparison_mode,
+            personas_selection=personas_selection,
+            created_by=created_by,
+        )
+    except Exception as exc:
+        logger.exception("Run %s failed at stage generating_responses (population simulation)", run_id)
+        async with AsyncSession(async_engine) as db:
+            run = await db.get(ArtifactPipelineRun, run_id)
+            if run is not None:
+                run.status = "failed"
+                run.error_stage = "generating_responses"
+                run.error_message = str(exc)[:4000]
+                run.updated_at = datetime.utcnow()
+                db.add(run)
+                await db.commit()
+        return
+
+    async with AsyncSession(async_engine) as db:
+        existing = (
+            await db.execute(select(ArtifactPopulationResult).where(ArtifactPopulationResult.run_id == run_id))
+        ).scalars().first()
+        now = datetime.utcnow()
+        if existing is None:
+            db.add(ArtifactPopulationResult(
+                run_id=run_id,
+                total_sample_size=result["total_sample_size"],
+                personas_simulated=result["personas_simulated"],
+                results=result["results"],
+                narrative=result["narrative"],
+                created_at=now,
+                updated_at=now,
+            ))
+        else:
+            existing.total_sample_size = result["total_sample_size"]
+            existing.personas_simulated = result["personas_simulated"]
+            existing.results = result["results"]
+            existing.narrative = result["narrative"]
+            existing.updated_at = now
+            db.add(existing)
+
+        run = await db.get(ArtifactPipelineRun, run_id)
+        if run is not None:
+            run.status = "completed"
+            run.error_stage = None
+            run.error_message = None
+            run.updated_at = now
+            db.add(run)
+        await db.commit()
