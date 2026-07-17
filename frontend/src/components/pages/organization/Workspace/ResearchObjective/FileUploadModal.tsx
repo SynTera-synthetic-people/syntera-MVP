@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import SpIcon from "../../../../SPIcon";
 import "./FileUploadModal.css";
 
@@ -38,6 +38,31 @@ const ARTIFACT_CATEGORIES: { id: ArtifactCategory; label: string; description: s
   //   label: "Sequence",
   //   description: "Assets meant to be seen in order — a funnel, a teaser-to-reveal, or a multi-step flow. Omi tests whether each step earns the next.",
   // },
+];
+
+// The kind of creative asset this is — separate from ArtifactCategory
+// (comparison mode) above. Drives dimension selection in the artifact
+// stimulus pipeline (Stage 2) — must match one of the artifact_types keys
+// in backend/app/data/artifact_dimensions_library.json. Required whenever
+// at least one artifact (file or link) is attached, regardless of count.
+// Kept in sync with ResearchObjectiveFramer's ArtifactContentCategory.
+export type ArtifactContentCategory =
+  | "ad_creative"
+  | "product_concept"
+  | "packaging"
+  | "landing_page"
+  | "pricing_offer"
+  | "claim"
+  | "script_storyboard";
+
+const ARTIFACT_CONTENT_CATEGORIES: { id: ArtifactContentCategory; label: string }[] = [
+  { id: "ad_creative", label: "Ad Creative" },
+  { id: "landing_page", label: "Landing Page" },
+  { id: "packaging", label: "Packaging" },
+  { id: "product_concept", label: "Product Concept" },
+  { id: "pricing_offer", label: "Pricing Offer" },
+  { id: "claim", label: "Claim" },
+  { id: "script_storyboard", label: "Script / Storyboard" },
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -82,6 +107,7 @@ export interface FileUploadModalValue {
   artifactFiles: File[];
   artifactLinks: string[];
   artifactCategory: ArtifactCategory | null;
+  artifactContentCategory: ArtifactContentCategory | null;
 }
 
 interface FileUploadModalProps {
@@ -419,6 +445,115 @@ const ArtifactCategoryChips: React.FC<ArtifactCategoryChipsProps> = ({ value, on
   </div>
 );
 
+// ─── Custom select (dark-themed dropdown — used for Artifact Content Category) ──
+
+interface CustomSelectOption<T extends string> {
+  id: T;
+  label: string;
+}
+
+interface CustomSelectProps<T extends string> {
+  id?: string | undefined;
+  value: T | null;
+  placeholder: string;
+  options: CustomSelectOption<T>[];
+  onChange: (value: T) => void;
+  disabled?: boolean | undefined;
+}
+
+function CustomSelect<T extends string>({
+  id, value, placeholder, options, onChange, disabled,
+}: CustomSelectProps<T>) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleClick = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const handleKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", handleClick);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [open]);
+
+  const selectedLabel = options.find(o => o.id === value)?.label ?? null;
+
+  return (
+    <div className="fum-custom-select" ref={wrapRef}>
+      <button
+        type="button"
+        id={id}
+        className={[
+          "fum-custom-select-trigger",
+          !selectedLabel ? "fum-custom-select-trigger--placeholder" : "",
+          open ? "fum-custom-select-trigger--open" : "",
+        ].filter(Boolean).join(" ")}
+        onClick={() => !disabled && setOpen(o => !o)}
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <span>{selectedLabel ?? placeholder}</span>
+        <svg className="fum-custom-select-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      {open && (
+        <ul className="fum-custom-select-menu" role="listbox">
+          {options.map(opt => (
+            <li
+              key={opt.id}
+              role="option"
+              aria-selected={opt.id === value}
+              className={[
+                "fum-custom-select-option",
+                opt.id === value ? "fum-custom-select-option--active" : "",
+              ].filter(Boolean).join(" ")}
+              onClick={() => { onChange(opt.id); setOpen(false); }}
+            >
+              {opt.label}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+interface ArtifactContentCategorySelectProps {
+  value: ArtifactContentCategory | null;
+  onChange: (category: ArtifactContentCategory) => void;
+  disabled?: boolean | undefined;
+}
+
+// Required whenever at least one artifact (file or link) is attached —
+// unlike ArtifactCategoryChips (comparison mode) above, which only applies
+// once there are 2+. A single artifact still needs a content category for
+// Stage 2 dimension selection to make sense.
+const ArtifactContentCategorySelect: React.FC<ArtifactContentCategorySelectProps> = ({ value, onChange, disabled }) => (
+  <div className="fum-field-group">
+    <div className="fum-field-label-row">
+      <label className="fum-label" htmlFor="fum-artifact-content-category">
+        Artifact Content Category
+      </label>
+      <Tooltip text="What kind of creative asset is this? Drives which questions Omi asks personas about it." />
+    </div>
+    <CustomSelect
+      id="fum-artifact-content-category"
+      value={value}
+      placeholder="Select a category…"
+      options={ARTIFACT_CONTENT_CATEGORIES}
+      onChange={onChange}
+      disabled={disabled}
+    />
+  </div>
+);
+
 // ─── Link row ─────────────────────────────────────────────────────────────────
 
 interface LinkRowProps {
@@ -497,19 +632,26 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
   const [artifactCategory, setArtifactCategory] = useState<ArtifactCategory | null>(
     initialValue?.artifactCategory ?? null
   );
+  const [artifactContentCategory, setArtifactContentCategory] = useState<ArtifactContentCategory | null>(
+    initialValue?.artifactContentCategory ?? null
+  );
 
   if (!isOpen) return null;
 
   // Counts distinct artifacts attached so far (filled links + files), so the
-  // category selector only appears once there's actually something to relate.
+  // category selectors only appear once there's actually something to relate.
   const artifactItemCount =
     artifactLinks.filter(l => l.value.trim()).length + artifactFiles.length;
-  // With 2+ artifacts, a category is required — otherwise Omi doesn't know
-  // whether to compare, unify, or sequence them.
+  // With 2+ artifacts, a comparison category is required — otherwise Omi
+  // doesn't know whether to compare, unify, or sequence them.
   const artifactNeedsCategory = artifactItemCount >= 2 && !artifactCategory;
+  // With 1+ artifacts, a content category is required (independent of
+  // comparison mode) — Stage 2 dimension selection needs it even for a
+  // single artifact.
+  const artifactNeedsContentCategory = artifactItemCount >= 1 && !artifactContentCategory;
 
   const handleDone = () => {
-    if (artifactNeedsCategory) return;
+    if (artifactNeedsCategory || artifactNeedsContentCategory) return;
     onDone({
       briefInstruction: briefInstruction.trim(),
       briefFile: briefFile?.file ?? null,
@@ -518,6 +660,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
       artifactFiles: artifactFiles.map(s => s.file),
       artifactLinks: artifactLinks.map(l => l.value.trim()).filter(Boolean),
       artifactCategory,
+      artifactContentCategory,
     });
     onClose();
   };
@@ -690,6 +833,13 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                 onRemoveAt={removeArtifactFileAt}
               />
 
+              {artifactItemCount >= 1 && (
+                <ArtifactContentCategorySelect
+                  value={artifactContentCategory}
+                  onChange={setArtifactContentCategory}
+                />
+              )}
+
               {artifactItemCount >= 2 && (
                 <ArtifactCategoryChips
                   value={artifactCategory}
@@ -710,14 +860,17 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
             </button>
             <div className="fum-footer-done-wrap">
               <button
-                className={["fum-btn-done", artifactNeedsCategory ? "fum-btn-done--disabled" : ""].filter(Boolean).join(" ")}
+                className={["fum-btn-done", (artifactNeedsCategory || artifactNeedsContentCategory) ? "fum-btn-done--disabled" : ""].filter(Boolean).join(" ")}
                 onClick={handleDone}
-                disabled={artifactNeedsCategory}
+                disabled={artifactNeedsCategory || artifactNeedsContentCategory}
                 type="button"
               >
                 Done
               </button>
-              {artifactNeedsCategory && (
+              {artifactNeedsContentCategory && (
+                <p className="fum-done-hint">Pick an artifact content category to continue</p>
+              )}
+              {!artifactNeedsContentCategory && artifactNeedsCategory && (
                 <p className="fum-done-hint">Pick how the artifacts relate to continue</p>
               )}
             </div>
