@@ -1,7 +1,14 @@
 import { useCallback, useRef, useState } from 'react';
 import { artifactPipelineService } from '../services/artifactPipelineService';
+import { getAxiosErrorMessage } from '../utils/axiosBlobError';
 
 const POLL_INTERVAL_MS = 3000;
+// Pipeline is now two phases (see artifact_pipeline_orchestrator.py): POST
+// /runs only auto-runs Stages 1-3 and pauses at "questionnaire_ready" — Stage
+// 4 (persona responses) requires a separate POST .../runs/{run_id}/personas.
+// There's no review-gate UI yet, so startAndAwaitRun below auto-continues
+// through that pause with the same personaIds it was called with.
+const PHASE_1_PAUSE_STATUSES = new Set(['questionnaire_ready', 'failed']);
 const TERMINAL_STATUSES = new Set(['completed', 'failed']);
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -11,7 +18,12 @@ export interface ArtifactRunPersonaProgress {
   total: number;
 }
 
-export type ArtifactRunStage = 'dissecting' | 'selecting_dimensions' | 'generating_guide' | 'generating_responses';
+export type ArtifactRunStage =
+  | 'dissecting'
+  | 'selecting_dimensions'
+  | 'generating_guide'
+  | 'questionnaire_ready'
+  | 'generating_responses';
 
 export interface ArtifactRunStatus {
   id: string;
@@ -28,10 +40,19 @@ export interface ArtifactRunStatus {
 }
 
 // Ordered so we can find the furthest-along stage for display purposes.
+// Full state machine (see artifact_pipeline_orchestrator.py:600-639,676):
+// pending -> dissecting -> selecting_dimensions -> generating_guide ->
+// questionnaire_ready -> generating_responses -> completed | failed.
+// "questionnaire_ready" is a run *status*, not a boolean flag in
+// stages_completed (that dict only ever has the other four keys — see
+// get_run_status()), so it never matches the completed[s] lookup below; it's
+// listed here for state-machine documentation and getArtifactRunStageLabel
+// resolves it directly from STAGE_LABELS instead, via status.status.
 export const ARTIFACT_RUN_STAGE_ORDER: ArtifactRunStage[] = [
   'dissecting',
   'selecting_dimensions',
   'generating_guide',
+  'questionnaire_ready',
   'generating_responses',
 ];
 
@@ -39,6 +60,7 @@ const STAGE_LABELS: Record<ArtifactRunStage, string> = {
   dissecting: 'Dissecting artifact',
   selecting_dimensions: 'Selecting dimensions',
   generating_guide: 'Generating guide',
+  questionnaire_ready: 'Starting persona responses',
   generating_responses: 'Generating responses',
 };
 
@@ -95,14 +117,17 @@ export function useArtifactPipelineRun(workspaceId: string, objectiveId: string)
     }
   }, []);
 
-  const pollUntilDone = useCallback((runId: string): Promise<ArtifactRunStatus> => {
+  // Generic poll loop, parameterized on which statuses should stop it —
+  // reused for both the Phase 1 pause (questionnaire_ready/failed) and the
+  // final Phase 2 wait (completed/failed).
+  const pollUntil = useCallback((runId: string, stopStatuses: Set<string>): Promise<ArtifactRunStatus> => {
     return new Promise((resolve) => {
       const poll = async () => {
         try {
           const res = await artifactPipelineService.getRunStatus(workspaceId, objectiveId, runId);
           const data: ArtifactRunStatus = (res?.data ?? res) as ArtifactRunStatus;
           setStatus(data);
-          if (TERMINAL_STATUSES.has(data?.status)) {
+          if (stopStatuses.has(data?.status)) {
             resolve(data);
             return;
           }
@@ -120,6 +145,13 @@ export function useArtifactPipelineRun(workspaceId: string, objectiveId: string)
    * Kicks off a run and resolves once it reaches a terminal state.
    * Returns null (and sets `error`) if the run couldn't even be created —
    * caller should decide whether to still proceed to interviews in that case.
+   *
+   * Two-phase under the hood (see artifact_pipeline_orchestrator.py): POST
+   * /runs only auto-runs Stages 1-3 and pauses at "questionnaire_ready" —
+   * Stage 4 needs a separate POST .../personas. There's no review-gate UI
+   * yet, so this auto-continues through that pause with the same personaIds
+   * the caller passed in, keeping the UX identical to the old single-phase
+   * flow from the caller's point of view.
    */
   const startAndAwaitRun = useCallback(async ({
     sourceFileIds,
@@ -146,9 +178,11 @@ export function useArtifactPipelineRun(workspaceId: string, objectiveId: string)
       // 'general' category, or file-count > 1 => comparison_mode) would
       // either fail schema validation (comparison_mode is a strict enum,
       // not a boolean) or silently produce a wrong run.
+      // No persona_ids here — create_run() no longer accepts them (Stages
+      // 1-3 run with no persona involved); they're sent separately below,
+      // once the run reaches questionnaire_ready.
       const payload: Record<string, unknown> = {
         source_file_ids: sourceFileIds.map((f) => (typeof f === 'object' ? f.id : f)),
-        persona_ids: personaIds,
         instruction: instruction ?? 'Evaluate this artifact against the persona.',
         artifact_type: artifactType,
       };
@@ -159,7 +193,37 @@ export function useArtifactPipelineRun(workspaceId: string, objectiveId: string)
       const runId: string | undefined = createRes?.data?.run_id ?? createRes?.run_id;
       if (!runId) throw new Error('Artifact run did not return a run_id');
 
-      const finalStatus = await pollUntilDone(runId);
+      // Phase 1: wait for Stages 1-3 (auto-run server-side) to either pause
+      // at questionnaire_ready or fail outright.
+      const phase1Status = await pollUntil(runId, PHASE_1_PAUSE_STATUSES);
+      if (phase1Status.status === 'failed') {
+        setIsRunning(false);
+        return phase1Status;
+      }
+
+      // Phase 2: no review gate yet, so immediately trigger Stage 4 with the
+      // personas already selected. A failure here (network/4xx) must be
+      // surfaced as a run failure, not left to hang — pollUntil above only
+      // resolves on questionnaire_ready/failed, and nothing would otherwise
+      // ever move this run to "generating_responses" or poll it further.
+      try {
+        await artifactPipelineService.triggerPersonaResponses(workspaceId, objectiveId, runId, personaIds);
+      } catch (err) {
+        console.error('Artifact pipeline: failed to trigger persona responses:', err);
+        setError(err);
+        setIsRunning(false);
+        const message = await getAxiosErrorMessage(err, 'Failed to start persona response generation.');
+        const failedStatus: ArtifactRunStatus = {
+          ...phase1Status,
+          status: 'failed',
+          error_stage: 'generating_responses',
+          error_message: message,
+        };
+        setStatus(failedStatus);
+        return failedStatus;
+      }
+
+      const finalStatus = await pollUntil(runId, TERMINAL_STATUSES);
       setIsRunning(false);
       return finalStatus;
     } catch (err) {
@@ -168,7 +232,7 @@ export function useArtifactPipelineRun(workspaceId: string, objectiveId: string)
       setIsRunning(false);
       return null;
     }
-  }, [workspaceId, objectiveId, pollUntilDone]);
+  }, [workspaceId, objectiveId, pollUntil]);
 
   return { status, isRunning, error, startAndAwaitRun, stopPolling };
 }
