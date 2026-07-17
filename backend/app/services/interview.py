@@ -32,6 +32,8 @@ from app.services.llm_usage_tracker import (
     extract_usage_openai_chat,
     extract_usage_anthropic_message,
 )
+from app.services.report_generation_qual_claude import generate_pdf_path, html_to_pdf, sanitize_report_text
+from html import escape as _html_escape
 
 
 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
@@ -242,64 +244,51 @@ async def get_full_interview_guide(workspace_id: str, exploration_id: str) -> Li
     return result
 
 
-def _build_discussion_guide_docx(
+def _build_discussion_guide_html(
     *,
     research_objective: str,
     sections: List[Dict],
-) -> bytes:
-    """Build a discussion guide DOCX in memory."""
-    from docx import Document
-    from docx.shared import Pt, RGBColor
-
-    document = Document()
-    title = document.add_paragraph()
-    title_run = title.add_run("Discussion Guide")
-    title_run.bold = True
-    title_run.font.size = Pt(18)
-    title_run.font.color.rgb = RGBColor(0x11, 0x11, 0x11)
+) -> str:
+    """Build the discussion guide body HTML — styled via app/css/report_generation.css
+    (the same house style used by every other qual/quant PDF report) so this
+    matches the rest of the Report Log instead of carrying its own look."""
+    parts: List[str] = ['<h1>Discussion Guide</h1>']
 
     if research_objective:
-        objective_heading = document.add_paragraph()
-        objective_heading.add_run("Research Exploration").bold = True
-        objective = document.add_paragraph(str(research_objective).strip())
-        objective.paragraph_format.space_after = Pt(12)
+        parts.append('<h3>Research Exploration</h3>')
+        objective = _html_escape(sanitize_report_text(str(research_objective).strip()))
+        parts.append(f'<p class="body-text">{objective}</p>')
 
     for section_index, section in enumerate(sections, start=1):
-        heading = document.add_paragraph()
-        heading.paragraph_format.space_before = Pt(10)
-        heading_run = heading.add_run(f"{section_index}. {section.get('title') or 'Untitled Section'}")
-        heading_run.bold = True
-        heading_run.font.size = Pt(13)
+        title = _html_escape(sanitize_report_text(str(section.get("title") or "Untitled Section")))
+        parts.append(f'<h2>{section_index}. {title}</h2>')
 
         questions = section.get("questions") or []
         if not questions:
-            empty = document.add_paragraph("No questions in this section.")
-            empty.paragraph_format.left_indent = Pt(16)
+            parts.append('<p class="body-text">No questions in this section.</p>')
             continue
 
         for question_index, question in enumerate(questions, start=1):
-            paragraph = document.add_paragraph()
-            paragraph.paragraph_format.left_indent = Pt(16)
-            label = paragraph.add_run(f"Q{question_index}. ")
-            label.bold = True
-            paragraph.add_run(str(question.get("text") or "").strip())
+            text = _html_escape(sanitize_report_text(str(question.get("text") or "").strip()))
+            parts.append(f'<p class="body-text"><strong>Q{question_index}.</strong> {text}</p>')
 
-    buffer = io.BytesIO()
-    document.save(buffer)
-    return buffer.getvalue()
+    return "\n".join(parts)
 
 
-async def generate_discussion_guide_docx_bytes(workspace_id: str, exploration_id: str) -> bytes:
-    """Export the current discussion guide as a DOCX without relying on local disk."""
+async def generate_discussion_guide_pdf(workspace_id: str, exploration_id: str) -> str:
+    """Export the current discussion guide as a branded PDF. Returns the output file path."""
     sections = await get_full_interview_guide(workspace_id, exploration_id)
     if not sections:
         raise ValueError("No discussion guide found. Generate or upload a guide first.")
 
     research_objective = await get_description(exploration_id) or ""
-    return await asyncio.to_thread(
-        _build_discussion_guide_docx,
+    html_body = _build_discussion_guide_html(
         research_objective=research_objective,
         sections=sections,
+    )
+    out_path = generate_pdf_path(prefix="discussion_guide")
+    return await asyncio.to_thread(
+        html_to_pdf, html_body, out_path, "app/css/report_generation.css",
     )
 
 
