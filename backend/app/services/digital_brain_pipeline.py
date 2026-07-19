@@ -343,33 +343,77 @@ def _city_tier(city: str) -> str:
     return "Tier 1" if city.lower() in TIER1_CITIES else "Tier 2/3"
 
 
-# Ordered per-country metro pools used to fill out persona geography when the
-# RO doesn't name enough cities on its own. Order = major-hub-first, so the
-# first N entries are handed out before secondary markets.
+# Ordered per-country metro pools — both the fallback pool used to fill out
+# persona geography when the RO doesn't name enough cities on its own, AND
+# (via _CITY_LOOKUP below) the set of cities recognized as explicit,
+# assignable persona locations when the RO names them by name. Order =
+# major-hub-first (see _is_major_hub), so keep each country's biggest/most
+# obvious cities first and secondary markets after.
 COUNTRY_CITY_POOLS: dict[str, list[str]] = {
-    "India": ["Mumbai", "Bangalore", "Delhi", "Pune", "Hyderabad", "Chennai", "Kolkata", "Ahmedabad", "Surat"],
-    "USA": ["New York", "Los Angeles", "Chicago", "Houston", "San Francisco", "Seattle", "Boston", "Austin"],
-    "UK": ["London", "Manchester", "Birmingham", "Leeds"],
+    "India": [
+        "Mumbai", "Bangalore", "Delhi", "Pune", "Hyderabad", "Chennai", "Kolkata", "Ahmedabad", "Surat",
+        "Jaipur", "Lucknow", "Kochi", "Chandigarh", "Coimbatore", "Nagpur", "Mysore", "Indore",
+        "Thiruvananthapuram", "Vadodara", "Ludhiana", "Kanpur", "Rajkot", "Gurugram", "Noida", "Madurai",
+    ],
+    "USA": [
+        "New York", "Los Angeles", "Chicago", "Houston", "San Francisco", "Seattle", "Boston", "Austin",
+        "Dallas", "Miami", "Philadelphia", "Phoenix", "San Diego", "San Antonio", "Atlanta", "Denver",
+        "Las Vegas", "Sacramento", "Stockton", "Oakland", "San Jose", "Fresno", "Orlando", "Tampa",
+        "Jacksonville", "Fort Worth", "El Paso", "Minneapolis",
+    ],
+    "UK": ["London", "Manchester", "Birmingham", "Leeds", "Glasgow", "Edinburgh", "Liverpool", "Bristol", "Cardiff", "Belfast"],
     "Brazil": ["São Paulo", "Rio de Janeiro", "Brasília", "Belo Horizonte"],
-    "Germany": ["Berlin", "Munich", "Hamburg", "Frankfurt"],
-    "Australia": ["Sydney", "Melbourne", "Brisbane", "Perth"],
-    "Canada": ["Toronto", "Vancouver", "Montreal", "Calgary"],
+    "Germany": ["Berlin", "Munich", "Hamburg", "Frankfurt", "Cologne"],
+    "Australia": ["Sydney", "Melbourne", "Brisbane", "Perth", "Adelaide", "Canberra", "Hobart"],
+    "Canada": ["Toronto", "Vancouver", "Montreal", "Calgary", "Ottawa", "Winnipeg"],
     "Singapore": ["Singapore"],
     "UAE": ["Dubai", "Abu Dhabi", "Sharjah"],
+    "France": ["Paris", "Lyon", "Marseille", "Toulouse", "Nice"],
+    "Japan": ["Tokyo", "Osaka", "Yokohama", "Kyoto", "Hiroshima"],
 }
 
 # Country name/alias -> canonical country label. "US" is deliberately excluded
 # (too short, collides with ordinary words like "us"/"bonus"); use "USA" instead.
 COUNTRY_ALIASES: dict[str, str] = {
-    "india": "India",
-    "usa": "USA", "united states": "USA", "america": "USA",
-    "uk": "UK", "united kingdom": "UK", "britain": "UK",
+    "india": "India", "indian": "India",
+    "usa": "USA", "united states": "USA", "america": "USA", "american": "USA",
+    "uk": "UK", "united kingdom": "UK", "britain": "UK", "british": "UK",
     "brazil": "Brazil",
-    "germany": "Germany",
-    "australia": "Australia",
-    "canada": "Canada",
+    "germany": "Germany", "german": "Germany",
+    "australia": "Australia", "australian": "Australia",
+    "canada": "Canada", "canadian": "Canada",
     "singapore": "Singapore",
     "uae": "UAE", "united arab emirates": "UAE", "emirates": "UAE",
+    "france": "France", "french": "France",
+    "japan": "Japan", "japanese": "Japan",
+}
+
+# Country-detection ONLY (not an assignment pool). These are genuine
+# administrative regions (states/provinces/nations), not cities — actual
+# cities belong in COUNTRY_CITY_POOLS instead, so a named city (e.g.
+# "Sacramento") becomes a real assignable persona location, not just a
+# country-detection signal. This dict exists for the case where the RO names
+# a state/province/nation without naming a specific city (e.g. "USA market
+# research" or "consumers in Maharashtra") — those still need to resolve to a
+# country even though they're not cities themselves.
+_REGION_TO_COUNTRY_HINTS: dict[str, str] = {
+    # USA states
+    "california": "USA", "texas": "USA", "florida": "USA", "illinois": "USA",
+    "washington state": "USA", "massachusetts": "USA", "pennsylvania": "USA",
+    "georgia": "USA", "arizona": "USA", "nevada": "USA", "colorado": "USA",
+    "new york state": "USA",
+    # India states
+    "maharashtra": "India", "karnataka": "India", "west bengal": "India",
+    "tamil nadu": "India", "telangana": "India", "gujarat": "India",
+    "rajasthan": "India", "kerala": "India", "punjab": "India", "uttar pradesh": "India",
+    "delhi ncr": "India", "new delhi": "India", "navi mumbai": "India", "thane": "India",
+    # UK nations
+    "england": "UK", "scotland": "UK", "wales": "UK", "northern ireland": "UK",
+    # Canada provinces
+    "ontario": "Canada", "british columbia": "Canada", "quebec": "Canada",
+    # Australia states
+    "new south wales": "Australia", "victoria": "Australia", "queensland": "Australia",
+    "western australia": "Australia", "south australia": "Australia",
 }
 
 
@@ -384,6 +428,10 @@ _CITY_LOOKUP: dict[str, tuple[str, str]] = {
     for country, cities in COUNTRY_CITY_POOLS.items()
     for city in cities
 }
+# Alternate spellings for the same city, mapped to the canonical pool entry's
+# display name (not added as separate pool entries — "Bengaluru" in RO text
+# should assign a persona to the same city as "Bangalore", not a 25th slot).
+_CITY_LOOKUP[_normalize_text("Bengaluru")] = ("Bangalore", "India")
 
 
 def _extract_geography_meta(validated_ro: dict) -> dict:
@@ -422,6 +470,13 @@ def _extract_geography_meta(validated_ro: dict) -> dict:
     for alias, canonical in COUNTRY_ALIASES.items():
         m = re.search(r"\b" + re.escape(alias) + r"\b", normalized)
         if m:
+            hits.append((m.start(), canonical))
+
+    # Broader city/state/province hints for country detection only (does not
+    # feed explicit_cities_by_country — see _REGION_TO_COUNTRY_HINTS docstring).
+    for region, canonical in _REGION_TO_COUNTRY_HINTS.items():
+        m = re.search(r"\b" + re.escape(_normalize_text(region)) + r"\b", normalized)
+        if m and not any(c == canonical for _, c in hits):
             hits.append((m.start(), canonical))
 
     # (position, display_city, country) hits from known city names
