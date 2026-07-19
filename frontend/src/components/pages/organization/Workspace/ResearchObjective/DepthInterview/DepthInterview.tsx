@@ -3,7 +3,7 @@ import { useObjectives } from '../../../../../../context/ObjectiveContext';
 import { useLoaderActive } from '../../../../../../context/LoaderActiveContext';
 import ChatView from './ChatView';
 import { motion, AnimatePresence } from 'framer-motion';
-import { TbLoader, TbX, TbPlus, TbAlertCircle } from 'react-icons/tb';
+import { TbLoader, TbX, TbPlus, TbAlertCircle, TbPaperclip, TbExternalLink, TbDownload } from 'react-icons/tb';
 import SpIcon from '../../../../../SPIcon';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import GuideValidationModal from './components/GuideValidationModal';
@@ -77,6 +77,70 @@ const validateFile = (file: File): UploadError => {
   if (file.size > MAX_FILE_SIZE_BYTES) return 'size';
   return null;
 };
+
+// ── Submitted artifact data (Research Objective Framer) ──────────────────────
+//
+// Mirrors ResearchObjectiveFramer's localStorage snapshot key. That component
+// strips raw File objects before persisting (see stripFilesForStorage there),
+// so file entries here only carry fileName/fileSizeLabel — never bytes. `url`
+// is included defensively in case a backend-hosted URL is ever added to that
+// payload; when present it's used to render an actual image preview instead
+// of a generic file icon.
+
+interface SubmittedArtifactFile {
+  fileName: string;
+  fileSizeLabel?: string | null;
+  // Base64 data URL of the file's actual bytes, written by
+  // ResearchObjectiveFramer's handleSubmitArtifact right before the
+  // submitted snapshot is persisted. This is what lets us render a real
+  // image preview (or offer a real download for non-image files) instead
+  // of just a filename. Absent for artifacts submitted before this field
+  // existed, or if the read failed — in that case we fall back to a
+  // plain, non-interactive file card.
+  dataUrl?: string | null;
+}
+
+interface SubmittedArtifactData {
+  instruction: string;
+  links: string[];
+  files: SubmittedArtifactFile[];
+}
+
+const framerSubmittedDataKey = (objectiveId?: string) =>
+  `ro_framer_submitted_data_${objectiveId ?? 'unknown'}`;
+
+const loadSubmittedArtifact = (objectiveId?: string): SubmittedArtifactData | null => {
+  try {
+    const saved = localStorage.getItem(framerSubmittedDataKey(objectiveId));
+    if (!saved) return null;
+    const parsed = JSON.parse(saved);
+    const artifact = parsed?.material?.artifact;
+    if (!artifact) return null;
+
+    const links: string[] = Array.isArray(artifact.links)
+      ? artifact.links
+          .map((l: any) => (typeof l === 'string' ? l : l?.value))
+          .filter((v: any): v is string => Boolean(v && String(v).trim()))
+      : [];
+
+    const files: SubmittedArtifactFile[] = Array.isArray(artifact.files)
+      ? artifact.files
+          .filter((f: any) => f?.fileName)
+          .map((f: any) => ({
+            fileName: f.fileName,
+            fileSizeLabel: f.fileSizeLabel ?? null,
+            dataUrl: f.dataUrl ?? null,
+          }))
+      : [];
+
+    if (!links.length && !files.length) return null;
+    return { instruction: artifact.instruction ?? '', links, files };
+  } catch {
+    return null;
+  }
+};
+
+const isImageFileName = (name: string) => /\.(png|jpe?g|gif|webp|svg)$/i.test(name);
 
 // ── Shared Modal Shell ────────────────────────────────────────────────────────
 
@@ -221,6 +285,112 @@ const DeleteModal: React.FC<DeleteModalProps> = ({ target, isPending, onConfirm,
   </ModalOverlay>
 );
 
+// ── Artifact File Card ─────────────────────────────────────────────────────
+//
+// Three states, in order of preference:
+//  1. Image + we have its dataUrl  → render an actual <img> preview.
+//  2. Any other file + dataUrl     → whole card becomes a clickable
+//                                     download (video, doc, etc.) so the
+//                                     user gets the real file rather than
+//                                     just being told its name.
+//  3. No dataUrl available         → plain, non-interactive file card
+//                                     (legacy artifacts submitted before
+//                                     dataUrl capture existed).
+
+const ArtifactFileCard: React.FC<{ file: SubmittedArtifactFile }> = ({ file }) => {
+  const isImage = isImageFileName(file.fileName);
+
+  if (isImage && file.dataUrl) {
+    return (
+      <div className="di-artifact-modal__file-card">
+        <img src={file.dataUrl} alt={file.fileName} />
+        <span className="di-artifact-modal__file-name">{file.fileName}</span>
+        {file.fileSizeLabel && (
+          <span className="di-artifact-modal__file-size">{file.fileSizeLabel}</span>
+        )}
+      </div>
+    );
+  }
+
+  if (file.dataUrl) {
+    return (
+      <a
+        className="di-artifact-modal__file-card di-artifact-modal__file-card--download"
+        href={file.dataUrl}
+        download={file.fileName}
+        title={`Download ${file.fileName}`}
+      >
+        <span className="di-artifact-modal__file-download-icon">
+          <SpIcon name="sp-File-File_Blank" size={22} />
+          <TbDownload size={11} className="di-artifact-modal__file-download-badge" />
+        </span>
+        <span className="di-artifact-modal__file-name">{file.fileName}</span>
+        {file.fileSizeLabel && (
+          <span className="di-artifact-modal__file-size">{file.fileSizeLabel}</span>
+        )}
+      </a>
+    );
+  }
+
+  return (
+    <div className="di-artifact-modal__file-card">
+      <SpIcon name="sp-File-File_Blank" size={22} />
+      <span className="di-artifact-modal__file-name">{file.fileName}</span>
+      {file.fileSizeLabel && (
+        <span className="di-artifact-modal__file-size">{file.fileSizeLabel}</span>
+      )}
+    </div>
+  );
+};
+
+// ── Artifact View Modal ───────────────────────────────────────────────────────
+
+const ArtifactViewModal: React.FC<{ data: SubmittedArtifactData; onClose: () => void }> = ({ data, onClose }) => (
+  <ModalOverlay onClose={onClose}>
+    <button className="di-modal__close" onClick={onClose}><TbX size={18} /></button>
+    <h2 className="di-modal__title">Uploaded Artifact</h2>
+    <p className="di-modal__subtitle">Material shared for this exploration</p>
+
+    <div className="di-artifact-modal__body">
+      {data.instruction && (
+        <p className="di-artifact-modal__instruction">{data.instruction}</p>
+      )}
+
+      {data.links.length > 0 && (
+        <div className="di-artifact-modal__section">
+          <h4 className="di-artifact-modal__section-title">Links</h4>
+          <ul className="di-artifact-modal__link-list">
+            {data.links.map((link, i) => (
+              <li key={`${link}-${i}`}>
+                <a
+                  className="di-artifact-modal__link"
+                  href={link.startsWith('http') ? link : `https://${link}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <span className="di-artifact-modal__link-text">{link}</span>
+                  <TbExternalLink size={14} className="di-artifact-modal__link-icon" />
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {data.files.length > 0 && (
+        <div className="di-artifact-modal__section">
+          <h4 className="di-artifact-modal__section-title">Files</h4>
+          <div className="di-artifact-modal__file-grid">
+            {data.files.map((file, i) => (
+              <ArtifactFileCard file={file} key={`${file.fileName}-${i}`} />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  </ModalOverlay>
+);
+
 // ── Main Component ────────────────────────────────────────────────────────────
 
 const DepthInterview: React.FC = () => {
@@ -279,6 +449,16 @@ const DepthInterview: React.FC = () => {
 
   // ── Upload validation error ───────────────────────────────────────────────
   const [uploadError, setUploadError] = useState<UploadError>(null);
+
+  // ── Uploaded artifact (from Research Objective Framer / File Upload Modal) ──
+  const [artifactData, setArtifactData] = useState<SubmittedArtifactData | null>(null);
+  const [showArtifactModal, setShowArtifactModal] = useState(false);
+
+  useEffect(() => {
+    setArtifactData(loadSubmittedArtifact(objectiveId));
+    // Re-check whenever the guide data changes/reloads, in case an artifact
+    // was submitted elsewhere in the flow since this screen last mounted.
+  }, [objectiveId, guideData]);
 
   type ModalState =
     | { type: 'editSection'; sectionId: string; currentTitle: string }
@@ -754,23 +934,35 @@ const DepthInterview: React.FC = () => {
                 Structured to uncover behaviours, motivations, and decision triggers
               </p>
             </div>
-            <AnimatePresence>
-              {showReadyToast && (
-                <motion.div
-                  className="di-ready-toast"
-                  initial={{ opacity: 0, y: -8, scale: 0.97 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -8, scale: 0.97 }}
-                  transition={{ duration: 0.22 }}
+            <div className="di-guide-page-header-right">
+              {artifactData && (
+                <button
+                  className="di-artifact-btn"
+                  onClick={() => setShowArtifactModal(true)}
+                  type="button"
                 >
-                  <SpIcon name="sp-Warning-Circle_Check" size={18} className="di-ready-toast__icon" />
-                  <span>Your Discussion Guide is Ready</span>
-                  <button className="di-ready-toast__close" onClick={() => setShowReadyToast(false)}>
-                    <TbX size={14} />
-                  </button>
-                </motion.div>
+                  <TbPaperclip size={16} className="di-artifact-btn__icon" />
+                  Artifact
+                </button>
               )}
-            </AnimatePresence>
+              <AnimatePresence>
+                {showReadyToast && (
+                  <motion.div
+                    className="di-ready-toast"
+                    initial={{ opacity: 0, y: -8, scale: 0.97 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -8, scale: 0.97 }}
+                    transition={{ duration: 0.22 }}
+                  >
+                    <SpIcon name="sp-Warning-Circle_Check" size={18} className="di-ready-toast__icon" />
+                    <span>Your Discussion Guide is Ready</span>
+                    <button className="di-ready-toast__close" onClick={() => setShowReadyToast(false)}>
+                      <TbX size={14} />
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           </div>
 
           <div className="di-guide-card">
@@ -923,6 +1115,13 @@ const DepthInterview: React.FC = () => {
         {modal?.type === 'deleteQuestion' && (
           <DeleteModal target="question" isPending={deleteQuestionMutation.isPending}
             onConfirm={() => deleteQuestion(modal.questionId)} onClose={() => setModal(null)} />
+        )}
+      </AnimatePresence>
+
+      {/* ── Artifact view modal ── */}
+      <AnimatePresence>
+        {showArtifactModal && artifactData && (
+          <ArtifactViewModal data={artifactData} onClose={() => setShowArtifactModal(false)} />
         )}
       </AnimatePresence>
 

@@ -13,6 +13,7 @@ from app.services.questionnaire import get_full_questionnaire, get_questionnaire
 from app.config import OPENAI_API_KEY
 from openai import AsyncOpenAI
 from app.services.llm_usage_tracker import record_llm_usage, extract_usage_openai_chat
+from app.services.anti_sycophancy_rules import ANTI_SYCOPHANCY_RULES_BRIEF
 
 
 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
@@ -128,6 +129,8 @@ AVAILABLE OPTIONS:
 
 SURVEY RESULTS (how your group answered):
 {sr_text or 'No survey results available.'}
+
+{ANTI_SYCOPHANCY_RULES_BRIEF}
 
 TASK:
 Generate a brief starter message (1-2 sentences) where you:
@@ -282,6 +285,8 @@ PREVIOUS CONTEXT:
 
 USER'S QUESTION TO YOUR GROUP:
 {user_message}
+
+{ANTI_SYCOPHANCY_RULES_BRIEF}
 
 CRITICAL INSTRUCTIONS:
 1. **Align with Research Objective** - Your answer MUST relate back to the research objective: "{research_desc}"

@@ -52,6 +52,13 @@ interface MaterialSlot {
     // The actual selected File — kept so Submit can send the real bytes.
     // (fileName/fileSizeLabel alone were display-only and discarded the file.)
     file: File | null;
+    // Base64 data URL of the file's contents. Unlike `file`, this string
+    // DOES survive JSON.stringify/localStorage, so it's what lets the
+    // read-only "Artifact" viewer on the Discussion Guide screen actually
+    // show an image preview (or offer a download for non-image files)
+    // instead of just a filename. Populated for Artifact-section files
+    // right before they're marked submitted — see handleSubmitArtifact.
+    dataUrl: string | null;
 }
 
 // A single URL entry (used within the Artifact section's link list)
@@ -71,7 +78,7 @@ interface BriefSectionData {
 // How Omi should relate multiple artifacts in this section to each other.
 // Only meaningful once 2+ artifacts (links/file) are attached — with a
 // single artifact there's nothing to compare/group/sequence.
-type ArtifactCategory = "compare" | "campaign_set" ;
+type ArtifactCategory = "compare" | "campaign_set";
 
 // The kind of creative asset this is — separate from ArtifactCategory
 // (comparison mode) above. Drives dimension selection in the artifact
@@ -220,6 +227,7 @@ const emptySlot = (): MaterialSlot => ({
     fileSizeLabel: null,
     uploadStatus: "idle",
     file: null,
+    dataUrl: null,
 });
 
 const emptyBriefSection = (): BriefSectionData => ({
@@ -255,6 +263,8 @@ const emptyFramerData = (): ROFramerData => ({
 // localStorage doesn't choke or silently lose data. Display fields
 // (fileName/fileSizeLabel) are kept so the review screen still shows what
 // was attached, even though the raw file itself won't survive a reload.
+// `dataUrl` (see MaterialSlot) is a plain string and IS kept — it's what
+// survives storage and lets the Artifact viewer preview/download the file.
 const stripFilesForStorage = (data: ROFramerData): ROFramerData => ({
     ...data,
     material: {
@@ -1104,6 +1114,18 @@ const formatFileSize = (bytes: number): string => {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 };
 
+// Reads a File's bytes into a base64 data URL — the only File "shape" that
+// survives JSON.stringify, so it's what gets persisted to localStorage
+// (see handleSubmitArtifact) for later preview/download in the read-only
+// Artifact viewer on the Discussion Guide screen.
+const fileToDataUrl = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(reader.error ?? new Error("Failed to read file"));
+        reader.readAsDataURL(file);
+    });
+
 const MaterialCheckIcon: React.FC = () => (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
         <path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
@@ -1140,7 +1162,7 @@ const UploadSlot: React.FC<UploadSlotProps> = ({
             return;
         }
         setFileError(null);
-        onSlotChange({ fileName: file.name, fileSizeLabel: formatFileSize(file.size), uploadStatus: "idle", file });
+        onSlotChange({ fileName: file.name, fileSizeLabel: formatFileSize(file.size), uploadStatus: "idle", file, dataUrl: null });
     };
 
     const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1160,7 +1182,7 @@ const UploadSlot: React.FC<UploadSlotProps> = ({
     const handleRemove = () => {
         if (disabled) return;
         setFileError(null);
-        onSlotChange({ fileName: null, fileSizeLabel: null, uploadStatus: "idle", file: null });
+        onSlotChange({ fileName: null, fileSizeLabel: null, uploadStatus: "idle", file: null, dataUrl: null });
     };
 
     return (
@@ -1263,7 +1285,7 @@ const MultiUploadSlot: React.FC<MultiUploadSlotProps> = ({
                 error = `File too large. Maximum size is ${formatFileSize(maxBytes)}.`;
                 continue;
             }
-            accepted.push({ fileName: file.name, fileSizeLabel: formatFileSize(file.size), uploadStatus: "idle", file });
+            accepted.push({ fileName: file.name, fileSizeLabel: formatFileSize(file.size), uploadStatus: "idle", file, dataUrl: null });
         }
 
         setFileError(error);
@@ -1683,9 +1705,21 @@ const MaterialTab: React.FC<MaterialTabProps> = ({
                 comparison_mode: data.artifact.category,
                 artifact_category: data.artifact.contentCategory,
             });
+            // Capture each file's bytes as a base64 data URL before we lose
+            // the raw File reference — this is what survives into the
+            // localStorage snapshot (stripFilesForStorage nulls out `file`
+            // but keeps `dataUrl`) and lets the Discussion Guide's Artifact
+            // viewer actually preview images / offer downloads later.
+            const filesWithDataUrls = await Promise.all(
+                data.artifact.files.map(async (f) => ({
+                    ...f,
+                    uploadStatus: "done" as MaterialUploadStatus,
+                    dataUrl: f.file ? await fileToDataUrl(f.file).catch(() => f.dataUrl ?? null) : f.dataUrl,
+                }))
+            );
             updateArtifact({
                 submitted: true,
-                files: data.artifact.files.map(f => ({ ...f, uploadStatus: "done" as MaterialUploadStatus })),
+                files: filesWithDataUrls,
             });
         } catch (error: any) {
             setArtifactError(
@@ -1804,7 +1838,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({
                         </div>
                     </div>
 
-{/* ── Section 2: Artifact ─────────────────────────────── */}
+                    {/* ── Section 2: Artifact ─────────────────────────────── */}
                     <div
                         className={[
                             "rofp-material-section",
@@ -1816,90 +1850,90 @@ const MaterialTab: React.FC<MaterialTabProps> = ({
                                 <span className="rofp-coming-soon-badge">Coming Soon</span>
                             </div>
                         )}
-                            <div className="rofp-material-section-head">
-                                <h3 className="rofp-material-section-title">Artifact</h3>
-                                <p className="rofp-material-section-sub">
-                                    Share creatives, videos, images, landing pages, claims,
-                                    storyboards, prototypes, product flows, or anything you want
-                                    Omi to test with personas.
-                                </p>
+                        <div className="rofp-material-section-head">
+                            <h3 className="rofp-material-section-title">Artifact</h3>
+                            <p className="rofp-material-section-sub">
+                                Share creatives, videos, images, landing pages, claims,
+                                storyboards, prototypes, product flows, or anything you want
+                                Omi to test with personas.
+                            </p>
+                        </div>
+
+                        <div className="rofp-material-section-body">
+                            <div className="rofp-field-group">
+                                <div className="rofp-field-label-row">
+                                    <label className="rofp-label" htmlFor="rof-artifact-instruction">
+                                        What should Omi do with this artifact?
+                                        <span className="rofp-label-optional">Optional</span>
+                                    </label>
+                                    <Tooltip text="Tell Omi what to test, decode, or react to in this artifact." />
+                                </div>
+                                <textarea
+                                    id="rof-artifact-instruction"
+                                    className="rofp-textarea rofp-textarea--lg"
+                                    placeholder="This is a campaign creative. Test whether the message is clear, believable, distinctive, and likely to drive interest or purchase intent…."
+                                    value={data.artifact.instruction}
+                                    maxLength={MATERIAL_INSTRUCTION_MAX_LENGTH}
+                                    onFocus={handleFieldFocus}
+                                    onBlur={handleFieldBlur}
+                                    onChange={e => updateArtifact({ instruction: e.target.value.slice(0, MATERIAL_INSTRUCTION_MAX_LENGTH) })}
+                                    rows={3}
+                                    disabled={data.artifact.submitted}
+                                />
+                                <p className="rofp-field-charcount">{data.artifact.instruction.length}/{MATERIAL_INSTRUCTION_MAX_LENGTH}</p>
                             </div>
 
-                            <div className="rofp-material-section-body">
-                                <div className="rofp-field-group">
-                                    <div className="rofp-field-label-row">
-                                        <label className="rofp-label" htmlFor="rof-artifact-instruction">
-                                            What should Omi do with this artifact?
-                                            <span className="rofp-label-optional">Optional</span>
-                                        </label>
-                                        <Tooltip text="Tell Omi what to test, decode, or react to in this artifact." />
-                                    </div>
-                                    <textarea
-                                        id="rof-artifact-instruction"
-                                        className="rofp-textarea rofp-textarea--lg"
-                                        placeholder="This is a campaign creative. Test whether the message is clear, believable, distinctive, and likely to drive interest or purchase intent…."
-                                        value={data.artifact.instruction}
-                                        maxLength={MATERIAL_INSTRUCTION_MAX_LENGTH}
-                                        onFocus={handleFieldFocus}
-                                        onBlur={handleFieldBlur}
-                                        onChange={e => updateArtifact({ instruction: e.target.value.slice(0, MATERIAL_INSTRUCTION_MAX_LENGTH) })}
-                                        rows={3}
-                                        disabled={data.artifact.submitted}
-                                    />
-                                    <p className="rofp-field-charcount">{data.artifact.instruction.length}/{MATERIAL_INSTRUCTION_MAX_LENGTH}</p>
-                                </div>
-
-                                {data.artifact.links.map((link, idx) => (
-                                    <LinkRow
-                                        key={link.id}
-                                        value={link.value}
-                                        placeholder="Paste a YouTube, video, image, landing page, product page, or creative URL"
-                                        onChange={value => updateArtifact({
-                                            links: data.artifact.links.map(l => l.id === link.id ? { ...l, value } : l),
-                                        })}
-                                        removable={data.artifact.links.length > 1 || idx > 0}
-                                        onRemove={() => updateArtifact({ links: data.artifact.links.filter(l => l.id !== link.id) })}
-                                        onFocus={handleFieldFocus}
-                                        onBlur={handleFieldBlur}
-                                        disabled={data.artifact.submitted}
-                                    />
-                                ))}
-
-                                <p className="rofp-field-static-note rofp-field-static-note--italic">
-                                    Links are recommended for videos, social creatives, landing pages, hosted images, and product pages.
-                                </p>
-
-                                {canAddArtifactLink && !data.artifact.submitted && (
-                                    <button
-                                        type="button"
-                                        className="rofp-material-add-link-btn"
-                                        onClick={() => updateArtifact({ links: [...data.artifact.links, emptyLink()] })}
-                                    >
-                                        <PlusIcon /> Add another link
-                                    </button>
-                                )}
-
-                                <MultiUploadSlot
-                                    label="Image"
-                                    acceptExtensions={ARTIFACT_EXTENSIONS}
-                                    maxBytes={ARTIFACT_MAX_BYTES}
-                                    maxFiles={ARTIFACT_MAX_FILES}
-                                    formatsLabel="PNG, JPG, GIF, WEBP"
-                                    files={data.artifact.files}
-                                    onFilesChange={files => updateArtifact({ files })}
+                            {data.artifact.links.map((link, idx) => (
+                                <LinkRow
+                                    key={link.id}
+                                    value={link.value}
+                                    placeholder="Paste a YouTube, video, image, landing page, product page, or creative URL"
+                                    onChange={value => updateArtifact({
+                                        links: data.artifact.links.map(l => l.id === link.id ? { ...l, value } : l),
+                                    })}
+                                    removable={data.artifact.links.length > 1 || idx > 0}
+                                    onRemove={() => updateArtifact({ links: data.artifact.links.filter(l => l.id !== link.id) })}
+                                    onFocus={handleFieldFocus}
+                                    onBlur={handleFieldBlur}
                                     disabled={data.artifact.submitted}
-                                    compact
                                 />
+                            ))}
 
-                                {artifactItemCount >= 1 && (
-                                    <ArtifactContentCategorySelect
-                                        value={data.artifact.contentCategory}
-                                        onChange={contentCategory => updateArtifact({ contentCategory })}
-                                        disabled={data.artifact.submitted}
-                                    />
-                                )}
+                            <p className="rofp-field-static-note rofp-field-static-note--italic">
+                                Links are recommended for videos, social creatives, landing pages, hosted images, and product pages.
+                            </p>
 
-                                {/* DISABLED — comparison-mode categorization UI. See the
+                            {canAddArtifactLink && !data.artifact.submitted && (
+                                <button
+                                    type="button"
+                                    className="rofp-material-add-link-btn"
+                                    onClick={() => updateArtifact({ links: [...data.artifact.links, emptyLink()] })}
+                                >
+                                    <PlusIcon /> Add another link
+                                </button>
+                            )}
+
+                            <MultiUploadSlot
+                                label="Image"
+                                acceptExtensions={ARTIFACT_EXTENSIONS}
+                                maxBytes={ARTIFACT_MAX_BYTES}
+                                maxFiles={ARTIFACT_MAX_FILES}
+                                formatsLabel="PNG, JPG, GIF, WEBP"
+                                files={data.artifact.files}
+                                onFilesChange={files => updateArtifact({ files })}
+                                disabled={data.artifact.submitted}
+                                compact
+                            />
+
+                            {artifactItemCount >= 1 && (
+                                <ArtifactContentCategorySelect
+                                    value={data.artifact.contentCategory}
+                                    onChange={contentCategory => updateArtifact({ contentCategory })}
+                                    disabled={data.artifact.submitted}
+                                />
+                            )}
+
+                            {/* DISABLED — comparison-mode categorization UI. See the
                                     block comment near ARTIFACT_MAX_FILES for how to re-enable.
                                 {artifactItemCount >= 2 && (
                                     <ArtifactCategoryChips
@@ -1909,41 +1943,41 @@ const MaterialTab: React.FC<MaterialTabProps> = ({
                                     />
                                 )}
                                 */}
-                            </div>
+                        </div>
 
-                            {artifactProcessing && <OmiProcessingBar messageIndex={artifactMsgIndex} />}
+                        {artifactProcessing && <OmiProcessingBar messageIndex={artifactMsgIndex} />}
 
-                            {artifactError && !artifactProcessing && (
-                                <p className="rofp-upload-slot-error">{artifactError}</p>
-                            )}
+                        {artifactError && !artifactProcessing && (
+                            <p className="rofp-upload-slot-error">{artifactError}</p>
+                        )}
 
-                            {data.artifact.submitted && !artifactProcessing && (
-                                <div className="rofp-upload-complete">
-                                    <span className="rofp-upload-complete-icon"><MaterialCheckIcon /></span>
-                                    <div className="rofp-upload-complete-text">
-                                        <div className="rofp-upload-complete-title">Artifact saved</div>
-                                        <div className="rofp-upload-complete-sub">Omi can now test this against your personas.</div>
-                                    </div>
-                                    <button className="rofp-material-edit-btn" onClick={handleEditArtifact} type="button">
-                                        <EditIcon /> Edit
-                                    </button>
+                        {data.artifact.submitted && !artifactProcessing && (
+                            <div className="rofp-upload-complete">
+                                <span className="rofp-upload-complete-icon"><MaterialCheckIcon /></span>
+                                <div className="rofp-upload-complete-text">
+                                    <div className="rofp-upload-complete-title">Artifact saved</div>
+                                    <div className="rofp-upload-complete-sub">Omi can now test this against your personas.</div>
                                 </div>
-                            )}
-
-                            <div className="rofp-material-section-cta">
-                                <button
-                                    className={["rofp-btn-section-submit", !canSubmitArtifact ? "rofp-btn-section-submit--disabled" : ""].filter(Boolean).join(" ")}
-                                    disabled={!canSubmitArtifact}
-                                    onClick={handleSubmitArtifact}
-                                    type="button"
-                                >
-                                    {artifactProcessing ? "Saving…" : data.artifact.submitted ? "Saved" : "Submit"}
+                                <button className="rofp-material-edit-btn" onClick={handleEditArtifact} type="button">
+                                    <EditIcon /> Edit
                                 </button>
                             </div>
-                            {artifactNeedsContentCategory && !artifactProcessing && (
-                                <p className="rofp-cta-hint" style={{ textAlign: "right" }}>Pick an artifact content category to continue</p>
-                            )}
-                            {/* DISABLED alongside the comparison-mode chips above.
+                        )}
+
+                        <div className="rofp-material-section-cta">
+                            <button
+                                className={["rofp-btn-section-submit", !canSubmitArtifact ? "rofp-btn-section-submit--disabled" : ""].filter(Boolean).join(" ")}
+                                disabled={!canSubmitArtifact}
+                                onClick={handleSubmitArtifact}
+                                type="button"
+                            >
+                                {artifactProcessing ? "Saving…" : data.artifact.submitted ? "Saved" : "Submit"}
+                            </button>
+                        </div>
+                        {artifactNeedsContentCategory && !artifactProcessing && (
+                            <p className="rofp-cta-hint" style={{ textAlign: "right" }}>Pick an artifact content category to continue</p>
+                        )}
+                        {/* DISABLED alongside the comparison-mode chips above.
                             {artifactNeedsCategory && !artifactProcessing && (
                                 <p className="rofp-cta-hint" style={{ textAlign: "right" }}>Pick how these relate to continue</p>
                             )}

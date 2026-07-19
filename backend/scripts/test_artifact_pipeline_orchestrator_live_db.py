@@ -4,12 +4,15 @@ local Postgres (same DATABASE_URL the app uses). No pytest, no new
 dependency — plain asyncio + assert, matching backend/scripts/'s existing
 convention.
 
-The four stage services are monkeypatched at the class level (their real
-LLM-calling internals are exactly what scripts/test_artifact_pipeline*.py
-and test_artifact_pipeline_stage_validation.py already exercise) so this
+The stage services (Stages 1-3, plus qual's PersonaResponseService and
+quant's simulate_artifact_population_responses) are monkeypatched — their
+real LLM-calling internals are exactly what scripts/test_artifact_pipeline*.py
+and test_artifact_pipeline_stage_validation.py already exercise — so this
 script is free to focus on what only a real database can prove: checkpoint
-persistence, failure + resume (no re-billing of completed stages), and
-per-persona failure isolation.
+persistence across the two-phase split (Stages 1-3 pausing at
+questionnaire_ready, Stage 4 triggered separately for qual/quant), failure +
+resume (no re-billing of completed stages), and per-persona failure
+isolation.
 
 Creates its own minimal fixture chain (User -> Organization -> Workspace ->
 Exploration -> ResearchObjectives -> ResearchObjectivesFile x2 -> Persona x2)
@@ -35,7 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import async_engine
 from app.migrations.startup import run_startup_migrations
-from app.models.artifact_pipeline import ArtifactPipelineRun, PersonaArtifactResponse
+from app.models.artifact_pipeline import ArtifactPipelineRun, ArtifactPopulationResult, PersonaArtifactResponse
 from app.models.exploration import Exploration
 from app.models.organization import Organization
 from app.models.persona import Persona
@@ -52,6 +55,7 @@ from app.schemas.artifact_pipeline import (
     GuideSection,
     PersonaAnswer,
     PersonaResponseSet,
+    RunType,
 )
 from app.services.artifact_dissection import AssetDissectionService
 from app.services.artifact_pipeline_orchestrator import (
@@ -60,11 +64,16 @@ from app.services.artifact_pipeline_orchestrator import (
     get_run_results,
     get_run_status,
     list_artifact_files,
-    run_artifact_pipeline,
+    run_artifact_pipeline_stages_1_to_3,
+    run_persona_response_stage,
+    run_population_simulation_stage,
+    start_persona_response_stage,
+    start_population_simulation_stage,
 )
 from app.services.dimension_extraction import DimensionExtractionService
 from app.services.discussion_guide import DiscussionGuideService
 from app.services.persona_response import PersonaResponseService
+import app.services.artifact_population_simulation as artifact_population_simulation
 
 
 # ── LLM service mocking (class-level, so orchestrator-constructed instances pick it up) ──
@@ -114,14 +123,20 @@ def _patch_service_classes(*, dissection_fail=False, dimension_fail_once=False, 
         self, ro_description, instruction, selected_dimensions, dimension_details,
         comparison_mode, num_assets=1, is_qual=True, **kwargs,
     ):
+        question = (
+            GuideQuestion(question="Q1?", type="open")
+            if is_qual
+            else GuideQuestion(question="Q1?", type="rating", scale="1-10")
+        )
         return DiscussionGuide(
-            title="Test Guide",
+            title="Test Guide" if is_qual else "Test Questionnaire",
+            run_type=RunType.QUAL if is_qual else RunType.QUANT,
             comparison_mode=ComparisonMode(comparison_mode),
             num_assets=num_assets,
             sections=[
                 GuideSection(
                     dimension="artifact_comprehension", theme="t", dimension_name="Comprehension",
-                    description="d", questions=[GuideQuestion(question="Q1?", type="open")],
+                    description="d", questions=[question],
                 )
             ],
         )
@@ -139,6 +154,45 @@ def _patch_service_classes(*, dissection_fail=False, dimension_fail_once=False, 
 
     PersonaResponseService.generate_persona_responses = _fake_generate_persona_responses
 
+    return state
+
+
+def _patch_population_simulation(*, fail=False):
+    """Separate from _patch_service_classes: simulate_artifact_population_responses
+    is a plain module function (not a class method), and
+    run_population_simulation_stage() imports it locally at call time — so
+    patching the origin module's attribute (not an orchestrator-level name)
+    is what actually takes effect."""
+    state = {"calls": 0}
+
+    async def _fake_simulate(
+        run_id, exploration_id, workspace_id, ro_description, asset_dissections,
+        questionnaire, comparison_mode, personas_selection, created_by=None,
+    ):
+        state["calls"] += 1
+        if fail:
+            raise RuntimeError("simulated population simulation failure")
+        total_sample = sum(p["sample_size"] for p in personas_selection)
+        return {
+            "results": {
+                "Q1?": [
+                    {"option": "1", "count": total_sample // 2, "pct": 50.0},
+                    {"option": "10", "count": total_sample - total_sample // 2, "pct": 50.0},
+                ]
+            },
+            "personas_simulated": [
+                {
+                    "persona_id": p["persona_id"], "persona_name": "Test Persona",
+                    "sample_size": p["sample_size"],
+                    "percentage": round(100.0 * p["sample_size"] / total_sample, 1),
+                }
+                for p in personas_selection
+            ],
+            "total_sample_size": total_sample,
+            "narrative": {"summary": "fake population narrative"},
+        }
+
+    artifact_population_simulation.simulate_artifact_population_responses = _fake_simulate
     return state
 
 
@@ -228,6 +282,7 @@ async def _cleanup_fixtures(fx: Fixtures) -> None:
     async with AsyncSession(async_engine) as db:
         for run_id in fx.run_ids:
             await db.execute(delete(PersonaArtifactResponse).where(PersonaArtifactResponse.run_id == run_id))
+            await db.execute(delete(ArtifactPopulationResult).where(ArtifactPopulationResult.run_id == run_id))
         if fx.run_ids:
             await db.execute(delete(ArtifactPipelineRun).where(ArtifactPipelineRun.id.in_(fx.run_ids)))
         if fx.member_id:
@@ -253,18 +308,29 @@ async def _cleanup_fixtures(fx: Fixtures) -> None:
 # ── Tests ──
 
 async def test_happy_path(fx: Fixtures) -> None:
-    print("\n#### TEST A: happy path (create_run -> run_artifact_pipeline -> completed) ####")
+    print("\n#### TEST A: happy path (create_run -> stages 1-3 -> questionnaire_ready -> Stage 4 -> completed) ####")
     _patch_service_classes()
 
     run_id = await create_run(
         workspace_id=fx.workspace_id, exploration_id=fx.exploration_id, created_by=fx.user_id,
-        source_file_ids=[fx.file_ids[0]], persona_ids=fx.persona_ids,
+        source_file_ids=[fx.file_ids[0]],
         instruction="Test instruction", artifact_type="image", artifact_category="ad_creative",
         comparison_mode=ComparisonMode.CAMPAIGN_SET,
     )
     fx.run_ids.append(run_id)
 
-    await run_artifact_pipeline(run_id)
+    await run_artifact_pipeline_stages_1_to_3(run_id)
+
+    status = await get_run_status(run_id)
+    assert status["status"] == "questionnaire_ready", f"expected questionnaire_ready, got {status}"
+    assert status["stages_completed"]["dissecting"] is True
+    assert status["stages_completed"]["selecting_dimensions"] is True
+    assert status["stages_completed"]["generating_guide"] is True
+    assert status["stages_completed"]["generating_responses"] is False
+    print(f"[PASS] Stages 1-3 complete, paused at questionnaire_ready: {status['stages_completed']}")
+
+    await start_persona_response_stage(run_id, fx.persona_ids)
+    await run_persona_response_stage(run_id)
 
     status = await get_run_status(run_id)
     assert status["status"] == "completed", f"expected completed, got {status}"
@@ -306,7 +372,7 @@ async def test_derive_category_and_mode_from_files(fx: Fixtures) -> None:
 
     run_id = await create_run(
         workspace_id=fx.workspace_id, exploration_id=fx.exploration_id, created_by=fx.user_id,
-        source_file_ids=[fx.file_ids[0], fx.file_ids[1]], persona_ids=fx.persona_ids,
+        source_file_ids=[fx.file_ids[0], fx.file_ids[1]],
         instruction="Test instruction", artifact_type="image",
         # artifact_category/comparison_mode deliberately omitted — must be derived
     )
@@ -325,13 +391,13 @@ async def test_failure_then_resume(fx: Fixtures) -> None:
 
     run_id = await create_run(
         workspace_id=fx.workspace_id, exploration_id=fx.exploration_id, created_by=fx.user_id,
-        source_file_ids=[fx.file_ids[0]], persona_ids=fx.persona_ids,
+        source_file_ids=[fx.file_ids[0]],
         instruction="Test instruction", artifact_type="image", artifact_category="ad_creative",
         comparison_mode=ComparisonMode.CAMPAIGN_SET,
     )
     fx.run_ids.append(run_id)
 
-    await run_artifact_pipeline(run_id)
+    await run_artifact_pipeline_stages_1_to_3(run_id)
     status = await get_run_status(run_id)
     assert status["status"] == "failed", f"expected failed, got {status}"
     assert status["error_stage"] == "selecting_dimensions", f"expected error_stage=selecting_dimensions, got {status}"
@@ -341,13 +407,13 @@ async def test_failure_then_resume(fx: Fixtures) -> None:
     print(f"[PASS] run failed at selecting_dimensions as expected, stage 1 output persisted: {status['stages_completed']}")
 
     # Resume: same run_id, dimension_fail_once no longer forces a failure this time.
-    await run_artifact_pipeline(run_id)
+    await run_artifact_pipeline_stages_1_to_3(run_id)
     status = await get_run_status(run_id)
-    assert status["status"] == "completed", f"expected completed after resume, got {status}"
+    assert status["status"] == "questionnaire_ready", f"expected questionnaire_ready after resume, got {status}"
     assert state["dissection_calls"] == 1, (
         f"expected dissection to NOT be re-called on resume (no re-billing), got {state['dissection_calls']} calls"
     )
-    print(f"[PASS] resumed run completed; dissection was called exactly once total across both attempts (no re-billing)")
+    print(f"[PASS] resumed run reached questionnaire_ready; dissection was called exactly once total across both attempts (no re-billing)")
 
 
 async def test_persona_isolation(fx: Fixtures) -> None:
@@ -358,13 +424,15 @@ async def test_persona_isolation(fx: Fixtures) -> None:
 
     run_id = await create_run(
         workspace_id=fx.workspace_id, exploration_id=fx.exploration_id, created_by=fx.user_id,
-        source_file_ids=[fx.file_ids[0]], persona_ids=fx.persona_ids,
+        source_file_ids=[fx.file_ids[0]],
         instruction="Test instruction", artifact_type="image", artifact_category="ad_creative",
         comparison_mode=ComparisonMode.CAMPAIGN_SET,
     )
     fx.run_ids.append(run_id)
 
-    await run_artifact_pipeline(run_id)
+    await run_artifact_pipeline_stages_1_to_3(run_id)
+    await start_persona_response_stage(run_id, fx.persona_ids)
+    await run_persona_response_stage(run_id)
 
     status = await get_run_status(run_id)
     assert status["status"] == "completed", f"expected run to complete despite one persona failing, got {status}"
@@ -384,18 +452,108 @@ async def test_persona_isolation(fx: Fixtures) -> None:
 
 
 async def test_create_run_validation_rejects_foreign_ids(fx: Fixtures) -> None:
-    print("\n#### TEST D: create_run rejects file/persona ids that don't belong to this exploration ####")
+    print("\n#### TEST D: create_run rejects source_file_ids that don't belong to this exploration ####")
     _patch_service_classes()
     try:
         await create_run(
             workspace_id=fx.workspace_id, exploration_id=fx.exploration_id, created_by=fx.user_id,
-            source_file_ids=["not-a-real-file-id"], persona_ids=fx.persona_ids,
+            source_file_ids=["not-a-real-file-id"],
             instruction="x", artifact_type="image", artifact_category="ad_creative",
             comparison_mode=ComparisonMode.CAMPAIGN_SET,
         )
         print("[FAIL] expected ArtifactRunValidationError")
     except ArtifactRunValidationError as exc:
         print(f"[PASS] rejected foreign source_file_id: {exc}")
+
+
+async def test_stage4_trigger_validation_rejects_foreign_persona_ids(fx: Fixtures) -> None:
+    print("\n#### TEST D2: Stage 4 triggers reject persona_ids that don't belong to this exploration "
+          "(validation moved here from create_run, since persona selection now happens after Stages 1-3) ####")
+    _patch_service_classes()
+
+    qual_run_id = await create_run(
+        workspace_id=fx.workspace_id, exploration_id=fx.exploration_id, created_by=fx.user_id,
+        source_file_ids=[fx.file_ids[0]],
+        instruction="x", artifact_type="image", artifact_category="ad_creative",
+        comparison_mode=ComparisonMode.CAMPAIGN_SET,
+    )
+    fx.run_ids.append(qual_run_id)
+    await run_artifact_pipeline_stages_1_to_3(qual_run_id)
+    try:
+        await start_persona_response_stage(qual_run_id, ["not-a-real-persona-id"])
+        print("[FAIL] expected ArtifactRunValidationError from start_persona_response_stage")
+    except ArtifactRunValidationError as exc:
+        print(f"[PASS] start_persona_response_stage rejected foreign persona_id: {exc}")
+
+    quant_run_id = await create_run(
+        workspace_id=fx.workspace_id, exploration_id=fx.exploration_id, created_by=fx.user_id,
+        source_file_ids=[fx.file_ids[0]],
+        instruction="x", artifact_type="image", artifact_category="ad_creative",
+        comparison_mode=ComparisonMode.CAMPAIGN_SET, run_type=RunType.QUANT,
+    )
+    fx.run_ids.append(quant_run_id)
+    await run_artifact_pipeline_stages_1_to_3(quant_run_id)
+    try:
+        await start_population_simulation_stage(
+            quant_run_id, [{"persona_id": "not-a-real-persona-id", "sample_size": 100}],
+        )
+        print("[FAIL] expected ArtifactRunValidationError from start_population_simulation_stage")
+    except ArtifactRunValidationError as exc:
+        print(f"[PASS] start_population_simulation_stage rejected foreign persona_id: {exc}")
+
+
+async def test_quant_population_simulation(fx: Fixtures) -> None:
+    print("\n#### TEST G: quant flow — questionnaire generation + population simulation "
+          "(one combined ArtifactPopulationResult row, not per-persona) ####")
+    _patch_service_classes()
+    sim_state = _patch_population_simulation()
+
+    run_id = await create_run(
+        workspace_id=fx.workspace_id, exploration_id=fx.exploration_id, created_by=fx.user_id,
+        source_file_ids=[fx.file_ids[0]],
+        instruction="Rate this ad", artifact_type="image", artifact_category="ad_creative",
+        comparison_mode=ComparisonMode.CAMPAIGN_SET, run_type=RunType.QUANT,
+    )
+    fx.run_ids.append(run_id)
+
+    await run_artifact_pipeline_stages_1_to_3(run_id)
+    status = await get_run_status(run_id)
+    assert status["status"] == "questionnaire_ready", f"expected questionnaire_ready, got {status}"
+    assert status["run_type"] == "quant"
+
+    results = await get_run_results(run_id)
+    assert results["discussion_guide"]["run_type"] == "quant", f"expected quant guide, got {results['discussion_guide']}"
+    first_question = results["discussion_guide"]["sections"][0]["questions"][0]
+    assert first_question["type"] == "rating", f"expected rating question, got {first_question}"
+    print(f"[PASS] Stage 3 produced a quant questionnaire: {results['discussion_guide']['title']!r}, "
+          f"first question type={first_question['type']!r} scale={first_question['scale']!r}")
+
+    personas_selection = [
+        {"persona_id": fx.persona_ids[0], "sample_size": 300},
+        {"persona_id": fx.persona_ids[1], "sample_size": 200},
+    ]
+    await start_population_simulation_stage(run_id, personas_selection)
+    await run_population_simulation_stage(run_id, personas_selection)
+    assert sim_state["calls"] == 1
+
+    status = await get_run_status(run_id)
+    assert status["status"] == "completed", f"expected completed, got {status}"
+    assert status["stages_completed"]["generating_responses"] is True
+
+    results = await get_run_results(run_id)
+    pop = results["population_result"]
+    assert pop is not None, "expected a population_result, got None"
+    assert pop["total_sample_size"] == 500, f"expected 500, got {pop['total_sample_size']}"
+    assert len(pop["personas_simulated"]) == 2
+    assert "Q1?" in pop["results"]
+    print(
+        f"[PASS] quant run completed: total_sample_size={pop['total_sample_size']}, "
+        f"{len(pop['personas_simulated'])} persona cohort(s), one combined ArtifactPopulationResult row "
+        "(no per-persona PersonaArtifactResponse rows for quant)"
+    )
+    assert results["persona_responses"] == [], (
+        f"quant runs should not produce PersonaArtifactResponse rows, got {results['persona_responses']}"
+    )
 
 
 async def test_framer_materials_multi_file_append(fx: Fixtures) -> None:
@@ -479,7 +637,6 @@ async def test_router_http_layer(fx: Fixtures) -> None:
             base = f"/workspaces/{fx.workspace_id}/explorations/{fx.exploration_id}/artifacts"
             resp = await client.post(f"{base}/runs", json={
                 "source_file_ids": [fx.file_ids[0]],
-                "persona_ids": fx.persona_ids,
                 "instruction": "Test instruction via HTTP",
                 "artifact_type": "image",
                 "artifact_category": "ad_creative",
@@ -491,8 +648,18 @@ async def test_router_http_layer(fx: Fixtures) -> None:
             print(f"[PASS] POST {base}/runs -> 202, run_id={run_id}")
 
             # BackgroundTasks run (and are awaited) as part of the same ASGI
-            # call before the response is returned, so the pipeline has
+            # call before the response is returned, so Stages 1-3 have
             # already finished by this point.
+            resp = await client.get(f"{base}/runs/{run_id}")
+            assert resp.status_code == 200, f"expected 200, got {resp.status_code}: {resp.text}"
+            status = resp.json()
+            assert status["status"] == "questionnaire_ready", f"expected questionnaire_ready, got {status}"
+            print("[PASS] GET /runs/{run_id} -> 200, status=questionnaire_ready")
+
+            resp = await client.post(f"{base}/runs/{run_id}/personas", json={"persona_ids": fx.persona_ids})
+            assert resp.status_code == 202, f"expected 202, got {resp.status_code}: {resp.text}"
+            print(f"[PASS] POST {base}/runs/{run_id}/personas -> 202")
+
             resp = await client.get(f"{base}/runs/{run_id}")
             assert resp.status_code == 200, f"expected 200, got {resp.status_code}: {resp.text}"
             status = resp.json()
@@ -526,6 +693,8 @@ async def main() -> None:
         await test_failure_then_resume(fx)
         await test_persona_isolation(fx)
         await test_create_run_validation_rejects_foreign_ids(fx)
+        await test_stage4_trigger_validation_rejects_foreign_persona_ids(fx)
+        await test_quant_population_simulation(fx)
         await test_framer_materials_multi_file_append(fx)
         await test_router_http_layer(fx)
         print("\n\n#### ALL LIVE-DB ORCHESTRATOR TESTS PASSED ####")

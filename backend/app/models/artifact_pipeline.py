@@ -42,6 +42,10 @@ class ArtifactPipelineRun(SQLModel, table=True):
     artifact_type: str  # media type Stage 1 needs to read the asset(s): "image" | "video" | "url"
     artifact_category: str  # dimension-library key Stage 2 needs, e.g. "ad_creative" | "product_concept" | ...
     comparison_mode: str  # ComparisonMode.value: "campaign_set" | "comparison"
+    # RunType.value: "qual" (open-ended guide + free-text answers) or "quant"
+    # (rating-scale questionnaire + numeric scores). Only Stage 3/4 branch on
+    # this; Stage 1/2 behave identically either way.
+    run_type: str = Field(default="qual")
     num_assets: int = Field(default=1)
     instruction: str = Field(sa_column=Column(Text))
     # Snapshotted at run creation (not re-read live from ResearchObjectives),
@@ -53,11 +57,15 @@ class ArtifactPipelineRun(SQLModel, table=True):
     # rather than a child table since a run always reads them as one ordered
     # set (asset_0, asset_1, ...) — never queried or FK-joined individually.
     source_file_ids: List[str] = Field(sa_column=Column(JSON), default_factory=list)
-    # persona.id values this run answers the guide for. Drives Stage 4's
-    # fan-out and lets resume logic know the full requested set up front.
+    # persona.id values this (qual) run answers the guide for. Empty at
+    # creation — Stages 1-3 run automatically with no persona involved, and
+    # this is only populated once the user reviews the guide/questionnaire
+    # and triggers Stage 4 (POST .../personas for qual; quant instead uses
+    # personas_selection, see ArtifactPopulationResult below).
     persona_ids: List[str] = Field(sa_column=Column(JSON), default_factory=list)
 
     # "pending" | "dissecting" | "selecting_dimensions" | "generating_guide"
+    # | "questionnaire_ready" (Stages 1-3 done, awaiting Stage 4 trigger)
     # | "generating_responses" | "completed" | "failed"
     status: str = Field(default="pending", index=True)
     error_stage: Optional[str] = Field(default=None)
@@ -87,6 +95,35 @@ class PersonaArtifactResponse(SQLModel, table=True):
     # Stage 4 output: PersonaResponseSet.model_dump()
     response: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
     error_message: Optional[str] = Field(default=None, sa_column=Column(Text))
+
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ArtifactPopulationResult(SQLModel, table=True):
+    """Stage 4 output for quant runs — one row per run (not per persona, unlike
+    PersonaArtifactResponse), since population simulation produces a single
+    combined, sample-size-weighted distribution across all selected persona
+    cohorts rather than one individual response per persona.
+
+    Deliberately a separate table from app.models.survey_simulation.SurveySimulation
+    even though the underlying simulation engine (app.services.survey_simulation_combined)
+    is reused: keeps artifact-driven results out of the general quant-survey
+    listing/reporting surface, which assumes a manually-authored Questionnaire,
+    not an auto-generated one grounded in an asset dissection.
+    """
+    __tablename__ = "artifact_population_result"
+
+    id: str = Field(default_factory=generate_id, primary_key=True)
+    run_id: str = Field(foreign_key="artifact_pipeline_run.id", index=True, unique=True)
+
+    total_sample_size: int
+    # PersonaSimulated.model_dump() list — which persona cohorts contributed,
+    # each cohort's requested sample_size, and its resulting weight (%).
+    personas_simulated: Optional[List[Dict[str, Any]]] = Field(default=None, sa_column=Column(JSON))
+    # {question_text: [{option, count, pct}]} — PopulationSimulationResult.results
+    results: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    narrative: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
 
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

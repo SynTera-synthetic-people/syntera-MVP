@@ -18,6 +18,7 @@ from app.services.question_engine import analysis_options_for_question
 from app.services.persona import get_persona
 from app.services.auto_generated_persona import get_description
 from app.services.llm_usage_tracker import record_llm_usage, extract_usage_openai_chat
+from app.services.anti_sycophancy_rules import ANTI_SYCOPHANCY_RULES
 
 logger = logging.getLogger(__name__)
 
@@ -367,6 +368,10 @@ PART 5: RESEARCH OBJECTIVE
 PART 7: QUESTIONNAIRE
 
 {questions_section}
+
+═══════════════════════════════════════════════════════════════════════════════
+
+{ANTI_SYCOPHANCY_RULES}
 
 ═══════════════════════════════════════════════════════════════════════════════
 

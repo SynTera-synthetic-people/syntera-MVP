@@ -12,7 +12,7 @@ from openai import AsyncOpenAI
 from pydantic import ValidationError
 
 from app.config import settings
-from app.schemas.artifact_pipeline import ComparisonMode, DiscussionGuide, PipelineStageError
+from app.schemas.artifact_pipeline import ComparisonMode, DiscussionGuide, PipelineStageError, RunType
 from app.services.llm_usage_tracker import extract_usage_openai_chat, record_llm_usage
 
 logger = logging.getLogger(__name__)
@@ -83,6 +83,11 @@ supports the RO objectives, and fit with audience and messaging.
 """
 
         guide_format = "discussion guide with open-ended questions" if is_qual else "survey questionnaire with rating scales"
+        example_question = (
+            '{"question": "The actual question", "type": "open", "scale": null, "intent": "What this question reveals"}'
+            if is_qual else
+            '{"question": "The actual question", "type": "rating", "scale": "1-10", "intent": "What this question reveals"}'
+        )
 
         prompt = f"""
 You are creating a {guide_format} for creative asset testing.
@@ -112,7 +117,7 @@ Your task:
 
 Respond with ONLY valid JSON (no markdown, no extra text):
 {{
-  "title": "Discussion Guide: [Artifact Type]",
+  "title": "{"Discussion Guide" if is_qual else "Questionnaire"}: [Artifact Type]",
   "introduction": "Brief intro that explains what respondent will do",
   "comparison_mode": "{comparison_mode.value}",
   "num_assets": {num_assets},
@@ -123,12 +128,7 @@ Respond with ONLY valid JSON (no markdown, no extra text):
       "dimension_name": "Full name",
       "description": "What this dimension measures",
       "questions": [
-        {{
-          "question": "The actual question",
-          "type": "open",
-          "scale": null,
-          "intent": "What this question reveals"
-        }}
+        {example_question}
       ]
     }}
   ]
@@ -168,6 +168,7 @@ Respond with ONLY valid JSON (no markdown, no extra text):
             # authoritatively — no need to trust the model's copy of them.
             data["comparison_mode"] = comparison_mode.value
             data["num_assets"] = num_assets
+            data["run_type"] = RunType.QUAL.value if is_qual else RunType.QUANT.value
             guide = DiscussionGuide.model_validate(data)
         except (json.JSONDecodeError, ValidationError) as exc:
             logger.error("Failed to parse discussion guide response: %s", (raw or "")[:2000])

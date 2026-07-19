@@ -569,6 +569,37 @@ def _build_omi_web_evidence_by_platform(reference_urls: list) -> list[dict]:
     ]
 
 
+# location_country is free-texted by the LLM per persona with no consistency
+# constraint — different personas (or different generation batches) can
+# describe the same country as "USA", "United States", "America", etc.,
+# fragmenting country-grouped views (e.g. a persona-list grouped by country)
+# into duplicate buckets for what's really one country. Canonicalize known
+# variants; anything unrecognized passes through unchanged (title-cased) so a
+# genuinely different/rare country name is never dropped or blanked.
+_COUNTRY_DISPLAY_NAMES: dict[str, str] = {
+    "usa": "USA", "us": "USA", "u.s.a.": "USA", "u.s.": "USA",
+    "united states": "USA", "united states of america": "USA",
+    "america": "USA", "american": "USA",
+    "india": "India", "indian": "India",
+    "uk": "UK", "u.k.": "UK", "united kingdom": "UK",
+    "britain": "UK", "british": "UK", "great britain": "UK",
+    "england": "UK", "scotland": "UK", "wales": "UK",
+    "canada": "Canada", "canadian": "Canada",
+    "australia": "Australia", "australian": "Australia",
+    "france": "France", "french": "France",
+    "germany": "Germany", "german": "Germany",
+    "japan": "Japan", "japanese": "Japan",
+    "singapore": "Singapore",
+}
+
+
+def _normalize_country_name(country: str) -> str:
+    if not country:
+        return country
+    canonical = _COUNTRY_DISPLAY_NAMES.get(country.strip().lower())
+    return canonical if canonical else country
+
+
 def _normalise_generated_persona(persona: dict) -> dict:
     source = _json_safe(persona) if isinstance(persona, dict) else {}
     normalised = dict(source)
@@ -576,6 +607,7 @@ def _normalise_generated_persona(persona: dict) -> dict:
     for field in TEXT_PERSONA_FIELDS:
         normalised[field] = _stringify_for_column(source.get(field))
 
+    normalised["location_country"] = _normalize_country_name(normalised["location_country"])
     normalised["name"] = normalised["name"] or "Generated Persona"
     normalised["interests"] = _list_for_jsonb(source.get("interests"))
     normalised["ocean_profile"] = _json_object_or_none(source.get("ocean_profile"))
