@@ -1533,6 +1533,121 @@ async def _repair_decision_room_schema(conn: AsyncConnection) -> None:
     )
 
 
+async def _repair_data_playground_schema(conn: AsyncConnection) -> None:
+    await ensure_table(
+        conn,
+        """
+        CREATE TABLE IF NOT EXISTS dp_dataset (
+            id                 VARCHAR PRIMARY KEY,
+            workspace_id       VARCHAR NOT NULL,
+            exploration_id     VARCHAR NOT NULL,
+            name               VARCHAR NOT NULL,
+            original_filename  VARCHAR NOT NULL,
+            stored_filename    VARCHAR NOT NULL,
+            file_type          VARCHAR NOT NULL,
+            row_count          INTEGER NOT NULL DEFAULT 0,
+            column_count       INTEGER NOT NULL DEFAULT 0,
+            status             VARCHAR NOT NULL DEFAULT 'ready',
+            meta               JSONB NOT NULL DEFAULT '{}',
+            created_by         VARCHAR,
+            created_at         TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
+            updated_at         TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
+        )
+        """,
+    )
+    await ensure_table(
+        conn,
+        """
+        CREATE TABLE IF NOT EXISTS dp_variable (
+            id                  VARCHAR PRIMARY KEY,
+            dataset_id          VARCHAR NOT NULL,
+            variable_name       VARCHAR NOT NULL,
+            display_name        VARCHAR NOT NULL,
+            data_type           VARCHAR NOT NULL,
+            position            INTEGER NOT NULL DEFAULT 0,
+            unique_values_count INTEGER NOT NULL DEFAULT 0,
+            missing_count       INTEGER NOT NULL DEFAULT 0,
+            value_labels        JSONB,
+            meta                JSONB NOT NULL DEFAULT '{}',
+            created_at          TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
+        )
+        """,
+    )
+    await ensure_table(
+        conn,
+        """
+        CREATE TABLE IF NOT EXISTS dp_analysis (
+            id            VARCHAR PRIMARY KEY,
+            dataset_id    VARCHAR NOT NULL,
+            analysis_type VARCHAR NOT NULL,
+            parameters    JSONB NOT NULL DEFAULT '{}',
+            result        JSONB NOT NULL DEFAULT '{}',
+            created_by    VARCHAR,
+            created_at    TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
+        )
+        """,
+    )
+    # Single-column index names intentionally match the ones SQLModel emits for
+    # Field(index=True) so a fresh create_all + this repair never duplicates them.
+    for index_sql in (
+        "CREATE INDEX IF NOT EXISTS ix_dp_dataset_workspace_id ON dp_dataset (workspace_id)",
+        "CREATE INDEX IF NOT EXISTS ix_dp_dataset_exploration_id ON dp_dataset (exploration_id)",
+        "CREATE INDEX IF NOT EXISTS ix_dp_dataset_created_by ON dp_dataset (created_by)",
+        "CREATE INDEX IF NOT EXISTS ix_dp_dataset_status ON dp_dataset (status)",
+        "CREATE INDEX IF NOT EXISTS ix_dpv_dataset_position ON dp_variable (dataset_id, position)",
+        "CREATE INDEX IF NOT EXISTS ix_dpa_dataset_type ON dp_analysis (dataset_id, analysis_type)",
+    ):
+        await ensure_index(conn, index_sql)
+    await ensure_foreign_key(
+        conn,
+        table_sql="dp_dataset",
+        schema="public",
+        table="dp_dataset",
+        column="workspace_id",
+        referenced_table="workspace",
+        constraint_name="fk_dpd_workspace_id",
+    )
+    await ensure_foreign_key(
+        conn,
+        table_sql="dp_dataset",
+        schema="public",
+        table="dp_dataset",
+        column="exploration_id",
+        referenced_table="explorations",
+        constraint_name="fk_dpd_exploration_id",
+    )
+    await ensure_foreign_key(
+        conn,
+        table_sql="dp_dataset",
+        schema="public",
+        table="dp_dataset",
+        column="created_by",
+        referenced_table="user",
+        constraint_name="fk_dpd_created_by",
+        on_delete="SET NULL",
+    )
+    await ensure_foreign_key(
+        conn,
+        table_sql="dp_variable",
+        schema="public",
+        table="dp_variable",
+        column="dataset_id",
+        referenced_table="dp_dataset",
+        constraint_name="fk_dpv_dataset_id",
+        on_delete="CASCADE",
+    )
+    await ensure_foreign_key(
+        conn,
+        table_sql="dp_analysis",
+        schema="public",
+        table="dp_analysis",
+        column="dataset_id",
+        referenced_table="dp_dataset",
+        constraint_name="fk_dpa_dataset_id",
+        on_delete="CASCADE",
+    )
+
+
 _MIGRATION_STEPS: tuple[tuple[str, str, MigrationStep], ...] = (
     ("base", "create_sqlmodel_tables", _create_sqlmodel_tables),
     ("public", "repair_core_public_schema", _repair_core_public_schema),
@@ -1543,4 +1658,5 @@ _MIGRATION_STEPS: tuple[tuple[str, str, MigrationStep], ...] = (
     ("billing", "repair_billing_schema", _repair_billing_schema),
     ("settings", "repair_settings_schema", _repair_settings_schema),
     ("decision_room", "repair_decision_room_schema", _repair_decision_room_schema),
+    ("data_playground", "repair_data_playground_schema", _repair_data_playground_schema),
 )

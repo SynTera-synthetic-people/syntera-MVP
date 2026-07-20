@@ -10,6 +10,7 @@ from importlib import import_module
 
 MODEL_MODULES = (
     "billing",
+    "data_playground",
     "decision_room",
     "exploration",
     "interview",
