@@ -458,7 +458,17 @@ def _build_framer_structured_block(
         lines.append("Brand Context:\n" + "\n".join(brand_bits))
 
     for field, label in FRAMER_COMPONENT_LABELS.items():
-        value = (framer.get(field) or "").strip()
+        raw_value = framer.get(field)
+        # geography is a list[str] of discrete tags from the Audience &
+        # Segments picker (e.g. ["California", "Mumbai"]), not free text like
+        # every other Framer field here — join it the same way `competitors`
+        # is joined above, rather than calling .strip() on a list (which
+        # would raise AttributeError for any submission that used the
+        # geography picker).
+        if isinstance(raw_value, list):
+            value = ", ".join(str(v).strip() for v in raw_value if str(v or "").strip())
+        else:
+            value = (raw_value or "").strip()
         if value:
             lines.append(f"{label}:\n{value}")
             filled.append(label)

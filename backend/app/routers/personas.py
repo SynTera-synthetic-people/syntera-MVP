@@ -783,8 +783,13 @@ async def generate_personas_digital_brain(
         await session.refresh(p)
 
     # Enrich KE sources in background — runs after response is sent.
-    # ro.description is the verbatim research objective text, which gives
-    # better semantic search recall than joining ro_dict structured components.
+    # ro.description is still passed as the raw-text fallback (used only if
+    # structured query generation degrades — see build_ke_search_queries() in
+    # ro_extractor.py), but ro_dict (already extracted above for the pipeline
+    # itself) is now also passed so KE queries are built from the structured
+    # category/geography/business_objective fields instead of raw RO text —
+    # this is what keeps a query anchored to e.g. "California USA" instead of
+    # silently losing that signal to truncation.
     for p in saved_personas:
         asyncio.create_task(
             enrich_persona_ke_sources(
@@ -792,6 +797,7 @@ async def generate_personas_digital_brain(
                 research_objective=ro.description or "",
                 persona_name=p.name or "",
                 exploration_id=exploration_id,
+                ro_components=ro_dict,
             )
         )
 

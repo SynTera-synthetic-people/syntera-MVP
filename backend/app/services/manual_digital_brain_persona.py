@@ -891,13 +891,19 @@ async def calibrate_manual_persona_with_brains(
 
             # Enrich KE sources in background — runs after response is sent.
             # research_objective is always a plain string here (fetched by
-            # get_description() earlier in this function).
+            # get_description() earlier in this function). validated_ro (Step
+            # 1's structured 12-field RO, already computed above for evidence
+            # collection) is also passed so KE queries are built from the
+            # structured category/geography/business_objective fields instead
+            # of raw RO text — no extra extraction call, pure reuse of what
+            # Step 1 already produced.
             asyncio.create_task(
                 enrich_persona_ke_sources(
                     persona_id=persona_id,
                     research_objective=research_objective,
                     persona_name=p.name or "",
                     exploration_id=exploration_id,
+                    ro_components=validated_ro,
                 )
             )
 

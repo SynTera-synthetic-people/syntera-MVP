@@ -48,7 +48,12 @@ class ResearchObjectiveFramerInput(BaseModel):
     segmentation_logic: Optional[str] = None
     competitive_frame: Optional[str] = None
     behaviors_attitudes: Optional[str] = None
-    geography: Optional[str] = None
+    # Audience & Segments tab's Geography picker sends a list of discrete
+    # tags (e.g. ["California", "Mumbai"]) added one at a time via the FE's
+    # "Add" control — NOT a single free-text string. Was Optional[str] before
+    # this fix, which meant the FE's actual payload shape (a JSON array)
+    # failed Pydantic validation on every submit that used the picker.
+    geography: Optional[List[str]] = None
     additional_notes: Optional[str] = None
 
 class ResearchObjectiveMaterialOut(BaseModel):

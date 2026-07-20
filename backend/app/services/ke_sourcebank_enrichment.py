@@ -41,6 +41,7 @@ from typing import Optional
 
 from app.config import settings
 from app.rag.retrieve import controlled_sourcebank_search, resolve_source_identity
+from app.services.ro_extractor import build_ke_search_queries
 from app.services.web_evidence_search import get_additional_web_sources
 
 logger = logging.getLogger(__name__)
@@ -441,17 +442,35 @@ def _compute_ke_confidence_from_sources(retrieved_sources: list[dict]) -> dict:
 def _build_unique_search_queries(
     research_objective: str,
     persona_name: str,
+    ro_components: Optional[dict] = None,
 ) -> list[str]:
     """
     Build a deduplicated list of Qdrant search queries for this persona.
 
-    Three queries with increasing specificity:
+    When the caller has a structured RO (`ro_components`, the same 12-field
+    dict extract_ro_components_for_pipeline() already produces for Digital
+    Brain / manual calibration), queries are built from those structured
+    fields via build_ke_search_queries() — see that function's docstring in
+    ro_extractor.py for exactly why (raw-text queries used to silently drop
+    category/geography signal once the RO text ran long) and how geography is
+    preserved verbatim. Capped at 3 queries to match this function's original
+    query volume (no increase in embedding-API calls per persona).
+
+    Legacy fallback (ro_components is None — extraction wasn't available for
+    this caller): unchanged from the original 3-candidate raw-text builder,
+    so KE enrichment never breaks when structured extraction can't run.
       1. Research objective verbatim (broad recall).
       2. Persona segment + RO (bias towards this persona's behavioural segment).
       3. Consumer behaviour broadener (catches general KE docs not matched above).
-
-    Duplicates are removed so we don't waste an embedding call.
     """
+    if ro_components:
+        return build_ke_search_queries(
+            ro_components,
+            persona_name=persona_name,
+            max_queries=3,
+            fallback_text=research_objective,
+        )
+
     ro_text = (research_objective or "").strip()
     broadener = f"consumer behaviour market research insights {ro_text[:100]}"
 
@@ -476,6 +495,7 @@ def fetch_ke_sources(
     persona_name: str = "",
     exploration_id: Optional[str] = None,
     *,
+    ro_components: Optional[dict] = None,
     top_k_per_query: int = 8,
     max_sources_per_query: int = 5,
     total_source_cap: int = 45,
@@ -485,6 +505,11 @@ def fetch_ke_sources(
 
     Executes up to 3 deduplicated Qdrant vector queries and merges results into
     a single deduplicated list capped at total_source_cap documents.
+
+    `ro_components`, when available, is the structured 12-field RO dict from
+    extract_ro_components_for_pipeline() — see _build_unique_search_queries()
+    for how it drives query generation (falls back to raw `research_objective`
+    text when not supplied).
 
     This function is synchronous — it uses the blocking Qdrant client and the
     OpenAI embedding API directly.  Always call it via asyncio.run_in_executor
@@ -497,7 +522,9 @@ def fetch_ke_sources(
           "ke_confidence":            dict,  # overall + 4 components
         }
     """
-    search_queries = _build_unique_search_queries(research_objective, persona_name)
+    search_queries = _build_unique_search_queries(
+        research_objective, persona_name, ro_components
+    )
 
     seen_document_ids: set[str] = set()
     deduplicated_sources: list[dict] = []
@@ -512,7 +539,22 @@ def fetch_ke_sources(
                 exploration_id=exploration_id,
                 top_k=top_k_per_query,
                 max_sources=max_sources_per_query,
-                score_threshold=0.0,
+                # Was 0.0 (no relevance floor at all) — every Qdrant hit up to
+                # top_k was kept regardless of vector similarity, so a thin
+                # Sourcebank could surface an entirely unrelated document (see
+                # the P0 fix notes: an RO about regenerative medicine in
+                # California could pull in unrelated India/UK reports purely
+                # because nothing closer existed and nothing filtered it out).
+                # KE_SOURCEBANK_SCORE_THRESHOLD (default 0.15) is deliberately
+                # conservative: it only removes the near-zero/noise tail
+                # BEFORE the authority/quality/domain/keyword reweighting in
+                # _score_result() runs, and does not touch search_qdrant()'s
+                # own default (0.0) used everywhere else in the codebase — so
+                # existing retrieval coverage outside KEL is unaffected, and
+                # the fallback attempts inside controlled_sourcebank_search()
+                # (and the web-search gap-fill after it) still cover the case
+                # where a query genuinely has no close Sourcebank match.
+                score_threshold=settings.KE_SOURCEBANK_SCORE_THRESHOLD,
                 allow_legacy_fallback=True,
             )
         except Exception as exc:
@@ -583,10 +625,21 @@ async def enrich_persona_ke_sources(
     research_objective: str,
     persona_name: str = "",
     exploration_id: Optional[str] = None,
+    ro_components: Optional[dict] = None,
 ) -> None:
     """
     Background task: fetch KE Sourcebank sources and patch them into
     persona_details.ke_sources_used / ke_source_type_breakdown / ke_confidence.
+
+    `ro_components`, when the caller has one, is the structured 12-field RO
+    dict from extract_ro_components_for_pipeline() (category, sub_category,
+    target_audience, geography, business_objective, research_type,
+    key_questions, hypotheses, competitive_context, time_frame, constraints,
+    probes). It drives structured query generation for both the Sourcebank
+    search below and the web-search gap-fill (see build_ke_search_queries()
+    in ro_extractor.py). Optional and backward compatible: omitting it (the
+    prior call signature) falls back to the original raw-`research_objective`
+    query building, unchanged.
 
     Must be spawned via asyncio.create_task() immediately after the persona is
     committed to the DB.  It runs in the background after the HTTP response has
@@ -613,6 +666,7 @@ async def enrich_persona_ke_sources(
                 research_objective=research_objective,
                 persona_name=persona_name,
                 exploration_id=exploration_id,
+                ro_components=ro_components,
             ),
         )
         raw_sources: list[dict] = ke_enrichment_data["ke_sources_used"]
@@ -651,6 +705,7 @@ async def enrich_persona_ke_sources(
                         gap_topics=gap_topics,
                         exploration_id=exploration_id,
                         db=db_session,
+                        ro_components=ro_components,
                     )
                 except Exception:
                     logger.warning(
