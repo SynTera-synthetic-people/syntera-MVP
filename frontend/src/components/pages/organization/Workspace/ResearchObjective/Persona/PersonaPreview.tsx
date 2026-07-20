@@ -1190,7 +1190,7 @@ const MultiPlatformCalibCard: React.FC<MultiPlatformCalibCardProps> = ({
     return () => clearTimeout(timer);
   }, [confidenceComponents]);
 
-const safeDecodeURIComponent = (s: string): string => {
+  const safeDecodeURIComponent = (s: string): string => {
     try {
       return decodeURIComponent(s);
     } catch {
@@ -2342,7 +2342,7 @@ const PersonaPreview: React.FC = () => {
   // patAccuracy is the primary/legacy source; predominantPatternsScore is the
   // backup/newer source. TODO: once backend guarantees both are recomputed
   // together on every recalibration, this can go back to a single source of truth.
- const RO_ALIGNMENT_RELIABLE_THRESHOLD = 60;
+  const RO_ALIGNMENT_RELIABLE_THRESHOLD = 60;
 
   const predominantPatterns = (
     rawData?.predominant_patterns ??
@@ -2937,12 +2937,8 @@ const PersonaPreview: React.FC = () => {
                   {/* ── Multi-platform card with eye CTA ── */}
                   {/* ── Multi-platform card with eye CTA ── */}
                   <MultiPlatformCalibCard
-                    title={isManualMode ? 'RO Alignment Score' : 'Multi-platform Conversation'}
-                    subtitle={
-                      isManualMode
-                        ? 'Research Objective alignment scored across 4 dimensions: demographics, psychographics, behaviour, and trait completeness.'
-                        : 'Calibrated against real consumer conversations across multiple platforms.'
-                    }
+                    title="Multi-platform Conversation"
+                    subtitle="Calibrated against real consumer conversations across multiple platforms."
                     totalCount={getCalibCount('multi')}
                     totalCountLabel={getCalibLabel('multi', 'Total conversations inferred')}
                     platformCounts={platformCounts}
