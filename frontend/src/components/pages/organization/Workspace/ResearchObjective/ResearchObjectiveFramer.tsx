@@ -19,6 +19,11 @@ interface Competitor {
     name: string;
 }
 
+interface Geography {
+    id: string;
+    name: string;
+}
+
 interface ContextData {
     companyName: string;
     industry: string;
@@ -41,6 +46,7 @@ interface DecisionMomentData {
 
 interface AudienceSegmentsData {
     audience: string;
+    geographies: Geography[];
 }
 
 type MaterialUploadStatus = "idle" | "processing" | "done";
@@ -141,6 +147,7 @@ function buildFramerPayload(data: ROFramerData) {
         information_gap: data.customerUnknown.unknown || undefined,
         decision_problem: data.decisionMoment.decision || undefined,
         target_audience: data.audienceSegments.audience || undefined,
+        geography: data.audienceSegments.geographies.map(g => g.name),
         // Materials are NOT sent here — each section (Research Brief/Artifact)
         // is already submitted, extracted, and persisted against exploration_id
         // independently via its own "Submit" button (see MaterialTab). The
@@ -251,7 +258,7 @@ const emptyFramerData = (): ROFramerData => ({
     businessTrigger: { trigger: "" },
     customerUnknown: { unknown: "" },
     decisionMoment: { decision: "" },
-    audienceSegments: { audience: "" },
+    audienceSegments: { audience: "", geographies: [] },
     material: {
         brief: emptyBriefSection(),
         artifact: emptyArtifactSection(),
@@ -290,7 +297,13 @@ const hydrateFramerData = (parsed: any): ROFramerData => {
         businessTrigger: { ...base.businessTrigger, ...parsed.businessTrigger },
         customerUnknown: { ...base.customerUnknown, ...parsed.customerUnknown },
         decisionMoment: { ...base.decisionMoment, ...parsed.decisionMoment },
-        audienceSegments: { ...base.audienceSegments, ...parsed.audienceSegments },
+        audienceSegments: {
+            ...base.audienceSegments,
+            ...parsed.audienceSegments,
+            geographies: Array.isArray(parsed.audienceSegments?.geographies)
+                ? parsed.audienceSegments.geographies
+                : base.audienceSegments.geographies,
+        },
         otherInformation: { ...base.otherInformation, ...parsed.otherInformation },
         material: {
             brief: {
@@ -953,11 +966,39 @@ interface AudienceSegmentsTabProps {
 const AudienceSegmentsTab: React.FC<AudienceSegmentsTabProps> = ({
     data, onChange, onOmiStateChange, onContinue, onBack,
 }) => {
+    const [geoInput, setGeoInput] = useState("");
+
     const canContinue = data.audience.trim().length > 0;
     const handleFieldFocus = () => onOmiStateChange("typing");
     const handleFieldBlur = () => { if (!data.audience) onOmiStateChange("idle"); };
     const handleContinueClick = () => { if (!canContinue) return; onOmiStateChange("navigating"); setTimeout(onContinue, 400); };
     const handleBackClick = () => { onOmiStateChange("navigating"); setTimeout(onBack, 400); };
+
+    const addGeography = () => {
+        const val = geoInput.trim();
+        if (!val) return;
+        const alreadyExists = data.geographies.some(
+            g => g.name.toLowerCase() === val.toLowerCase()
+        );
+        if (alreadyExists) {
+            setGeoInput("");
+            return;
+        }
+        onChange({
+            ...data,
+            geographies: [
+                ...data.geographies,
+                { id: `geo-${Date.now()}`, name: val },
+            ],
+        });
+        setGeoInput("");
+    };
+
+    const removeGeography = (id: string) =>
+        onChange({
+            ...data,
+            geographies: data.geographies.filter(g => g.id !== id),
+        });
 
     return (
         <div className="rofp-tab-content">
@@ -974,6 +1015,65 @@ const AudienceSegmentsTab: React.FC<AudienceSegmentsTabProps> = ({
                     </div>
                     <textarea id="rof-audience-segments" className="rofp-textarea rofp-textarea--lg" placeholder={"We want to understand audience, especially segments...\n\nCurrent users, prospects, lapsed users, switchers, loyalists, first-time buyers, premium buyers, value seekers, skeptics, heavy users..."} value={data.audience} onFocus={handleFieldFocus} onBlur={handleFieldBlur} onChange={e => onChange({ ...data, audience: e.target.value })} rows={6} />
                     <p className="rofp-field-static-note">Keep it directional for now. You'll define detailed personas, demographics, and traits in the next step.</p>
+                </div>
+
+                {/* Geography */}
+                <div className="rofp-field-group">
+                    <div className="rofp-field-label-row">
+                        <label className="rofp-label" htmlFor="rof-geography">
+                            Geography
+                            <span className="rofp-label-optional">Optional</span>
+                        </label>
+                        <Tooltip text="Add the countries, states, or cities this exploration should focus on." />
+                    </div>
+                    <div className="rofp-input-row">
+                        <input
+                            id="rof-geography"
+                            className="rofp-input"
+                            type="text"
+                            placeholder="e.g., India, California, Mumbai"
+                            value={geoInput}
+                            onFocus={handleFieldFocus}
+                            onBlur={handleFieldBlur}
+                            onChange={e => setGeoInput(e.target.value)}
+                            onKeyDown={e => {
+                                if (e.key === "Enter") {
+                                    e.preventDefault();
+                                    addGeography();
+                                }
+                            }}
+                            autoComplete="off"
+                        />
+                        <button
+                            className="rofp-btn-add"
+                            onClick={addGeography}
+                            type="button"
+                        >
+                            Add
+                        </button>
+                    </div>
+
+                    <div className="rofp-comp-list-box">
+                        {data.geographies.length === 0 ? (
+                            <span className="rofp-comp-list-empty">
+                                Added countries, states, or cities will appear here
+                            </span>
+                        ) : (
+                            data.geographies.map(g => (
+                                <span key={g.id} className="rofp-comp-pill">
+                                    <span className="rofp-comp-pill-name">{g.name}</span>
+                                    <button
+                                        className="rofp-comp-pill-rm"
+                                        onClick={() => removeGeography(g.id)}
+                                        type="button"
+                                        aria-label={`Remove ${g.name}`}
+                                    >
+                                        ×
+                                    </button>
+                                </span>
+                            ))
+                        )}
+                    </div>
                 </div>
             </div>
             <div className="rofp-tab-cta">
@@ -2089,7 +2189,16 @@ const buildPreviewSections = (data: ROFramerData): PreviewSection[] => {
     if (data.businessTrigger.trigger.trim()) sections.push({ heading: "Business Trigger", body: data.businessTrigger.trigger.trim() });
     if (data.customerUnknown.unknown.trim()) sections.push({ heading: "Customer Unknown", body: data.customerUnknown.unknown.trim() });
     if (data.decisionMoment.decision.trim()) sections.push({ heading: "Decision Moment", body: data.decisionMoment.decision.trim() });
-    if (data.audienceSegments.audience.trim()) sections.push({ heading: "Audience & Segments", body: data.audienceSegments.audience.trim() });
+
+    const { audienceSegments } = data;
+    if (audienceSegments.audience.trim() || audienceSegments.geographies.length > 0) {
+        const lines: string[] = [];
+        if (audienceSegments.audience.trim()) lines.push(audienceSegments.audience.trim());
+        if (audienceSegments.geographies.length) {
+            lines.push(`Geography: ${audienceSegments.geographies.map(g => g.name).join(", ")}`);
+        }
+        sections.push({ heading: "Audience & Segments", body: lines.join("\n") });
+    }
 
     const briefLink = data.material.brief.link.trim();
     const artifactLinks = data.material.artifact.links.map(l => l.value.trim()).filter(Boolean);
