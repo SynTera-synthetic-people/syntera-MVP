@@ -114,7 +114,8 @@ const formatUrlAsTitle = (url: string): string => {
     const host = u.hostname.replace(/^www\./, '');
     const segments = u.pathname.split('/').filter(Boolean);
     if (segments.length === 0) return host;
-    const lastSegment = decodeURIComponent(segments[segments.length - 1])
+    const last = segments[segments.length - 1] ?? '';
+    const lastSegment = decodeURIComponent(last)
       .replace(/[-_]+/g, ' ')
       .replace(/\.[a-z0-9]{2,5}$/i, '');
     return `${host} › ${lastSegment}`;
@@ -179,14 +180,14 @@ const isGenericLabelSource = (src: KESourceEntry): boolean =>
 
 const getPlatformIcon = (name: string): React.ReactNode => {
   const lower = name.toLowerCase();
-  if (lower.includes('linkedin'))  return <SiLinkedin size={16} />;
-  if (lower.includes('reddit'))    return <SiReddit size={16} />;
-  if (lower.includes('youtube'))   return <SiYoutube size={16} />;
-  if (lower.includes('quora'))     return <SiQuora size={16} />;
+  if (lower.includes('linkedin')) return <SiLinkedin size={16} />;
+  if (lower.includes('reddit')) return <SiReddit size={16} />;
+  if (lower.includes('youtube')) return <SiYoutube size={16} />;
+  if (lower.includes('quora')) return <SiQuora size={16} />;
   if (lower.includes('twitter') || lower.includes('x.com') || lower === 'x')
     return <SiX size={16} />;
   if (lower.includes('instagram')) return <SiInstagram size={16} />;
-  if (lower.includes('medium'))    return <SiMedium size={16} />;
+  if (lower.includes('medium')) return <SiMedium size={16} />;
   if (lower.includes('trustpilot')) return <SiTrustpilot size={16} />;
   if (lower.includes('review') || lower.includes('yelp') || lower.includes('capterra'))
     return <MdStarRate size={16} />;
@@ -195,14 +196,14 @@ const getPlatformIcon = (name: string): React.ReactNode => {
 
 const getPlatformAccent = (name: string): string => {
   const lower = name.toLowerCase();
-  if (lower.includes('linkedin'))  return '#0A66C2';
-  if (lower.includes('reddit'))    return '#FF4500';
-  if (lower.includes('youtube'))   return '#FF0000';
-  if (lower.includes('quora'))     return '#B92B27';
+  if (lower.includes('linkedin')) return '#0A66C2';
+  if (lower.includes('reddit')) return '#FF4500';
+  if (lower.includes('youtube')) return '#FF0000';
+  if (lower.includes('quora')) return '#B92B27';
   if (lower.includes('twitter') || lower.includes('x.com') || lower === 'x')
     return '#ffffff';
   if (lower.includes('instagram')) return '#E1306C';
-  if (lower.includes('medium'))    return '#02B875';
+  if (lower.includes('medium')) return '#02B875';
   if (lower.includes('trustpilot')) return '#00B67A';
   return '#64748b';
 };
@@ -211,9 +212,9 @@ const getPlatformAccent = (name: string): string => {
 const getTierColor = (tier: string): string => {
   switch ((tier || '').toLowerCase()) {
     case 'official': return '#37FFCE';
-    case 'partner':  return '#4d8ff0';
-    case 'curated':  return '#FABC48';
-    default:         return '#94a3b8';
+    case 'partner': return '#4d8ff0';
+    case 'curated': return '#FABC48';
+    default: return '#94a3b8';
   }
 };
 
@@ -221,18 +222,18 @@ const resolveUrl = (link: EvidenceLink): string | null => {
   if (link.url) return link.url;
   const lower = link.name.toLowerCase();
   const DOMAIN_MAP: Record<string, string> = {
-    linkedin:   'https://www.linkedin.com',
-    reddit:     'https://www.reddit.com',
-    youtube:    'https://www.youtube.com',
-    quora:      'https://www.quora.com',
-    twitter:    'https://www.twitter.com',
-    'x.com':    'https://www.x.com',
-    instagram:  'https://www.instagram.com',
-    medium:     'https://www.medium.com',
+    linkedin: 'https://www.linkedin.com',
+    reddit: 'https://www.reddit.com',
+    youtube: 'https://www.youtube.com',
+    quora: 'https://www.quora.com',
+    twitter: 'https://www.twitter.com',
+    'x.com': 'https://www.x.com',
+    instagram: 'https://www.instagram.com',
+    medium: 'https://www.medium.com',
     trustpilot: 'https://www.trustpilot.com',
-    yelp:       'https://www.yelp.com',
-    capterra:   'https://www.capterra.com',
-    producthunt:'https://www.producthunt.com',
+    yelp: 'https://www.yelp.com',
+    capterra: 'https://www.capterra.com',
+    producthunt: 'https://www.producthunt.com',
   };
   for (const [key, domain] of Object.entries(DOMAIN_MAP)) {
     if (lower.includes(key)) return domain;
@@ -440,7 +441,7 @@ const KECategoryRow: React.FC<KECategoryRowProps> = ({ link }) => {
           >
             {sources.map((src, idx) => {
               const hasUrl = isValidUrl(src.source_url ?? '');
-              const tier   = src.authority_label || src.authority_tier || 'Curated';
+              const tier = src.authority_label || src.authority_tier || 'Curated';
               const tierColor = getTierColor(src.authority_tier || '');
               const relevancePct = src.relevance_score != null
                 ? `${Math.round(src.relevance_score * 100)}%`
@@ -551,8 +552,8 @@ const EvidenceLinksModal: React.FC<EvidenceLinksModalProps> = ({ links, onClose 
                   {isKEModal
                     ? 'Knowledge bank sources used to calibrate this persona'
                     : isWebEvidenceModal
-                    ? 'Web articles and research documents consulted during generation'
-                    : 'Platforms and communities used to calibrate this persona'}
+                      ? 'Web articles and research documents consulted during generation'
+                      : 'Platforms and communities used to calibrate this persona'}
                 </p>
               </div>
             </div>
@@ -577,9 +578,9 @@ const EvidenceLinksModal: React.FC<EvidenceLinksModalProps> = ({ links, onClose 
                     return <WebPlatformCitationRow key={i} link={link} />;
                   }
 
-                  const url    = resolveUrl(link);
+                  const url = resolveUrl(link);
                   const accent = getPlatformAccent(link.name);
-                  const icon   = getPlatformIcon(link.name);
+                  const icon = getPlatformIcon(link.name);
 
                   return (
                     <div key={i} className="elm-link-row">
@@ -656,8 +657,8 @@ const EvidenceLinksModal: React.FC<EvidenceLinksModalProps> = ({ links, onClose 
               {isKEModal
                 ? 'Click a category to expand its sources. Links open in a new tab.'
                 : isWebEvidenceModal
-                ? 'Click a platform to expand individual article URLs and quote previews. Links open in a new tab.'
-                : 'Links open in a new tab. Source counts reflect conversations and threads analysed during calibration.'}
+                  ? 'Click a platform to expand individual article URLs and quote previews. Links open in a new tab.'
+                  : 'Links open in a new tab. Source counts reflect conversations and threads analysed during calibration.'}
             </p>
             <button className="elm-close-footer-btn" onClick={onClose}>
               Close

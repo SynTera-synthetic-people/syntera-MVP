@@ -1314,7 +1314,7 @@ function GroundTruthFoundation({
 
         {/* Feature table */}
         <div>
-          <div style={{ fontFamily: MONO, fontSize: 9, textTransform: 'uppercase' as const, letterSpacing: '0.10em', color: TEXT_TER, fontWeight: 600, marginBottom: 10 }}>
+          {/* <div style={{ fontFamily: MONO, fontSize: 9, textTransform: 'uppercase' as const, letterSpacing: '0.10em', color: TEXT_TER, fontWeight: 600, marginBottom: 10 }}>
             Behaviour Signals Extracted
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
@@ -1336,7 +1336,7 @@ function GroundTruthFoundation({
                 </table>
               </div>
             ))}
-          </div>
+          </div> */}
 
           <div style={{ fontFamily: MONO, fontSize: 9, textTransform: 'uppercase' as const, letterSpacing: '0.10em', color: TEXT_TER, fontWeight: 600, marginBottom: 10 }}>
             Parameter Integrated
