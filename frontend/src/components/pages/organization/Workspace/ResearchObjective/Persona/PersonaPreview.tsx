@@ -88,7 +88,7 @@ const BASE_TABS = [
 ] as const;
 
 const FORMATIVE_TAB = { key: 'formative', label: 'Formative Experience', fields: [] } as const;
-const AUTO_FILL_TAB = { key: 'autofill', label: 'AI Auto-Fill Report', fields: [] } as const;
+const AUTO_FILL_TAB = { key: 'autofill', label: 'Traits Calibration', fields: [] } as const;
 
 type BaseTabKey = typeof BASE_TABS[number]['key'];
 type TabKey = BaseTabKey | 'formative' | 'autofill';
@@ -1190,9 +1190,17 @@ const MultiPlatformCalibCard: React.FC<MultiPlatformCalibCardProps> = ({
     return () => clearTimeout(timer);
   }, [confidenceComponents]);
 
+const safeDecodeURIComponent = (s: string): string => {
+    try {
+      return decodeURIComponent(s);
+    } catch {
+      return s;
+    }
+  };
+
   const donutData: DonutEntry[] = Object.entries(platformCounts).map(
     ([name, value], i) => ({
-      name,
+      name: safeDecodeURIComponent(name),
       value,
       color: DONUT_COLORS[i % DONUT_COLORS.length]!,
     })
@@ -2324,22 +2332,32 @@ const PersonaPreview: React.FC = () => {
     ? Math.round(roAlignmentEntry.score <= 1 ? roAlignmentEntry.score * 100 : roAlignmentEntry.score)
     : Math.round(Math.min(patternsExtractedCount / 20, 1) * 100);
 
-  // Only Predominant Patterns Extracted contributes to the Real Actions Signal confidence.
-  // predominant_patterns.score is the exact "RO Alignment" number the backend's
-  // compute_master_calibration_confidence() uses for this layer — reading it here
-  // (rather than the legacy confidence.components.ro_alignment_score entry that
-  // patAccuracy falls back through) keeps this pill in sync with the master ring
-  // instead of showing an unrelated older score next to it. patAccuracy remains the
-  // fallback for personas that don't have predominant_patterns generated yet.
+  // predominant_patterns.score is a newer backend field intended to represent
+  // the same "RO Alignment" concept as the legacy confidence.components /
+  // confidenceDetail.ro_alignment_score entry (patAccuracy). The two can drift
+  // out of sync depending on which backend routine last recalculated them, so
+  // rather than picking one source and risking a stale low value hiding a
+  // legitimately higher, fresher one, we take whichever is higher.
+  //
+  // patAccuracy is the primary/legacy source; predominantPatternsScore is the
+  // backup/newer source. TODO: once backend guarantees both are recomputed
+  // together on every recalibration, this can go back to a single source of truth.
+ const RO_ALIGNMENT_RELIABLE_THRESHOLD = 60;
+
   const predominantPatterns = (
     rawData?.predominant_patterns ??
     mergedTraits?.predominant_patterns ??
     personaDetails?.predominant_patterns
   ) as { score?: number; patterns?: string[] } | undefined;
 
-  const realActionsConfidenceScore =
+  const predominantPatternsScore =
     typeof predominantPatterns?.score === 'number' && !Number.isNaN(predominantPatterns.score)
       ? Math.round(predominantPatterns.score)
+      : null;
+
+  const realActionsConfidenceScore =
+    patAccuracy < RO_ALIGNMENT_RELIABLE_THRESHOLD && predominantPatternsScore !== null
+      ? Math.max(patAccuracy, predominantPatternsScore)
       : patAccuracy;
 
   // ── Master Calibration Confidence ─────────────────────────────────────────
@@ -2438,7 +2456,7 @@ const PersonaPreview: React.FC = () => {
       value: patternsExtractedCount,
       displayValue: patternPeopleAnalyzed,
       countSubtitle: 'people analyzed',
-      accuracy: patAccuracy,
+      accuracy: realActionsConfidenceScore,
       accuracyLabel: 'Research Objective Alignment',
       color: '#5D74EB',
       detailLabel: 'Behavioral signals extracted from action patterns:',
@@ -2710,7 +2728,7 @@ const PersonaPreview: React.FC = () => {
                         </div>
                       ))}
                     </div>
-
+                    {/* 
                     {(autoFillReport.total_sub_traits ?? 0) > 0 && (
                       <div style={{ marginBottom: 24 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'rgba(255,255,255,0.5)', marginBottom: 6 }}>
@@ -2727,12 +2745,12 @@ const PersonaPreview: React.FC = () => {
                           }} />
                         </div>
                       </div>
-                    )}
+                    )} */}
 
                     {(autoFillReport.auto_filled_traits ?? []).length > 0 && (
                       <div className="pp-list-card">
                         <h4 className="pp-list-card-title">
-                          AI Auto-Filled Traits ({autoFillReport.auto_filled_count ?? 0})
+                          Traits Calibration ({autoFillReport.auto_filled_count ?? 0})
                         </h4>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
                           {(autoFillReport.auto_filled_traits ?? []).map((t, i) => (
@@ -2753,7 +2771,7 @@ const PersonaPreview: React.FC = () => {
                     )}
                   </>
                 ) : (
-                  <p className="pp-empty">Auto-fill report not available for this persona. Calibrate the persona to generate it.</p>
+                  <p className="pp-empty">Traits Calibration not available for this persona. Calibrate the persona to generate it.</p>
                 )}
               </div>
             )}
