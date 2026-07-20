@@ -35,6 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.db import async_engine
 from app.rag.retrieve import resolve_source_identity
+from app.services.ro_extractor import build_ke_search_queries
 from app.utils.anthropic_client import get_async_anthropic_client
 from app.utils.id_generator import generate_id
 from app.services.llm_usage_tracker import record_llm_usage, extract_usage_anthropic_message
@@ -164,13 +165,36 @@ def _build_web_search_queries(
     persona_name: str,
     research_questions: Optional[list[str]],
     gap_topics: Optional[list[str]],
+    ro_components: Optional[dict] = None,
 ) -> list[str]:
     """
     Inputs, per the requirement: research objective, persona, research
     questions, and gap topics (caller-supplied — for KE these are the
     KE categories not yet covered by Sourcebank; this function doesn't need
     to know what a "KE category" is).
+
+    When `ro_components` (the structured 12-field RO dict from
+    extract_ro_components_for_pipeline()) is available, queries are built
+    from it via build_ke_search_queries() — the same structured builder the
+    Sourcebank query step uses (see ke_sourcebank_enrichment.py /
+    ro_extractor.py for why: raw RO text used to silently drop
+    category/geography signal once it ran long, and how geography is now
+    preserved verbatim in every query). Capped at the existing _MAX_QUERIES
+    (6) so web-search call volume/cost is unchanged.
+
+    Legacy fallback (ro_components is None): unchanged raw-text builder
+    below, so this function never breaks a caller that hasn't been updated
+    to supply structured RO components.
     """
+    if ro_components:
+        return build_ke_search_queries(
+            ro_components,
+            persona_name=persona_name,
+            gap_topics=gap_topics,
+            max_queries=_MAX_QUERIES,
+            fallback_text=research_objective,
+        )
+
     ro_text = (research_objective or "").strip()
     candidates: list[str] = [ro_text]
 
@@ -310,11 +334,21 @@ async def get_additional_web_sources(
     gap_topics: Optional[list[str]] = None,
     exploration_id: Optional[str] = None,
     db: Optional[AsyncSession] = None,
+    ro_components: Optional[dict] = None,
 ) -> list[dict]:
     """
     Fetches up to `needed_count` credibility-ranked web sources not already
     covered by `existing_sources` (Sourcebank entries — dicts with
     document_id/source_url/title, same shape as ke_sources_used entries).
+
+    `ro_components`, when supplied, is the structured 12-field RO dict from
+    extract_ro_components_for_pipeline() — used both to build structured,
+    geography-anchored queries (see _build_web_search_queries()) and to widen
+    the relevance-scoring token set below with category/target_audience/
+    geography signal, so a candidate result actually matching the RO's
+    category and geography scores higher than one that only matches the raw
+    RO text loosely. Optional and backward compatible: omitting it preserves
+    the original raw-text query + relevance behavior exactly.
 
     Returns generic dicts: {document_id: None, chunk_id: None, title,
     source_url, domain, authority_tier: None, authority_label: None,
@@ -328,7 +362,9 @@ async def get_additional_web_sources(
     if needed_count <= 0:
         return []
 
-    queries = _build_web_search_queries(research_objective, persona_name, research_questions, gap_topics)
+    queries = _build_web_search_queries(
+        research_objective, persona_name, research_questions, gap_topics, ro_components,
+    )
     if not queries:
         return []
 
@@ -370,7 +406,19 @@ async def get_additional_web_sources(
             if key:
                 seen.add(key)
 
-        query_context = " ".join([research_objective or "", persona_name or ""] + list(research_questions or []))
+        # Widen the relevance-scoring token set with structured RO signal
+        # (category/target_audience/geography/business_objective) when
+        # available, so _score_relevance() rewards a candidate that actually
+        # matches the RO's topic and geography — not just loose overlap with
+        # the raw RO text. Falls back to the original raw-text-only context
+        # when ro_components isn't supplied.
+        context_parts = [research_objective or "", persona_name or ""] + list(research_questions or [])
+        if ro_components:
+            context_parts += [
+                str(ro_components.get(key, "") or "")
+                for key in ("category", "sub_category", "target_audience", "geography", "business_objective")
+            ]
+        query_context = " ".join(context_parts)
         query_tokens = _tokenize(query_context)
 
         scored: list[dict] = []

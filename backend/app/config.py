@@ -87,6 +87,41 @@ class Settings(BaseSettings):
     KE_MAX_PER_DOMAIN: int = 2
     KE_WEB_SOURCE_CACHE_TTL_HOURS: int = 48
 
+    # ============================================================
+    # KE Query Generation — structured RO-driven query construction
+    # (see app/services/ro_extractor.py: build_ke_search_queries())
+    # ============================================================
+    # Configurable "mandatory" research-format intents mixed into generated
+    # queries (e.g. "... market research report"). Kept as data, not code, so
+    # new intents can be added/removed without touching query-generation
+    # logic, and so they apply uniformly to any RO category.
+    KE_MANDATORY_RESEARCH_INTENTS: list[str] = [
+        "survey", "study", "research", "report",
+        "market research", "consumer research", "public opinion",
+    ]
+    # Configurable "insight" intents — attitudinal/behavioural angles. Which
+    # ones get used per RO is content-matched against the RO's own
+    # business_objective/key_questions/hypotheses text (see
+    # _select_insight_intents), not hardcoded per category.
+    KE_INSIGHT_INTENTS: list[str] = [
+        "awareness", "perception", "attitude", "behavior", "preference",
+        "motivation", "barrier", "adoption", "trust", "acceptance",
+    ]
+    # How many insight intents to weave into a single RO's query set.
+    KE_INSIGHT_INTENT_COUNT: int = 2
+    # Raw Qdrant cosine-similarity floor applied ONLY to KE Sourcebank queries
+    # (fetch_ke_sources -> controlled_sourcebank_search). Filters the
+    # near-zero/noise tail before the authority/quality/domain/keyword
+    # reweighting in _score_result() runs, without touching
+    # search_qdrant()'s own default (0.0), which stays unchanged for every
+    # other caller (report generation, etc.) outside KEL. Deliberately
+    # conservative — see the threshold-change reasoning in the KEL P0 fix
+    # notes: this embedding model's cosine scores are not zero-centered
+    # (~0.5 already reads as "strong match" per
+    # _compute_ke_confidence_from_sources), so a low floor removes clearly
+    # unrelated noise without risking real coverage loss.
+    KE_SOURCEBANK_SCORE_THRESHOLD: float = 0.15
+
     class Config:
         env_file = ".env"
         case_sensitive = True

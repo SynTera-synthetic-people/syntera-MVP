@@ -258,6 +258,7 @@ async def _fetch_ml_contexts_per_persona(
 def _assign_cities_for_personas(
     description: str,
     persona_numbers: list[int],
+    explicit_geography: Optional[list[str]] = None,
 ) -> dict[int, tuple[str | None, str | None]]:
     """
     Reuses digital_brain_pipeline's battle-tested geography round-robin so Omi
@@ -265,10 +266,22 @@ def _assign_cities_for_personas(
     x3) — each parallel generation call had no visibility into what city any
     other call picked. Maps persona_number -> (assigned_city, assigned_country).
 
+    `explicit_geography`, when supplied, is the Research Objective Framer's
+    structured geography tags (Audience & Segments tab's picker — e.g.
+    ["California", "Mumbai"]). When present, digital_brain_pipeline's
+    _extract_geography_meta() resolves cities from THESE tags in STRICT mode
+    (only ever assigns cities the user actually named, cycling them rather
+    than padding out with an un-requested city) instead of regex-parsing the
+    free-text `description` paragraph — see that function's docstring.
+    Falls back to the original free-text-only behavior when not supplied
+    (RO created via the chat flow, or the picker was left empty).
+
     Falls back to (None, None) for every persona on any failure — geographic
     diversity is a nice-to-have, never worth blocking generation over.
     """
-    pseudo_ro = {"geography": description}
+    pseudo_ro: dict = {"geography": description}
+    if explicit_geography:
+        pseudo_ro["explicit_geography"] = explicit_geography
     try:
         geo_meta = _extract_geography_meta(pseudo_ro)
         print(f"[Geo] Omi geography detected: countries={geo_meta['countries']}")
@@ -779,6 +792,85 @@ async def get_description(exploration_id: str) -> str | None:
     await engine.dispose()
     return result.scalar_one_or_none()
 
+
+async def _get_research_objective_interpretation(exploration_id: str) -> dict:
+    """
+    Fetch the RO's structured `ai_interpretation` JSON (get_description()
+    above only returns the free-text `description`). Used by
+    _get_ro_components_for_ke() below, which needs both fields to call
+    extract_ro_components_for_pipeline() — the same RO-structuring extractor
+    Digital Brain / manual calibration already use.
+    """
+    Base = declarative_base()
+
+    class Exploration(Base):
+        __tablename__ = "research_objectives"
+        exploration_id = Column(String, primary_key=True)
+        ai_interpretation = Column(JSON)
+
+    engine = create_async_engine(DATABASE_URL, echo=False)
+    SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with SessionLocal() as session:
+        result = await session.execute(
+            select(Exploration.ai_interpretation).where(
+                Exploration.exploration_id == exploration_id
+            )
+        )
+        value = result.scalar_one_or_none()
+
+    await engine.dispose()
+    return value or {}
+
+
+async def _get_ro_components_for_ke(
+    exploration_id: str,
+    description: Optional[str],
+    workspace_id: str,
+    created_by: str,
+    ai_interpretation: Optional[dict] = None,
+) -> Optional[dict]:
+    """
+    Best-effort structured RO extraction, used only to drive Knowledge
+    Enrichment query generation (see build_ke_search_queries() in
+    ro_extractor.py) for Omi auto-generated personas.
+
+    Digital Brain and manual calibration already compute this same
+    12-component RO shape for their own generation logic and pass it
+    straight through to KE (see routers/personas.py and
+    manual_digital_brain_persona.py) — zero extra cost there. The Omi
+    auto-generate flow doesn't otherwise need this structure at all, so this
+    is the one call site that runs the shared extractor, once per generation
+    batch (not once per persona — see the ro_components_task wiring in
+    ai_generate_persona()).
+
+    `ai_interpretation`, when the caller already fetched it (ai_generate_persona
+    fetches it early and cheaply — no LLM call — to feed city assignment's
+    explicit_geography, before this function's own, separate, LLM-based
+    extraction runs), is reused here instead of querying it a second time.
+    Falls back to fetching it itself when not supplied.
+
+    Never raises: a failure here must degrade KE query generation to raw RO
+    text (ro_components=None, handled by every downstream KE function), not
+    break persona generation, which never depended on this value.
+    """
+    try:
+        from app.services.ro_extractor import extract_ro_components_for_pipeline
+
+        if ai_interpretation is None:
+            ai_interpretation = await _get_research_objective_interpretation(exploration_id)
+        return await extract_ro_components_for_pipeline(
+            description or "", ai_interpretation,
+            exploration_id=exploration_id, workspace_id=workspace_id, created_by=created_by,
+        )
+    except Exception as exc:
+        print(
+            f"[KE] Structured RO extraction failed ({type(exc).__name__}: {exc}); "
+            f"KE queries will fall back to raw RO text"
+        )
+        return None
+
+
 async def get_all_questions_by_section_id(section_id: str):
     Base = declarative_base()
     engine = create_async_engine(DATABASE_URL, echo=False)
@@ -879,6 +971,7 @@ async def ai_generate_persona(
     _attempt: int = 1,
     assigned_themes: Optional[Dict[int, str]] = None,
     request_id: Optional[str] = None,
+    ro_components: Optional[dict] = None,
 ):
     """
     Generate the requested number of Omi personas in parallel.
@@ -897,6 +990,39 @@ async def ai_generate_persona(
 
     description = await get_description(exploration_id)
 
+    # Cheap, non-LLM lookup (single SELECT of ai_interpretation), fetched
+    # eagerly and reused two ways below: (1) explicit_geography is extracted
+    # from it right away, synchronously, to feed city assignment before
+    # generation starts; (2) the same dict is handed to the deferred
+    # ro_components_task below so that call doesn't re-fetch it.
+    from app.services.ro_extractor import _extract_explicit_geography
+
+    ai_interpretation = await _get_research_objective_interpretation(exploration_id)
+    explicit_geography = _extract_explicit_geography(ai_interpretation)
+    if explicit_geography:
+        print(f"[Geo] Omi: explicit geography tags from Framer picker: {explicit_geography}")
+
+    # ============================================================================
+    # KE QUERY GENERATION — kick off structured RO-component extraction
+    # concurrently with the independent setup steps below (city assignment,
+    # ML context, theme brainstorm). Unlike Digital Brain / manual
+    # calibration, the Omi auto-generate flow never otherwise computes the
+    # 12-component RO shape, so this is the one flow that needs a dedicated
+    # call to get it. Started as a background task (not awaited yet) so its
+    # ~1-2s Claude call runs alongside the other setup work instead of adding
+    # latency on top of it; it's only awaited below, right before the first
+    # KE-enrichment call needs it. Computed ONCE per batch (not once per
+    # persona) and threaded through retries via the ro_components parameter,
+    # the same pattern already used for assigned_themes above.
+    ro_components_task = None
+    if ro_components is None:
+        ro_components_task = asyncio.create_task(
+            _get_ro_components_for_ke(
+                exploration_id, description, workspace_id, current_user_id,
+                ai_interpretation=ai_interpretation,
+            )
+        )
+
     # Import the split prompts
     from app.services.auto_generated_persona_prompts import (
         PERSONA_GENERATION_BASE_INSTRUCTIONS,
@@ -910,7 +1036,9 @@ async def ai_generate_persona(
     # independent parallel generation calls below don't all converge on the
     # same city (reuses digital_brain_pipeline's round-robin + dedup logic)
     # ============================================================================
-    city_assignments = _assign_cities_for_personas(description or "", persona_numbers)
+    city_assignments = _assign_cities_for_personas(
+        description or "", persona_numbers, explicit_geography=explicit_geography,
+    )
 
     # ============================================================================
     # ML CONTEXT — ground each persona in a DIFFERENT real transactor's
@@ -1056,6 +1184,14 @@ Return exactly one item inside consumer_personas.
     elapsed = asyncio.get_event_loop().time() - start_time
     print(f"✓ Parallel generation completed in {elapsed:.1f}s\n")
 
+    # Resolve the structured RO components kicked off above. By this point the
+    # single Claude extraction call has almost certainly already finished
+    # alongside the (slower, parallel) persona-generation calls, so this
+    # await adds no meaningful latency. ro_components stays None (graceful
+    # degradation to raw-text KE queries) if extraction failed.
+    if ro_components_task is not None:
+        ro_components = await ro_components_task
+
     # ============================================================================
     # PROCESS RESULTS AND SAVE TO DATABASE
     # ============================================================================
@@ -1148,13 +1284,18 @@ Return exactly one item inside consumer_personas.
                     session.add(p)
                     await session.commit()
 
-                # Enrich KE sources in background — does not block the response
+                # Enrich KE sources in background — does not block the response.
+                # ro_components (resolved above) drives structured, geography-
+                # anchored query generation; falls back to raw `description`
+                # text automatically if extraction failed (ro_components is
+                # None) or came back thin.
                 asyncio.create_task(
                     enrich_persona_ke_sources(
                         persona_id=persona_id,
                         research_objective=description,
                         persona_name=db_persona["name"],
                         exploration_id=exploration_id,
+                        ro_components=ro_components,
                     )
                 )
 
@@ -1189,6 +1330,7 @@ Return exactly one item inside consumer_personas.
             _attempt=_attempt + 1,
             assigned_themes=assigned_themes,
             request_id=request_id,
+            ro_components=ro_components,
         )
         response["personas"].extend(retry_response.get("personas", []))
         response["consumer_personas"].extend(retry_response.get("consumer_personas", []))

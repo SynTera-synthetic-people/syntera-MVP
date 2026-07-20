@@ -434,10 +434,40 @@ _CITY_LOOKUP: dict[str, tuple[str, str]] = {
 _CITY_LOOKUP[_normalize_text("Bengaluru")] = ("Bangalore", "India")
 
 
+def _resolve_geography_entry(entry: str) -> tuple[str | None, str | None]:
+    """Resolve ONE discrete geography entry (not free text — a single tag
+    value like "Sacramento", "California", or "USA") to (city_or_None,
+    country). City match takes priority over region/country, since it's the
+    most specific. Returns (None, None) if unrecognized — callers skip
+    unrecognized entries rather than guessing a country for them."""
+    normalized = _normalize_text(entry)
+    city_hit = _CITY_LOOKUP.get(normalized)
+    if city_hit:
+        return city_hit
+    if normalized in COUNTRY_ALIASES:
+        return None, COUNTRY_ALIASES[normalized]
+    if normalized in _REGION_TO_COUNTRY_HINTS:
+        return None, _REGION_TO_COUNTRY_HINTS[normalized]
+    return None, None
+
+
 def _extract_geography_meta(validated_ro: dict) -> dict:
     """
-    Parse the RO's geography field for countries, per-country explicit
-    cities, and a coarse tier signal.
+    Resolve geography with 3-tier priority:
+
+    1. validated_ro["explicit_geography"] — a structured list[str] of
+       discrete tags (e.g. ["Sacramento", "Stockton"]), sourced from the RO
+       Framing Guide's Audience & Segments tab when that field is filled in
+       (storage/wiring of this key upstream is out of scope here — this
+       function just consumes it if present). Skips free-text parsing
+       entirely. Cities resolved this way populate explicit_cities_by_country,
+       which _assign_cities_to_personas() already treats as STRICT (no pool
+       fallback, round-robin repeat if more personas are needed than cities
+       given) — no separate strict-mode plumbing needed here.
+    2. Free-text parsing of the RO's "geography" description field (the
+       original, pre-existing behavior) — used whenever (1) is absent/empty,
+       or every entry in it was unrecognized.
+    3. Default to ["India"] if neither source yields anything.
 
     Returns:
         {
@@ -447,13 +477,41 @@ def _extract_geography_meta(validated_ro: dict) -> dict:
           "tier_signal": "tier1" | "tier2" | "unknown",
         }
     """
-    geography_text = str(validated_ro.get("geography", "") or "")
     result: dict = {
         "countries": [],
         "explicit_cities_by_country": {},
         "explicit_regions": [],
         "tier_signal": "unknown",
     }
+
+    # ---- Priority 1: structured geography from the RO Framing Guide ----
+    explicit_geography = validated_ro.get("explicit_geography")
+    if explicit_geography:
+        countries: list[str] = []
+        seen_countries: set[str] = set()
+        explicit_cities_by_country: dict[str, list[str]] = {}
+        seen_pairs: set[tuple[str, str]] = set()
+        for entry in explicit_geography:
+            if not entry:
+                continue
+            city, country = _resolve_geography_entry(str(entry))
+            if country is None:
+                logger.warning("Framing-guide geography entry %r not recognized; skipping", entry)
+                continue
+            if country not in seen_countries:
+                countries.append(country)
+                seen_countries.add(country)
+            if city and (city, country) not in seen_pairs:
+                seen_pairs.add((city, country))
+                explicit_cities_by_country.setdefault(country, []).append(city)
+        if countries:
+            result["countries"] = countries
+            result["explicit_cities_by_country"] = explicit_cities_by_country
+            return result
+        # every entry was unrecognized — fall through to Priority 2
+
+    # ---- Priority 2: free-text parsing of the RO's geography description ----
+    geography_text = str(validated_ro.get("geography", "") or "")
     if not geography_text:
         result["countries"] = ["India"]
         return result
@@ -524,11 +582,23 @@ def _assign_cities_to_personas(
     - 2+ countries detected: personas are split round-robin across countries in
       mention order, so counts come out as even as possible (remainder goes to
       the first-mentioned countries).
-    - Within a country, explicit RO-named cities are used first, then the
-      country's fallback metro pool, honoring exclude_city_country_pairs.
-    - If a country's pool is exhausted, its remaining slot(s) get city=None
-      (caller falls back to a geography-agnostic prompt for that persona).
-    Never returns a duplicate (city, country) pair.
+    - Within a country that has explicit RO-named cities: STRICT mode — those
+      cities are the only ones ever used for that country, no fallback to the
+      broader metro pool. If more personas are needed than cities were named,
+      the named cities are cycled (repeated) round-robin rather than padded
+      out with unmentioned cities — an RO that names 2 cities for a 4-persona
+      batch must never introduce a 3rd, un-requested city. exclude_city_country_pairs
+      is honored on a first pass (so an expansion batch prefers a named city
+      it hasn't used yet); once every named city has been used at least once,
+      further slots repeat them even if that means reusing an excluded pair —
+      there is nowhere else to go without violating "only mentioned cities".
+    - Within a country with NO explicit cities: falls back to the country's
+      metro pool (deduped, no repeats), honoring exclude_city_country_pairs.
+      If that pool is exhausted, remaining slot(s) get city=None (caller falls
+      back to a geography-agnostic prompt for that persona) — pools are large
+      enough (10+ cities) that this is only reachable at extreme persona counts.
+    Never returns a duplicate (city, country) pair, except when a country's
+    named-city list must legitimately repeat (see above).
     """
     if num_personas <= 0:
         return []
@@ -549,25 +619,48 @@ def _assign_cities_to_personas(
     cities_by_country: dict[str, list[str]] = {}
     for country in active_countries:
         needed = personas_per_country[country]
-        candidates: list[str] = []
-        seen_candidates: set[str] = set()
-        for city in explicit_cities_by_country.get(country, []) + COUNTRY_CITY_POOLS.get(country, []):
-            if city.lower() not in seen_candidates:
-                candidates.append(city)
-                seen_candidates.add(city.lower())
+        explicit_list = explicit_cities_by_country.get(country, [])
 
-        assigned: list[str] = []
-        for city in candidates:
-            if len(assigned) >= needed:
-                break
-            if (city, country) in exclude_pairs:
-                continue
-            assigned.append(city)
-        if len(assigned) < needed:
-            logger.warning(
-                "Country %s pool exhausted; %d persona(s) may fall back to geography-agnostic prompt",
-                country, needed - len(assigned),
-            )
+        if explicit_list:
+            # STRICT mode: never introduce a city the RO didn't name for this
+            # country. Pass 1 — each named city once, skipping ones already
+            # used by a prior batch (exclude_pairs) so expansion prefers an
+            # unused named city first.
+            assigned: list[str] = []
+            for city in explicit_list:
+                if len(assigned) >= needed:
+                    break
+                if (city, country) in exclude_pairs:
+                    continue
+                assigned.append(city)
+            # Pass 2 — every named city has now been offered once; cycle
+            # through them again (repeats expected/required) to fill any
+            # remaining slots, ignoring exclude_pairs since repeating a named
+            # city is preferable to fabricating an unmentioned one.
+            i = 0
+            while len(assigned) < needed:
+                assigned.append(explicit_list[i % len(explicit_list)])
+                i += 1
+        else:
+            candidates: list[str] = []
+            seen_candidates: set[str] = set()
+            for city in COUNTRY_CITY_POOLS.get(country, []):
+                if city.lower() not in seen_candidates:
+                    candidates.append(city)
+                    seen_candidates.add(city.lower())
+
+            assigned = []
+            for city in candidates:
+                if len(assigned) >= needed:
+                    break
+                if (city, country) in exclude_pairs:
+                    continue
+                assigned.append(city)
+            if len(assigned) < needed:
+                logger.warning(
+                    "Country %s pool exhausted; %d persona(s) may fall back to geography-agnostic prompt",
+                    country, needed - len(assigned),
+                )
         cities_by_country[country] = assigned
 
     result: list[tuple[str | None, str]] = []
