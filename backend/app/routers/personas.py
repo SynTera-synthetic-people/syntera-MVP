@@ -65,6 +65,7 @@ from app.services.manual_digital_brain_persona import (
     run_manual_calibration_background,
 )
 from app.services.ke_sourcebank_enrichment import enrich_persona_ke_sources
+from app.services.llm_usage_tracker import UsageCollector, flush_usage_events
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/explorations/{exploration_id}/personas",
@@ -720,7 +721,10 @@ async def generate_personas_digital_brain(
     account_tier = _normalised_account_tier(current_user)
 
     try:
-        ro_dict = await extract_ro_components_for_pipeline(ro.description, ro.ai_interpretation or {})
+        ro_dict = await extract_ro_components_for_pipeline(
+            ro.description, ro.ai_interpretation or {},
+            exploration_id=exploration_id, workspace_id=workspace_id, created_by=current_user.id,
+        )
     except Exception as e:
         logger.error("Digital Brain RO extraction failed for exploration=%s: %s", exploration_id, e)
         raise HTTPException(
@@ -735,13 +739,30 @@ async def generate_personas_digital_brain(
     # scan_action_data() silently found nothing; passing a DataFrame here would
     # also short-circuit fetch_action_data_all() entirely (it only runs when
     # action_data_df is None).
+    usage_collector = UsageCollector()
+    request_id = uuid.uuid4().hex
     try:
-        result = await run_in_threadpool(digital_brain_pipeline, ro_dict, None, account_tier)
+        result = await run_in_threadpool(
+            digital_brain_pipeline, ro_dict, None, account_tier,
+            exploration_id=exploration_id, usage_collector=usage_collector,
+        )
     except Exception as e:
         logger.error("Digital Brain Pipeline failed for exploration=%s: %s", exploration_id, e)
         raise HTTPException(
             status_code=500,
             detail=ErrorResponse(status="error", message=f"Digital Brain Pipeline failed: {e}").dict(),
+        )
+    finally:
+        # Flush whatever LLM usage was recorded before returning/raising, so a
+        # pipeline run that fails partway through still has its token spend
+        # captured (see docs/llm_usage_tracking_plan.md, amendment 3).
+        events = usage_collector.drain()
+        await flush_usage_events(
+            events,
+            exploration_id=exploration_id,
+            workspace_id=workspace_id,
+            created_by=current_user.id,
+            request_id=request_id,
         )
 
     stage_5_personas = result.get("stage_5_personas", [])
@@ -762,8 +783,13 @@ async def generate_personas_digital_brain(
         await session.refresh(p)
 
     # Enrich KE sources in background — runs after response is sent.
-    # ro.description is the verbatim research objective text, which gives
-    # better semantic search recall than joining ro_dict structured components.
+    # ro.description is still passed as the raw-text fallback (used only if
+    # structured query generation degrades — see build_ke_search_queries() in
+    # ro_extractor.py), but ro_dict (already extracted above for the pipeline
+    # itself) is now also passed so KE queries are built from the structured
+    # category/geography/business_objective fields instead of raw RO text —
+    # this is what keeps a query anchored to e.g. "California USA" instead of
+    # silently losing that signal to truncation.
     for p in saved_personas:
         asyncio.create_task(
             enrich_persona_ke_sources(
@@ -771,6 +797,7 @@ async def generate_personas_digital_brain(
                 research_objective=ro.description or "",
                 persona_name=p.name or "",
                 exploration_id=exploration_id,
+                ro_components=ro_dict,
             )
         )
 
@@ -1609,7 +1636,13 @@ async def preview_persona(
     if not confidence:
         confidence_started_at = time.perf_counter()
         logger.info("preview_persona:confidence_llm_start persona=%s", persona_id)
-        confidence = await persona_service.generate_persona_confidence(p)
+        confidence = await persona_service.generate_persona_confidence(
+            p,
+            exploration_id=p.get("exploration_id"),
+            workspace_id=p.get("workspace_id"),
+            persona_id=persona_id,
+            created_by=p.get("created_by"),
+        )
         confidence_source = "llm"
         logger.info(
             "preview_persona:confidence_llm_done persona=%s elapsed_ms=%d",
@@ -1657,7 +1690,11 @@ async def preview_persona(
                 ocean_profile = await call_omi(
                     system_prompt=system_prompt,
                     user_prompt=user_prompt,
-                    response_format="json"
+                    response_format="json",
+                    exploration_id=persona_obj.exploration_id,
+                    workspace_id=persona_obj.workspace_id,
+                    persona_id=persona_obj.id,
+                    created_by=persona_obj.created_by,
                 )
 
                 # Save OCEAN profile to database
@@ -1696,7 +1733,13 @@ async def preview_persona(
     else:
         try:
             patterns_started_at = time.perf_counter()
-            patterns_result = await persona_service.generate_predominant_patterns(full_persona_info)
+            patterns_result = await persona_service.generate_predominant_patterns(
+                full_persona_info,
+                exploration_id=full_persona_info.get("exploration_id"),
+                workspace_id=full_persona_info.get("workspace_id"),
+                persona_id=persona_id,
+                created_by=full_persona_info.get("created_by"),
+            )
             preview["predominant_patterns"] = patterns_result
             cached_patterns = patterns_result
             patterns_freshly_generated = True
@@ -1777,7 +1820,8 @@ async def validate_persona_traits(
     validation = await validate_persona_traits_with_omi(
         research_objective=research_objective.description,
         trait_group=payload.trait_group,
-        traits=payload.traits
+        traits=payload.traits,
+        exploration_id=payload.exploration_id,
     )
 
     return validation
@@ -1894,7 +1938,11 @@ async def generate_ocean(
     ocean_profile = await call_omi(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
-        response_format="json"
+        response_format="json",
+        exploration_id=persona.exploration_id,
+        workspace_id=persona.workspace_id,
+        persona_id=persona.id,
+        created_by=persona.created_by,
     )
 
     persona.ocean_profile = ocean_profile

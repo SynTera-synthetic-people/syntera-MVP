@@ -12,6 +12,7 @@ import base64
 import csv
 import mimetypes
 from pathlib import Path
+from typing import Optional
 from urllib.parse import urlparse
 
 import httpx
@@ -19,6 +20,11 @@ from bs4 import BeautifulSoup
 from openai import AsyncOpenAI
 from app.config import OPENAI_API_KEY
 from app.utils.file_utils import save_material_bytes, material_file_path, MATERIAL_ALLOWED_EXT
+from app.services.llm_usage_tracker import (
+    record_llm_usage,
+    extract_usage_openai_chat,
+    extract_usage_openai_responses,
+)
 
 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
@@ -88,7 +94,11 @@ def _extract_csv(path: Path) -> str:
     return _truncate("\n".join(", ".join(row) for row in rows))
 
 
-async def _describe_image_bytes(image_bytes: bytes, content_type: str) -> str:
+async def _describe_image_bytes(
+    image_bytes: bytes, content_type: str,
+    *, exploration_id: Optional[str] = None, workspace_id: Optional[str] = None,
+    created_by: Optional[str] = None,
+) -> str:
     """Uses an OpenAI vision-capable model instead of OCR — no tesseract binary dependency.
     Shared by file-upload images and link-downloaded images (incl. YouTube thumbnails)."""
     b64 = base64.b64encode(image_bytes).decode("utf-8")
@@ -116,16 +126,39 @@ async def _describe_image_bytes(image_bytes: bytes, content_type: str) -> str:
         ],
         max_tokens=800,
     )
+    input_tokens, output_tokens, usage_raw = extract_usage_openai_chat(response)
+    await record_llm_usage(
+        exploration_id=exploration_id,
+        stage="material_extraction_vision",
+        provider="openai",
+        model="gpt-4o-mini",
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        usage_raw=usage_raw,
+        workspace_id=workspace_id,
+        created_by=created_by,
+    )
     return _truncate(response.choices[0].message.content or "")
 
 
-async def _extract_image_via_vision(path: Path, content_type: str) -> str:
+async def _extract_image_via_vision(
+    path: Path, content_type: str,
+    *, exploration_id: Optional[str] = None, workspace_id: Optional[str] = None,
+    created_by: Optional[str] = None,
+) -> str:
     with open(path, "rb") as f:
         image_bytes = f.read()
-    return await _describe_image_bytes(image_bytes, content_type)
+    return await _describe_image_bytes(
+        image_bytes, content_type,
+        exploration_id=exploration_id, workspace_id=workspace_id, created_by=created_by,
+    )
 
 
-async def extract_raw_text(path: Path, ext: str, content_type: str) -> str:
+async def extract_raw_text(
+    path: Path, ext: str, content_type: str,
+    *, exploration_id: Optional[str] = None, workspace_id: Optional[str] = None,
+    created_by: Optional[str] = None,
+) -> str:
     """Dispatches to the right extractor by extension. Returns '' on failure rather than raising —
     a bad/unparseable file should degrade to 'no extracted context', not block the upload."""
     try:
@@ -140,7 +173,10 @@ async def extract_raw_text(path: Path, ext: str, content_type: str) -> str:
         if ext == ".csv":
             return _extract_csv(path)
         if ext in IMAGE_EXTENSIONS:
-            return await _extract_image_via_vision(path, content_type)
+            return await _extract_image_via_vision(
+                path, content_type,
+                exploration_id=exploration_id, workspace_id=workspace_id, created_by=created_by,
+            )
         # .doc/.ppt/.xls (legacy binary Office formats) and .svg (vector markup)
         # have no extraction support — the file is still saved, it just won't
         # contribute extracted context. Better than failing the upload outright.
@@ -150,7 +186,11 @@ async def extract_raw_text(path: Path, ext: str, content_type: str) -> str:
     return ""
 
 
-async def summarize_material(instruction: str, raw_text: str) -> str:
+async def summarize_material(
+    instruction: str, raw_text: str,
+    *, exploration_id: Optional[str] = None, workspace_id: Optional[str] = None,
+    created_by: Optional[str] = None,
+) -> str:
     """Compresses (instruction + raw extracted text) into a concise, prompt-ready summary."""
     if not raw_text.strip():
         return ""
@@ -180,15 +220,37 @@ do not write generic filler. Return ONLY the summary as plain text, no preamble.
         temperature=0.3,
         input=prompt,
     )
+    input_tokens, output_tokens, usage_raw = extract_usage_openai_responses(response)
+    await record_llm_usage(
+        exploration_id=exploration_id,
+        stage="material_extraction_summary",
+        provider="openai",
+        model="gpt-4.1",
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        usage_raw=usage_raw,
+        workspace_id=workspace_id,
+        created_by=created_by,
+    )
     return response.output[0].content[0].text.strip()
 
 
-async def process_material(path: Path, ext: str, content_type: str, instruction: str) -> str:
+async def process_material(
+    path: Path, ext: str, content_type: str, instruction: str,
+    *, exploration_id: Optional[str] = None, workspace_id: Optional[str] = None,
+    created_by: Optional[str] = None,
+) -> str:
     """End-to-end: extract -> summarize. Returns '' if extraction yielded nothing usable."""
-    raw_text = await extract_raw_text(path, ext, content_type)
+    raw_text = await extract_raw_text(
+        path, ext, content_type,
+        exploration_id=exploration_id, workspace_id=workspace_id, created_by=created_by,
+    )
     if not raw_text.strip():
         return ""
-    return await summarize_material(instruction, raw_text)
+    return await summarize_material(
+        instruction, raw_text,
+        exploration_id=exploration_id, workspace_id=workspace_id, created_by=created_by,
+    )
 
 
 # ── Link extraction (Research Brief's reference link / Artifact's links) ──────
@@ -288,7 +350,11 @@ async def _fetch_webpage_text(url: str) -> str:
     return _truncate("\n".join(lines))
 
 
-async def process_material_url(url: str, instruction: str) -> dict:
+async def process_material_url(
+    url: str, instruction: str,
+    *, exploration_id: Optional[str] = None, workspace_id: Optional[str] = None,
+    created_by: Optional[str] = None,
+) -> dict:
     """
     End-to-end for a pasted link: classify -> fetch/extract -> summarize.
     Returns {"extracted_context": str, "stored_name": str|None, "size": int|None,
@@ -308,14 +374,23 @@ async def process_material_url(url: str, instruction: str) -> dict:
             stored_name, size, content_type, _ = await save_material_bytes(content, ext, content_type)
             stored = {"stored_name": stored_name, "size": size, "content_type": content_type}
             if kind == "image":
-                raw_text = await _describe_image_bytes(content, content_type)
+                raw_text = await _describe_image_bytes(
+                    content, content_type,
+                    exploration_id=exploration_id, workspace_id=workspace_id, created_by=created_by,
+                )
             else:
-                raw_text = await extract_raw_text(material_file_path(stored_name), ext, content_type)
+                raw_text = await extract_raw_text(
+                    material_file_path(stored_name), ext, content_type,
+                    exploration_id=exploration_id, workspace_id=workspace_id, created_by=created_by,
+                )
         else:
             raw_text = await _fetch_webpage_text(url)
     except Exception as e:
         print(f"Error extracting material from URL ({url}): {e}")
         raw_text = ""
 
-    extracted_context = await summarize_material(instruction, raw_text) if raw_text.strip() else ""
+    extracted_context = await summarize_material(
+        instruction, raw_text,
+        exploration_id=exploration_id, workspace_id=workspace_id, created_by=created_by,
+    ) if raw_text.strip() else ""
     return {"extracted_context": extracted_context, **stored}

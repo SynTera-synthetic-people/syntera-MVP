@@ -288,7 +288,7 @@ const ReportLogContainer: React.FC<ReportLogContainerProps> = ({ exploration, wo
 
         case 'discussion-guide': {
           const blob = await discussionGuideService.downloadGuide(workspaceId, explorationId);
-          _triggerBlobDownload(blob, `discussion_guide_${explorationId}.docx`);
+          _triggerBlobDownload(blob, `discussion_guide_${explorationId}.pdf`);
           break;
         }
 

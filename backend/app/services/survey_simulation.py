@@ -13,6 +13,7 @@ from sqlmodel import select
 from app.config import OPENAI_API_KEY
 from openai import AsyncOpenAI
 from app.services.question_engine import analysis_options_for_question
+from app.services.anti_sycophancy_rules import ANTI_SYCOPHANCY_RULES
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +72,8 @@ RESEARCH OBJECTIVE:
 
 QUESTIONS:
 {qs_joined}
+
+{ANTI_SYCOPHANCY_RULES}
 
 REQUIREMENTS (STRICT):
 1) Return ONLY valid JSON, and nothing else.

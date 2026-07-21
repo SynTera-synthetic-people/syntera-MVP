@@ -15,6 +15,7 @@ failures into clean HTTP responses without try/except boilerplate.
 import asyncio
 import json
 import logging
+import uuid
 from typing import Optional, Dict, Any, Tuple, List
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,6 +35,12 @@ from app.services.persona import (
 )
 from app.services.ke_sourcebank_enrichment import enrich_persona_ke_sources
 from app.config import OPENAI_API_KEY
+from app.services.llm_usage_tracker import (
+    record_llm_usage,
+    extract_usage_openai_chat,
+    UsageCollector,
+    flush_usage_events,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -631,6 +638,8 @@ async def create_manual_persona_draft(
 async def calibrate_manual_persona_with_brains(
     persona_id: str,
     exploration_id: str,
+    *,
+    request_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Single unified calibration flow (Phase 2). One path from draft to final
@@ -658,6 +667,18 @@ async def calibrate_manual_persona_with_brains(
     """
     logger.info("manual_persona.calibrate:start persona_id=%s", persona_id)
 
+    if request_id is None:
+        request_id = uuid.uuid4().hex
+
+    # Step 4 (_collect_evidence_for_manual_persona) reuses digital_brain_pipeline's
+    # scan_action_data/search_evidence_based_web_tiered/search_hq_database, which
+    # run inside their own ThreadPoolExecutor — this collector is threaded into
+    # those calls and drained/flushed in the finally below, regardless of where
+    # calibration fails (see docs/llm_usage_phase3_backlog.md, gap #1).
+    usage_collector = UsageCollector()
+    workspace_id: Optional[str] = None
+    created_by: Optional[str] = None
+
     try:
         async with AsyncSession(async_engine) as session:
             res = await session.execute(select(Persona).where(Persona.id == persona_id))
@@ -665,6 +686,9 @@ async def calibrate_manual_persona_with_brains(
 
             if not p:
                 return {"status": "error", "error_message": "Persona not found"}
+
+            workspace_id = p.workspace_id
+            created_by = p.created_by
 
             if p.calibration_status == "calibrated":
                 logger.info("manual_persona.calibrate:idempotent_return persona_id=%s", persona_id)
@@ -683,7 +707,10 @@ async def calibrate_manual_persona_with_brains(
             from app.services.digital_brain_pipeline import detect_relevant_dimensions
 
             # Step 1 + 2: RO -> 12 components, validated, then dimension detection.
-            validated_ro = await _extract_validated_ro(raw_traits, research_objective, category)
+            validated_ro = await _extract_validated_ro(
+                raw_traits, research_objective, category,
+                exploration_id=exploration_id, workspace_id=workspace_id, created_by=created_by,
+            )
             activated_dimensions = detect_relevant_dimensions(validated_ro)["activated_dimensions"]
 
             # Step 3: single LLM call — auto-fill traits, OCEAN, barriers/triggers,
@@ -705,6 +732,21 @@ async def calibrate_manual_persona_with_brains(
                     ],
                     temperature=0.4,
                     response_format={"type": "json_object"},
+                )
+                input_tokens, output_tokens, usage_raw = extract_usage_openai_chat(response)
+                await record_llm_usage(
+                    exploration_id=exploration_id,
+                    stage="persona_manual_calibration",
+                    operation="step3_autofill_ocean",
+                    provider="openai",
+                    model="gpt-4o",
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    usage_raw=usage_raw,
+                    workspace_id=p.workspace_id,
+                    persona_id=persona_id,
+                    created_by=p.created_by,
+                    request_id=request_id,
                 )
                 result = json.loads(response.choices[0].message.content)
             except Exception as e:
@@ -756,7 +798,12 @@ async def calibrate_manual_persona_with_brains(
 
             # Step 4: collect evidence (real, with an LLM-generated realistic
             # replacement per stream where real coverage is thin).
-            evidence = await _collect_evidence_for_manual_persona(validated_ro, activated_dimensions, category)
+            evidence = await _collect_evidence_for_manual_persona(
+                validated_ro, activated_dimensions, category,
+                exploration_id=exploration_id, workspace_id=p.workspace_id,
+                persona_id=persona_id, created_by=p.created_by, request_id=request_id,
+                usage_collector=usage_collector,
+            )
             evidence_metadata = evidence["evidence_metadata"]
 
             # Step 5: brain assignment + say-do-gap check — runs only now,
@@ -764,6 +811,8 @@ async def calibrate_manual_persona_with_brains(
             # evidence from Step 4 together. Never decided earlier.
             step5 = await _assign_brain_and_check_say_do_gap(
                 validated_ro, enriched, evidence["depth_layers"], evidence["eb_verdicts"], evidence["hq_verdicts"],
+                exploration_id=exploration_id, workspace_id=p.workspace_id,
+                persona_id=persona_id, created_by=p.created_by, request_id=request_id,
             )
             brain_assignment = step5["brain_assignment"]
             say_do_gap = step5["say_do_gap"]
@@ -811,7 +860,11 @@ async def calibrate_manual_persona_with_brains(
 
             # Pre-compute patterns so preview reads from cache instead of calling LLM again.
             try:
-                merged["predominant_patterns"] = await generate_predominant_patterns(merged)
+                merged["predominant_patterns"] = await generate_predominant_patterns(
+                    merged,
+                    exploration_id=exploration_id, workspace_id=p.workspace_id,
+                    persona_id=persona_id, created_by=p.created_by,
+                )
             except Exception:
                 logger.warning(
                     "manual_persona.calibrate: pattern generation failed, will recompute at preview",
@@ -838,13 +891,19 @@ async def calibrate_manual_persona_with_brains(
 
             # Enrich KE sources in background — runs after response is sent.
             # research_objective is always a plain string here (fetched by
-            # get_description() earlier in this function).
+            # get_description() earlier in this function). validated_ro (Step
+            # 1's structured 12-field RO, already computed above for evidence
+            # collection) is also passed so KE queries are built from the
+            # structured category/geography/business_objective fields instead
+            # of raw RO text — no extra extraction call, pure reuse of what
+            # Step 1 already produced.
             asyncio.create_task(
                 enrich_persona_ke_sources(
                     persona_id=persona_id,
                     research_objective=research_objective,
                     persona_name=p.name or "",
                     exploration_id=exploration_id,
+                    ro_components=validated_ro,
                 )
             )
 
@@ -861,6 +920,20 @@ async def calibrate_manual_persona_with_brains(
             persona_id, str(e), exc_info=True,
         )
         return {"status": "error", "error_message": str(e)}
+
+    finally:
+        # Flush whatever Step 4 evidence-collection usage was recorded before
+        # returning/raising, so a calibration run that fails partway through
+        # still has that token spend captured (same pattern as
+        # routers/personas.py's digital_brain_pipeline flush).
+        events = usage_collector.drain()
+        await flush_usage_events(
+            events,
+            exploration_id=exploration_id,
+            workspace_id=workspace_id,
+            created_by=created_by,
+            request_id=request_id,
+        )
 
 
 async def run_manual_calibration_background(
@@ -889,8 +962,9 @@ async def run_manual_calibration_background(
     from app.services import interview as interview_service
     from app.services import report_orchestrator as report_cache
 
+    request_id = uuid.uuid4().hex
     try:
-        result = await calibrate_manual_persona_with_brains(persona_id, exploration_id)
+        result = await calibrate_manual_persona_with_brains(persona_id, exploration_id, request_id=request_id)
     except Exception as e:
         logger.error(
             "manual_persona.calibrate_background:unhandled_error persona_id=%s error=%s",
@@ -972,7 +1046,15 @@ def _build_pseudo_ro(raw_traits: dict, research_objective_text: str, category: s
     }
 
 
-async def _extract_validated_ro(raw_traits: dict, research_objective_text: str, category: str) -> dict:
+async def _extract_validated_ro(
+    raw_traits: dict,
+    research_objective_text: str,
+    category: str,
+    *,
+    exploration_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
+    created_by: Optional[str] = None,
+) -> dict:
     """
     Stage 1: convert the manual persona's free-text research objective into
     the same 12-component RO shape the auto-generated digital brain flow uses
@@ -985,7 +1067,8 @@ async def _extract_validated_ro(raw_traits: dict, research_objective_text: str, 
 
     try:
         validated_ro = await extract_ro_components_for_pipeline(
-            research_objective_text, raw_traits if isinstance(raw_traits, dict) else {}
+            research_objective_text, raw_traits if isinstance(raw_traits, dict) else {},
+            exploration_id=exploration_id, workspace_id=workspace_id, created_by=created_by,
         )
         return validate_research_objective(validated_ro)
     except Exception:
@@ -1004,7 +1087,17 @@ async def _extract_validated_ro(raw_traits: dict, research_objective_text: str, 
         return pseudo_ro
 
 
-async def _simulate_fallback_content(prompt: str, default: dict) -> dict:
+async def _simulate_fallback_content(
+    prompt: str,
+    default: dict,
+    *,
+    operation: Optional[str] = None,
+    exploration_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
+    persona_id: Optional[str] = None,
+    created_by: Optional[str] = None,
+    request_id: Optional[str] = None,
+) -> dict:
     """
     Ask GPT-4o to generate plausible, category-typical content for a
     fallback verdict — written so it reads exactly like real evidence.
@@ -1021,6 +1114,21 @@ async def _simulate_fallback_content(prompt: str, default: dict) -> dict:
             temperature=0.4,
             response_format={"type": "json_object"},
         )
+        input_tokens, output_tokens, usage_raw = extract_usage_openai_chat(response)
+        await record_llm_usage(
+            exploration_id=exploration_id,
+            stage="persona_manual_calibration",
+            operation=operation,
+            provider="openai",
+            model="gpt-4o",
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            usage_raw=usage_raw,
+            workspace_id=workspace_id,
+            persona_id=persona_id,
+            created_by=created_by,
+            request_id=request_id,
+        )
         parsed = json.loads(response.choices[0].message.content)
         if isinstance(parsed, dict):
             return {**default, **{k: v for k, v in parsed.items() if k in default}}
@@ -1029,7 +1137,15 @@ async def _simulate_fallback_content(prompt: str, default: dict) -> dict:
     return default
 
 
-async def _estimate_action_data_verdict(category: str) -> dict:
+async def _estimate_action_data_verdict(
+    category: str,
+    *,
+    exploration_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
+    persona_id: Optional[str] = None,
+    created_by: Optional[str] = None,
+    request_id: Optional[str] = None,
+) -> dict:
     """LLM-generated stand-in when real action data for this category is sparse."""
     lo, hi = _ESTIMATED_CONFIDENCE_RANGE
     content = await _simulate_fallback_content(
@@ -1044,6 +1160,9 @@ async def _estimate_action_data_verdict(category: str) -> dict:
             "pattern_detected": f"Users in this category consistently demonstrate repeat purchase behaviour after initial adoption.",
             "behavioral_signal": "Driven by category-typical adoption and repeat-purchase norms.",
         },
+        operation="evidence_fallback_action_data",
+        exploration_id=exploration_id, workspace_id=workspace_id,
+        persona_id=persona_id, created_by=created_by, request_id=request_id,
     )
     return {
         "verdict_id": "DL_ESTIMATED",
@@ -1060,7 +1179,15 @@ async def _estimate_action_data_verdict(category: str) -> dict:
     }
 
 
-async def _estimate_hq_verdict(category: str) -> dict:
+async def _estimate_hq_verdict(
+    category: str,
+    *,
+    exploration_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
+    persona_id: Optional[str] = None,
+    created_by: Optional[str] = None,
+    request_id: Optional[str] = None,
+) -> dict:
     """LLM-generated stand-in when real HQ source coverage is sparse."""
     lo, hi = _ESTIMATED_CONFIDENCE_RANGE
     content = await _simulate_fallback_content(
@@ -1075,6 +1202,9 @@ async def _estimate_hq_verdict(category: str) -> dict:
             "finding_summary": f"Category benchmark research for '{category}' indicates consistent, well-established consumer norms.",
             "dimension_insight": "Reflects general category-level consumer behavior.",
         },
+        operation="evidence_fallback_hq",
+        exploration_id=exploration_id, workspace_id=workspace_id,
+        persona_id=persona_id, created_by=created_by, request_id=request_id,
     )
     return {
         "verdict_id": "HQ_ESTIMATED",
@@ -1255,6 +1385,13 @@ async def _collect_evidence_for_manual_persona(
     validated_ro: dict,
     activated_dimensions: list,
     category: str,
+    *,
+    exploration_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
+    persona_id: Optional[str] = None,
+    created_by: Optional[str] = None,
+    request_id: Optional[str] = None,
+    usage_collector: Optional[UsageCollector] = None,
 ) -> Dict[str, Any]:
     """
     Real-first evidence collection for a manual persona (Step 4 of
@@ -1288,8 +1425,14 @@ async def _collect_evidence_for_manual_persona(
     # these three still run concurrently in their own threads.
     with _cf.ThreadPoolExecutor(max_workers=3) as executor:
         fut_action_df = executor.submit(fetch_action_data_all, 5000)
-        fut_eb = executor.submit(search_evidence_based_web_tiered, validated_ro, activated_dimensions)
-        fut_hq = executor.submit(search_hq_database, validated_ro, activated_dimensions)
+        fut_eb = executor.submit(
+            search_evidence_based_web_tiered, validated_ro, activated_dimensions,
+            usage_collector=usage_collector,
+        )
+        fut_hq = executor.submit(
+            search_hq_database, validated_ro, activated_dimensions,
+            usage_collector=usage_collector,
+        )
         action_df, result_3b, hq_verdicts = await asyncio.gather(
             asyncio.wrap_future(fut_action_df),
             asyncio.wrap_future(fut_eb),
@@ -1327,7 +1470,9 @@ async def _collect_evidence_for_manual_persona(
             return False
         category_matched_rows = int(action_df.apply(_row_matches, axis=1).sum())
 
-    depth_layers = scan_action_data(action_df, activated_dimensions, validated_ro) if action_df is not None and not action_df.empty else []
+    depth_layers = scan_action_data(
+        action_df, activated_dimensions, validated_ro, usage_collector=usage_collector,
+    ) if action_df is not None and not action_df.empty else []
 
     # Real action-data confidence requires BOTH enough total volume AND that
     # volume actually being relevant to this persona's stated category.
@@ -1349,9 +1494,15 @@ async def _collect_evidence_for_manual_persona(
     web_used_estimate = web_tier_metadata.get("tier_3_llm_estimated", False)
 
     if action_used_estimate:
-        final_depth_layers.append(await _estimate_action_data_verdict(category))
+        final_depth_layers.append(await _estimate_action_data_verdict(
+            category, exploration_id=exploration_id, workspace_id=workspace_id,
+            persona_id=persona_id, created_by=created_by, request_id=request_id,
+        ))
     if hq_used_estimate:
-        final_hq_verdicts.append(await _estimate_hq_verdict(category))
+        final_hq_verdicts.append(await _estimate_hq_verdict(
+            category, exploration_id=exploration_id, workspace_id=workspace_id,
+            persona_id=persona_id, created_by=created_by, request_id=request_id,
+        ))
 
     evidence_metadata = {
         "action_data": {
@@ -1390,6 +1541,12 @@ async def _assign_brain_and_check_say_do_gap(
     depth_layers: list,
     eb_verdicts: list,
     hq_verdicts: list,
+    *,
+    exploration_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
+    persona_id: Optional[str] = None,
+    created_by: Optional[str] = None,
+    request_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Step 5 of calibrate_manual_persona_with_brains(): brain assignment AND
@@ -1473,6 +1630,21 @@ Return ONLY this JSON object:
             ],
             temperature=0.3,
             response_format={"type": "json_object"},
+        )
+        input_tokens, output_tokens, usage_raw = extract_usage_openai_chat(response)
+        await record_llm_usage(
+            exploration_id=exploration_id,
+            stage="persona_manual_calibration",
+            operation="step5_brain_assignment",
+            provider="openai",
+            model="gpt-4o",
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            usage_raw=usage_raw,
+            workspace_id=workspace_id,
+            persona_id=persona_id,
+            created_by=created_by,
+            request_id=request_id,
         )
         parsed = json.loads(response.choices[0].message.content)
         if isinstance(parsed, dict) and isinstance(parsed.get("brain_assignment"), dict) and parsed["brain_assignment"].get("primary_brain"):
