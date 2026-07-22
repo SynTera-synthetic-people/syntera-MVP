@@ -429,6 +429,12 @@ export default function ChartVisuals({ allVariables }: ChartVisualsProps) {
     footnote2: '',
   });
 
+  // Whether each "source" has actually produced a chart yet in this session.
+  // These drive what the two "Switch to..." buttons do — see
+  // handleSwitchToOmi / handleSwitchToCustom below for the reasoning.
+  const [hasOmiResult, setHasOmiResult] = useState(false);
+  const [hasCustomChart, setHasCustomChart] = useState(false);
+
   useEffect(() => {
     return () => {
       if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -469,11 +475,40 @@ export default function ChartVisuals({ allVariables }: ChartVisualsProps) {
         setLoadingStep(step);
         stepTimer.current = setTimeout(advance, 900);
       } else {
+        setHasOmiResult(true);
         setFlow('preview');
         flashToast();
       }
     };
     stepTimer.current = setTimeout(advance, 900);
+  }
+
+  /** "Switch to Omi Generated Charts" (shown on the Builder screen).
+   * If Omi has already produced a result this session, just flip back to
+   * it instantly — no need to make the user wait again. If Omi has never
+   * run yet (they went straight to the custom-builder path), treat the
+   * click as a request to generate one now: run the full loading sequence
+   * and land on Preview once it's done. */
+  function handleSwitchToOmi() {
+    if (hasOmiResult) {
+      setFlow('preview');
+    } else {
+      startOmiGeneration();
+    }
+  }
+
+  /** "Switch to Custom Charts" (shown on the Preview screen).
+   * If the user already built a custom chart this session, resume it
+   * directly on the Builder screen rather than making them re-pick from
+   * the Gallery. If they haven't built one yet, send them to the Gallery
+   * to create one — same destination as the entry screen's identically
+   * worded "Create Custom Charts" button. */
+  function handleSwitchToCustom() {
+    if (hasCustomChart) {
+      setFlow('builder');
+    } else {
+      goToGallery();
+    }
   }
 
   function selectGalleryType(id: ChartType) {
@@ -483,6 +518,7 @@ export default function ChartVisuals({ allVariables }: ChartVisualsProps) {
   }
 
   function addChartFromGallery() {
+    setHasCustomChart(true);
     setFlow('builder');
     flashToast();
   }
@@ -660,9 +696,17 @@ export default function ChartVisuals({ allVariables }: ChartVisualsProps) {
   //
   // Both render the same underlying chart mapping. Preview is the
   // read-mostly view Omi lands you on (3 rows, no Slicer column, no filter
-  // chips). Builder is the fully editable view, reached either via
-  // Preview's "Switch to Custom Charts" or via the Gallery's "+ Add Chart"
-  // (adds a 4th Select/slicer row plus Filter 1–4 chips).
+  // chips); Builder is the fully editable view (adds a 4th Select/slicer
+  // row plus Filter 1–4 chips), reached via the Gallery's "+ Add Chart".
+  //
+  // The two "Switch to..." buttons are symmetric, not a blind toggle —
+  // see handleSwitchToOmi / handleSwitchToCustom above:
+  //   - "Switch to Omi Generated Charts" (on Builder): if Omi has already
+  //     produced a result this session, jump straight back to it; if not,
+  //     run the generation now and land on Preview once it finishes.
+  //   - "Switch to Custom Charts" (on Preview): if the user already built
+  //     a custom chart this session, resume it directly; if not, open the
+  //     Gallery so they can build one.
   // ══════════════════════════════════════════════════════════════════════
 
   const isBuilder = flow === 'builder';
@@ -678,7 +722,8 @@ export default function ChartVisuals({ allVariables }: ChartVisualsProps) {
         </div>
       )}
 
-      <div className="dp-panel dp-panel--all">
+      <div className="dp-left-zone">
+      <div className="dp-panel dp-panel--all" style={{ width: 170 }}>
         <div className="dp-panel-header">
           <div className="dp-panel-header-left">
             <button type="button" className="dp-panel-back-btn" onClick={goToChoice} aria-label="Back to chart options" title="Back to chart options">
@@ -720,16 +765,17 @@ export default function ChartVisuals({ allVariables }: ChartVisualsProps) {
           </table>
         </div>
       </div>
+      </div>
 
       <div className="dp-chart-builder">
         <div className="dp-cb-header">
           <span className="dp-cb-title">{isBuilder ? 'Chart Builder' : 'Preview'}</span>
           {isBuilder ? (
-            <button type="button" className="dp-cb-switch-btn" onClick={() => setFlow('preview')}>
+            <button type="button" className="dp-cb-switch-btn" onClick={handleSwitchToOmi}>
               Switch to Omi Generated Charts
             </button>
           ) : (
-            <button type="button" className="dp-cb-switch-btn" onClick={() => setFlow('builder')}>
+            <button type="button" className="dp-cb-switch-btn" onClick={handleSwitchToCustom}>
               Switch to Custom Charts
             </button>
           )}

@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import './DataPlayground.css';
+import { createPortal } from 'react-dom';
 import FrequencyTable from './tabs/FrequencyTable';
 import CrossTabs from './tabs/CrossTabs';
 import ChartVisuals from './tabs/ChartVisuals';
@@ -323,7 +324,7 @@ const DataPlayground: React.FC<DataPlaygroundProps> = ({ onClose }) => {
     }
   };
 
-  return (
+   return createPortal(
     <div className="dp-overlay">
       <div className="dp-modal">
 
@@ -402,7 +403,8 @@ const DataPlayground: React.FC<DataPlaygroundProps> = ({ onClose }) => {
           }}
         />
       )}
-    </div>
+    </div>,
+    document.body
   );
 };
 
