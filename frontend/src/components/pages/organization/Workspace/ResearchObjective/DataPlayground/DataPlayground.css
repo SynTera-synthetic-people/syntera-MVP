@@ -273,12 +273,73 @@
   opacity: 1;
 }
 
+/* ── Left "zone" wrapper ──────────────────────────────────────────────────
+   Groups the variable-selection panels (All Variables / Selected /
+   Banner / Main) on a shared, slightly-darker recessed background, per
+   Figma. Panels sit "on top of" this zone with their own lighter fill
+   (see .dp-panel below) — the zone is the darker of the two tones. ── */
+/* ── Full-bleed "zone" wrapper (Frequency Table / Cross Tabs) ─────────────
+   Per Figma, the dark recessed zone isn't confined to the variable panels —
+   it spans the *entire* tab body edge-to-edge, and the results content
+   area (the "Data will appear here" card / results table) floats on top
+   of it using the same lighter tone the panels use. This wrapper bleeds
+   out through .dp-body's own padding (negative margin) and re-applies it
+   as its own padding, so it reaches the full width/height of the body. ── */
+.dp-zone-body {
+  flex: 1;
+  display: flex;
+  align-items: stretch;
+  gap: 16px;
+  margin: -16px;
+  /* Top + left only — per Figma the content-area card is flush against
+     the zone's right and bottom edges; only the panel side (top/left)
+     keeps an inset. */
+  padding: 16px 0 0 16px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: #121317;
+}
+
+/* The variable panels still want a bottom gap before the zone's edge —
+   since the zone itself no longer has bottom padding (so the content-area
+   can go flush), give the panel columns their own margin instead. This
+   only targets direct children of the full-bleed zone, so it doesn't
+   affect .dp-panel usage elsewhere (e.g. Chart/Visuals' .dp-left-zone). */
+.dp-zone-body > .dp-panel,
+.dp-zone-body > .dp-cross-panels {
+  margin-bottom: 16px;
+}
+
+/* Legacy small wrapper — still used by Chart/Visuals, which isn't part of
+   this pass. Kept separate from .dp-zone-body above. */
+.dp-left-zone {
+  display: flex;
+  align-items: stretch;
+  gap: 16px;
+  padding: 10px;
+  background: #121317;
+  border: 1px solid #2a2d33;
+  border-radius: 14px;
+  flex-shrink: 0;
+  min-height: 0;
+}
+
+.dp-content-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+  background: #1e2126;
+}
+
 /* ── Shared Panel Styles (used by tabs) ── */
 .dp-panel {
   display: flex;
   flex-direction: column;
-  background: #121317;
-  border: 1px solid #2a2d33;
+  background: #17181c;
+  border: 1px solid #2f323a;
   border-radius: 12px;
   overflow: hidden;
   flex-shrink: 0;
@@ -529,14 +590,6 @@
 }
 
 /* ── Content Area ── */
-.dp-content-area {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  min-width: 0;
-}
-
 .dp-content-scroll {
   flex: 1;
   overflow-y: auto;
@@ -1124,8 +1177,8 @@
   flex-direction: column;
   overflow: hidden;
   min-height: 0;
-  background: #121317;
-  border: 1px solid #2a2d33;
+  background: #17181c;
+  border: 1px solid #2f323a;
   border-radius: 12px;
 }
 

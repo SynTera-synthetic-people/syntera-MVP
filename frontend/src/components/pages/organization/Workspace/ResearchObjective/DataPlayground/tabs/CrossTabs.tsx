@@ -319,177 +319,181 @@ const CrossTabs: React.FC<CrossTabsProps> = ({
 
   return (
     <>
-      {/* All Variables panel */}
-      <div className="dp-panel dp-panel--all" style={{ position: 'relative' }}>
-        <div className="dp-panel-header">
-          <span className="dp-panel-title">All Variables</span>
-          <button className="dp-panel-arrow-btn" aria-label="Move all right">→</button>
-        </div>
-        <div className="dp-var-list">
-          {allVariables.map((v) => (
-            <VariablePill
-              key={v.id}
-              variable={v}
-              variant="source"
-              added={allSelectedIds.has(v.id)}
-              onClick={handleVarClick}
-            />
-          ))}
-        </div>
-
-        {/* Where to move modal */}
-        {pendingVar && (
-          <div className="dp-where-overlay" onClick={() => setPendingVar(null)}>
-            <div className="dp-where-box" onClick={(e) => e.stopPropagation()}>
-              <p className="dp-where-title">Where to move?</p>
-              <button className="dp-where-option" onClick={() => handleWhereSelect('banner')}>
-                Banner Variables
-              </button>
-              <button className="dp-where-option" onClick={() => handleWhereSelect('main')}>
-                Main Variables
-              </button>
-              <p className="dp-where-note">Add into respective column</p>
-            </div>
-          </div>
-        )}
-
-        {/* Value modal */}
-        {valueModal && (
-          <div className="dp-val-overlay" onClick={() => setValueModal(null)}>
-            <div className="dp-val-box" onClick={(e) => e.stopPropagation()}>
-              <p className="dp-val-title">Value</p>
-              <select
-                className="dp-val-select"
-                value={selectedValue1}
-                onChange={(e) => setSelectedValue1(e.target.value)}
-              >
-                <option value="">Select Value</option>
-                <option value="1">1</option>
-                <option value="2">2</option>
-                <option value="3">3</option>
-                <option value="4">4</option>
-              </select>
-              <select
-                className="dp-val-select"
-                value={selectedValue2}
-                onChange={(e) => setSelectedValue2(e.target.value)}
-              >
-                <option value="2">2</option>
-                <option value="3">3</option>
-                <option value="4">4</option>
-                <option value="5">5</option>
-              </select>
-              <button className="dp-val-ok-btn" onClick={handleValueOk}>
-                OK
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Banner + Main panels stacked */}
-      <div className="dp-cross-panels">
-        {/* Banner Variables */}
-        <div className="dp-cross-section">
+      {/* Full-bleed "zone" — recessed dark background spanning the whole
+          tab body. The All Variables / Banner / Main panels AND the
+          results content area all sit on top of it, per Figma. */}
+      <div className="dp-zone-body">
+        {/* All Variables panel */}
+        <div className="dp-panel dp-panel--all" style={{ position: 'relative' }}>
           <div className="dp-panel-header">
-            <span className="dp-panel-title">Banner Variables</span>
-            <button
-              className="dp-panel-arrow-btn"
-              onClick={() => bannerVars.forEach((v) => onBannerRemove(v.id))}
-              aria-label="Clear banner variables"
-            >
-              ←
-            </button>
+            <span className="dp-panel-title">All Variables</span>
+            <button className="dp-panel-arrow-btn" aria-label="Move all right">→</button>
           </div>
           <div className="dp-var-list">
-            {bannerVars.length === 0 ? (
-              <p className="dp-panel-empty-hint">No banner variables</p>
-            ) : (
-              bannerVars.map((v, i) => (
-                <VariablePill
-                  key={v.id}
-                  variable={v}
-                  variant="selected"
-                  focused={i === 0}
-                  arrowDirection="left"
-                  onClick={() => onBannerRemove(v.id)}
-                />
-              ))
-            )}
+            {allVariables.map((v) => (
+              <VariablePill
+                key={v.id}
+                variable={v}
+                variant="source"
+                added={allSelectedIds.has(v.id)}
+                onClick={handleVarClick}
+              />
+            ))}
           </div>
-          <div className="dp-updown-bar">
-            <span className="dp-updown-label">Up/Down</span>
-            <button
-              className="dp-updown-btn dp-updown-btn--accent"
-              onClick={() => onBannerMoveDown(bannerVars.length - 1)}
-              disabled={bannerVars.length < 2}
-              aria-label="Move down"
-            >
-              ↓
-            </button>
-            <button
-              className="dp-updown-btn"
-              onClick={() => onBannerMoveUp(0)}
-              disabled={bannerVars.length < 2}
-              aria-label="Move up"
-            >
-              ↑
-            </button>
+
+          {/* Where to move modal */}
+          {pendingVar && (
+            <div className="dp-where-overlay" onClick={() => setPendingVar(null)}>
+              <div className="dp-where-box" onClick={(e) => e.stopPropagation()}>
+                <p className="dp-where-title">Where to move?</p>
+                <button className="dp-where-option" onClick={() => handleWhereSelect('banner')}>
+                  Banner Variables
+                </button>
+                <button className="dp-where-option" onClick={() => handleWhereSelect('main')}>
+                  Main Variables
+                </button>
+                <p className="dp-where-note">Add into respective column</p>
+              </div>
+            </div>
+          )}
+
+          {/* Value modal */}
+          {valueModal && (
+            <div className="dp-val-overlay" onClick={() => setValueModal(null)}>
+              <div className="dp-val-box" onClick={(e) => e.stopPropagation()}>
+                <p className="dp-val-title">Value</p>
+                <select
+                  className="dp-val-select"
+                  value={selectedValue1}
+                  onChange={(e) => setSelectedValue1(e.target.value)}
+                >
+                  <option value="">Select Value</option>
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                  <option value="4">4</option>
+                </select>
+                <select
+                  className="dp-val-select"
+                  value={selectedValue2}
+                  onChange={(e) => setSelectedValue2(e.target.value)}
+                >
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                  <option value="4">4</option>
+                  <option value="5">5</option>
+                </select>
+                <button className="dp-val-ok-btn" onClick={handleValueOk}>
+                  OK
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Banner + Main panels stacked */}
+        <div className="dp-cross-panels">
+          {/* Banner Variables */}
+          <div className="dp-cross-section">
+            <div className="dp-panel-header">
+              <span className="dp-panel-title">Banner Variables</span>
+              <button
+                className="dp-panel-arrow-btn"
+                onClick={() => bannerVars.forEach((v) => onBannerRemove(v.id))}
+                aria-label="Clear banner variables"
+              >
+                ←
+              </button>
+            </div>
+            <div className="dp-var-list">
+              {bannerVars.length === 0 ? (
+                <p className="dp-panel-empty-hint">No banner variables</p>
+              ) : (
+                bannerVars.map((v, i) => (
+                  <VariablePill
+                    key={v.id}
+                    variable={v}
+                    variant="selected"
+                    focused={i === 0}
+                    arrowDirection="left"
+                    onClick={() => onBannerRemove(v.id)}
+                  />
+                ))
+              )}
+            </div>
+            <div className="dp-updown-bar">
+              <span className="dp-updown-label">Up/Down</span>
+              <button
+                className="dp-updown-btn dp-updown-btn--accent"
+                onClick={() => onBannerMoveDown(bannerVars.length - 1)}
+                disabled={bannerVars.length < 2}
+                aria-label="Move down"
+              >
+                ↓
+              </button>
+              <button
+                className="dp-updown-btn"
+                onClick={() => onBannerMoveUp(0)}
+                disabled={bannerVars.length < 2}
+                aria-label="Move up"
+              >
+                ↑
+              </button>
+            </div>
+          </div>
+
+          {/* Main Variables */}
+          <div className="dp-cross-section">
+            <div className="dp-panel-header">
+              <span className="dp-panel-title">Main Variables</span>
+              <button
+                className="dp-panel-arrow-btn"
+                onClick={() => mainVars.forEach((v) => onMainRemove(v.id))}
+                aria-label="Clear main variables"
+              >
+                ←
+              </button>
+            </div>
+            <div className="dp-var-list">
+              {mainVars.length === 0 ? (
+                <p className="dp-panel-empty-hint">No main variables</p>
+              ) : (
+                mainVars.map((v, i) => (
+                  <VariablePill
+                    key={v.id}
+                    variable={v}
+                    variant="selected"
+                    focused={i === 0}
+                    arrowDirection="left"
+                    onClick={() => onMainRemove(v.id)}
+                  />
+                ))
+              )}
+            </div>
+            <div className="dp-updown-bar">
+              <span className="dp-updown-label">Up/Down</span>
+              <button
+                className="dp-updown-btn dp-updown-btn--accent"
+                onClick={() => onMainMoveDown(mainVars.length - 1)}
+                disabled={mainVars.length < 2}
+                aria-label="Move down"
+              >
+                ↓
+              </button>
+              <button
+                className="dp-updown-btn"
+                onClick={() => onMainMoveUp(0)}
+                disabled={mainVars.length < 2}
+                aria-label="Move up"
+              >
+                ↑
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Main Variables */}
-        <div className="dp-cross-section">
-          <div className="dp-panel-header">
-            <span className="dp-panel-title">Main Variables</span>
-            <button
-              className="dp-panel-arrow-btn"
-              onClick={() => mainVars.forEach((v) => onMainRemove(v.id))}
-              aria-label="Clear main variables"
-            >
-              ←
-            </button>
-          </div>
-          <div className="dp-var-list">
-            {mainVars.length === 0 ? (
-              <p className="dp-panel-empty-hint">No main variables</p>
-            ) : (
-              mainVars.map((v, i) => (
-                <VariablePill
-                  key={v.id}
-                  variable={v}
-                  variant="selected"
-                  focused={i === 0}
-                  arrowDirection="left"
-                  onClick={() => onMainRemove(v.id)}
-                />
-              ))
-            )}
-          </div>
-          <div className="dp-updown-bar">
-            <span className="dp-updown-label">Up/Down</span>
-            <button
-              className="dp-updown-btn dp-updown-btn--accent"
-              onClick={() => onMainMoveDown(mainVars.length - 1)}
-              disabled={mainVars.length < 2}
-              aria-label="Move down"
-            >
-              ↓
-            </button>
-            <button
-              className="dp-updown-btn"
-              onClick={() => onMainMoveUp(0)}
-              disabled={mainVars.length < 2}
-              aria-label="Move up"
-            >
-              ↑
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Results area */}
-      <div className="dp-content-area">
+        {/* Results area */}
+        <div className="dp-content-area">
         {hasResults && (bannerVars.length > 0 || mainVars.length > 0) && (
           <>
             {/* Sigma / Mean statistic toggles */}
@@ -799,6 +803,7 @@ const CrossTabs: React.FC<CrossTabsProps> = ({
               );
             })
           )}
+        </div>
         </div>
       </div>
 

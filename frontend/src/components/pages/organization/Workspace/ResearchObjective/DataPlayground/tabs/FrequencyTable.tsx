@@ -183,162 +183,167 @@ const FrequencyTable: React.FC<FrequencyTableProps> = ({
 
   return (
     <>
-      {/* All Variables panel — click or drag to move into Selected Variables */}
-      <div className="dp-panel" style={{ width: 190 }}>
-        <div className="dp-panel-header">
-          <span className="dp-panel-title">All Variables</span>
-          <button
-            className="dp-panel-arrow-btn"
-            onClick={onSelectAll}
-            title="Select all variables"
-            aria-label="Select all variables"
-          >
-            →
-          </button>
-        </div>
-        <div className="dp-var-list">
-          {allVariables.map((v) => (
-            <VariablePill
-              key={v.id}
-              variable={v}
-              variant="source"
-              added={selectedIds.has(v.id)}
-              onClick={onVarToggle}
-              draggable={!selectedIds.has(v.id)}
-              onDragStart={handleSourceDragStart}
-            />
-          ))}
-        </div>
-      </div>
-
-      {/* Selected Variables panel — also acts as a drop target */}
-      {selectedVars.length === 0 ? (
-        <div
-          className={`dp-panel dp-add-variable-zone${dropZoneActive ? ' dp-add-variable-zone--active' : ''}`}
-          style={{ width: 190 }}
-          onDragOver={handleDropZoneDragOver}
-          onDragLeave={() => setDropZoneActive(false)}
-          onDrop={handleDropZoneDrop}
-        >
-          <svg className="dp-add-variable-icon" width="26" height="26" viewBox="0 0 24 24" fill="none">
-            <path
-              d="M12 2.5 20.5 7.5V16.5L12 21.5 3.5 16.5V7.5Z"
-              stroke="currentColor"
-              strokeWidth="1.4"
-              strokeLinejoin="round"
-            />
-            <path d="M12 8V16M8 12H16" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-          </svg>
-          <div className="dp-add-variable-title">Add Variable</div>
-          <div className="dp-add-variable-subtitle">
-            Select or drag and drop variables from left panel
-          </div>
-        </div>
-      ) : (
+      {/* Full-bleed "zone" — recessed dark background spanning the whole
+          tab body. The variable panels AND the results content area both
+          sit on top of it, per Figma. */}
+      <div className="dp-zone-body">
+        {/* All Variables panel — click or drag to move into Selected Variables */}
         <div className="dp-panel" style={{ width: 190 }}>
           <div className="dp-panel-header">
-            <span className="dp-panel-title">Selected Variables</span>
+            <span className="dp-panel-title">All Variables</span>
             <button
               className="dp-panel-arrow-btn"
-              onClick={onClearAll}
-              title="Clear all selected"
-              aria-label="Clear all selected variables"
+              onClick={onSelectAll}
+              title="Select all variables"
+              aria-label="Select all variables"
             >
-              ←
+              →
             </button>
           </div>
-          <div
-            className="dp-var-list"
-            onDragOver={handleDropZoneDragOver}
-            onDrop={handleDropZoneDrop}
-          >
-            {selectedVars.map((v, i) => (
-              <div
+          <div className="dp-var-list">
+            {allVariables.map((v) => (
+              <VariablePill
                 key={v.id}
-                className={dragOverIndex === i ? 'dp-pill--drag-over' : undefined}
-                style={{ borderRadius: 6 }}
-              >
-                <VariablePill
-                  variable={v}
-                  variant="selected"
-                  focused={focusedIndex === i}
-                  arrowDirection="left"
-                  onClick={() => {
-                    setFocusedIndex(i);
-                    onVarRemove(v.id);
-                  }}
-                  draggable
-                  onDragStart={(e) => handleSelectedDragStart(e, i)}
-                  onDragOver={handleSelectedDragOver(i)}
-                  onDrop={handleSelectedDrop(i)}
-                  onDragEnd={handleSelectedDragEnd}
-                />
-              </div>
+                variable={v}
+                variant="source"
+                added={selectedIds.has(v.id)}
+                onClick={onVarToggle}
+                draggable={!selectedIds.has(v.id)}
+                onDragStart={handleSourceDragStart}
+              />
             ))}
           </div>
-          <div className="dp-updown-bar">
-            <span className="dp-updown-label">Up/Down</span>
-            <button
-              className="dp-updown-btn dp-updown-btn--accent"
-              onClick={handleMoveDown}
-              disabled={selectedVars.length < 2}
-              title="Move selected item down"
-              aria-label="Move down"
-            >
-              ↓
-            </button>
-            <button
-              className="dp-updown-btn"
-              onClick={handleMoveUp}
-              disabled={selectedVars.length < 2}
-              title="Move selected item up"
-              aria-label="Move up"
-            >
-              ↑
-            </button>
-          </div>
         </div>
-      )}
 
-      {/* Results content area */}
-      <div className="dp-content-area">
-        <div className="dp-content-scroll">
-          {!hasResults || selectedVars.length === 0 ? (
-            <EmptyState />
-          ) : (
-            selectedVars.map((v) => {
-              const result = FREQ_RESULTS[v.id] ?? getFallbackResult(v.id);
-              return (
-                <div key={v.id} className="dp-freq-block">
-                  <div className="dp-freq-block-title">{result.title}</div>
-                  <table className="dp-freq-table">
-                    <thead>
-                      <tr>
-                        <th></th>
-                        <th></th>
-                        <th>Frequency</th>
-                        <th>Percent</th>
-                        <th>Valid Percent</th>
-                        <th>Cumulative Percent</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {result.rows.map((row, idx) => (
-                        <tr key={idx}>
-                          <td>Valid</td>
-                          <td>{row.label}</td>
-                          <td>{row.frequency}</td>
-                          <td>{row.percent.toFixed(1)}</td>
-                          <td>{row.validPercent.toFixed(1)}</td>
-                          <td>{row.cumulativePercent.toFixed(1)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+        {/* Selected Variables panel — also acts as a drop target */}
+        {selectedVars.length === 0 ? (
+          <div
+            className={`dp-panel dp-add-variable-zone${dropZoneActive ? ' dp-add-variable-zone--active' : ''}`}
+            style={{ width: 190 }}
+            onDragOver={handleDropZoneDragOver}
+            onDragLeave={() => setDropZoneActive(false)}
+            onDrop={handleDropZoneDrop}
+          >
+            <svg className="dp-add-variable-icon" width="26" height="26" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M12 2.5 20.5 7.5V16.5L12 21.5 3.5 16.5V7.5Z"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinejoin="round"
+              />
+              <path d="M12 8V16M8 12H16" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+            </svg>
+            <div className="dp-add-variable-title">Add Variable</div>
+            <div className="dp-add-variable-subtitle">
+              Select or drag and drop variables from left panel
+            </div>
+          </div>
+        ) : (
+          <div className="dp-panel" style={{ width: 190 }}>
+            <div className="dp-panel-header">
+              <span className="dp-panel-title">Selected Variables</span>
+              <button
+                className="dp-panel-arrow-btn"
+                onClick={onClearAll}
+                title="Clear all selected"
+                aria-label="Clear all selected variables"
+              >
+                ←
+              </button>
+            </div>
+            <div
+              className="dp-var-list"
+              onDragOver={handleDropZoneDragOver}
+              onDrop={handleDropZoneDrop}
+            >
+              {selectedVars.map((v, i) => (
+                <div
+                  key={v.id}
+                  className={dragOverIndex === i ? 'dp-pill--drag-over' : undefined}
+                  style={{ borderRadius: 6 }}
+                >
+                  <VariablePill
+                    variable={v}
+                    variant="selected"
+                    focused={focusedIndex === i}
+                    arrowDirection="left"
+                    onClick={() => {
+                      setFocusedIndex(i);
+                      onVarRemove(v.id);
+                    }}
+                    draggable
+                    onDragStart={(e) => handleSelectedDragStart(e, i)}
+                    onDragOver={handleSelectedDragOver(i)}
+                    onDrop={handleSelectedDrop(i)}
+                    onDragEnd={handleSelectedDragEnd}
+                  />
                 </div>
-              );
-            })
-          )}
+              ))}
+            </div>
+            <div className="dp-updown-bar">
+              <span className="dp-updown-label">Up/Down</span>
+              <button
+                className="dp-updown-btn dp-updown-btn--accent"
+                onClick={handleMoveDown}
+                disabled={selectedVars.length < 2}
+                title="Move selected item down"
+                aria-label="Move down"
+              >
+                ↓
+              </button>
+              <button
+                className="dp-updown-btn"
+                onClick={handleMoveUp}
+                disabled={selectedVars.length < 2}
+                title="Move selected item up"
+                aria-label="Move up"
+              >
+                ↑
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Results content area */}
+        <div className="dp-content-area">
+          <div className="dp-content-scroll">
+            {!hasResults || selectedVars.length === 0 ? (
+              <EmptyState />
+            ) : (
+              selectedVars.map((v) => {
+                const result = FREQ_RESULTS[v.id] ?? getFallbackResult(v.id);
+                return (
+                  <div key={v.id} className="dp-freq-block">
+                    <div className="dp-freq-block-title">{result.title}</div>
+                    <table className="dp-freq-table">
+                      <thead>
+                        <tr>
+                          <th></th>
+                          <th></th>
+                          <th>Frequency</th>
+                          <th>Percent</th>
+                          <th>Valid Percent</th>
+                          <th>Cumulative Percent</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {result.rows.map((row, idx) => (
+                          <tr key={idx}>
+                            <td>Valid</td>
+                            <td>{row.label}</td>
+                            <td>{row.frequency}</td>
+                            <td>{row.percent.toFixed(1)}</td>
+                            <td>{row.validPercent.toFixed(1)}</td>
+                            <td>{row.cumulativePercent.toFixed(1)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })
+            )}
+          </div>
         </div>
       </div>
     </>
