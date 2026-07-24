@@ -22,6 +22,7 @@ from functools import lru_cache
 from typing import Any, Optional
 
 import pandas as pd
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.data_playground import DataPlaygroundDataset, DataPlaygroundVariable
@@ -304,6 +305,47 @@ async def ingest_dataset(
     return dataset, variables
 
 
+# ── Queries ──────────────────────────────────────────────────────────────────
+
+async def list_datasets(
+    db: AsyncSession, *, workspace_id: str, exploration_id: str
+) -> list[DataPlaygroundDataset]:
+    result = await db.execute(
+        select(DataPlaygroundDataset)
+        .where(
+            DataPlaygroundDataset.workspace_id == workspace_id,
+            DataPlaygroundDataset.exploration_id == exploration_id,
+        )
+        .order_by(DataPlaygroundDataset.created_at.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def get_dataset(
+    db: AsyncSession, *, dataset_id: str, workspace_id: str, exploration_id: str
+) -> Optional[DataPlaygroundDataset]:
+    """Scoped lookup — a dataset_id alone is never enough; it must also belong
+    to the workspace/exploration in the URL, so a member of one exploration
+    can't reach another exploration's dataset by guessing an id."""
+    result = await db.execute(
+        select(DataPlaygroundDataset).where(
+            DataPlaygroundDataset.id == dataset_id,
+            DataPlaygroundDataset.workspace_id == workspace_id,
+            DataPlaygroundDataset.exploration_id == exploration_id,
+        )
+    )
+    return result.scalars().first()
+
+
+async def list_variables(db: AsyncSession, *, dataset_id: str) -> list[DataPlaygroundVariable]:
+    result = await db.execute(
+        select(DataPlaygroundVariable)
+        .where(DataPlaygroundVariable.dataset_id == dataset_id)
+        .order_by(DataPlaygroundVariable.position)
+    )
+    return list(result.scalars().all())
+
+
 # ── DataFrame access for analyses ────────────────────────────────────────────
 
 @lru_cache(maxsize=16)
@@ -330,3 +372,68 @@ def dataframe_for_dataset(dataset: DataPlaygroundDataset) -> pd.DataFrame:
 
 def touch_dataset(dataset: DataPlaygroundDataset) -> None:
     dataset.updated_at = datetime.utcnow()
+
+
+# ── Coded / Labelled Data rows ──────────────────────────────────────────────
+
+_ROW_MODES = {"coded", "labelled"}
+
+
+async def get_dataset_rows(
+    db: AsyncSession,
+    dataset: DataPlaygroundDataset,
+    mode: str,
+    page: int,
+    page_size: int,
+) -> dict[str, Any]:
+    """Paginated respondent-level grid backing the Coded Data / Labelled Data
+    tabs. Not cached in dp_analysis — this is a raw windowed view over the
+    file, not an aggregate computation.
+
+    mode="coded" attaches each categorical cell's stored code alongside its
+    label; mode="labelled" returns the label only. The first identifier-type
+    variable (if any) becomes each row's `respid`; every other variable is
+    a column in `values`. Falls back to a 1-based row number when the
+    dataset has no identifier-type column.
+    """
+    if mode not in _ROW_MODES:
+        raise ValueError(f"mode must be one of {sorted(_ROW_MODES)}")
+
+    variables = await list_variables(db, dataset_id=dataset.id)
+    df = dataframe_for_dataset(dataset)
+    total_rows = len(df)
+
+    id_variable = next((v for v in variables if v.data_type == "identifier"), None)
+    value_variables = [v for v in variables if v is not id_variable]
+
+    columns = [
+        {"key": v.variable_name, "header": v.display_name, "type": v.data_type}
+        for v in variables
+    ]
+    label_to_code = {
+        v.variable_name: {item["label"]: item["code"] for item in (v.value_labels or [])}
+        for v in value_variables
+    }
+
+    start = (page - 1) * page_size
+    page_df = df.iloc[start : start + page_size]
+
+    rows = []
+    for offset, (_, record) in enumerate(page_df.iterrows()):
+        respid = _cell(record[id_variable.variable_name]) if id_variable else str(start + offset + 1)
+        values: dict[str, Any] = {}
+        for variable in value_variables:
+            raw = _cell(record[variable.variable_name])
+            if not raw:
+                continue
+            code = label_to_code[variable.variable_name].get(raw) if mode == "coded" else None
+            values[variable.variable_name] = {"code": code, "label": raw}
+        rows.append({"respid": respid, "values": values})
+
+    return {
+        "columns": columns,
+        "rows": rows,
+        "page": page,
+        "page_size": page_size,
+        "total_rows": total_rows,
+    }
