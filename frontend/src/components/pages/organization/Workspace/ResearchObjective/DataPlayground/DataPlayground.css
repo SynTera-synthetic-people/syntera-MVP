@@ -157,6 +157,8 @@
 .dp-body {
   flex: 1;
   display: flex;
+  gap: 16px;
+  padding: 16px;
   overflow: hidden;
   min-height: 0;
   background: #1e2126;
@@ -271,12 +273,75 @@
   opacity: 1;
 }
 
+/* ── Left "zone" wrapper ──────────────────────────────────────────────────
+   Groups the variable-selection panels (All Variables / Selected /
+   Banner / Main) on a shared, slightly-darker recessed background, per
+   Figma. Panels sit "on top of" this zone with their own lighter fill
+   (see .dp-panel below) — the zone is the darker of the two tones. ── */
+/* ── Full-bleed "zone" wrapper (Frequency Table / Cross Tabs) ─────────────
+   Per Figma, the dark recessed zone isn't confined to the variable panels —
+   it spans the *entire* tab body edge-to-edge, and the results content
+   area (the "Data will appear here" card / results table) floats on top
+   of it using the same lighter tone the panels use. This wrapper bleeds
+   out through .dp-body's own padding (negative margin) and re-applies it
+   as its own padding, so it reaches the full width/height of the body. ── */
+.dp-zone-body {
+  flex: 1;
+  display: flex;
+  align-items: stretch;
+  gap: 16px;
+  margin: -16px;
+  /* Top + left only — per Figma the content-area card is flush against
+     the zone's right and bottom edges; only the panel side (top/left)
+     keeps an inset. */
+  padding: 16px 0 0 16px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: #121317;
+}
+
+/* The variable panels still want a bottom gap before the zone's edge —
+   since the zone itself no longer has bottom padding (so the content-area
+   can go flush), give the panel columns their own margin instead. This
+   only targets direct children of the full-bleed zone, so it doesn't
+   affect .dp-panel usage elsewhere (e.g. Chart/Visuals' .dp-left-zone). */
+.dp-zone-body > .dp-panel,
+.dp-zone-body > .dp-cross-panels {
+  margin-bottom: 16px;
+}
+
+/* Legacy small wrapper — still used by Chart/Visuals, which isn't part of
+   this pass. Kept separate from .dp-zone-body above. */
+.dp-left-zone {
+  display: flex;
+  align-items: stretch;
+  gap: 16px;
+  padding: 10px;
+  background: #121317;
+  border: 1px solid #2a2d33;
+  border-radius: 14px;
+  flex-shrink: 0;
+  min-height: 0;
+}
+
+.dp-content-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+  background: #1e2126;
+  border-radius: 14px;
+}
+
 /* ── Shared Panel Styles (used by tabs) ── */
 .dp-panel {
   display: flex;
   flex-direction: column;
-  background: #121317;
-  border-right: 1px solid #2a2d33;
+  background: #17181c;
+  border: 1px solid #2f323a;
+  border-radius: 12px;
   overflow: hidden;
   flex-shrink: 0;
 }
@@ -344,19 +409,21 @@
 
 /* ── Variable Pill ──────────────────────────────────────────────────────────
    Colors pixel-sampled from Figma:
-   - default fill  #393c45, text #e8e9ec
-   - added/mint fill #37ffce, text #0e0f12 (dark-on-mint, "source" list only)
-   - focused (selected-list) pill stays the neutral fill; a small solid-mint
-     arrow badge is what changes, not the whole chip
+   - default fill  #393c45, text #e8e9ec (pill background NEVER changes,
+     whether "added" in the source list or "focused" in a selected list —
+     the mint indicator is always the fused arrow badge, not a full-pill fill)
+   - fused arrow badge fill #37ffce, text #0e0f12, full pill height, flush
+     with the pill's edge (clipped to the pill's own border-radius via
+     `overflow: hidden` on .dp-pill — no gap, no floating rounded square)
    ── */
 .dp-pill {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   width: auto;
   max-width: 100%;
   flex-shrink: 0;
-  padding: 8px 16px;
   margin: 0;
+  padding: 0;
   background: #393c45;
   border: 1px solid #16181c;
   border-radius: 8px;
@@ -364,8 +431,9 @@
   font-size: 13px;
   cursor: pointer;
   text-align: left;
-  transition: all 0.15s;
-  gap: 6px;
+  transition: background 0.15s;
+  gap: 0;
+  overflow: hidden;
   font-family: inherit;
 }
 
@@ -373,45 +441,42 @@
   background: #454850;
 }
 
-/* "source" pill (All Variables list) once added to a target list */
+/* "source" pill (All Variables list) once added to a target list —
+   pill background stays the neutral slate; only the fused badge (below)
+   turns mint. Kept as a state hook but intentionally carries no override. */
 .dp-pill--added {
-  background: #37ffce;
-  border-color: #37ffce;
-  color: #0e0f12;
-  font-weight: 500;
 }
 
-.dp-pill--added:hover {
-  background: #2ee6b8;
-}
-
-/* "selected" pill (Selected/Banner/Main lists) that Up/Down acts on */
+/* "selected" pill (Selected/Banner/Main lists) that Up/Down acts on —
+   again, no outline/fill override; the fused badge is the sole indicator. */
 .dp-pill--focused {
-  outline: 1px solid #37ffce;
-  outline-offset: -1px;
 }
 
 .dp-pill-label {
   flex: 1;
   min-width: 0;
+  display: flex;
+  align-items: center;
+  padding: 8px 14px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Small solid-mint arrow badge shown on hover (source, not yet added) or
-   pinned permanently on the focused item in a selected-style list. */
+/* Fused mint arrow segment: full pill height, flush against the edge.
+   Visible permanently when pinned (added / focused); otherwise revealed
+   on hover only. Width is reserved at all times so hovering never shifts
+   the pill's layout. */
 .dp-pill-arrow-badge {
   flex-shrink: 0;
-  display: inline-flex;
+  align-self: stretch;
+  display: flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 4px;
+  width: 32px;
   background: #37ffce;
   color: #0e0f12;
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1;
   opacity: 0;
   transition: opacity 0.12s;
@@ -526,14 +591,6 @@
 }
 
 /* ── Content Area ── */
-.dp-content-area {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  min-width: 0;
-}
-
 .dp-content-scroll {
   flex: 1;
   overflow-y: auto;
@@ -605,7 +662,7 @@
 }
 
 .dp-freq-table th {
-  background: #121317;
+  background: #0e0f12;
   color: #9a9eab;
   font-weight: 500;
   font-size: 12px;
@@ -616,6 +673,7 @@
 }
 
 .dp-freq-table td {
+  background: #0e0f12;
   padding: 8px 12px;
   border: 1px solid #2a2d33;
   color: #c8cad0;
@@ -709,7 +767,7 @@
   align-items: center;
   gap: 6px;
   padding: 7px 14px;
-  background: #121317;
+  background: #1e2126;
   border: 1px solid #3a3d44;
   border-radius: 8px;
   color: #e8e9ec;
@@ -820,13 +878,13 @@
 
 /* ── Where Modal (inline in panel) ── */
 .dp-where-overlay {
-  position: absolute;
+  position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.6);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 20;
+  z-index: 2000;
   border-radius: 0;
 }
 
@@ -884,13 +942,13 @@
 
 /* ── Value Modal (inline in panel) ── */
 .dp-val-overlay {
-  position: absolute;
+  position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.6);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 20;
+  z-index: 2000;
 }
 
 .dp-val-box {
@@ -1109,11 +1167,9 @@
 .dp-cross-panels {
   display: flex;
   flex-direction: column;
+  gap: 12px;
   width: 190px;
   flex-shrink: 0;
-  background: #121317;
-  border-right: 1px solid #2a2d33;
-  overflow: hidden;
 }
 
 .dp-cross-section {
@@ -1121,12 +1177,10 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border-bottom: 1px solid #2a2d33;
   min-height: 0;
-}
-
-.dp-cross-section:last-child {
-  border-bottom: none;
+  background: #17181c;
+  border: 1px solid #2f323a;
+  border-radius: 12px;
 }
 
 /* ── Placeholder tabs ── */
@@ -1342,7 +1396,7 @@
   min-width: 260px;
   font-size: 11px;
   color: #9a9eab;
-  background: #121317;
+  background: #0e0f12;
   padding: 7px 10px;
   border: 1px solid #2a2d33;
   font-weight: 500;
@@ -1353,7 +1407,7 @@
   white-space: nowrap;
   font-size: 11px;
   color: #9a9eab;
-  background: #121317;
+  background: #0e0f12;
   padding: 7px 10px;
   border: 1px solid #2a2d33;
   font-weight: 500;
@@ -1363,7 +1417,7 @@
   text-align: right;
   font-size: 10px;
   color: #6b6f7a;
-  background: #17181c;
+  background: #0e0f12;
   padding: 5px 10px;
   border: 1px solid #2a2d33;
   font-weight: 400;
@@ -1373,6 +1427,7 @@
   text-align: left;
   font-size: 12px;
   color: #c8cad0;
+  background: #0e0f12;
   padding: 7px 10px;
   border: 1px solid #2a2d33;
   min-width: 260px;
@@ -1382,6 +1437,7 @@
   text-align: right;
   font-size: 12px;
   color: #c8cad0;
+  background: #0e0f12;
   padding: 7px 10px;
   border: 1px solid #2a2d33;
   white-space: nowrap;
@@ -1428,7 +1484,7 @@
   padding: 0;
   border: 1px solid #2a2d33;
   text-align: center;
-  background: transparent;
+  background: #0e0f12;
 }
 
 .dp-row-updown {
@@ -1724,7 +1780,7 @@
   display: flex;
   align-items: center;
   gap: 18px;
-  color: #cfd1d6;
+  color: #e8e9ec;
   font-size: 22px;
   margin-bottom: 6px;
 }
@@ -1915,7 +1971,7 @@
 
 .dp-cb-switch-btn {
   padding: 7px 14px;
-  background: transparent;
+  background: #1e2126;
   border: 1px solid #3a3d44;
   border-radius: 7px;
   color: #e8e9ec;
@@ -1976,7 +2032,7 @@
   align-items: center;
   gap: 6px;
   padding: 7px 12px;
-  background: #121317;
+  background: #1e2126;
   border: 1px solid #3a3d44;
   border-radius: 7px;
   color: #c8cad0;
@@ -1990,7 +2046,7 @@
 }
 
 .dp-cb-preview-box {
-  background: #17181c;
+  background: #1e2126;
   border: 1px solid #2a2d33;
   border-radius: 10px;
   padding: 20px;
@@ -2052,6 +2108,7 @@
 .dp-gallery-sidebar {
   width: 220px;
   flex-shrink: 0;
+  background: #121317;
   border-right: 1px solid #2a2d33;
   padding: 16px;
   overflow-y: auto;
@@ -2157,7 +2214,7 @@
 }
 
 .dp-gallery-type-btn--active {
-  background: #0c2c24;
+  background: #1e2126;
   border-color: #37ffce;
   color: #37ffce;
 }
@@ -2177,6 +2234,7 @@
 .dp-gallery-main {
   flex: 1;
   overflow-y: auto;
+  background: #121317;
   padding: 20px 24px;
 }
 
@@ -2194,7 +2252,7 @@
 }
 
 .dp-gallery-card {
-  background: #17181c;
+  background: #0e0f12;
   border: 1px solid #2a2d33;
   border-radius: 12px;
   padding: 14px 16px 16px;
@@ -2236,6 +2294,7 @@
   display: flex;
   justify-content: flex-end;
   padding: 14px 24px;
+  background: #121317;
   border-top: 1px solid #2a2d33;
   flex-shrink: 0;
 }
