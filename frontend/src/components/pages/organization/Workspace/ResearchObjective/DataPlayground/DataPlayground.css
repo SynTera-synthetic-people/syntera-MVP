@@ -1828,12 +1828,35 @@
 }
 
 .dp-gen-step-avatar {
-  width: 56px;
-  height: 56px;
+  width: 72px;
+  height: 72px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.dp-gen-step-avatar-ring {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  padding: 3px;
+  background: conic-gradient(#2563eb 0deg 270deg, #1c1e23 270deg 360deg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: dp-spin 1.4s linear infinite;
+}
+
+.dp-gen-step-avatar-video {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  background: #0d0e14;
+  /* Undo the parent ring's spin so the video itself stays upright while
+     only the ring behind it rotates. */
+  animation: dp-spin-reverse 1.4s linear infinite;
 }
 
 .dp-gen-ring {
@@ -1844,6 +1867,11 @@
 @keyframes dp-spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+@keyframes dp-spin-reverse {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(-360deg); }
 }
 
 .dp-gen-step-label {
@@ -1867,6 +1895,8 @@
   flex-direction: column;
   min-width: 0;
   overflow: hidden;
+  background: #17181c;
+  border-radius: 14px;
 }
 
 .dp-cb-header {
@@ -1918,7 +1948,7 @@
 .dp-cb-input {
   width: 100%;
   padding: 9px 12px;
-  background: #121317;
+  background: #272a30;
   border: 1px solid #3a3d44;
   border-radius: 8px;
   color: #e8e9ec;

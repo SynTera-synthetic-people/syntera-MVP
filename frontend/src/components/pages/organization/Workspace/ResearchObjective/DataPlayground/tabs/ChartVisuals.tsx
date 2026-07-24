@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import type { Variable } from '../Index';
 import VariablePill from '../VariablePill';
 import '../DataPlayground.css';
+import OmiKeyboard from '../../../../../../../assets/Omi Animations/OmiKeyboard.mp4';
 
 // ══════════════════════════════════════════════════════════════════════════
 // Icons — plain named components, rendered by explicit reference (never via
@@ -93,29 +94,20 @@ function chartTypeIcon(id: ChartType, size = 15) {
   }
 }
 
-/** Animated loader avatar for the Omi "Generating charts" step — a spinning
- * ring around a small robot glyph, echoing the Figma reference illustration. */
+/** Animated loader avatar for the Omi "Generating charts" step — plays the
+ * OmiKeyboard clip in a ringed circular frame, per the Figma reference. */
 function LoaderAvatar() {
   return (
-    <svg viewBox="0 0 64 64" width="56" height="56">
-      <circle cx="32" cy="32" r="27" fill="#0d0e14" />
-      <circle
-        cx="32"
-        cy="32"
-        r="27"
-        fill="none"
-        stroke="#2563eb"
-        strokeWidth="3"
-        strokeDasharray="127 170"
-        strokeLinecap="round"
-        className="dp-gen-ring"
+    <div className="dp-gen-step-avatar-ring">
+      <video
+        className="dp-gen-step-avatar-video"
+        src={OmiKeyboard}
+        autoPlay
+        loop
+        muted
+        playsInline
       />
-      <rect x="20" y="21" width="24" height="17" rx="7" fill="#3b82f6" />
-      <circle cx="26.5" cy="29.5" r="2.2" fill="#0d0e14" />
-      <circle cx="37.5" cy="29.5" r="2.2" fill="#0d0e14" />
-      <rect x="29" y="15" width="6" height="7" rx="2.5" fill="#3b82f6" />
-      <rect x="23" y="41" width="18" height="9" rx="3.5" fill="#2563eb" />
-    </svg>
+    </div>
   );
 }
 
