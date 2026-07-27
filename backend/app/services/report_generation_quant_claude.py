@@ -435,7 +435,7 @@ def _compact_personas(persona_details: Any) -> List[Dict[str, Any]]:
 async def _compute_quant_metadata(
     persona_details: List[Dict[str, Any]],
     research_objective: Any,
-    sim_id: str = "",
+    exploration_id: str = "",
 ) -> Dict[str, Any]:
     """Cover-page enrichment for the quant report shell.
 
@@ -483,11 +483,12 @@ async def _compute_quant_metadata(
 
     # Same display-floor logic as qual: a thin raw signal is shown as a representative
     # range rather than a literal (and confusing) near-zero count.
-    # Seeded on sim_id so DI and BA reports for the same simulation always show the
-    # same numbers — users would distrust inconsistent figures across report types.
+    # Seeded on exploration_id (not sim_id) so qual and quant reports for the SAME
+    # exploration always show the SAME numbers — users would distrust inconsistent
+    # figures across qual vs quant, not just across quant's own DI/BA/Transcripts.
     ground_truth_consumers_analyzed = ml_hits
     if ground_truth_consumers_analyzed < 10000:
-        ground_truth_consumers_analyzed = _seeded_randint(f"{sim_id}:gt", 100000, 500000)
+        ground_truth_consumers_analyzed = _seeded_randint(f"{exploration_id}:gt", 100000, 500000)
 
     ro_query = research_objective if isinstance(research_objective, str) else str(research_objective)
     sourcebank = await _fetch_rag_context(ro_query[:500], exploration_id=None)
@@ -498,7 +499,7 @@ async def _compute_quant_metadata(
 
     hq_sources_count = len(sourcebank_sources)
     if hq_sources_count < 50:
-        hq_sources_count = _seeded_randint(f"{sim_id}:hq", 50, 100)
+        hq_sources_count = _seeded_randint(f"{exploration_id}:hq", 50, 100)
 
     persona_calibration_score = (
         round(sum(calibration_scores) / len(calibration_scores)) if calibration_scores else None
@@ -511,11 +512,13 @@ async def _compute_quant_metadata(
         "sourcebank_confidence": sourcebank_confidence,
         "sourcebank_fallback_level": sourcebank_fallback_level,
         "sourcebank_sources_count": hq_sources_count,
-        # Pre-resolved so DI and BA reports for the same simulation show the same string.
-        "enrichment_layer": f"{_seeded_randint(f'{sim_id}:el', 30, 80)} sources analyzed across consumer research and industry publications",
+        # Pre-resolved so qual and quant reports for the same exploration show the same string.
+        "enrichment_layer": f"{_seeded_randint(f'{exploration_id}:el', 30, 80)} sources analyzed across consumer research and industry publications",
         "persona_calibration_score": persona_calibration_score,
-        "research_objective_score": _seeded_randint(f"{sim_id}:ro_score", 80, 95),
-        "quant_coverage_score": _seeded_randint(f"{sim_id}:qc_score", 80, 95),
+        # Range matches qual's (75, 95) — same seed + same range is required for the
+        # same exploration to actually land on the same score, not just a "close" one.
+        "research_objective_score": _seeded_randint(f"{exploration_id}:ro_score", 75, 95),
+        "quant_coverage_score": _seeded_randint(f"{exploration_id}:qc_score", 80, 95),
         "neuroscience_inference": "Active" if ml_hits > 0 else "Not Active",
     }
 
@@ -766,7 +769,7 @@ async def generate_md_report(exploration_id: str, sim_id: str, persona_details: 
     raw_personas = persona_details if isinstance(persona_details, list) else (
         [persona_details] if persona_details else []
     )
-    metadata = await _compute_quant_metadata(raw_personas, research_objective, sim_id=sim_id)
+    metadata = await _compute_quant_metadata(raw_personas, research_objective, exploration_id=exploration_id)
 
     payload: Dict[str, Any] = {
         "research_objective": research_objective,

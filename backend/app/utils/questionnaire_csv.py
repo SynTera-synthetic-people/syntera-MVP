@@ -275,7 +275,9 @@ def build_survey_results_csv_bytes(
     """
     Generates a per-respondent wide-format CSV matching the reference format:
 
-    Respondent_ID | Persona_Type | Persona_Sample_Size | Q1_<label> | Q2_<label> | ...
+    Row 1 (header):       Respondent_ID | Persona_Type | Persona_Sample_Size | Q1_<label> | Q2_<label> | ...
+    Row 2 (question text): "" | "" | "" | <full Q1 text> | <full Q2 text> | ...
+    Row 3+ (data):          per-respondent chosen options
 
     - results: { question_text: [ {option, count, pct?}, ... ] }  (SurveySimulation.results)
     - persona_sample_sizes: { persona_id: sample_size }
@@ -305,10 +307,15 @@ def build_survey_results_csv_bytes(
     col_labels = [_short_label(q, i) for i, q in enumerate(questions)]
 
     headers = ["Respondent_ID", "Persona_Type", "Persona_Sample_Size"] + col_labels
+    # Short column labels are truncated to a few words for readability; the full
+    # question text is never dropped — it's surfaced in a dedicated row right
+    # below the header so it's visible without cross-referencing the other CSV.
+    question_text_row = ["", "", ""] + [q.strip() for q in questions]
 
     buffer = io.StringIO()
     writer = csv.writer(buffer)
     writer.writerow(headers)
+    writer.writerow(question_text_row)
 
     for persona_idx, (persona_id, sample_size) in enumerate(persona_sample_sizes.items(), 1):
         persona_name = persona_names_map.get(persona_id, f"Persona_{persona_idx}")
