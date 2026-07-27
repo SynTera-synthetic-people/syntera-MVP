@@ -3,7 +3,7 @@ import '../DataPlayground.css';
 import { GRID_COLUMNS, GRID_ROWS } from './sampleGridData';
 
 const LabelledData: React.FC = () => (
-  <div className="dp-content-area">
+  <div className="dp-data-full-bleed">
     <div className="dp-data-table-wrap">
       <table className="dp-data-table">
         <thead>

@@ -380,6 +380,65 @@
   color: #e8e9ec;
 }
 
+.dp-panel-arrow-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.dp-panel-arrow-btn:disabled:hover {
+  background: #121317;
+  color: #e8e9ec;
+}
+
+/* "Group by" entry — created when 2+ multi-selected variables are moved
+   into Banner/Main together in one batch. Collapsible header pill (same
+   mint language as an "added" source pill) with its members nested and
+   indented underneath. */
+.dp-var-group {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  gap: 6px;
+}
+
+.dp-var-group-header {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  background: #37ffce;
+  border: none;
+  border-radius: 6px;
+  color: #0d0e12;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.dp-var-group-caret {
+  font-size: 12px;
+  line-height: 1;
+  transition: transform 0.15s;
+}
+
+.dp-var-group-caret--open {
+  transform: rotate(180deg);
+}
+
+.dp-var-group-members {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding-left: 14px;
+  border-left: 2px solid #2a2d33;
+  margin-left: 4px;
+}
+
 .dp-var-list {
   flex: 1;
   overflow-y: auto;
@@ -2321,6 +2380,32 @@
    Insights / Summary — report view
    ══════════════════════════════════════════════════════════════════════ */
 
+/* ── Full-bleed wrapper for panel-less tabs (Insights / Coded / Labelled) ──
+   Per Figma, these have no side panels, so unlike .dp-zone-body their
+   content fills the *entire* tab body edge-to-edge — no gap on any side.
+   Bleeds through .dp-body's own 16px padding on all four sides. ── */
+.dp-data-full-bleed {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  margin: -16px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Insights/Summary variant — same full-bleed idea, but with the zone-dark
+   fill and its own inner padding since it's prose, not a table. */
+.dp-report-zone {
+  flex: 1;
+  margin: -16px;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  background: #121317;
+  padding: 32px;
+}
+
 .dp-report {
   max-width: 900px;
 }
@@ -2372,7 +2457,7 @@
 .dp-data-table th {
   position: sticky;
   top: 0;
-  background: #121317;
+  background: #17181c;
   color: #e8e9ec;
   font-weight: 600;
   padding: 9px 14px;
@@ -2387,6 +2472,7 @@
   border: 1px solid #2a2d33;
   color: #c8cad0;
   white-space: nowrap;
+  background: #0e0f12;
 }
 
 .dp-data-table .dp-data-subrow td {
