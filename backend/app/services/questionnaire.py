@@ -1269,7 +1269,10 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
 
     MANDATORY SECTIONS (always include):
     • S1: Population Characteristics (Theme: Contextual Framing)
-    • S_DEMO: Demographics &amp; Classification (final section)
+    • S_DEMO: final section, Theme: Contextual Framing. Its "title" MUST be the exact
+      literal string "Population Profile" — do not rename, paraphrase, or invent an
+      alternative (e.g. "My Profile", "About You", "Demographics & Classification").
+      This is the one section exempt from the "make titles objective-specific" rule below.
 
     THEMATIC SECTIONS (create one section per relevant theme from Step 3):
     • If Behavioral Patterns is relevant → create dedicated Behavioral Patterns section 
@@ -1476,6 +1479,8 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
     research objective stated at the top of this prompt:
     "$res_desc"
     Generate section names that are SPECIFIC to that research objective — not generic labels.
+    EXCEPTION: the final S_DEMO section's title is NOT objective-specific — it MUST always be
+    the exact literal string "Population Profile", verbatim, regardless of research objective.
 
     NOTE: This template shows the REQUIRED question density. ALL sections including S1 must have 4-6 questions.
     Replicate the S2 pattern for every section — no section may have fewer than 4 questions.
@@ -1614,9 +1619,9 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
       "questions": [ "*** GENERATE 4-6 QUESTIONS FOLLOWING THE S2 PATTERN ABOVE ***" ]
     },
     {
-      "section_id": "S7",
+      "section_id": "S_DEMO",
       "section_theme": "Contextual Framing",
-      "title": "Demographics & Classification",
+      "title": "Population Profile",
       "questions": [ "*** GENERATE 4-6 QUESTIONS FOLLOWING THE S2 PATTERN ABOVE ***" ]
     }
   ]
