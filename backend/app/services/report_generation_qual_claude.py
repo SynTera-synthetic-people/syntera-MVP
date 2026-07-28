@@ -1601,6 +1601,32 @@ async def generate_report_markdown(
 # being deleted along with prose dashes.
 _NUMERIC_RANGE_DASH_RE = re.compile(r"(?<=[0-9%])\s*[–—]\s*(?=[0-9])")
 
+# Matches INR income figures denominated in lakhs/lacs (e.g. "Rs. 12-18
+# lakhs/year", "₹15-25 lac", "Rs.20 lakh per annum", "₹12-18L") so an
+# approximate USD equivalent can be appended for persona income ranges
+# (Studied Personas table, both qual and quant reports share this sanitizer).
+_INR_LAKH_RE = re.compile(
+    r"(?:(?i:Rs)\.?\s*|₹\s*)(\d+(?:\.\d+)?)(?:\s*[-–—]\s*(\d+(?:\.\d+)?))?"
+    r"\s*(?:(?i:lakhs?|lacs?)|L\b)(?:\s*(?i:/\s*year|per\s*annum))?"
+)
+
+_LAKH_TO_INR = 100_000
+# Approximate; update periodically. Figures are shown with "~" so small
+# rate drift doesn't misrepresent them as exact conversions.
+INR_TO_USD_RATE = 95.0
+
+
+def _lakh_match_to_usd(match: "re.Match[str]") -> str:
+    low = float(match.group(1))
+    high = float(match.group(2)) if match.group(2) else low
+    low_usd = round(low * _LAKH_TO_INR / INR_TO_USD_RATE / 100) * 100
+    high_usd = round(high * _LAKH_TO_INR / INR_TO_USD_RATE / 100) * 100
+    if match.group(2):
+        usd_text = f"~${low_usd:,.0f}-{high_usd:,.0f}"
+    else:
+        usd_text = f"~${low_usd:,.0f}"
+    return f"{match.group(0)} ({usd_text})"
+
 # Explicit replacements for Unicode symbols the LLM commonly emits but that
 # xhtml2pdf/reportlab cannot render with its default Latin fonts.  Ordered so
 # that multi-char sequences are replaced before their single-char subsets.
@@ -1674,6 +1700,11 @@ def sanitize_report_text(text: str) -> str:
     """
     if not text:
         return text
+
+    # Pass 0 – append an approximate USD equivalent next to INR lakh figures
+    # (e.g. persona income ranges in the Studied Personas table) before the
+    # ₹ symbol is stripped by Pass 1 below.
+    text = _INR_LAKH_RE.sub(_lakh_match_to_usd, text)
 
     # Pass 1 – named symbol replacements
     for char, replacement in _SYMBOL_REPLACEMENTS:

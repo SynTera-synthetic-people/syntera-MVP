@@ -1018,7 +1018,7 @@ const QuestionnaireGuide: React.FC<QuestionnaireGuideProps> = ({
                     <SpIcon name="sp-File-File_Download" size={15} />
                 </button>
                 <button className="qdg-launch-btn" onClick={onConfirm}>
-                    Create Population
+                    Create Sample
                     <SpIcon name="sp-Arrow-Arrow_Right_SM" size={16} />
                 </button>
             </div>

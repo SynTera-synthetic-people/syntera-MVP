@@ -99,7 +99,7 @@ const PopulationSetup: React.FC<PopulationSetupProps> = ({
             {/* ── Page header ─────────────────────────────────── */}
             <div className="ps-header">
                 <div>
-                    <h1 className="ps-title">Calibrate Your Population</h1>
+                    <h1 className="ps-title">Calibrate Your Sample</h1>
                     <p className="ps-subtitle">
                         Select personas and set sample sizes to reflect real-world distribution and decision context
                     </p>
