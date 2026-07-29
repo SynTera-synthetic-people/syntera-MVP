@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { TbX, TbLoader } from 'react-icons/tb';
+import { TbX, TbLoader, TbMaximize, TbMinimize, TbAlertCircle } from 'react-icons/tb';
 import SpIcon from '../../../../../../SPIcon';
 import { useShareQualReport } from '../../../../../../../hooks/useInterview';
+import { interviewService } from '../../../../../../../services/interviewService';
 import ShareInsightsModal from './ShareInsightModal';
 import './InsightViewerModal.css';
 
@@ -52,6 +53,21 @@ const CARD_SLUG: Record<InsightCardId, string> = {
   behaviour: 'behavior-archaeology',
 };
 
+// ── Blob download helper (mirrors _triggerBlobDownload in useInterview.ts) ────
+
+function triggerBlobDownload(blob: Blob, filename: string): void {
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  }, 150);
+}
+
 const InsightViewerModal: React.FC<InsightViewerModalProps> = ({
   cardId,
   workspaceId,
@@ -67,6 +83,55 @@ const InsightViewerModal: React.FC<InsightViewerModalProps> = ({
 
   // ── Share modal state ─────────────────────────────────────────────────────
   const [shareOpen, setShareOpen] = useState(false);
+
+  // ── Maximize state ────────────────────────────────────────────────────────
+  const [isMaximized, setIsMaximized] = useState(false);
+
+  // ── Inline PDF preview state (decision / behaviour reports) ──────────────
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const previewBlobRef = useRef<Blob | null>(null);
+
+  useEffect(() => {
+    // Verbatim has its own JSON-based preview (VerbatimContent) — no PDF needed.
+    if (cardId === 'verbatim') return;
+
+    let cancelled = false;
+    let objectUrl: string | null = null;
+
+    const fetchPreview = async () => {
+      setPreviewLoading(true);
+      setPreviewError(null);
+      previewBlobRef.current = null;
+      try {
+        const blob =
+          cardId === 'decision'
+            ? await interviewService.downloadQualDecisionIntelligence(workspaceId, objectiveId)
+            : await interviewService.downloadQualBehaviorArchaeology(workspaceId, objectiveId);
+
+        if (cancelled) return;
+        previewBlobRef.current = blob;
+        objectUrl = window.URL.createObjectURL(blob);
+        setPreviewUrl(objectUrl);
+      } catch (err) {
+        console.error(`Failed to load ${cardId} preview:`, err);
+        if (!cancelled) {
+          setPreviewError('Unable to load the preview. You can still try downloading the report.');
+        }
+      } finally {
+        if (!cancelled) setPreviewLoading(false);
+      }
+    };
+
+    fetchPreview();
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) window.URL.revokeObjectURL(objectUrl);
+    };
+  }, [cardId, workspaceId, objectiveId]);
+
   const shareReportMutation = useShareQualReport(workspaceId, objectiveId);
   const activeMutation =
     cardId === 'verbatim'
@@ -77,7 +142,13 @@ const InsightViewerModal: React.FC<InsightViewerModalProps> = ({
 
   const handleDownload = async () => {
     try {
-      await activeMutation.mutateAsync();
+      if (previewBlobRef.current) {
+        // Reuse the blob we already fetched for the inline preview —
+        // no need to hit the backend a second time.
+        triggerBlobDownload(previewBlobRef.current, `${CARD_SLUG[cardId]}_${objectiveId}.pdf`);
+      } else {
+        await activeMutation.mutateAsync();
+      }
     } catch (err) {
       console.error('Download failed:', err);
     }
@@ -97,7 +168,7 @@ const InsightViewerModal: React.FC<InsightViewerModalProps> = ({
         onClick={onClose}
       >
         <motion.div
-          className="ivm-panel"
+          className={`ivm-panel ${isMaximized ? 'ivm-panel--maximized' : ''}`}
           initial={{ opacity: 0, y: 24, scale: 0.98 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 24, scale: 0.98 }}
@@ -121,6 +192,15 @@ const InsightViewerModal: React.FC<InsightViewerModalProps> = ({
                 <SpIcon name="sp-Communication-Share_Android" size={20} />
               </button>
 
+              {/* Maximize / Restore */}
+              <button
+                className="ivm-icon-btn ivm-icon-btn--circle"
+                onClick={() => setIsMaximized((prev) => !prev)}
+                title={isMaximized ? 'Restore' : 'Maximize'}
+              >
+                {isMaximized ? <TbMinimize size={20} /> : <TbMaximize size={20} />}
+              </button>
+
               {/* Close */}
               <button
                 className="ivm-icon-btn ivm-icon-btn--ghost"
@@ -133,7 +213,7 @@ const InsightViewerModal: React.FC<InsightViewerModalProps> = ({
           </div>
 
           {/* ── Content area ── */}
-          <div className="ivm-body">
+          <div className={`ivm-body ${cardId !== 'verbatim' ? 'ivm-body--pdf' : ''}`}>
             {cardId === 'verbatim' ? (
               verbatimLoading ? (
                 <div className="ivm-loading">
@@ -147,13 +227,27 @@ const InsightViewerModal: React.FC<InsightViewerModalProps> = ({
                   <p>No verbatim data available yet.</p>
                 </div>
               )
+            ) : previewLoading ? (
+              <div className="ivm-loading">
+                <TbLoader className="ivm-loading__spinner" size={32} />
+                <p className="ivm-loading__text">Loading report…</p>
+              </div>
+            ) : previewError ? (
+              <div className="ivm-empty ivm-empty--error">
+                <TbAlertCircle size={28} />
+                <p>{previewError}</p>
+              </div>
+            ) : previewUrl ? (
+              <div className="ivm-pdf-wrapper">
+                <iframe
+                  src={previewUrl}
+                  title={meta.title}
+                  className="ivm-pdf-frame"
+                />
+              </div>
             ) : (
-              <div className="ivm-placeholder">
-                <p className="ivm-placeholder__label">{meta.title}</p>
-                <p className="ivm-placeholder__sub">{meta.subtitle}</p>
-                <p className="ivm-placeholder__note">
-                  [Document content would render here as embedded PDF or HTML preview]
-                </p>
+              <div className="ivm-empty">
+                <p>No report available yet.</p>
               </div>
             )}
           </div>
