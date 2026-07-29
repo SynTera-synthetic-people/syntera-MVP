@@ -29,6 +29,10 @@ export type TabId =
 export interface Variable {
   id: string;
   label: string;
+  /** Backend-inferred type (categorical/numeric/open_text/demographic/identifier) — optional
+   * since it's only populated once a real dataset is loaded; used to pick sensible defaults
+   * (e.g. skipping identifier columns) without needing a second lookup. */
+  dataType?: string;
 }
 
 export interface DownloadOptions {
@@ -128,7 +132,11 @@ const DataPlayground: React.FC<DataPlaygroundProps> = ({ workspaceId, exploratio
   }, [datasetsQuery.data, datasetId]);
 
   const allVariables: Variable[] = useMemo(
-    () => (variablesQuery.data ?? []).map((v) => ({ id: v.variable_name, label: v.display_name })),
+    () => (variablesQuery.data ?? []).map((v) => ({
+      id: v.variable_name,
+      label: v.display_name,
+      dataType: v.data_type,
+    })),
     [variablesQuery.data]
   );
 
