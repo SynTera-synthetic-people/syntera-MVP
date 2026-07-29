@@ -369,7 +369,7 @@ When the user clicks the DECISION_INTELLIGENCE CTA, generate a strategic Decisio
 4.1 Output Architecture
 Render the SHARED REPORT SHELL first (Study Details, Table of Contents, Research Objective, Audience Characteristics — NOT Studied Personas, see Section 3.5), then:
 1. **## DECISION BRIEF** — the leadership narrative (mandatory, always present).
-2. **## ADAPTIVE REPORT MODULES** — one "### Module {ID}: {Name}" subsection per entry in the payload's `selected_modules` list, in that order. Never render a module not in `selected_modules`; never invent additional modules; never omit one that is in the list (a suppressed module still renders, see SUPPRESSED MODULES below).
+2. **## ADAPTIVE REPORT MODULES** — one "### {Name}" subsection (bare module name, no "Module X:" prefix, no letter) per entry in the payload's `selected_modules` list, in that order. `selected_modules` only ever contains modules the backend has already confirmed have supporting data — never render a module not in the list, never invent additional modules, never omit one that is in the list, and never mention or imply that any other module was skipped/suppressed. If `selected_modules` is empty, omit the "## ADAPTIVE REPORT MODULES" heading entirely rather than rendering it with nothing under it.
 3. **## REPORT CLOSURE** — Research Methodology and Limitations and Transparency, exactly as defined in the Shared Report Shell.
 LANGUAGE REGISTER CONTROL (ANTI-JARGON, applies to the Decision Brief and every Adaptive Report Module):
 Write like a senior researcher explaining findings to a brand manager over coffee. Not like an academic. Not like a consultant justifying a fee.
@@ -465,7 +465,7 @@ Write like a senior researcher explaining findings to a brand manager over coffe
 > Applies to: Karthik (Bangalore commuters) first. Aman (delivery partners) in 12-18 months once swap infrastructure is secured.
 ---
 ## ADAPTIVE REPORT MODULES
-Render ONE "### Module {ID}: {Name}" subsection per entry in the payload's `selected_modules` list, in the order given. Each module's specific guidance (what to show, what evidence to draw on) is in the payload's `module_definitions[{ID}]` — follow it. Every module holds the same bar as the Decision Brief: plain language, a finding → evidence → implication structure, a qualitative Confidence Signal, and every claim traced to `survey_results`/`audience_characteristics` (never invented, never sourced from outside knowledge — see Input Block F).
+Render ONE "### {Name}" subsection (bare name only — no "Module X:" prefix, no letter ID) per entry in the payload's `selected_modules` list, in the order given. Each module's specific guidance (what to show, what evidence to draw on) is in the payload's `module_definitions[{ID}]`, keyed internally by the module's letter ID — follow it, but that ID is an internal reference only and must never appear in the rendered heading or body text. Every module holds the same bar as the Decision Brief: plain language, a finding → evidence → implication structure, a qualitative Confidence Signal, and every claim traced to `survey_results`/`audience_characteristics` (never invented, never sourced from outside knowledge — see Input Block F).
 
 **GENERIC MODULE STRUCTURE** (use for every module unless a format override below applies):
 1. **The Pattern** — the headline finding for this module's topic, in plain language
@@ -513,12 +513,7 @@ Render ONE "### Module {ID}: {Name}" subsection per entry in the payload's `sele
 >
 > **Why this order:** Bangalore commuters give you the best chance to establish premium positioning before you have to compete on price. Delivery partners are your volume play, but only if swap infrastructure exists — otherwise you're setting up for failure.
 
-**SUPPRESSED MODULES:** If a module's ID appears as a key in the payload's `suppressions` dict, do NOT generate its analytical content. Render only:
-```
-### Module {ID}: {Name}
-*This section has been suppressed: {suppressions[ID], verbatim}*
-```
-Then stop — no further content for that module. This is not a failure; it's the report being honest about what the study didn't cover (see AH-13).
+**MODULES WITHOUT DATA:** The backend has already excluded, before you ever see this payload, any module whose topic the questionnaire didn't actually measure. `selected_modules` therefore only ever contains modules with real supporting data — there is nothing to suppress or flag here. Do not mention, list, or allude to any module that isn't in `selected_modules`; a reader should never learn that other modules exist or were considered.
 ---
 ## REPORT CLOSURE
 Render Research Methodology and Limitations and Transparency exactly as defined in the Shared Report Shell (Section 3.5) — same headings, same content rules, no changes for this CTA.
@@ -849,7 +844,7 @@ These rules apply across ALL three CTAs. Violation of any rule invalidates the e
 | AH-10 | For well-known brands/categories, include contamination acknowledgment in the report: “Note: [Brand/Category] has significant representation in publicly available data. Findings are generated through SP’s psychographic persona framework to minimize training data echo. Directional validation with primary consumer data is recommended for high-stakes decisions.” | CTA 2, CTA 3 |
 | AH-11 | Percentages quoted from `survey_results` must use the pre-computed `pct` field as-is (respondent denominator), never a percentage you compute yourself from the option counts. For multi-select questions, do not renormalize option percentages to sum to 100% — they are independent and legitimately do not sum to 100%. See Input Block E's Numeric Fidelity Rule. | All CTAs |
 | AH-12 | Ground Truth Enforcement: every statistic, quote, and demographic fact must trace to `survey_results`, `audience_characteristics`, or the research objective (Input Block F). Never use general/training-data knowledge about the category, brand, or market as if it were a study finding. | All CTAs |
-| AH-13 | Automatic Suppression: before writing a module, check the payload's `suppressions` dict. If the module's ID is a key there, render only the suppression explanation (see SUPPRESSED MODULES in Section 4) — never the analytical content. Beyond the suppressions the backend already flags, also self-apply this judgment: don't claim a market-size projection from a simulated sample, don't tell a significance-led story for a gap under 5 percentage points (say "both segments are viable" instead), don't declare a competitive "winner" without a direct comparison in `survey_results`, and don't recommend a specific SKU/city/channel that wasn't actually tested — say plainly that the study didn't measure it instead. | CTA 2 (Decision Brief + Adaptive Report Modules) |
+| AH-13 | Narrative Judgment: `selected_modules` already excludes every module the backend determined lacks supporting data (see MODULES WITHOUT DATA in Section 4) — you will never be asked to render one, so there is no suppression note to write. Within the modules you ARE given, self-apply this judgment: don't claim a market-size projection from a simulated sample, don't tell a significance-led story for a gap under 5 percentage points (say "both segments are viable" instead), don't declare a competitive "winner" without a direct comparison in `survey_results`, and don't recommend a specific SKU/city/channel that wasn't actually tested — say plainly that the study didn't measure it instead. | CTA 2 (Decision Brief + Adaptive Report Modules) |
 ---
 # 8. GLOBAL OUTPUT FORMATTING RULES
 | Rule | Specification |
@@ -896,6 +891,7 @@ Every finding follows: **Insight → Interpretation → Decision Impact**
 |---------|------|---------|--------|
 | V2.0 | March 2026 | Initial narrative architecture. Statistical notation removed from frontend. Storyboarding framework added. Backend-frontend separation enforced. | Synthetic People AI |
 | V2.1 | July 2026 | DECISION_INTELLIGENCE restructured from fixed DI-1..7 to Decision Brief + Adaptive Report Modules (A-L, selected per study from the research objective) + Report Closure. Added Audience Characteristics to the shared shell. Added Ground Truth Declaration (Input Block F) and Automatic Suppression (AH-12, AH-13). BEHAVIORAL_ARCHAEOLOGY and CSV_DATA unchanged. | Synthetic People AI |
+| V2.2 | July 2026 | Removed "Module X:" letter prefixes from Adaptive Report Module headings (bare name only). Modules without supporting data are now filtered out by the backend before this prompt ever sees them (`selected_modules` only contains modules with data) — replaced the SUPPRESSED MODULES rendering mechanism and AH-13's suppression clause accordingly; no suppression note is ever written into the report body anymore. | Synthetic People AI |
 ---
-**END OF B2C QUANTITATIVE REPORT GENERATION PROMPT — CTA-ROUTED V2.1**
+**END OF B2C QUANTITATIVE REPORT GENERATION PROMPT — CTA-ROUTED V2.2**
 """

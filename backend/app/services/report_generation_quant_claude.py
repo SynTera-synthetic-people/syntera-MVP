@@ -21,6 +21,7 @@ from app.ml.predictor import VALID_DOMAINS
 from app.models.survey_simulation import SurveySimulation
 from app.services.auto_generated_persona import get_description
 from app.services.quant_report_cta_prompt import CTA_ROUTED_QUANT_REPORT_PROMPT_V2
+from app.services.quant_report_charts import render_audience_characteristics_charts
 from app.services.report_generation_qual_claude import (
     _current_report_date,
     _ensure_closing_section_content,
@@ -237,15 +238,16 @@ def check_suppression_rules(
     return suppressions
 
 
-def _build_di_required_sections(
-    selected_modules: List[str], suppressions: Dict[str, str]
-) -> List[Tuple[str, str]]:
+def _build_di_required_sections(selected_modules: List[str]) -> List[Tuple[str, str]]:
     """Build DECISION_INTELLIGENCE's required-sections list for this specific report.
 
     Unlike BA/CSV's fixed list, DI's body is Decision Brief + whichever Modules A-L
     were selected from the research objective — so what's "required" is computed
-    per-report instead of read from a static constant. Suppressed modules still
-    render (as a short explanation instead of content), so they stay required too.
+    per-report instead of read from a static constant. `selected_modules` is expected
+    to already be filtered to modules with supporting data (see generate_md_report) —
+    a module without data is simply never in this list, never rendered, and never
+    shown as a suppression note; there is no separate "suppressed but required" case
+    to track here anymore.
     """
     sections: List[Tuple[str, str]] = [
         *_SHARED_SHELL_PREFIX,
@@ -256,7 +258,9 @@ def _build_di_required_sections(
         meta = MODULE_DEFINITIONS.get(module_id)
         if not meta:
             continue
-        sections.append((f"Module {module_id}: {meta['name']}", re.escape(meta["name"].lower())))
+        # Label carries no "Module X:" prefix — that's now purely a display concern
+        # the LLM/TOC never surface (see _strip_section_prefixes).
+        sections.append((meta["name"], re.escape(meta["name"].lower())))
     sections.extend(_SHARED_SHELL_SUFFIX)
     return sections
 
@@ -341,17 +345,27 @@ def _strip_table_of_contents(md_content: str) -> str:
 
 
 def _strip_section_prefixes(md: str) -> str:
-    """Remove DI-N: and BA-N: prefixes from all markdown headings.
+    """Remove DI-N:, BA-N:, and Module X: prefixes from all markdown headings.
 
-    The LLM generates headings like '## DI-1: THE DECISION AT STAKE'.
-    We want '## THE DECISION AT STAKE' everywhere (body and TOC).
+    The LLM generates headings like '## DI-1: THE DECISION AT STAKE' or
+    '### Module B: Problem and Need-State Analysis'. We want the bare title
+    everywhere (body and TOC, since _build_toc_markdown copies its entries
+    verbatim from the body's own headings) — this is a defensive regex strip
+    independent of prompt compliance, same as the existing DI-N/BA-N case.
     """
-    return re.sub(
+    md = re.sub(
         r'(?m)^(#{1,6}\s+)(?:Section\s+)?(?:DI|BA)-?\d+[\s:.\-]+',
         r'\1',
         md,
         flags=re.IGNORECASE,
     )
+    md = re.sub(
+        r'(?m)^(#{1,6}\s+)Module\s+[A-L][\s:.\-]+',
+        r'\1',
+        md,
+        flags=re.IGNORECASE,
+    )
+    return md
 
 
 def _strip_end_markers(md: str) -> str:
@@ -926,23 +940,62 @@ def _is_wide_table(headers: List[str], rows: List[List[str]]) -> bool:
 
 def _escape_text(value: str) -> str:
     safe = html.escape(value or "")
-    return safe.replace("\n", "<br/>")
+    safe = safe.replace("\n", "<br/>")
+    # A fully empty <td></td> (e.g. a blank "continuation of the row above"
+    # cell in a grouped table) breaks xhtml2pdf/reportlab's <colgroup> width
+    # resolution for the WHOLE table — verified empirically: an otherwise
+    # identical table with a single empty cell in one column collapses that
+    # column's width, overlapping neighboring columns. A non-breaking space
+    # keeps the cell visually blank while keeping the cell non-empty.
+    return safe or "&nbsp;"
+
+
+_WORD_SPLIT_RE = re.compile(r"[\s/]+")
+
+
+def _compact_table_colgroup(headers: List[str], rows: List[List[str]]) -> str:
+    """Build a <colgroup> sized to each column's longest unbreakable word.
+
+    xhtml2pdf/reportlab's `table-layout:fixed` does not reliably auto-size
+    columns from cell content the way a browser does, and a plain <table>
+    with no explicit column widths can end up with a column narrower than
+    its own longest word — the word then overflows into the neighboring
+    column instead of wrapping (word-wrap only breaks at whitespace).
+    Sizing by longest word (not longest full cell, which would just make
+    every column as wide as its longest phrase) keeps columns compact while
+    guaranteeing no single word is ever narrower than its column.
+    """
+    n = len(headers)
+    if n == 0:
+        return ""
+    widths: List[int] = []
+    for i, header in enumerate(headers):
+        longest = max((len(w) for w in _WORD_SPLIT_RE.split(header) if w), default=1)
+        for row in rows:
+            if i < len(row):
+                longest = max(longest, max((len(w) for w in _WORD_SPLIT_RE.split(row[i]) if w), default=0))
+        widths.append(max(longest, 1))
+    total = sum(widths)
+    pct = [max(10, round(100 * w / total)) for w in widths]
+    pct[pct.index(max(pct))] += 100 - sum(pct)  # absorb rounding drift into the widest column
+    return "<colgroup>" + "".join(f'<col style="width:{p}%">' for p in pct) + "</colgroup>"
 
 
 def _render_compact_table(headers: List[str], rows: List[List[str]]) -> str:
     width = max([len(headers)] + [len(row) for row in rows] + [0])
     normalized_headers = _pad_row(headers, width)
+    normalized_rows = [_pad_row(row, width) for row in rows]
+    colgroup = _compact_table_colgroup(normalized_headers, normalized_rows)
     head_html = "".join(f"<th>{_escape_text(header)}</th>" for header in normalized_headers)
 
     body_rows = []
-    for row in rows:
-        normalized_row = _pad_row(row, width)
+    for normalized_row in normalized_rows:
         row_html = "".join(f"<td>{_escape_text(cell)}</td>" for cell in normalized_row)
         body_rows.append(f"<tr>{row_html}</tr>")
 
     return (
         '<div class="quant-table-wrap">'
-        f"<table><thead><tr>{head_html}</tr></thead><tbody>{''.join(body_rows)}</tbody></table>"
+        f"<table>{colgroup}<thead><tr>{head_html}</tr></thead><tbody>{''.join(body_rows)}</tbody></table>"
         "</div>"
     )
 
@@ -1053,8 +1106,134 @@ def _render_persona_table(headers: List[str], rows: List[List[str]]) -> str:
     )
 
 
-def _normalize_quant_tables(html_body: str) -> str:
+_AUDIENCE_CHARACTERISTICS_SECTION_RE = re.compile(
+    r"audience\s+characteristics|sample\s+characteristics", re.IGNORECASE
+)
+
+
+def _is_in_audience_characteristics_section(html_body: str, table_start: int) -> bool:
+    """Same backward heading-scan technique as _is_in_compact_table_section,
+    bounded by the nearest preceding h1/h2 (so sub-headings inside the
+    section, like a per-characteristic label, don't affect the result)."""
+    preceding = html_body[:table_start]
+    headings = list(re.finditer(r"<(h[1-6])[^>]*>(.*?)</h[1-6]>", preceding, re.IGNORECASE | re.DOTALL))
+    in_section = False
+    for m in headings:
+        if m.group(1).lower() in ("h1", "h2"):
+            text = re.sub(r"<[^>]+>", "", m.group(2)).strip()
+            in_section = bool(_AUDIENCE_CHARACTERISTICS_SECTION_RE.search(text))
+    return in_section
+
+
+def _split_audience_table_groups(
+    headers: List[str], rows: List[List[str]]
+) -> Optional[List[Tuple[str, List[List[str]]]]]:
+    """Split a combined Sample Characteristics/Sample Profile table into one
+    group per characteristic/question.
+
+    The prompt asks the LLM for ONE table per Table 1/Table 2 with columns
+    "Characteristic | Option | Count | Percentage" (or "Question | Response |
+    Count | Percentage"), where rows are grouped in blocks by question — the
+    first row of each block carries the label, continuation rows leave that
+    cell blank. Returns None (caller falls back to the plain compact-table
+    renderer) if the table doesn't have that shape, e.g. the first row's
+    first cell is blank (malformed/unexpected) or there are fewer than 2
+    columns to split on.
+    """
+    if len(headers) < 2 or not rows:
+        return None
+    if not (rows[0][0] if rows[0] else "").strip():
+        return None
+
+    groups: List[Tuple[str, List[List[str]]]] = []
+    current_label: Optional[str] = None
+    current_rows: List[List[str]] = []
+    for row in rows:
+        label = (row[0] if row else "").strip()
+        if label:
+            if current_label is not None:
+                groups.append((current_label, current_rows))
+            current_label = label
+            current_rows = [row[1:]]
+        else:
+            if current_label is None:
+                return None  # continuation row before any label — malformed
+            current_rows.append(row[1:])
+    if current_label is not None:
+        groups.append((current_label, current_rows))
+    return groups or None
+
+
+def _wrap_table_with_chart(heading: str, table_html: str, chart_data_uri: Optional[str] = None) -> str:
+    """Wrap a characteristic's subheading, its mini-table, and (if available) its
+    chart in ONE atomic table row — using a real HTML <table> for the side-by-side
+    layout, not CSS flex/grid, since xhtml2pdf (reportlab) has no flexbox support
+    but does support nested HTML tables as a layout mechanism.
+
+    The heading is placed INSIDE the table-column cell, above the mini-table,
+    rather than as its own preceding <tr> (colspan across a separate heading
+    row was tried and measured to still let xhtml2pdf split between the two
+    <tr>s at a page boundary — page-break-inside:avoid on the outer <table>
+    does not guarantee its child rows stay together) or as a sibling element
+    entirely (same problem, verified empirically). A single <tr> containing
+    both the chart <td> and the heading+table <td> is what's actually been
+    confirmed atomic: xhtml2pdf pushes that whole row to the next page as one
+    unsplittable unit instead of stranding the heading behind.
+    """
+    heading_html = f'<div class="quant-chart-heading-cell">{_escape_text(heading)}</div>'
+    if chart_data_uri:
+        return (
+            '<table class="quant-chart-table-layout"><tr>'
+            f'<td class="quant-chart-cell"><img src="{chart_data_uri}" class="quant-chart-image"/></td>'
+            f'<td class="quant-chart-table-cell">{heading_html}{table_html}</td>'
+            "</tr></table>"
+        )
+    return f'<div class="quant-audience-subblock">{heading_html}{table_html}</div>'
+
+
+def _render_audience_characteristics_table(
+    headers: List[str], rows: List[List[str]], charts: List[Tuple[str, str]]
+) -> str:
+    """Render a Sample Characteristics/Sample Profile table as one short
+    mini-table per characteristic, each paired side by side with its own
+    chart (matched by source order — see quant_report_charts.py).
+
+    Splitting into small per-characteristic blocks (rather than nesting the
+    whole, potentially page-spanning combined table inside a chart layout)
+    keeps each side-by-side unit short enough to safely paginate: xhtml2pdf
+    treats a table nested in a table cell as one atomic, unsplittable block,
+    so a single 10+ row table forced into a cell can strand a large blank
+    gap on the previous page (verified empirically) instead of flowing
+    naturally.
+    """
+    groups = _split_audience_table_groups(headers, rows)
+    if groups is None:
+        return _render_compact_table(headers, rows)
+
+    remaining_headers = headers[1:]
+    blocks: List[str] = []
+    for index, (label, group_rows) in enumerate(groups):
+        mini_table = _render_compact_table(remaining_headers, group_rows)
+        chart_uri = charts[index][1] if index < len(charts) else None
+        blocks.append(_wrap_table_with_chart(label, mini_table, chart_uri))
+    return "".join(blocks)
+
+
+def _normalize_quant_tables(
+    html_body: str, audience_charts: Optional[Dict[str, List[Tuple[str, str]]]] = None
+) -> str:
+    audience_charts = audience_charts or {}
+    # Table 1 (Sample Characteristics) and Table 2 (Sample Profile) are the
+    # only two tables ever expected inside the Audience Characteristics
+    # section, in that fixed order (Section 3.5 of the prompt) — matched
+    # positionally by which chart-eligible table is encountered Nth, not by
+    # text, since the LLM is free to reword a characteristic's label.
+    chart_groups = [
+        audience_charts.get("sample_characteristics") or [],
+        audience_charts.get("sample_profile") or [],
+    ]
     table_pattern = re.compile(r"<table>.*?</table>", re.IGNORECASE | re.DOTALL)
+    audience_table_index = {"n": 0}
 
     def _replace(match: re.Match[str]) -> str:
         table_html = match.group(0)
@@ -1065,18 +1244,28 @@ def _normalize_quant_tables(html_body: str) -> str:
             return _render_persona_table(headers, rows)
         if _is_wide_table(headers, rows):
             return _render_record_table(headers, rows)
+        if _is_in_audience_characteristics_section(html_body, match.start()):
+            idx = audience_table_index["n"]
+            audience_table_index["n"] += 1
+            charts = chart_groups[idx] if idx < len(chart_groups) else []
+            return _render_audience_characteristics_table(headers, rows, charts)
         return _render_compact_table(headers, rows)
 
     normalized = table_pattern.sub(_replace, html_body)
     return f'<div class="quant-report-root">{normalized}</div>'
 
 
-def _quant_md_to_pdf(md_content: str, output_pdf_path: str, css_path: str) -> str:
+def _quant_md_to_pdf(
+    md_content: str,
+    output_pdf_path: str,
+    css_path: str,
+    audience_charts: Optional[Dict[str, List[Tuple[str, str]]]] = None,
+) -> str:
     md_content = sanitize_report_text(md_content)
     html_body = markdown.markdown(
         md_content, extensions=["tables", "fenced_code", "toc", "attr_list"]
     )
-    html_body = _normalize_quant_tables(html_body)
+    html_body = _normalize_quant_tables(html_body, audience_charts)
     return html_to_pdf(html_body, output_pdf_path, css_path)
 
 
@@ -1142,18 +1331,27 @@ async def generate_md_report(
     # and does NOT also render Audience Characteristics — rendering both produced a
     # duplicate persona-summary section in practice.
     audience_characteristics: Dict[str, Any] = {}
+    audience_charts: Dict[str, List[Tuple[str, str]]] = {}
     if cta == "DECISION_INTELLIGENCE":
         audience_characteristics = extract_audience_characteristics(
             questionnaire_sections, survey_results or {}, data.get("total_sample_size") or 0,
         )
+        # Rendered straight from the same dict as Table 1 above, never from LLM
+        # output, so a chart can never disagree with the table beside it.
+        audience_charts = render_audience_characteristics_charts(audience_characteristics)
 
     selected_modules: List[str] = []
-    suppressions: Dict[str, str] = {}
     required_sections: Optional[List[Tuple[str, str]]] = None
     if cta == "DECISION_INTELLIGENCE":
-        selected_modules = select_adaptive_modules(str(research_objective or ""), question_types)
-        suppressions = check_suppression_rules(selected_modules, question_types)
-        required_sections = _build_di_required_sections(selected_modules, suppressions)
+        # select_adaptive_modules() (RO-keyword matching) and check_suppression_rules()
+        # (data-availability check) are unchanged — same backend selection logic as
+        # before. What changed: a module without supporting data is now filtered out
+        # here, before it ever reaches the LLM payload/TOC/required sections, instead
+        # of being passed through and rendered as a suppression-note placeholder.
+        ro_matched_modules = select_adaptive_modules(str(research_objective or ""), question_types)
+        suppressions = check_suppression_rules(ro_matched_modules, question_types)
+        selected_modules = [m for m in ro_matched_modules if m not in suppressions]
+        required_sections = _build_di_required_sections(selected_modules)
 
     payload: Dict[str, Any] = {
         "research_objective": research_objective,
@@ -1170,7 +1368,6 @@ async def generate_md_report(
         "audience_characteristics": audience_characteristics,
         "selected_modules": selected_modules,
         "module_definitions": {mid: MODULE_DEFINITIONS[mid]["guidance"] for mid in selected_modules},
-        "suppressions": suppressions,
     }
 
     md = await _generate_validated_report_markdown(payload, cta, exploration_id, required_sections)
@@ -1183,7 +1380,9 @@ async def generate_md_report(
         if _REPORT_CSS_PATH.is_file()
         else "app/css/report_generation_quant.css"
     )
-    pdf_path = await asyncio.to_thread(_quant_md_to_pdf, md, output_pdf_path, css_path)
+    pdf_path = await asyncio.to_thread(
+        _quant_md_to_pdf, md, output_pdf_path, css_path, audience_charts
+    )
     pdf_buffer = pdf_file_to_buffer(pdf_path)
     return pdf_buffer.getvalue()
 
