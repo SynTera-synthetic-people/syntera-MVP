@@ -9,7 +9,7 @@ import random
 import re
 import uuid
 from html.parser import HTMLParser
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from dotenv import load_dotenv
 from sqlalchemy import select
@@ -55,29 +55,30 @@ upload_dir = "./reports"
 
 # Same shared-shell labels/patterns as REPORT_REQUIRED_SECTIONS in report_generation_qual_claude.py,
 # so quant reports validate, TOC, and render with the identical shell as qual reports.
+#
+# Studied Personas (archetype/psychographic table) and Audience Characteristics (demographic
+# fact table) are NOT both rendered for the same CTA — that produced a duplicate section in
+# practice. BEHAVIORAL_ARCHAEOLOGY keeps the original Studied Personas; DECISION_INTELLIGENCE
+# uses Audience Characteristics instead (see _build_di_required_sections below). Only
+# "Research Objective" is common to every narrative CTA.
 _SHARED_SHELL_PREFIX = [
     ("Research Objective", r"\bresearch objective\b"),
-    ("Studied Personas", r"\bstudied personas\b"),
 ]
 _SHARED_SHELL_SUFFIX = [
     ("Research Methodology", r"\bresearch methodology\b"),
     ("Limitations and Transparency", r"\blimitations\s*(?:&|and)\s*transparency\b"),
 ]
 
+# DECISION_INTELLIGENCE's required sections are NOT a static list here: since the DI
+# narrative is now Decision Brief + Adaptive Modules A-L (selected per-report from the
+# research objective, see select_adaptive_modules/_build_di_required_sections below),
+# what's "required" varies per report. QUANT_REQUIRED_SECTIONS only holds the CTAs whose
+# structure is fixed; DI's list is computed at generation time and threaded through as an
+# explicit `required_sections` argument to _find_missing_sections/_build_toc_markdown/etc.
 QUANT_REQUIRED_SECTIONS = {
-    "DECISION_INTELLIGENCE": [
-        *_SHARED_SHELL_PREFIX,
-        ("The Decision at Stake", r"\b(?:di-?1|section\s+di-?1)?[\s:.\-]*the decision at stake\b"),
-        ("What the Data Proves", r"\b(?:di-?2|section\s+di-?2)?[\s:.\-]*what the data proves\b"),
-        ("The Persona Face-Off", r"\b(?:di-?3|section\s+di-?3)?[\s:.\-]*the persona face[-\s]?off\b"),
-        ("Where to Focus", r"\b(?:di-?4|section\s+di-?4)?[\s:.\-]*where to focus\b"),
-        ("The Price Story", r"\b(?:di-?5|section\s+di-?5)?[\s:.\-]*the price story\b"),
-        ("What Could Go Wrong", r"\b(?:di-?6|section\s+di-?6)?[\s:.\-]*what could go wrong\b"),
-        ("What to Do Now", r"\b(?:di-?7|section\s+di-?7)?[\s:.\-]*what to do now\b"),
-        *_SHARED_SHELL_SUFFIX,
-    ],
     "BEHAVIORAL_ARCHAEOLOGY": [
         *_SHARED_SHELL_PREFIX,
+        ("Studied Personas", r"\bstudied personas\b"),
         ("The Say-Do Gap", r"\b(?:ba-?1|section\s+ba-?1)?[\s:.\-]*the say[-\s/]?do gap\b"),
         ("The Bias Landscape", r"\b(?:ba-?2|section\s+ba-?2)?[\s:.\-]*the bias landscape\b"),
         ("The Emotional Architecture", r"\b(?:ba-?3|section\s+ba-?3)?[\s:.\-]*the emotional architecture\b"),
@@ -92,6 +93,239 @@ QUANT_REQUIRED_SECTIONS = {
         *_SHARED_SHELL_SUFFIX,
     ],
 }
+
+
+# ---------------------------------------------------------------------------
+# Adaptive Report Modules (A-L) — DECISION_INTELLIGENCE only.
+#
+# Replaces the old fixed DI-1..7 narrative with Decision Brief + a subset of
+# these modules, selected per-report from the research objective's keywords
+# (select_adaptive_modules) and checked against the questionnaire for
+# supporting data (check_suppression_rules).
+# ---------------------------------------------------------------------------
+
+MODULE_DEFINITIONS: Dict[str, Dict[str, Any]] = {
+    "A": {
+        "name": "Category and Usage Landscape",
+        "keywords": ["u&a", "usage", "category", "market entry", "entry"],
+        "guidance": "Use for U&A, category-entry, or market-entry research. Show category incidence, usage frequency, and product repertoire from the relevant survey_results.",
+    },
+    "B": {
+        "name": "Problem and Need-State Analysis",
+        # NOTE: bare "need" is deliberately excluded — it false-positives on almost any RO
+        # phrased as "we need to understand X" without being need-state research at all.
+        "keywords": ["problem", "pain point", "unmet need", "need state", "need-state", "customer need"],
+        "guidance": "Use for problem/need-state or innovation research. Show problem prevalence, intensity, and unmet needs from the relevant survey_results and open-end verbatims.",
+    },
+    "C": {
+        "name": "Audience Segmentation and ICP",
+        "keywords": ["segmentation", "icp", "target", "persona"],
+        "guidance": "Use for segmentation/ICP/targeting research. Show how personas differ on decision-relevant dimensions, drawing on Studied Personas and survey_results.",
+    },
+    "D": {
+        "name": "Concept Evaluation",
+        "keywords": ["concept", "innovation"],
+        "guidance": "Use for concept-testing research. Show concept appeal, fit, and objections from the relevant survey_results.",
+    },
+    "E": {
+        "name": "Message and Claims Testing",
+        "keywords": ["message", "communication", "claim", "campaign"],
+        "guidance": "Use for message/claims/communication testing. Show which messages land, and why, from the relevant survey_results.",
+    },
+    "F": {
+        "name": "Feature Prioritization",
+        "keywords": ["feature", "roadmap"],
+        "guidance": "Use for feature/roadmap prioritization research. Rank features by demand signal from the relevant survey_results.",
+    },
+    "G": {
+        "name": "Pricing and Willingness to Pay",
+        "keywords": ["pricing", "price", "willingness to pay"],
+        "guidance": "Use for pricing research. Show price sensitivity and willingness-to-pay patterns from the relevant survey_results.",
+    },
+    "H": {
+        "name": "Brand and Competitive Positioning",
+        "keywords": ["brand", "competitive", "positioning"],
+        "guidance": "Use for brand/positioning/competitive research. Show relative brand perception from the relevant survey_results.",
+    },
+    "I": {
+        "name": "Customer Journey and Experience",
+        "keywords": ["journey", "experience", "retention", "churn"],
+        "guidance": "Use for journey/experience/retention research. Show journey friction and satisfaction drivers from the relevant survey_results.",
+    },
+    "J": {
+        "name": "Go-to-Market and Channel Strategy",
+        "keywords": ["channel", "gtm", "distribution"],
+        "guidance": "Use for GTM/channel/distribution research. Show channel preference from the relevant survey_results.",
+    },
+    "K": {
+        "name": "Occasion and Context",
+        "keywords": ["occasion", "context"],
+        "guidance": "Use for occasion/context research. Show usage-occasion patterns from the relevant survey_results.",
+    },
+    "L": {
+        "name": "Adoption and Retention",
+        "keywords": ["adoption", "switching", "retention"],
+        "guidance": "Use for adoption/switching/retention research. Show adoption barriers and switching triggers from the relevant survey_results.",
+    },
+}
+
+# Modules whose data support is checkable from question text alone (see
+# check_suppression_rules). The remaining spec suppression rules (no market-size
+# claims from a simulated sample, no significance-led storytelling for <5pt gaps,
+# no persona-prioritization without material differentiation, no external-knowledge
+# claims, etc.) require narrative judgment the Python layer can't cheaply verify —
+# those are enforced at the prompt level (AH-13 in quant_report_cta_prompt.py).
+_MODULE_SUPPRESSION_KEYWORDS: Dict[str, Tuple[List[str], str]] = {
+    "G": (
+        ["price", "pricing", "willingness to pay", "budget", "afford", "cost of", "how much would you"],
+        "Pricing was outside the decision coverage of this study.",
+    ),
+    "H": (
+        ["compared to", "versus", " vs ", "vs.", "competitor", "which brand", "brands do you", "rank the following brands"],
+        "Direct competitive comparison was not measured in this study.",
+    ),
+    "J": (
+        ["which channel", "platform do you", "app store", "purchase from", "buy from", "shop at", "social media platform"],
+        "Channel preference data was not collected in this study.",
+    ),
+    "K": (
+        ["occasion", "what time", "situation in which", "context in which", "when do you"],
+        "Usage-occasion data was not collected in this study.",
+    ),
+}
+
+
+def select_adaptive_modules(research_objective: str, question_types: Dict[str, str]) -> List[str]:
+    """Keyword-match the research objective text to Modules A-L (spec Task 4.2).
+
+    question_types is accepted alongside the RO text (rather than RO alone) so this
+    can be extended later to also factor in which question types actually exist;
+    today only RO keywords drive selection.
+    """
+    ro_lower = (research_objective or "").lower()
+    selected = {
+        module_id
+        for module_id, meta in MODULE_DEFINITIONS.items()
+        if any(kw in ro_lower for kw in meta["keywords"])
+    }
+    if not selected:
+        # A DI report should never come back empty — fall back to the two
+        # always-relevant general modules (category landscape + segmentation).
+        selected = {"A", "C"}
+    return sorted(selected)
+
+
+def check_suppression_rules(
+    selected_modules: List[str], question_types: Dict[str, str]
+) -> Dict[str, str]:
+    """For selected modules with a data-decidable suppression rule, return
+    {module_id: reason} when the questionnaire has no supporting questions.
+    """
+    question_texts_lower = [str(q or "").lower() for q in question_types.keys()]
+
+    def _has_supporting_question(keywords: List[str]) -> bool:
+        return any(any(kw in qtext for kw in keywords) for qtext in question_texts_lower)
+
+    suppressions: Dict[str, str] = {}
+    for module_id in selected_modules:
+        rule = _MODULE_SUPPRESSION_KEYWORDS.get(module_id)
+        if rule is None:
+            continue
+        keywords, reason = rule
+        if not _has_supporting_question(keywords):
+            suppressions[module_id] = reason
+    return suppressions
+
+
+def _build_di_required_sections(
+    selected_modules: List[str], suppressions: Dict[str, str]
+) -> List[Tuple[str, str]]:
+    """Build DECISION_INTELLIGENCE's required-sections list for this specific report.
+
+    Unlike BA/CSV's fixed list, DI's body is Decision Brief + whichever Modules A-L
+    were selected from the research objective — so what's "required" is computed
+    per-report instead of read from a static constant. Suppressed modules still
+    render (as a short explanation instead of content), so they stay required too.
+    """
+    sections: List[Tuple[str, str]] = [
+        *_SHARED_SHELL_PREFIX,
+        ("Audience Characteristics", r"\baudience characteristics\b"),
+        ("Decision Brief", r"\bdecision brief\b"),
+    ]
+    for module_id in selected_modules:
+        meta = MODULE_DEFINITIONS.get(module_id)
+        if not meta:
+            continue
+        sections.append((f"Module {module_id}: {meta['name']}", re.escape(meta["name"].lower())))
+    sections.extend(_SHARED_SHELL_SUFFIX)
+    return sections
+
+
+_CHARACTERISTICS_TITLE_RE = re.compile(r"characteristic", re.IGNORECASE)
+_PROFILE_TITLE_RE = re.compile(r"profile", re.IGNORECASE)
+
+
+def extract_audience_characteristics(
+    questionnaire_sections: List[Dict[str, Any]],
+    survey_results: Dict[str, Any],
+    total_sample_size: int,
+) -> Dict[str, Any]:
+    """Build the Audience Characteristics payload from the questionnaire's demographic
+    sections, for the new shared-shell "Audience Characteristics" section (replaces
+    nothing — added alongside "Studied Personas").
+
+    Sections are matched by KEYWORD on title ("characteristic" / "profile"), not by a
+    fixed index: "Population Profile" (or its renamed "Sample Profile") is always the
+    LAST section, not index 6 as originally assumed, and section count varies 3-10.
+    Matching by keyword also means this works unchanged whether the questionnaire was
+    generated before or after the "Population..." -> "Sample..." title rename.
+
+    Percentages are read verbatim from survey_results (already computed upstream by
+    build_normalized_survey_results) — never recomputed here.
+    """
+    characteristics_section: Optional[Dict[str, Any]] = None
+    profile_section: Optional[Dict[str, Any]] = None
+    for sec in questionnaire_sections or []:
+        title = str(sec.get("title") or "")
+        if characteristics_section is None and _CHARACTERISTICS_TITLE_RE.search(title):
+            characteristics_section = sec
+        if _PROFILE_TITLE_RE.search(title):
+            profile_section = sec  # last match wins -> naturally the final section
+
+    def _questions_with_results(sec: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        out: List[Dict[str, Any]] = []
+        if not sec:
+            return out
+        for q in sec.get("questions") or []:
+            qtext = (q.get("text") or "").strip()
+            rows = survey_results.get(qtext) if isinstance(survey_results, dict) else None
+            if not rows or not isinstance(rows, list):
+                continue
+            options: Dict[str, Any] = {}
+            for row in rows:
+                if not isinstance(row, dict) or "verbatim" in row:
+                    continue
+                options[str(row.get("option", ""))] = {
+                    "count": int(row.get("count", 0) or 0),
+                    "percentage": row.get("pct", 0.0),
+                }
+            if options:
+                out.append({"question": q.get("label") or qtext, "options": options})
+        return out
+
+    characteristics_rows = _questions_with_results(characteristics_section)
+    profile_rows = _questions_with_results(profile_section)
+
+    return {
+        "sample_size": total_sample_size,
+        "sample_characteristics": {"questions_and_options": characteristics_rows},
+        "sample_profile": {
+            "questions": [
+                {"question": row["question"], "responses": row["options"]}
+                for row in profile_rows
+            ]
+        },
+    }
 
 
 def _normalize_whitespace(value: str) -> str:
@@ -160,10 +394,12 @@ def _move_shell_suffix_to_end(md_content: str) -> str:
     return ''.join(main_parts).rstrip() + '\n\n' + ''.join(suffix_parts)
 
 
-def _find_missing_sections(md_content: str, cta: str) -> List[str]:
+def _find_missing_sections(
+    md_content: str, cta: str, required_sections: Optional[List[Tuple[str, str]]] = None
+) -> List[str]:
     normalized = _normalize_whitespace(_strip_table_of_contents(md_content)).lower()
     missing: List[str] = []
-    for label, pattern in QUANT_REQUIRED_SECTIONS.get(cta, []):
+    for label, pattern in (required_sections if required_sections is not None else QUANT_REQUIRED_SECTIONS.get(cta, [])):
         if not re.search(pattern, normalized, flags=re.IGNORECASE):
             missing.append(label)
     return missing
@@ -193,7 +429,9 @@ def _extract_markdown_headings(md_content: str) -> List[str]:
     return headings
 
 
-def _build_toc_markdown(cta: str, headings: List[str]) -> str:
+def _build_toc_markdown(
+    cta: str, headings: List[str], required_sections: Optional[List[Tuple[str, str]]] = None
+) -> str:
     if not headings:
         return ""
 
@@ -206,7 +444,8 @@ def _build_toc_markdown(cta: str, headings: List[str]) -> str:
                     ordered_entries.append(heading)
                 return
 
-    for _, pattern in QUANT_REQUIRED_SECTIONS.get(cta, []):
+    sections = required_sections if required_sections is not None else QUANT_REQUIRED_SECTIONS.get(cta, [])
+    for _, pattern in sections:
         append_if_present(pattern)
 
     if not ordered_entries:
@@ -221,8 +460,10 @@ def _build_toc_markdown(cta: str, headings: List[str]) -> str:
     return "\n".join(toc_lines)
 
 
-def _synchronize_toc(md_content: str, cta: str) -> str:
-    toc_markdown = _build_toc_markdown(cta, _extract_markdown_headings(md_content))
+def _synchronize_toc(
+    md_content: str, cta: str, required_sections: Optional[List[Tuple[str, str]]] = None
+) -> str:
+    toc_markdown = _build_toc_markdown(cta, _extract_markdown_headings(md_content), required_sections)
     if not toc_markdown:
         return md_content
 
@@ -295,7 +536,12 @@ async def _generate_report_markdown_once(payload: dict, system_prompt: str, expl
     return md
 
 
-def _append_supported_missing_sections(md_content: str, cta: str, missing_sections: List[str]) -> tuple[str, List[str]]:
+def _append_supported_missing_sections(
+    md_content: str,
+    cta: str,
+    missing_sections: List[str],
+    required_sections: Optional[List[Tuple[str, str]]] = None,
+) -> Tuple[str, List[str]]:
     # Reuses the same deterministic fallback text qual uses for these two shared
     # closing sections, so a partial quant draft still ends with the identical shell.
     appenders = {
@@ -308,10 +554,15 @@ def _append_supported_missing_sections(md_content: str, cta: str, missing_sectio
 
     blocks = [appenders[label]() for label in appendable]
     repaired = f"{md_content.rstrip()}\n\n" + "\n\n".join(block.strip() for block in blocks) + "\n"
-    return repaired, _find_missing_sections(repaired, cta)
+    return repaired, _find_missing_sections(repaired, cta, required_sections)
 
 
-async def _generate_validated_report_markdown(payload: dict, cta: str, exploration_id: Optional[str] = None) -> str:
+async def _generate_validated_report_markdown(
+    payload: dict,
+    cta: str,
+    exploration_id: Optional[str] = None,
+    required_sections: Optional[List[Tuple[str, str]]] = None,
+) -> str:
     system_prompt = CTA_ROUTED_QUANT_REPORT_PROMPT_V2.replace("{REPORT_DATE}", _current_report_date())
 
     md = await _generate_report_markdown_once(payload, system_prompt, exploration_id)
@@ -321,10 +572,10 @@ async def _generate_validated_report_markdown(payload: dict, cta: str, explorati
     md = _strip_end_markers(md)
     md = _move_shell_suffix_to_end(md)
     md = _ensure_closing_section_content(md, cta)
-    md = _synchronize_toc(md, cta)
-    missing_sections = _find_missing_sections(md, cta)
-    md, missing_sections = _append_supported_missing_sections(md, cta, missing_sections)
-    md = _synchronize_toc(md, cta)
+    md = _synchronize_toc(md, cta, required_sections)
+    missing_sections = _find_missing_sections(md, cta, required_sections)
+    md, missing_sections = _append_supported_missing_sections(md, cta, missing_sections, required_sections)
+    md = _synchronize_toc(md, cta, required_sections)
     if not missing_sections:
         return md.rstrip() + "\n\n---\n\n**END OF REPORT**\n"
 
@@ -347,12 +598,12 @@ async def _generate_validated_report_markdown(payload: dict, cta: str, explorati
     repaired_md = _strip_end_markers(repaired_md)
     repaired_md = _move_shell_suffix_to_end(repaired_md)
     repaired_md = _ensure_closing_section_content(repaired_md, cta)
-    repaired_md = _synchronize_toc(repaired_md, cta)
-    repaired_missing_sections = _find_missing_sections(repaired_md, cta)
+    repaired_md = _synchronize_toc(repaired_md, cta, required_sections)
+    repaired_missing_sections = _find_missing_sections(repaired_md, cta, required_sections)
     repaired_md, repaired_missing_sections = _append_supported_missing_sections(
-        repaired_md, cta, repaired_missing_sections
+        repaired_md, cta, repaired_missing_sections, required_sections
     )
-    repaired_md = _synchronize_toc(repaired_md, cta)
+    repaired_md = _synchronize_toc(repaired_md, cta, required_sections)
     if repaired_missing_sections:
         raise ValueError(
             "Generated quant report is incomplete after retry. Missing required sections: "
@@ -376,6 +627,7 @@ async def get_simulation_results(
             SurveySimulation.total_sample_size,
             SurveySimulation.persona_sample_sizes,
             SurveySimulation.persona_id,
+            SurveySimulation.simulation_source_id,
         ).where(SurveySimulation.id == simulation_id)
     )
 
@@ -393,7 +645,83 @@ async def get_simulation_results(
         "total_sample_size": row.total_sample_size,
         "persona_sample_sizes": row.persona_sample_sizes,
         "persona_id": row.persona_id,
+        "simulation_source_id": row.simulation_source_id,
     }
+
+
+_MULTI_SELECT_QUESTION_TYPES = {"m", "multi_select", "grid_multi_select", "multiselect"}
+
+
+def _validate_survey_results_reconciliation(
+    survey_results: Dict[str, Any],
+    total_sample_size: int,
+    question_types: Dict[str, str],
+) -> List[str]:
+    """Reconciliation gate run before survey_results is handed to the LLM.
+
+    survey_results is always written by build_normalized_survey_results() /
+    _combine_persona_results() (see survey_results_normalize.py and
+    survey_simulation_combined.py), which already guarantee: single-select option
+    counts sum to total_sample_size, and every option's `pct` is
+    round(100 * count / total_sample_size, 1) — a respondent-count denominator, not a
+    response-count denominator, for both single- and multi-select questions. This check
+    re-verifies those invariants at read time so a future write path that skips that
+    helper (or stale/hand-edited data) can't silently ship a report with inflated
+    multi-select percentages or drifted single-select totals; it raises instead of
+    reaching the LLM.
+    """
+    issues: List[str] = []
+    if not survey_results or total_sample_size <= 0:
+        return issues
+
+    for q_text, rows in survey_results.items():
+        if not isinstance(rows, list) or not rows:
+            continue
+
+        qtype = str(question_types.get(q_text) or "").strip().lower().replace("-", "_")
+        is_multi = qtype in _MULTI_SELECT_QUESTION_TYPES
+        type_known = q_text in question_types
+
+        counts: List[float] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            count = row.get("count")
+            pct = row.get("pct")
+            if not isinstance(count, (int, float)):
+                # Open-ended questions store [{"verbatim": "..."}] rows (see
+                # build_normalized_survey_results) with no count/pct — nothing
+                # to reconcile, skip.
+                continue
+            counts.append(count)
+
+            if isinstance(pct, (int, float)):
+                expected_pct = round(100.0 * count / total_sample_size, 1)
+                if abs(pct - expected_pct) > 0.6:
+                    issues.append(
+                        f"{q_text!r} option {row.get('option')!r}: pct={pct} uses the wrong "
+                        f"denominator (expected {expected_pct} = 100*{count}/{total_sample_size} respondents)"
+                    )
+
+            if is_multi and count > total_sample_size:
+                issues.append(
+                    f"{q_text!r} option {row.get('option')!r}: count={count} exceeds "
+                    f"total_sample_size={total_sample_size}"
+                )
+
+        # Single-select must account for exactly one answer per respondent. Only enforced
+        # when the question's type is actually known, so a missing/incomplete question_types
+        # map (e.g. questionnaire lookup failed) can't produce false positives on real
+        # multi-select questions, whose counts legitimately don't sum to total_sample_size.
+        if type_known and not is_multi and counts:
+            total = sum(counts)
+            if abs(total - total_sample_size) > 1:
+                issues.append(
+                    f"{q_text!r} (single-select) option counts sum to {total}, "
+                    f"expected {total_sample_size} respondents"
+                )
+
+    return issues
 
 
 def pdf_file_to_buffer(pdf_path: str) -> io.BytesIO:
@@ -752,7 +1080,19 @@ def _quant_md_to_pdf(md_content: str, output_pdf_path: str, css_path: str) -> st
     return html_to_pdf(html_body, output_pdf_path, css_path)
 
 
-async def generate_md_report(exploration_id: str, sim_id: str, persona_details: Any, cta: str = "DECISION_INTELLIGENCE") -> bytes:
+async def generate_md_report(
+    exploration_id: str, sim_id: str, persona_details: Any, cta: str = "DECISION_INTELLIGENCE",
+    workspace_id: Optional[str] = None,
+) -> bytes:
+    # RECONCILIATION FLOW:
+    # 1. Load survey_results from SurveySimulation.results (source of truth; always written
+    #    by build_normalized_survey_results()/_combine_persona_results(), never a derived CSV).
+    # 2. Look up each question's type from the questionnaire, so multi- vs single-select can
+    #    be told apart.
+    # 3. Validate survey_results against total_sample_size (respondent-denominator invariant);
+    #    raise if it doesn't reconcile, before any LLM call is made.
+    # 4. Use survey_results as-is (no separate aggregation step — it's already the aggregate)
+    #    in the LLM payload.
     async with AsyncSession(async_engine) as session:
         data = await get_simulation_results(session, sim_id)
 
@@ -764,12 +1104,56 @@ async def generate_md_report(exploration_id: str, sim_id: str, persona_details: 
     if survey_results is None and isinstance(raw_results, dict):
         survey_results = raw_results
 
+    question_types: Dict[str, str] = {}
+    questionnaire_sections: List[Dict[str, Any]] = []
+    population_sim_id = data.get("simulation_source_id")
+    if workspace_id and population_sim_id:
+        try:
+            from app.services.questionnaire import get_questionnaire_by_simulation
+
+            questionnaire_sections = await get_questionnaire_by_simulation(workspace_id, exploration_id, population_sim_id) or []
+            for sec in questionnaire_sections:
+                for q in sec.get("questions") or []:
+                    qtext = (q.get("text") or "").strip()
+                    if qtext:
+                        question_types[qtext] = q.get("question_type") or "single_select"
+        except Exception as exc:
+            print(f"[quant_report] question_types lookup failed sim_id={sim_id!r}: {exc}")
+
+    if survey_results:
+        reconciliation_issues = _validate_survey_results_reconciliation(
+            survey_results, data.get("total_sample_size") or 0, question_types,
+        )
+        if reconciliation_issues:
+            raise ValueError(
+                "Quant report blocked: survey_results failed reconciliation against "
+                "total_sample_size — " + "; ".join(reconciliation_issues)
+            )
+
     research_objective = await get_description(exploration_id)
 
     raw_personas = persona_details if isinstance(persona_details, list) else (
         [persona_details] if persona_details else []
     )
     metadata = await _compute_quant_metadata(raw_personas, research_objective, exploration_id=exploration_id)
+
+    # Audience Characteristics (demographic fact) replaces Studied Personas (archetype
+    # table) for DECISION_INTELLIGENCE only. BEHAVIORAL_ARCHAEOLOGY keeps Studied Personas
+    # and does NOT also render Audience Characteristics — rendering both produced a
+    # duplicate persona-summary section in practice.
+    audience_characteristics: Dict[str, Any] = {}
+    if cta == "DECISION_INTELLIGENCE":
+        audience_characteristics = extract_audience_characteristics(
+            questionnaire_sections, survey_results or {}, data.get("total_sample_size") or 0,
+        )
+
+    selected_modules: List[str] = []
+    suppressions: Dict[str, str] = {}
+    required_sections: Optional[List[Tuple[str, str]]] = None
+    if cta == "DECISION_INTELLIGENCE":
+        selected_modules = select_adaptive_modules(str(research_objective or ""), question_types)
+        suppressions = check_suppression_rules(selected_modules, question_types)
+        required_sections = _build_di_required_sections(selected_modules, suppressions)
 
     payload: Dict[str, Any] = {
         "research_objective": research_objective,
@@ -783,9 +1167,13 @@ async def generate_md_report(exploration_id: str, sim_id: str, persona_details: 
         "simulation_result": data.get("simulation_result"),
         "narrative": data.get("narrative"),
         "metadata": metadata,
+        "audience_characteristics": audience_characteristics,
+        "selected_modules": selected_modules,
+        "module_definitions": {mid: MODULE_DEFINITIONS[mid]["guidance"] for mid in selected_modules},
+        "suppressions": suppressions,
     }
 
-    md = await _generate_validated_report_markdown(payload, cta, exploration_id)
+    md = await _generate_validated_report_markdown(payload, cta, exploration_id, required_sections)
 
     output_pdf_path = generate_pdf_path(prefix="quant_survey")
     css_path = (

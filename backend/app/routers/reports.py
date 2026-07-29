@@ -812,12 +812,20 @@ async def quant_transcripts(
                 name = p.get("name") or p.get("persona_name") or pid
                 persona_names_map[pid] = name
 
+        question_types: dict = {}
+        for sec in questionnaires:
+            for q in sec.get("questions") or []:
+                qtext = (q.get("text") or "").strip()
+                if qtext:
+                    question_types[qtext] = q.get("question_type") or "single_select"
+
         results_data = parse_survey_results_field(survey_sim.results) or {}
         survey_results_csv = build_survey_results_csv_bytes(
             results=results_data,
             persona_sample_sizes=persona_sample_sizes,
             persona_names_map=persona_names_map,
             seed=resolved_simulation_id,
+            question_types=question_types,
         )
 
         # ── Combine into ZIP ──
@@ -859,7 +867,10 @@ async def quant_decision_intelligence(
         content = _read_cached_file(cached)
     else:
         personas = await _personas_for_simulation(survey_sim)
-        pdf_bytes = await generate_md_report(exploration_id, resolved_simulation_id, personas, cta="DECISION_INTELLIGENCE")
+        pdf_bytes = await generate_md_report(
+            exploration_id, resolved_simulation_id, personas,
+            cta="DECISION_INTELLIGENCE", workspace_id=workspace_id,
+        )
         path = generate_pdf_path(prefix="quant_di")
         _write_file(path, pdf_bytes)
         await _store_file_report_cache(
@@ -897,7 +908,10 @@ async def quant_behavior_archaeology(
         content = _read_cached_file(cached)
     else:
         personas = await _personas_for_simulation(survey_sim)
-        pdf_bytes = await generate_md_report(exploration_id, resolved_simulation_id, personas, cta="BEHAVIORAL_ARCHAEOLOGY")
+        pdf_bytes = await generate_md_report(
+            exploration_id, resolved_simulation_id, personas,
+            cta="BEHAVIORAL_ARCHAEOLOGY", workspace_id=workspace_id,
+        )
         path = generate_pdf_path(prefix="quant_ba")
         _write_file(path, pdf_bytes)
         await _store_file_report_cache(
