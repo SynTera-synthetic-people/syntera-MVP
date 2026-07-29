@@ -2,8 +2,8 @@ import React from 'react';
 import './DataPlayground.css';
 
 interface EmptyStateProps {
-  title?: string;
-  subtitle?: string;
+  title?: string | undefined;
+  subtitle?: string | undefined;
 }
 
 const EmptyState: React.FC<EmptyStateProps> = ({

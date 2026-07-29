@@ -494,8 +494,8 @@ export default function ChartVisuals({ allVariables, workspaceId, explorationId,
     // dual-axis chart, otherwise a bar chart.
     const chartType: ChartType = effectiveVars.length >= 2 ? 'dual' : 'bar';
     const fetchPromise = runChartMutation.mutateAsync({
-      workspaceId,
-      explorationId,
+      ...(workspaceId !== undefined ? { workspaceId } : {}),
+      ...(explorationId !== undefined ? { explorationId } : {}),
       datasetId,
       variables: effectiveVars.map((v) => v.id),
       chartType,
@@ -512,6 +512,7 @@ export default function ChartVisuals({ allVariables, workspaceId, explorationId,
           .then((result) => {
             setChartResult(result);
             setSelectedVars(effectiveVars); // keep the mapping table in sync with what was fetched
+            setGalleryType(chartType); // keep the "what did we actually request" type in sync too
             setFlow('preview');
             flashToast();
           })
@@ -545,8 +546,8 @@ export default function ChartVisuals({ allVariables, workspaceId, explorationId,
     }
     try {
       const result = await runChartMutation.mutateAsync({
-        workspaceId,
-        explorationId,
+        ...(workspaceId !== undefined ? { workspaceId } : {}),
+        ...(explorationId !== undefined ? { explorationId } : {}),
         datasetId,
         variables: effectiveVars.map((v) => v.id),
         chartType: galleryType,
@@ -562,51 +563,166 @@ export default function ChartVisuals({ allVariables, workspaceId, explorationId,
 
   const selectedIds = new Set(selectedVars.map((v) => v.id));
 
+  // The chart type actually being displayed right now. In Builder mode this
+  // is whatever the user explicitly picked in the Gallery (galleryType) —
+  // that's the source of truth for "what did I ask for", and trusting it
+  // over the backend's echoed chart_type means picking "Line" and adding it
+  // always renders a line chart even if the API doesn't echo the type back
+  // exactly. In Preview mode (the Omi-generated result) there's no manual
+  // picker, so the backend's chart_type is authoritative there instead.
+  const isBuilder = flow === 'builder';
+  const currentChartType: ChartType = isBuilder
+    ? galleryType
+    : (chartResult?.chart_type as ChartType) ?? galleryType;
+
   // ── Live chart preview shared by Preview & Builder ────────────────────────
+  // Renders bar / line / pie / dual based on currentChartType — previously
+  // this always drew bars regardless of what was actually generated or
+  // picked in the Gallery, which is why switching chart types looked like
+  // it "did nothing."
 
   function LivePreview() {
     const chartH = 140;
     const barW = 34;
     const gap = 18;
-    const series = chartResult?.series[0];
     const labels = chartResult?.labels ?? [];
-    const values = series?.values ?? [];
+    const seriesList = chartResult?.series ?? [];
+    const primary = seriesList[0];
+    const secondary = seriesList[1];
+    const values = primary?.values ?? [];
     const totalW = Math.max(labels.length, 1) * (barW + gap);
     // Scale to the real data's own range, not a fixed 100 — real counts are
-    // often far below 100, which made bars render as barely-visible slivers.
-    const maxVal = Math.max(1, ...values);
+    // often far below 100, which made bars/lines render as barely-visible
+    // slivers hugging the bottom of the chart.
+    const maxVal = Math.max(1, ...values, ...(secondary?.values ?? []));
+
+    function renderBars(barValues: number[], color: string) {
+      return barValues.map((val, i) => {
+        const barH = (val / maxVal) * chartH;
+        const x = 20 + i * (barW + gap);
+        const y = chartH - barH + 10;
+        return (
+          <g key={i}>
+            <rect x={x} y={y} width={barW} height={barH} fill={color} rx={3} opacity={0.9} />
+            {props.dataLabel !== 'counts' && (
+              <text x={x + barW / 2} y={y - 6} textAnchor="middle" fontSize="10" fill="#ccc">{val}</text>
+            )}
+            <text x={x + barW / 2} y={chartH + 24} textAnchor="middle" fontSize="9" fill="#9a9eab">{labels[i]}</text>
+          </g>
+        );
+      });
+    }
+
+    function renderChart() {
+      if (!chartResult) {
+        return <div style={{ color: '#9a9eab', fontSize: 12, padding: '20px 0' }}>No chart data yet.</div>;
+      }
+
+      if (currentChartType === 'pie') {
+        const w = 260;
+        const h = 220;
+        const cx = w / 2;
+        const cy = h / 2;
+        const rOuter = Math.min(w, h) / 2 - 10;
+        const rInner = rOuter * 0.55;
+        const total = values.reduce((a, b) => a + b, 0) || 1;
+        let angle = 0;
+        const segments = values.map((val, i) => {
+          const sweep = (val / total) * 360;
+          const seg = { start: angle, end: angle + sweep, color: PALETTE[i % PALETTE.length]!, label: labels[i], val };
+          angle += sweep;
+          return seg;
+        });
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap' }}>
+            <svg viewBox={`0 0 ${w} ${h}`} width={w} height={h}>
+              {segments.map((seg, i) => (
+                <path key={i} d={donutSegmentPath(cx, cy, rOuter, rInner, seg.start, seg.end)} fill={seg.color} />
+              ))}
+              <text x={cx} y={cy + 6} textAnchor="middle" fontSize="18" fontWeight={700} fill="#f5f6f7">{total}</text>
+            </svg>
+            <div className="dp-chart-legend">
+              {segments.map((seg, i) => (
+                <div key={i} className="dp-chart-legend-item">
+                  <span className="dp-chart-legend-dot" style={{ background: seg.color }} />
+                  <span className="dp-chart-legend-label">{seg.label}: {seg.val}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      }
+
+      if (currentChartType === 'line') {
+        const stepX = labels.length > 1 ? (totalW - 20) / (labels.length - 1) : 0;
+        const points = values.map((val, i) => ({
+          x: 20 + i * stepX,
+          y: chartH - (val / maxVal) * chartH + 10,
+        }));
+        const color = '#7947c4';
+        return (
+          <svg viewBox={`0 0 ${totalW + 40} ${chartH + 50}`} className="dp-chart-svg">
+            <path d={smoothPath(points)} fill="none" stroke={color} strokeWidth={2} />
+            {points.map((p, i) => (
+              <g key={i}>
+                <circle cx={p.x} cy={p.y} r={3.5} fill="#121317" stroke={color} strokeWidth={1.8} />
+                {props.dataLabel !== 'counts' && (
+                  <text x={p.x} y={p.y - 8} textAnchor="middle" fontSize="10" fill="#ccc">{values[i]}</text>
+                )}
+                <text x={p.x} y={chartH + 24} textAnchor="middle" fontSize="9" fill="#9a9eab">{labels[i]}</text>
+              </g>
+            ))}
+            <line x1="20" y1={chartH + 10} x2={totalW + 20} y2={chartH + 10} stroke="#2a2d33" strokeWidth="1" />
+          </svg>
+        );
+      }
+
+      if (currentChartType === 'dual' && secondary) {
+        const stepX = labels.length > 1 ? (totalW - 20) / (labels.length - 1) : 0;
+        const linePoints = secondary.values.map((val, i) => ({
+          x: 20 + i * stepX + barW / 2,
+          y: chartH - (val / maxVal) * chartH + 10,
+        }));
+        const lineColor = '#45c276';
+        return (
+          <svg viewBox={`0 0 ${totalW + 40} ${chartH + 50}`} className="dp-chart-svg">
+            {renderBars(values, '#7947c4')}
+            <path d={smoothPath(linePoints)} fill="none" stroke={lineColor} strokeWidth={2} />
+            {linePoints.map((p, i) => (
+              <circle key={i} cx={p.x} cy={p.y} r={3} fill="#121317" stroke={lineColor} strokeWidth={1.6} />
+            ))}
+            <line x1="20" y1={chartH + 10} x2={totalW + 20} y2={chartH + 10} stroke="#2a2d33" strokeWidth="1" />
+          </svg>
+        );
+      }
+
+      // 'bar', and 'dual' without a second series to plot as a line
+      return (
+        <svg viewBox={`0 0 ${totalW + 40} ${chartH + 50}`} className="dp-chart-svg">
+          {renderBars(values, '#7947c4')}
+          <line x1="20" y1={chartH + 10} x2={totalW + 20} y2={chartH + 10} stroke="#2a2d33" strokeWidth="1" />
+        </svg>
+      );
+    }
+
     return (
       <div className="dp-chart-preview-wrap">
         {props.title1 && <div className="dp-chart-title">{props.title1}</div>}
         {props.title2 && <div className="dp-chart-subtitle">{props.title2}</div>}
-        {!chartResult ? (
-          <div style={{ color: '#9a9eab', fontSize: 12, padding: '20px 0' }}>No chart data yet.</div>
-        ) : (
-          <svg viewBox={`0 0 ${totalW + 40} ${chartH + 50}`} className="dp-chart-svg">
-            {values.map((val, i) => {
-              const barH = (val / maxVal) * chartH;
-              const x = 20 + i * (barW + gap);
-              const y = chartH - barH + 10;
-              return (
-                <g key={i}>
-                  <rect x={x} y={y} width={barW} height={barH} fill="#7947c4" rx={3} opacity={0.9} />
-                  {props.dataLabel !== 'counts' && (
-                    <text x={x + barW / 2} y={y - 6} textAnchor="middle" fontSize="10" fill="#ccc">{val}</text>
-                  )}
-                  <text x={x + barW / 2} y={chartH + 24} textAnchor="middle" fontSize="9" fill="#9a9eab">{labels[i]}</text>
-                </g>
-              );
-            })}
-            <line x1="20" y1={chartH + 10} x2={totalW + 20} y2={chartH + 10} stroke="#2a2d33" strokeWidth="1" />
-          </svg>
-        )}
+        {renderChart()}
         {props.showBase && <div className="dp-chart-base">Base: All respondents (n={chartResult?.base ?? 0})</div>}
-        {props.showLegend && series && (
+        {props.showLegend && primary && currentChartType !== 'pie' && (
           <div className="dp-chart-legend">
             <div className="dp-chart-legend-item">
               <span className="dp-chart-legend-dot" style={{ background: '#7947c4' }} />
-              <span className="dp-chart-legend-label">{series.name}</span>
+              <span className="dp-chart-legend-label">{primary.name}</span>
             </div>
+            {secondary && currentChartType === 'dual' && (
+              <div className="dp-chart-legend-item">
+                <span className="dp-chart-legend-dot" style={{ background: '#45c276' }} />
+                <span className="dp-chart-legend-label">{secondary.name}</span>
+              </div>
+            )}
           </div>
         )}
         {props.footnote1 && <div className="dp-chart-footnote">{props.footnote1}</div>}
@@ -745,8 +861,6 @@ export default function ChartVisuals({ allVariables, workspaceId, explorationId,
   // full set of variables that went into that request.
   // ══════════════════════════════════════════════════════════════════════
 
-  const isBuilder = flow === 'builder';
-  const currentChartType: ChartType = (chartResult?.chart_type as ChartType) ?? galleryType;
   const visibleMapping: MappingRow[] = selectedVars.map((v) => ({
     variable: v.id,
     chartType: currentChartType,
