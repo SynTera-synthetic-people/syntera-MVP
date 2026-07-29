@@ -1,66 +1,9 @@
 import React, { useRef, useState } from 'react';
 import type { Variable } from '../Index';
+import type { FrequencyResult } from '../../../../../../../services/dataPlaygroundService';
 import VariablePill from '../VariablePill';
 import EmptyState from '../EmptyState';
 import '../DataPlayground.css';
-
-// ── Sample frequency data ─────────────────────────────────────────────────────
-
-interface FreqRow {
-  label: string;
-  frequency: number;
-  percent: number;
-  validPercent: number;
-  cumulativePercent: number;
-}
-
-interface FreqResult {
-  varId: string;
-  title: string;
-  rows: FreqRow[];
-}
-
-const FREQ_RESULTS: Record<string, FreqResult> = {
-  S1: {
-    varId: 'S1',
-    title: 'S1_In which country are you located?',
-    rows: [
-      { label: 'United States', frequency: 35, percent: 100.0, validPercent: 100.0, cumulativePercent: 100.0 },
-    ],
-  },
-  S2: {
-    varId: 'S2',
-    title: 'S2_How many employees work for your firm/organization worldwide?',
-    rows: [
-      { label: '1,000 to 4,999 employees', frequency: 5,  percent: 14.3, validPercent: 14.3, cumulativePercent: 14.3 },
-      { label: '20,000 or more employees', frequency: 4,  percent: 11.4, validPercent: 11.4, cumulativePercent: 25.7 },
-      { label: '5,000 to 19,999 employees', frequency: 22, percent: 62.9, validPercent: 62.9, cumulativePercent: 88.6 },
-      { label: '500 to 999 employees',      frequency: 4,  percent: 11.4, validPercent: 11.4, cumulativePercent: 100.0 },
-    ],
-  },
-  Q1_1: {
-    varId: 'Q1_1',
-    title: 'Q1_1_Improve creative velocity across channels and formats',
-    rows: [
-      { label: 'Not on our agenda', frequency: 2,  percent: 5.7,  validPercent: 5.7,  cumulativePercent: 5.7 },
-      { label: 'Low priority',      frequency: 5,  percent: 14.3, validPercent: 14.3, cumulativePercent: 20.0 },
-      { label: 'High priority',     frequency: 12, percent: 34.3, validPercent: 34.3, cumulativePercent: 54.3 },
-      { label: 'Critical priority', frequency: 16, percent: 45.7, validPercent: 45.7, cumulativePercent: 100.0 },
-    ],
-  },
-};
-
-function getFallbackResult(varId: string): FreqResult {
-  return {
-    varId,
-    title: `${varId} — variable question text`,
-    rows: [
-      { label: 'Response option 1', frequency: 20, percent: 57.1, validPercent: 57.1, cumulativePercent: 57.1 },
-      { label: 'Response option 2', frequency: 10, percent: 28.6, validPercent: 28.6, cumulativePercent: 85.7 },
-      { label: 'Response option 3', frequency: 5,  percent: 14.3, validPercent: 14.3, cumulativePercent: 100.0 },
-    ],
-  };
-}
 
 // The mime type used for the drag payload — a variable id being dragged
 // either from the "All Variables" source list, or from within the
@@ -73,6 +16,9 @@ interface FrequencyTableProps {
   allVariables: Variable[];
   selectedVars: Variable[];
   hasResults: boolean;
+  results: FrequencyResult[] | null;
+  isRunning: boolean;
+  hasDataset: boolean;
   onVarToggle: (variable: Variable) => void;
   onVarAdd: (variable: Variable) => void;
   onVarRemove: (varId: string) => void;
@@ -89,6 +35,9 @@ const FrequencyTable: React.FC<FrequencyTableProps> = ({
   allVariables,
   selectedVars,
   hasResults,
+  results,
+  isRunning,
+  hasDataset,
   onVarToggle,
   onVarAdd,
   onVarRemove,
@@ -307,41 +256,49 @@ const FrequencyTable: React.FC<FrequencyTableProps> = ({
         {/* Results content area */}
         <div className="dp-content-area">
           <div className="dp-content-scroll">
-            {!hasResults || selectedVars.length === 0 ? (
-              <EmptyState />
+            {isRunning ? (
+              <EmptyState title="Running frequency table..." subtitle="This will only take a moment" />
+            ) : !hasResults || !results || results.length === 0 ? (
+              <EmptyState
+                title={hasDataset ? undefined : 'No dataset yet'}
+                subtitle={hasDataset ? undefined : 'Upload a CSV or XLSX file to get started'}
+              />
             ) : (
-              selectedVars.map((v) => {
-                const result = FREQ_RESULTS[v.id] ?? getFallbackResult(v.id);
-                return (
-                  <div key={v.id} className="dp-freq-block">
-                    <div className="dp-freq-block-title">{result.title}</div>
-                    <table className="dp-freq-table">
-                      <thead>
+              results.map((result) => (
+                <div key={result.variable} className="dp-freq-block">
+                  <div className="dp-freq-block-title">{result.title}</div>
+                  <table className="dp-freq-table">
+                    <thead>
+                      <tr>
+                        <th></th>
+                        <th></th>
+                        <th>Frequency</th>
+                        <th>Percent</th>
+                        <th>Valid Percent</th>
+                        <th>Cumulative Percent</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {result.rows.length === 0 ? (
                         <tr>
-                          <th></th>
-                          <th></th>
-                          <th>Frequency</th>
-                          <th>Percent</th>
-                          <th>Valid Percent</th>
-                          <th>Cumulative Percent</th>
+                          <td colSpan={6}>No responses recorded for this variable.</td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {result.rows.map((row, idx) => (
+                      ) : (
+                        result.rows.map((row, idx) => (
                           <tr key={idx}>
                             <td>Valid</td>
                             <td>{row.label}</td>
                             <td>{row.frequency}</td>
                             <td>{row.percent.toFixed(1)}</td>
-                            <td>{row.validPercent.toFixed(1)}</td>
-                            <td>{row.cumulativePercent.toFixed(1)}</td>
+                            <td>{row.valid_percent.toFixed(1)}</td>
+                            <td>{row.cumulative_percent.toFixed(1)}</td>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                );
-              })
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              ))
             )}
           </div>
         </div>

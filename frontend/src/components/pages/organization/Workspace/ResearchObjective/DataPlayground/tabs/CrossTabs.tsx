@@ -1,5 +1,6 @@
-import React, { useState, useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import type { Variable } from '../Index';
+import type { CrosstabTable, CrosstabRow } from '../../../../../../../services/dataPlaygroundService';
 import VariablePill from '../VariablePill';
 import EmptyState from '../EmptyState';
 import '../DataPlayground.css';
@@ -12,12 +13,6 @@ type PercentMode = 'col' | 'row';
 interface ValueModalState {
   variable: Variable;
   target: WhereTarget;
-}
-
-interface AnswerOption {
-  id: string;
-  label: string;
-  precode: number;
 }
 
 interface NettGroup {
@@ -37,43 +32,67 @@ interface TableState {
   meanFactors: Record<string, number>;
 }
 
-// ── Sample data ───────────────────────────────────────────────────────────────
-// Every selected Main Variable ("question") gets its own table, mirroring
-// the Figma "Table Behaviour" spec exactly (each answer option count/col%
-// is a uniform dummy 35 / 100.0, consistent with the reference screens).
-
-const SAMPLE_OPTIONS: AnswerOption[] = [
-  { id: 'retail', label: 'Retail media advertising', precode: 1 },
-  { id: 'social', label: 'Social media marketing', precode: 2 },
-  { id: 'tv', label: 'TV advertising', precode: 3 },
-  { id: 'other', label: 'Other', precode: 4 },
-];
-
-const DEFAULT_BANNER_COLS = ['1,000–4,999', '20,000+', '5,000–19,999', '500–999'];
-
-const OPTION_COUNT = 35;
-const OPTION_COL_PCT = 100.0;
-const BASE_TOTAL = 35;
-
-function defaultTableState(): TableState {
+function defaultTableState(rowLabels: string[]): TableState {
   return {
-    optionOrder: SAMPLE_OPTIONS.map((o) => o.id),
+    optionOrder: rowLabels,
     rowLabelOverrides: {},
     nettGroups: [],
     buildingNettId: null,
     sigmaRemoved: false,
     meanEnabled: false,
-    meanFactors: Object.fromEntries(SAMPLE_OPTIONS.map((o) => [o.id, o.precode])),
+    meanFactors: {},
   };
 }
 
-function getQuestionTitle(mainVar: Variable): string {
-  return `${mainVar.label}_You indicated that you work in a marketing/advertising role. In which of the following types of marketing are you personally directly involved?`;
+function round1(n: number): number {
+  return Math.round(n * 10) / 10;
 }
 
-function getBannerTitle(bannerVars: Variable[]): string {
-  const label = bannerVars.map((v) => v.label).join(', ') || 'Employee count';
-  return `${label}_Using your best estimate how many employees work for your firm/organization worldwide?`;
+/** Default weighting factor for an option row when the user hasn't set one
+ * explicitly — the row's real precode, or its position if it has none. */
+function defaultFactor(row: CrosstabRow, index: number): number {
+  return row.code ?? index + 1;
+}
+
+/** count/col%/row% for an aggregate row (NETT group or Sigma) built by
+ * summing several real option rows, column by column. columnCount includes
+ * the leading "Total" column. Total's row_pct mirrors its col_pct (matches
+ * how the backend defines a regular row's Total cell — it's not one of the
+ * mutually-exclusive banner segments, so a self-referential 100% wouldn't
+ * mean anything useful there). */
+function aggregateCells(
+  memberRows: CrosstabRow[],
+  baseByColumn: number[],
+): { count: number; col_pct: number; row_pct: number }[] {
+  const columnCount = baseByColumn.length;
+  const counts = Array.from({ length: columnCount }, (_, colIdx) =>
+    memberRows.reduce((sum, r) => sum + (r.cells[colIdx]?.count ?? 0), 0)
+  );
+  const rowTotal = counts.slice(1).reduce((a, b) => a + b, 0);
+  return counts.map((count, colIdx) => {
+    const colBase = baseByColumn[colIdx] ?? 0;
+    const colPct = colBase ? (count / colBase) * 100 : 0;
+    const rowPct = colIdx === 0 ? colPct : (rowTotal ? (count / rowTotal) * 100 : 0);
+    return { count, col_pct: round1(colPct), row_pct: round1(rowPct) };
+  });
+}
+
+function weightedMeanPerColumn(
+  rows: CrosstabRow[],
+  factors: Record<string, number>,
+  columnCount: number,
+): number[] {
+  return Array.from({ length: columnCount }, (_, colIdx) => {
+    let weighted = 0;
+    let totalCount = 0;
+    rows.forEach((row, idx) => {
+      const count = row.cells[colIdx]?.count ?? 0;
+      const factor = factors[row.label] ?? defaultFactor(row, idx);
+      weighted += factor * count;
+      totalCount += count;
+    });
+    return totalCount ? weighted / totalCount : 0;
+  });
 }
 
 // ── Props ─────────────────────────────────────────────────────────────────────
@@ -83,6 +102,9 @@ interface CrossTabsProps {
   bannerVars: Variable[];
   mainVars: Variable[];
   hasResults: boolean;
+  tables: CrosstabTable[] | null;
+  isRunning: boolean;
+  hasDataset: boolean;
   onAddToBanner: (v: Variable) => void;
   onAddToMain: (v: Variable) => void;
   onBannerRemove: (id: string) => void;
@@ -100,6 +122,9 @@ const CrossTabs: React.FC<CrossTabsProps> = ({
   bannerVars,
   mainVars,
   hasResults,
+  tables,
+  isRunning,
+  hasDataset,
   onAddToBanner,
   onAddToMain,
   onBannerRemove,
@@ -114,7 +139,7 @@ const CrossTabs: React.FC<CrossTabsProps> = ({
   const [selectedValue1, setSelectedValue1] = useState<string>('');
   const [selectedValue2, setSelectedValue2] = useState<string>('2');
   const [percentMode, setPercentMode] = useState<PercentMode>('col');
-  const [bannerColLabels, setBannerColLabels] = useState<string[]>(DEFAULT_BANNER_COLS);
+  const [bannerColLabels, setBannerColLabels] = useState<string[]>([]);
 
   // Sigma / Mean — Sigma is a single global toggle that applies to every
   // question's table at once; Mean is configured per-question via a Factors
@@ -131,14 +156,30 @@ const CrossTabs: React.FC<CrossTabsProps> = ({
     ...mainVars.map((v) => v.id),
   ]);
 
+  // Banner columns are shared across every table in one crosstab response
+  // (same banner variable) — re-seed the editable header labels whenever a
+  // fresh Run comes back.
+  useEffect(() => {
+    if (tables && tables[0]) {
+      setBannerColLabels(tables[0].columns.slice(1).map((c) => c.label));
+    }
+  }, [tables]);
+
   const getTS = useCallback(
-    (mainVarId: string): TableState => tableStates[mainVarId] ?? defaultTableState(),
+    (mainVarId: string, rowLabels: string[]): TableState =>
+      tableStates[mainVarId] ?? defaultTableState(rowLabels),
     [tableStates]
   );
 
-  const updateTS = useCallback((mainVarId: string, updater: (ts: TableState) => TableState) => {
-    setTableStates((prev) => ({ ...prev, [mainVarId]: updater(prev[mainVarId] ?? defaultTableState()) }));
-  }, []);
+  const updateTS = useCallback(
+    (mainVarId: string, rowLabels: string[], updater: (ts: TableState) => TableState) => {
+      setTableStates((prev) => ({
+        ...prev,
+        [mainVarId]: updater(prev[mainVarId] ?? defaultTableState(rowLabels)),
+      }));
+    },
+    []
+  );
 
   // ── Variable selection flow (All Variables → Where to move? → Value) ─────
 
@@ -184,8 +225,8 @@ const CrossTabs: React.FC<CrossTabsProps> = ({
     });
   };
 
-  const handleRemoveSigmaFromTable = (mainVarId: string) => {
-    updateTS(mainVarId, (ts) => ({ ...ts, sigmaRemoved: true }));
+  const handleRemoveSigmaFromTable = (mainVarId: string, rowLabels: string[]) => {
+    updateTS(mainVarId, rowLabels, (ts) => ({ ...ts, sigmaRemoved: true }));
   };
 
   // ── Mean (per-question Factors popup) ─────────────────────────────────────
@@ -204,34 +245,34 @@ const CrossTabs: React.FC<CrossTabsProps> = ({
     setMeanPopup({ mainVarId });
   };
 
-  const handleMeanFactorChange = (mainVarId: string, optionId: string, value: number) => {
-    updateTS(mainVarId, (ts) => ({ ...ts, meanFactors: { ...ts.meanFactors, [optionId]: value } }));
+  const handleMeanFactorChange = (mainVarId: string, rowLabels: string[], rowLabel: string, value: number) => {
+    updateTS(mainVarId, rowLabels, (ts) => ({ ...ts, meanFactors: { ...ts.meanFactors, [rowLabel]: value } }));
   };
 
-  const handleMeanOk = () => {
+  const handleMeanOk = (rowLabels: string[]) => {
     if (!meanPopup) return;
-    updateTS(meanPopup.mainVarId, (ts) => ({ ...ts, meanEnabled: true }));
+    updateTS(meanPopup.mainVarId, rowLabels, (ts) => ({ ...ts, meanEnabled: true }));
     setMeanPopup(null);
   };
 
-  const handleRemoveMeanFromTable = (mainVarId: string) => {
-    updateTS(mainVarId, (ts) => ({ ...ts, meanEnabled: false }));
+  const handleRemoveMeanFromTable = (mainVarId: string, rowLabels: string[]) => {
+    updateTS(mainVarId, rowLabels, (ts) => ({ ...ts, meanEnabled: false }));
   };
 
   // ── NETT (per-question grouping) ──────────────────────────────────────────
 
-  const startBuildingNett = (mainVarId: string) => {
+  const startBuildingNett = (mainVarId: string, rowLabels: string[]) => {
     const id = `nett-${Date.now()}`;
     setNettLabelDraft((prev) => ({ ...prev, [mainVarId]: '' }));
-    updateTS(mainVarId, (ts) => ({
+    updateTS(mainVarId, rowLabels, (ts) => ({
       ...ts,
       nettGroups: [...ts.nettGroups, { id, label: '', memberIds: [], expanded: true }],
       buildingNettId: id,
     }));
   };
 
-  const toggleNettMember = (mainVarId: string, optionId: string) => {
-    updateTS(mainVarId, (ts) => {
+  const toggleNettMember = (mainVarId: string, rowLabels: string[], optionId: string) => {
+    updateTS(mainVarId, rowLabels, (ts) => {
       if (!ts.buildingNettId) return ts;
       return {
         ...ts,
@@ -249,9 +290,9 @@ const CrossTabs: React.FC<CrossTabsProps> = ({
     });
   };
 
-  const finishBuildingNett = (mainVarId: string) => {
+  const finishBuildingNett = (mainVarId: string, rowLabels: string[]) => {
     const label = (nettLabelDraft[mainVarId] ?? '').trim();
-    updateTS(mainVarId, (ts) => ({
+    updateTS(mainVarId, rowLabels, (ts) => ({
       ...ts,
       nettGroups: ts.nettGroups
         .map((ng) => (ng.id !== ts.buildingNettId ? ng : { ...ng, label: label || 'NETT' }))
@@ -260,20 +301,20 @@ const CrossTabs: React.FC<CrossTabsProps> = ({
     }));
   };
 
-  const cancelBuildingNett = (mainVarId: string) => {
-    updateTS(mainVarId, (ts) => ({
+  const cancelBuildingNett = (mainVarId: string, rowLabels: string[]) => {
+    updateTS(mainVarId, rowLabels, (ts) => ({
       ...ts,
       nettGroups: ts.nettGroups.filter((ng) => ng.id !== ts.buildingNettId),
       buildingNettId: null,
     }));
   };
 
-  const removeNett = (mainVarId: string, nettId: string) => {
-    updateTS(mainVarId, (ts) => ({ ...ts, nettGroups: ts.nettGroups.filter((ng) => ng.id !== nettId) }));
+  const removeNett = (mainVarId: string, rowLabels: string[], nettId: string) => {
+    updateTS(mainVarId, rowLabels, (ts) => ({ ...ts, nettGroups: ts.nettGroups.filter((ng) => ng.id !== nettId) }));
   };
 
-  const toggleNettExpanded = (mainVarId: string, nettId: string) => {
-    updateTS(mainVarId, (ts) => ({
+  const toggleNettExpanded = (mainVarId: string, rowLabels: string[], nettId: string) => {
+    updateTS(mainVarId, rowLabels, (ts) => ({
       ...ts,
       nettGroups: ts.nettGroups.map((ng) => (ng.id !== nettId ? ng : { ...ng, expanded: !ng.expanded })),
     }));
@@ -281,8 +322,8 @@ const CrossTabs: React.FC<CrossTabsProps> = ({
 
   // ── Row reordering / editing ──────────────────────────────────────────────
 
-  const moveOptionUp = (mainVarId: string, optionId: string) => {
-    updateTS(mainVarId, (ts) => {
+  const moveOptionUp = (mainVarId: string, rowLabels: string[], optionId: string) => {
+    updateTS(mainVarId, rowLabels, (ts) => {
       const idx = ts.optionOrder.indexOf(optionId);
       if (idx <= 0) return ts;
       const next = [...ts.optionOrder];
@@ -291,8 +332,8 @@ const CrossTabs: React.FC<CrossTabsProps> = ({
     });
   };
 
-  const moveOptionDown = (mainVarId: string, optionId: string) => {
-    updateTS(mainVarId, (ts) => {
+  const moveOptionDown = (mainVarId: string, rowLabels: string[], optionId: string) => {
+    updateTS(mainVarId, rowLabels, (ts) => {
       const idx = ts.optionOrder.indexOf(optionId);
       if (idx === -1 || idx >= ts.optionOrder.length - 1) return ts;
       const next = [...ts.optionOrder];
@@ -301,21 +342,25 @@ const CrossTabs: React.FC<CrossTabsProps> = ({
     });
   };
 
-  const handleEditRowLabel = (mainVarId: string, optionId: string, text: string) => {
-    updateTS(mainVarId, (ts) => ({ ...ts, rowLabelOverrides: { ...ts.rowLabelOverrides, [optionId]: text } }));
+  const handleEditRowLabel = (mainVarId: string, rowLabels: string[], optionId: string, text: string) => {
+    updateTS(mainVarId, rowLabels, (ts) => ({ ...ts, rowLabelOverrides: { ...ts.rowLabelOverrides, [optionId]: text } }));
   };
 
   const handleEditBannerCol = (index: number, text: string) => {
     setBannerColLabels((prev) => prev.map((c, i) => (i === index ? text : c)));
   };
 
-  // ── Cell formatting helpers (uniform dummy data, matching Figma exactly) ──
+  // ── Cell formatting helpers ────────────────────────────────────────────────
 
-  const formatBaseCell = () => `${BASE_TOTAL} 100.0`;
-  const formatOptionCell = () => `${OPTION_COUNT} ${OPTION_COL_PCT.toFixed(1)}`;
+  const formatCell = (count: number, colPct: number, rowPct: number) =>
+    `${count} ${(percentMode === 'col' ? colPct : rowPct).toFixed(1)}`;
 
   const meanPopupVar = meanPopup ? mainVars.find((v) => v.id === meanPopup.mainVarId) : undefined;
-  const meanPopupTS = meanPopup ? getTS(meanPopup.mainVarId) : undefined;
+  const meanPopupTable = meanPopup ? (tables ?? []).find((t) => t.main_variable === meanPopup.mainVarId) : undefined;
+  const meanPopupRowLabels = meanPopupTable ? meanPopupTable.rows.map((r) => r.label) : [];
+  const meanPopupTS = meanPopup ? getTS(meanPopup.mainVarId, meanPopupRowLabels) : undefined;
+
+  const tablesByMainVar = new Map((tables ?? []).map((t) => [t.main_variable, t]));
 
   return (
     <>
@@ -494,7 +539,7 @@ const CrossTabs: React.FC<CrossTabsProps> = ({
 
         {/* Results area */}
         <div className="dp-content-area">
-        {hasResults && (bannerVars.length > 0 || mainVars.length > 0) && (
+        {hasResults && tables && tables.length > 0 && (
           <>
             {/* Sigma / Mean statistic toggles */}
             <div className="dp-cross-stat-row">
@@ -550,26 +595,35 @@ const CrossTabs: React.FC<CrossTabsProps> = ({
         )}
 
         <div className="dp-content-scroll">
-          {!hasResults || (bannerVars.length === 0 && mainVars.length === 0) ? (
-            <EmptyState />
+          {isRunning ? (
+            <EmptyState title="Running cross tab..." subtitle="This will only take a moment" />
+          ) : !hasResults || !tables || tables.length === 0 ? (
+            <EmptyState
+              title={hasDataset ? undefined : 'No dataset yet'}
+              subtitle={hasDataset ? undefined : 'Upload a CSV or XLSX file to get started'}
+            />
           ) : (
             mainVars.map((mainVar, tableIdx) => {
-              const ts = getTS(mainVar.id);
+              const table = tablesByMainVar.get(mainVar.id);
+              if (!table) return null;
+
+              const rowLabels = table.rows.map((r) => r.label);
+              const ts = getTS(mainVar.id, rowLabels);
               const memberIdsInNett = new Set(ts.nettGroups.flatMap((ng) => ng.memberIds));
               const remainingOptionIds = ts.optionOrder.filter((id) => !memberIdsInNett.has(id));
-              const optionById = Object.fromEntries(SAMPLE_OPTIONS.map((o) => [o.id, o]));
+              const optionByLabel = new Map(table.rows.map((r) => [r.label, r]));
               const showSigma = sigmaGlobalEnabled && !ts.sigmaRemoved;
+              const columnCount = table.columns.length; // Total + banner columns
 
-              const meanValue = (() => {
-                const totalFactor = SAMPLE_OPTIONS.reduce((sum, o) => sum + (ts.meanFactors[o.id] ?? o.precode) * OPTION_COUNT, 0);
-                const totalCount = SAMPLE_OPTIONS.length * OPTION_COUNT;
-                return totalCount === 0 ? 0 : totalFactor / totalCount;
-              })();
+              const meanByColumn = ts.meanEnabled
+                ? weightedMeanPerColumn(table.rows, ts.meanFactors, columnCount)
+                : [];
+              const sigmaCells = showSigma ? aggregateCells(table.rows, table.base.by_column) : [];
 
               return (
                 <div key={mainVar.id} className="dp-cross-block">
                   <div className="dp-cross-block-title-row">
-                    <div className="dp-cross-block-title">Table {tableIdx + 1} — {getQuestionTitle(mainVar)}</div>
+                    <div className="dp-cross-block-title">Table {tableIdx + 1} — {table.title}</div>
                     {ts.buildingNettId ? (
                       <div className="dp-nett-input-wrap">
                         <input
@@ -577,14 +631,14 @@ const CrossTabs: React.FC<CrossTabsProps> = ({
                           placeholder="NETT label..."
                           value={nettLabelDraft[mainVar.id] ?? ''}
                           onChange={(e) => setNettLabelDraft((prev) => ({ ...prev, [mainVar.id]: e.target.value }))}
-                          onKeyDown={(e) => e.key === 'Enter' && finishBuildingNett(mainVar.id)}
+                          onKeyDown={(e) => e.key === 'Enter' && finishBuildingNett(mainVar.id, rowLabels)}
                           autoFocus
                         />
-                        <button className="dp-nett-ok-btn" onClick={() => finishBuildingNett(mainVar.id)}>Add</button>
-                        <button className="dp-nett-cancel-btn" onClick={() => cancelBuildingNett(mainVar.id)}>✕</button>
+                        <button className="dp-nett-ok-btn" onClick={() => finishBuildingNett(mainVar.id, rowLabels)}>Add</button>
+                        <button className="dp-nett-cancel-btn" onClick={() => cancelBuildingNett(mainVar.id, rowLabels)}>✕</button>
                       </div>
                     ) : (
-                      <button className="dp-toolbar-btn" onClick={() => startBuildingNett(mainVar.id)}>
+                      <button className="dp-toolbar-btn" onClick={() => startBuildingNett(mainVar.id, rowLabels)}>
                         + NETT
                       </button>
                     )}
@@ -599,10 +653,10 @@ const CrossTabs: React.FC<CrossTabsProps> = ({
                       <thead>
                         <tr>
                           <th className="dp-cross-td--rowctl" aria-hidden />
-                          <th className="dp-cross-th--label">{getQuestionTitle(mainVar)}</th>
+                          <th className="dp-cross-th--label">{table.title}</th>
                           <th className="dp-cross-th--num" rowSpan={1}></th>
                           <th className="dp-cross-th--num" colSpan={bannerColLabels.length}>
-                            {getBannerTitle(bannerVars)}
+                            {table.banner_title}
                           </th>
                         </tr>
                         <tr>
@@ -624,12 +678,14 @@ const CrossTabs: React.FC<CrossTabsProps> = ({
                         </tr>
                         <tr>
                           <th className="dp-cross-td--rowctl" aria-hidden />
+                          <th className="dp-cross-th--subhead"></th>
                           <th className="dp-cross-th--subhead">
                             {percentMode === 'col' ? 'Col %' : 'Row %'}
                           </th>
-                          <th className="dp-cross-th--subhead">Count %</th>
                           {bannerColLabels.map((_, i) => (
-                            <th key={i} className="dp-cross-th--subhead">Count %</th>
+                            <th key={i} className="dp-cross-th--subhead">
+                              {percentMode === 'col' ? 'Col %' : 'Row %'}
+                            </th>
                           ))}
                         </tr>
                       </thead>
@@ -640,16 +696,15 @@ const CrossTabs: React.FC<CrossTabsProps> = ({
                             <span className="dp-row-link-icon" title="Aggregate row">⛓</span>
                           </td>
                           <td className="dp-cross-td--label">Base: All respondents</td>
-                          <td className="dp-cross-td--num">{formatBaseCell()}</td>
-                          {bannerColLabels.map((_, i) => (
-                            <td key={i} className="dp-cross-td--num">{formatBaseCell()}</td>
+                          {table.base.by_column.map((count, i) => (
+                            <td key={i} className="dp-cross-td--num">{count} 100.0</td>
                           ))}
                         </tr>
 
                         {/* NETT groups (rendered right after Base, per Figma's Table Behaviour example) */}
                         {ts.nettGroups.map((ng) => {
-                          const memberOptions = ng.memberIds.map((id) => optionById[id]).filter(Boolean) as AnswerOption[];
-                          const total = memberOptions.length * BASE_TOTAL;
+                          const memberOptions = ng.memberIds.map((id) => optionByLabel.get(id)).filter(Boolean) as CrosstabRow[];
+                          const cells = aggregateCells(memberOptions, table.base.by_column);
                           const isBuilding = ts.buildingNettId === ng.id;
                           return (
                             <React.Fragment key={ng.id}>
@@ -657,7 +712,7 @@ const CrossTabs: React.FC<CrossTabsProps> = ({
                                 <td className="dp-cross-td--rowctl">
                                   <button
                                     className="dp-row-updown-btn"
-                                    onClick={() => toggleNettExpanded(mainVar.id, ng.id)}
+                                    onClick={() => toggleNettExpanded(mainVar.id, rowLabels, ng.id)}
                                     aria-label={ng.expanded ? 'Collapse NETT' : 'Expand NETT'}
                                     title={ng.expanded ? 'Collapse' : 'Expand'}
                                   >
@@ -669,28 +724,26 @@ const CrossTabs: React.FC<CrossTabsProps> = ({
                                   {isBuilding ? 'NETT (building…)' : `NETT = ${ng.label || memberOptions.map((m) => m.label.split(' ')[0]).join(' + ')}`}
                                   <button
                                     className="dp-row-remove-btn"
-                                    onClick={() => removeNett(mainVar.id, ng.id)}
+                                    onClick={() => removeNett(mainVar.id, rowLabels, ng.id)}
                                     title="Remove this NETT group"
                                     aria-label="Remove NETT group"
                                   >
                                     −
                                   </button>
                                 </td>
-                                <td className="dp-cross-td--num">{total} 100.0</td>
-                                {bannerColLabels.map((_, i) => (
-                                  <td key={i} className="dp-cross-td--num">{total} 100.0</td>
+                                {cells.map((cell, i) => (
+                                  <td key={i} className="dp-cross-td--num">{formatCell(cell.count, cell.col_pct, cell.row_pct)}</td>
                                 ))}
                               </tr>
                               {ng.expanded &&
                                 memberOptions.map((opt) => (
-                                  <tr key={opt.id} className="dp-cross-row--nett-child">
+                                  <tr key={opt.label} className="dp-cross-row--nett-child">
                                     <td className="dp-cross-td--rowctl" />
                                     <td className="dp-cross-td--label" style={{ paddingLeft: 28 }}>
-                                      {ts.rowLabelOverrides[opt.id] ?? opt.label}
+                                      {ts.rowLabelOverrides[opt.label] ?? opt.label}
                                     </td>
-                                    <td className="dp-cross-td--num">{formatOptionCell()}</td>
-                                    {bannerColLabels.map((_, i) => (
-                                      <td key={i} className="dp-cross-td--num">{formatOptionCell()}</td>
+                                    {opt.cells.map((cell, i) => (
+                                      <td key={i} className="dp-cross-td--num">{formatCell(cell.count, cell.col_pct, cell.row_pct)}</td>
                                     ))}
                                   </tr>
                                 ))}
@@ -700,31 +753,32 @@ const CrossTabs: React.FC<CrossTabsProps> = ({
 
                         {/* Remaining (non-grouped) answer options */}
                         {remainingOptionIds.map((optionId) => {
-                          const opt = optionById[optionId]!;
+                          const opt = optionByLabel.get(optionId);
+                          if (!opt) return null;
                           const isBuilding = ts.buildingNettId != null;
                           return (
                             <tr
-                              key={opt.id}
+                              key={opt.label}
                               className={
-                                isBuilding && ts.nettGroups.find((ng) => ng.id === ts.buildingNettId)?.memberIds.includes(opt.id)
+                                isBuilding && ts.nettGroups.find((ng) => ng.id === ts.buildingNettId)?.memberIds.includes(opt.label)
                                   ? 'dp-cross-row--nett-child'
                                   : ''
                               }
-                              onClick={() => isBuilding && toggleNettMember(mainVar.id, opt.id)}
+                              onClick={() => isBuilding && toggleNettMember(mainVar.id, rowLabels, opt.label)}
                               style={isBuilding ? { cursor: 'pointer' } : undefined}
                             >
                               <td className="dp-cross-td--rowctl">
                                 <span className="dp-row-updown">
                                   <button
                                     className="dp-row-updown-btn"
-                                    onClick={(e) => { e.stopPropagation(); moveOptionDown(mainVar.id, opt.id); }}
+                                    onClick={(e) => { e.stopPropagation(); moveOptionDown(mainVar.id, rowLabels, opt.label); }}
                                     aria-label="Move row down"
                                   >
                                     ↓
                                   </button>
                                   <button
                                     className="dp-row-updown-btn"
-                                    onClick={(e) => { e.stopPropagation(); moveOptionUp(mainVar.id, opt.id); }}
+                                    onClick={(e) => { e.stopPropagation(); moveOptionUp(mainVar.id, rowLabels, opt.label); }}
                                     aria-label="Move row up"
                                   >
                                     ↑
@@ -736,14 +790,13 @@ const CrossTabs: React.FC<CrossTabsProps> = ({
                                   className="dp-editable"
                                   contentEditable
                                   suppressContentEditableWarning
-                                  onBlur={(e) => handleEditRowLabel(mainVar.id, opt.id, e.currentTarget.textContent ?? '')}
+                                  onBlur={(e) => handleEditRowLabel(mainVar.id, rowLabels, opt.label, e.currentTarget.textContent ?? '')}
                                 >
-                                  {ts.rowLabelOverrides[opt.id] ?? opt.label}
+                                  {ts.rowLabelOverrides[opt.label] ?? opt.label}
                                 </span>
                               </td>
-                              <td className="dp-cross-td--num">{formatOptionCell()}</td>
-                              {bannerColLabels.map((_, i) => (
-                                <td key={i} className="dp-cross-td--num">{formatOptionCell()}</td>
+                              {opt.cells.map((cell, i) => (
+                                <td key={i} className="dp-cross-td--num">{formatCell(cell.count, cell.col_pct, cell.row_pct)}</td>
                               ))}
                             </tr>
                           );
@@ -759,16 +812,15 @@ const CrossTabs: React.FC<CrossTabsProps> = ({
                               Mean
                               <button
                                 className="dp-row-remove-btn"
-                                onClick={() => handleRemoveMeanFromTable(mainVar.id)}
+                                onClick={() => handleRemoveMeanFromTable(mainVar.id, rowLabels)}
                                 title="Remove Mean row"
                                 aria-label="Remove Mean row"
                               >
                                 −
                               </button>
                             </td>
-                            <td className="dp-cross-td--num">{meanValue.toFixed(2)}</td>
-                            {bannerColLabels.map((_, i) => (
-                              <td key={i} className="dp-cross-td--num">{meanValue.toFixed(2)}</td>
+                            {meanByColumn.map((value, i) => (
+                              <td key={i} className="dp-cross-td--num">{value.toFixed(2)}</td>
                             ))}
                           </tr>
                         )}
@@ -783,16 +835,15 @@ const CrossTabs: React.FC<CrossTabsProps> = ({
                               Sigma
                               <button
                                 className="dp-row-remove-btn"
-                                onClick={() => handleRemoveSigmaFromTable(mainVar.id)}
+                                onClick={() => handleRemoveSigmaFromTable(mainVar.id, rowLabels)}
                                 title="Remove Sigma row from this table"
                                 aria-label="Remove Sigma row"
                               >
                                 −
                               </button>
                             </td>
-                            <td className="dp-cross-td--num">271% 100.0</td>
-                            {bannerColLabels.map((_, i) => (
-                              <td key={i} className="dp-cross-td--num">{formatOptionCell()}</td>
+                            {sigmaCells.map((cell, i) => (
+                              <td key={i} className="dp-cross-td--num">{formatCell(cell.count, cell.col_pct, cell.row_pct)}</td>
                             ))}
                           </tr>
                         )}
@@ -822,7 +873,7 @@ const CrossTabs: React.FC<CrossTabsProps> = ({
       )}
 
       {/* Mean: Factors popup */}
-      {meanPopup && meanPopupVar && meanPopupTS && (
+      {meanPopup && meanPopupVar && meanPopupTable && meanPopupTS && (
         <div className="dp-val-overlay" onClick={() => setMeanPopup(null)}>
           <div className="dp-mean-box" onClick={(e) => e.stopPropagation()}>
             <p className="dp-val-title">Mean — {meanPopupVar.label}</p>
@@ -835,23 +886,23 @@ const CrossTabs: React.FC<CrossTabsProps> = ({
                 </tr>
               </thead>
               <tbody>
-                {SAMPLE_OPTIONS.map((opt) => (
-                  <tr key={opt.id}>
-                    <td>{opt.label}</td>
-                    <td>{opt.precode}</td>
+                {meanPopupTable.rows.map((row, idx) => (
+                  <tr key={row.label}>
+                    <td>{row.label}</td>
+                    <td>{defaultFactor(row, idx)}</td>
                     <td>
                       <input
                         className="dp-mean-factor-input"
                         type="number"
-                        value={meanPopupTS.meanFactors[opt.id] ?? opt.precode}
-                        onChange={(e) => handleMeanFactorChange(meanPopupVar.id, opt.id, Number(e.target.value))}
+                        value={meanPopupTS.meanFactors[row.label] ?? defaultFactor(row, idx)}
+                        onChange={(e) => handleMeanFactorChange(meanPopupVar.id, meanPopupRowLabels, row.label, Number(e.target.value))}
                       />
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            <button className="dp-val-ok-btn" onClick={handleMeanOk}>OK</button>
+            <button className="dp-val-ok-btn" onClick={() => handleMeanOk(meanPopupRowLabels)}>OK</button>
           </div>
         </div>
       )}

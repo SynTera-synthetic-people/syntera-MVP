@@ -2424,6 +2424,13 @@
   margin: 0 0 18px;
 }
 
+.dp-report-subtitle {
+  font-size: 14px;
+  font-weight: 700;
+  color: #e8e9ec;
+  margin: 0 0 10px;
+}
+
 .dp-report-list {
   margin: 0;
   padding-left: 20px;
@@ -2483,6 +2490,35 @@
 
 .dp-data-table tbody tr:hover td {
   background: #121317;
+}
+
+.dp-data-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 10px 0 0;
+  flex-shrink: 0;
+}
+
+.dp-data-pager-btn {
+  background: #17181c;
+  border: 1px solid #2a2d33;
+  border-radius: 6px;
+  color: #e8e9ec;
+  font-size: 12px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.dp-data-pager-btn:disabled {
+  color: #6b6f7a;
+  cursor: not-allowed;
+}
+
+.dp-data-pager-label {
+  font-size: 12px;
+  color: #9a9eab;
 }
 
 /* ══════════════════════════════════════════════════════════════════════
