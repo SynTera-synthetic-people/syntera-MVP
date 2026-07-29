@@ -1030,3 +1030,15 @@ def canonicalize_section_payload(section: Dict[str, Any], section_index: int = 0
 
 def get_question_type_catalog() -> Dict[str, Dict[str, Any]]:
     return deepcopy(QUESTION_TYPE_CATALOG)
+
+
+def is_verbatim_question_type(raw_type: Optional[str]) -> bool:
+    """True for free-text question types whose simulated answer is a quote,
+    not an option distribution (result_shape == "text": text/essay/auto_suggest).
+
+    Distinct from the broader "open_ended" catalog category, which also
+    includes number/date_picker/autosum — those still simulate as a single
+    scalar/count, not a pool of verbatim quotes.
+    """
+    canon = normalize_question_type(raw_type)
+    return QUESTION_TYPE_CATALOG.get(canon, {}).get("result_shape") == "text"

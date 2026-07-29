@@ -9,7 +9,7 @@ import random
 import re
 import uuid
 from html.parser import HTMLParser
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from dotenv import load_dotenv
 from sqlalchemy import select
@@ -21,6 +21,7 @@ from app.ml.predictor import VALID_DOMAINS
 from app.models.survey_simulation import SurveySimulation
 from app.services.auto_generated_persona import get_description
 from app.services.quant_report_cta_prompt import CTA_ROUTED_QUANT_REPORT_PROMPT_V2
+from app.services.quant_report_charts import render_audience_characteristics_charts
 from app.services.report_generation_qual_claude import (
     _current_report_date,
     _ensure_closing_section_content,
@@ -55,29 +56,37 @@ upload_dir = "./reports"
 
 # Same shared-shell labels/patterns as REPORT_REQUIRED_SECTIONS in report_generation_qual_claude.py,
 # so quant reports validate, TOC, and render with the identical shell as qual reports.
+#
+# Studied Personas (archetype/psychographic table) and Audience Characteristics (demographic
+# fact table) are NOT both rendered for the same CTA — that produced a duplicate section in
+# practice. BEHAVIORAL_ARCHAEOLOGY keeps the original Studied Personas; DECISION_INTELLIGENCE
+# uses Audience Characteristics instead (see _build_di_required_sections below). Only
+# "Research Objective" is common to every narrative CTA.
 _SHARED_SHELL_PREFIX = [
     ("Research Objective", r"\bresearch objective\b"),
-    ("Studied Personas", r"\bstudied personas\b"),
 ]
 _SHARED_SHELL_SUFFIX = [
     ("Research Methodology", r"\bresearch methodology\b"),
     ("Limitations and Transparency", r"\blimitations\s*(?:&|and)\s*transparency\b"),
 ]
+# DI-only closing suffix: "Methodology and Calibration" replaces "Research Methodology"
+# for DECISION_INTELLIGENCE. BEHAVIORAL_ARCHAEOLOGY keeps the original heading/content
+# (_SHARED_SHELL_SUFFIX above) — the two are never both rendered in the same report.
+_DI_SHELL_SUFFIX = [
+    ("Methodology and Calibration", r"\bmethodology and calibration\b"),
+    ("Limitations and Transparency", r"\blimitations\s*(?:&|and)\s*transparency\b"),
+]
 
+# DECISION_INTELLIGENCE's required sections are NOT a static list here: since the DI
+# narrative is now Decision Brief + Adaptive Modules A-L (selected per-report from the
+# research objective, see select_adaptive_modules/_build_di_required_sections below),
+# what's "required" varies per report. QUANT_REQUIRED_SECTIONS only holds the CTAs whose
+# structure is fixed; DI's list is computed at generation time and threaded through as an
+# explicit `required_sections` argument to _find_missing_sections/_build_toc_markdown/etc.
 QUANT_REQUIRED_SECTIONS = {
-    "DECISION_INTELLIGENCE": [
-        *_SHARED_SHELL_PREFIX,
-        ("The Decision at Stake", r"\b(?:di-?1|section\s+di-?1)?[\s:.\-]*the decision at stake\b"),
-        ("What the Data Proves", r"\b(?:di-?2|section\s+di-?2)?[\s:.\-]*what the data proves\b"),
-        ("The Persona Face-Off", r"\b(?:di-?3|section\s+di-?3)?[\s:.\-]*the persona face[-\s]?off\b"),
-        ("Where to Focus", r"\b(?:di-?4|section\s+di-?4)?[\s:.\-]*where to focus\b"),
-        ("The Price Story", r"\b(?:di-?5|section\s+di-?5)?[\s:.\-]*the price story\b"),
-        ("What Could Go Wrong", r"\b(?:di-?6|section\s+di-?6)?[\s:.\-]*what could go wrong\b"),
-        ("What to Do Now", r"\b(?:di-?7|section\s+di-?7)?[\s:.\-]*what to do now\b"),
-        *_SHARED_SHELL_SUFFIX,
-    ],
     "BEHAVIORAL_ARCHAEOLOGY": [
         *_SHARED_SHELL_PREFIX,
+        ("Studied Personas", r"\bstudied personas\b"),
         ("The Say-Do Gap", r"\b(?:ba-?1|section\s+ba-?1)?[\s:.\-]*the say[-\s/]?do gap\b"),
         ("The Bias Landscape", r"\b(?:ba-?2|section\s+ba-?2)?[\s:.\-]*the bias landscape\b"),
         ("The Emotional Architecture", r"\b(?:ba-?3|section\s+ba-?3)?[\s:.\-]*the emotional architecture\b"),
@@ -94,6 +103,240 @@ QUANT_REQUIRED_SECTIONS = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Adaptive Report Modules (A-L) — DECISION_INTELLIGENCE only.
+#
+# Replaces the old fixed DI-1..7 narrative with Decision Brief + a subset of
+# these modules, selected per-report from the research objective's keywords
+# (select_adaptive_modules) and checked against the questionnaire for
+# supporting data (check_suppression_rules).
+# ---------------------------------------------------------------------------
+
+MODULE_DEFINITIONS: Dict[str, Dict[str, Any]] = {
+    "A": {
+        "name": "Category and Usage Landscape",
+        "keywords": ["u&a", "usage", "category", "market entry", "entry"],
+        "guidance": "Use for U&A, category-entry, or market-entry research. Show category incidence, usage frequency, and product repertoire from the relevant survey_results.",
+    },
+    "B": {
+        "name": "Problem and Need-State Analysis",
+        # NOTE: bare "need" is deliberately excluded — it false-positives on almost any RO
+        # phrased as "we need to understand X" without being need-state research at all.
+        "keywords": ["problem", "pain point", "unmet need", "need state", "need-state", "customer need"],
+        "guidance": "Use for problem/need-state or innovation research. Show problem prevalence, intensity, and unmet needs from the relevant survey_results and open-end verbatims.",
+    },
+    "C": {
+        "name": "Audience Segmentation and ICP",
+        "keywords": ["segmentation", "icp", "target", "persona"],
+        "guidance": "Use for segmentation/ICP/targeting research. Show how personas differ on decision-relevant dimensions, drawing on Studied Personas and survey_results.",
+    },
+    "D": {
+        "name": "Concept Evaluation",
+        "keywords": ["concept", "innovation"],
+        "guidance": "Use for concept-testing research. Show concept appeal, fit, and objections from the relevant survey_results.",
+    },
+    "E": {
+        "name": "Message and Claims Testing",
+        "keywords": ["message", "communication", "claim", "campaign"],
+        "guidance": "Use for message/claims/communication testing. Show which messages land, and why, from the relevant survey_results.",
+    },
+    "F": {
+        "name": "Feature Prioritization",
+        "keywords": ["feature", "roadmap"],
+        "guidance": "Use for feature/roadmap prioritization research. Rank features by demand signal from the relevant survey_results.",
+    },
+    "G": {
+        "name": "Pricing and Willingness to Pay",
+        "keywords": ["pricing", "price", "willingness to pay"],
+        "guidance": "Use for pricing research. Show price sensitivity and willingness-to-pay patterns from the relevant survey_results.",
+    },
+    "H": {
+        "name": "Brand and Competitive Positioning",
+        "keywords": ["brand", "competitive", "positioning"],
+        "guidance": "Use for brand/positioning/competitive research. Show relative brand perception from the relevant survey_results.",
+    },
+    "I": {
+        "name": "Customer Journey and Experience",
+        "keywords": ["journey", "experience", "retention", "churn"],
+        "guidance": "Use for journey/experience/retention research. Show journey friction and satisfaction drivers from the relevant survey_results.",
+    },
+    "J": {
+        "name": "Go-to-Market and Channel Strategy",
+        "keywords": ["channel", "gtm", "distribution"],
+        "guidance": "Use for GTM/channel/distribution research. Show channel preference from the relevant survey_results.",
+    },
+    "K": {
+        "name": "Occasion and Context",
+        "keywords": ["occasion", "context"],
+        "guidance": "Use for occasion/context research. Show usage-occasion patterns from the relevant survey_results.",
+    },
+    "L": {
+        "name": "Adoption and Retention",
+        "keywords": ["adoption", "switching", "retention"],
+        "guidance": "Use for adoption/switching/retention research. Show adoption barriers and switching triggers from the relevant survey_results.",
+    },
+}
+
+# Modules whose data support is checkable from question text alone (see
+# check_suppression_rules). The remaining spec suppression rules (no market-size
+# claims from a simulated sample, no significance-led storytelling for <5pt gaps,
+# no persona-prioritization without material differentiation, no external-knowledge
+# claims, etc.) require narrative judgment the Python layer can't cheaply verify —
+# those are enforced at the prompt level (AH-13 in quant_report_cta_prompt.py).
+_MODULE_SUPPRESSION_KEYWORDS: Dict[str, Tuple[List[str], str]] = {
+    "G": (
+        ["price", "pricing", "willingness to pay", "budget", "afford", "cost of", "how much would you"],
+        "Pricing was outside the decision coverage of this study.",
+    ),
+    "H": (
+        ["compared to", "versus", " vs ", "vs.", "competitor", "which brand", "brands do you", "rank the following brands"],
+        "Direct competitive comparison was not measured in this study.",
+    ),
+    "J": (
+        ["which channel", "platform do you", "app store", "purchase from", "buy from", "shop at", "social media platform"],
+        "Channel preference data was not collected in this study.",
+    ),
+    "K": (
+        ["occasion", "what time", "situation in which", "context in which", "when do you"],
+        "Usage-occasion data was not collected in this study.",
+    ),
+}
+
+
+def select_adaptive_modules(research_objective: str, question_types: Dict[str, str]) -> List[str]:
+    """Keyword-match the research objective text to Modules A-L (spec Task 4.2).
+
+    question_types is accepted alongside the RO text (rather than RO alone) so this
+    can be extended later to also factor in which question types actually exist;
+    today only RO keywords drive selection.
+    """
+    ro_lower = (research_objective or "").lower()
+    selected = {
+        module_id
+        for module_id, meta in MODULE_DEFINITIONS.items()
+        if any(kw in ro_lower for kw in meta["keywords"])
+    }
+    if not selected:
+        # A DI report should never come back empty — fall back to the two
+        # always-relevant general modules (category landscape + segmentation).
+        selected = {"A", "C"}
+    return sorted(selected)
+
+
+def check_suppression_rules(
+    selected_modules: List[str], question_types: Dict[str, str]
+) -> Dict[str, str]:
+    """For selected modules with a data-decidable suppression rule, return
+    {module_id: reason} when the questionnaire has no supporting questions.
+    """
+    question_texts_lower = [str(q or "").lower() for q in question_types.keys()]
+
+    def _has_supporting_question(keywords: List[str]) -> bool:
+        return any(any(kw in qtext for kw in keywords) for qtext in question_texts_lower)
+
+    suppressions: Dict[str, str] = {}
+    for module_id in selected_modules:
+        rule = _MODULE_SUPPRESSION_KEYWORDS.get(module_id)
+        if rule is None:
+            continue
+        keywords, reason = rule
+        if not _has_supporting_question(keywords):
+            suppressions[module_id] = reason
+    return suppressions
+
+
+def _build_di_required_sections(selected_modules: List[str]) -> List[Tuple[str, str]]:
+    """Build DECISION_INTELLIGENCE's required-sections list.
+
+    Deliberately a flat, fixed 6-entry list — NOT one entry per selected module.
+    Adding a per-module entry used to mean _build_toc_markdown (which scans body
+    headings for each required pattern) picked up every module's own "### {Name}"
+    sub-heading as its own top-level TOC line, producing a confusing nested module
+    listing even though the module content itself was already correctly nested
+    under the single "## ADAPTIVE REPORT MODULES" wrapper heading in the body. One
+    "Adaptive Report Modules" entry matches that wrapper heading instead, so the
+    TOC always shows exactly these 6 lines for DI regardless of module count.
+
+    `selected_modules` is accepted for call-site/API stability but not consulted
+    here anymore — module presence is validated structurally (the wrapper heading
+    must exist), not per-module.
+    """
+    return [
+        *_SHARED_SHELL_PREFIX,
+        ("Audience Characteristics", r"\baudience characteristics\b"),
+        ("Decision Brief", r"\bdecision brief\b"),
+        ("Adaptive Report Modules", r"\badaptive report modules\b"),
+        *_DI_SHELL_SUFFIX,
+    ]
+
+
+_CHARACTERISTICS_TITLE_RE = re.compile(r"characteristic", re.IGNORECASE)
+_PROFILE_TITLE_RE = re.compile(r"profile", re.IGNORECASE)
+
+
+def extract_audience_characteristics(
+    questionnaire_sections: List[Dict[str, Any]],
+    survey_results: Dict[str, Any],
+    total_sample_size: int,
+) -> Dict[str, Any]:
+    """Build the Audience Characteristics payload from the questionnaire's demographic
+    sections, for the new shared-shell "Audience Characteristics" section (replaces
+    nothing — added alongside "Studied Personas").
+
+    Sections are matched by KEYWORD on title ("characteristic" / "profile"), not by a
+    fixed index: "Population Profile" (or its renamed "Sample Profile") is always the
+    LAST section, not index 6 as originally assumed, and section count varies 3-10.
+    Matching by keyword also means this works unchanged whether the questionnaire was
+    generated before or after the "Population..." -> "Sample..." title rename.
+
+    Percentages are read verbatim from survey_results (already computed upstream by
+    build_normalized_survey_results) — never recomputed here.
+    """
+    characteristics_section: Optional[Dict[str, Any]] = None
+    profile_section: Optional[Dict[str, Any]] = None
+    for sec in questionnaire_sections or []:
+        title = str(sec.get("title") or "")
+        if characteristics_section is None and _CHARACTERISTICS_TITLE_RE.search(title):
+            characteristics_section = sec
+        if _PROFILE_TITLE_RE.search(title):
+            profile_section = sec  # last match wins -> naturally the final section
+
+    def _questions_with_results(sec: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        out: List[Dict[str, Any]] = []
+        if not sec:
+            return out
+        for q in sec.get("questions") or []:
+            qtext = (q.get("text") or "").strip()
+            rows = survey_results.get(qtext) if isinstance(survey_results, dict) else None
+            if not rows or not isinstance(rows, list):
+                continue
+            options: Dict[str, Any] = {}
+            for row in rows:
+                if not isinstance(row, dict) or "verbatim" in row:
+                    continue
+                options[str(row.get("option", ""))] = {
+                    "count": int(row.get("count", 0) or 0),
+                    "percentage": row.get("pct", 0.0),
+                }
+            if options:
+                out.append({"question": q.get("label") or qtext, "options": options})
+        return out
+
+    characteristics_rows = _questions_with_results(characteristics_section)
+    profile_rows = _questions_with_results(profile_section)
+
+    return {
+        "sample_size": total_sample_size,
+        "sample_characteristics": {"questions_and_options": characteristics_rows},
+        "sample_profile": {
+            "questions": [
+                {"question": row["question"], "responses": row["options"]}
+                for row in profile_rows
+            ]
+        },
+    }
+
+
 def _normalize_whitespace(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
 
@@ -107,17 +350,27 @@ def _strip_table_of_contents(md_content: str) -> str:
 
 
 def _strip_section_prefixes(md: str) -> str:
-    """Remove DI-N: and BA-N: prefixes from all markdown headings.
+    """Remove DI-N:, BA-N:, and Module X: prefixes from all markdown headings.
 
-    The LLM generates headings like '## DI-1: THE DECISION AT STAKE'.
-    We want '## THE DECISION AT STAKE' everywhere (body and TOC).
+    The LLM generates headings like '## DI-1: THE DECISION AT STAKE' or
+    '### Module B: Problem and Need-State Analysis'. We want the bare title
+    everywhere (body and TOC, since _build_toc_markdown copies its entries
+    verbatim from the body's own headings) — this is a defensive regex strip
+    independent of prompt compliance, same as the existing DI-N/BA-N case.
     """
-    return re.sub(
+    md = re.sub(
         r'(?m)^(#{1,6}\s+)(?:Section\s+)?(?:DI|BA)-?\d+[\s:.\-]+',
         r'\1',
         md,
         flags=re.IGNORECASE,
     )
+    md = re.sub(
+        r'(?m)^(#{1,6}\s+)Module\s+[A-L][\s:.\-]+',
+        r'\1',
+        md,
+        flags=re.IGNORECASE,
+    )
+    return md
 
 
 def _strip_end_markers(md: str) -> str:
@@ -133,8 +386,13 @@ def _move_shell_suffix_to_end(md_content: str) -> str:
     The LLM sometimes places these sections immediately after Studied Personas
     instead of after the CTA-specific body sections. This function moves any
     suffix sections found early in the document to the very end.
+
+    CTA-agnostic by design (no `cta` param), so it recognizes BOTH BA's "Research
+    Methodology" and DI's "Methodology and Calibration" — whichever one is actually
+    present in this particular report gets moved, the other pattern simply never
+    matches anything.
     """
-    suffix_patterns = [pattern for _, pattern in _SHARED_SHELL_SUFFIX]
+    suffix_patterns = [pattern for _, pattern in _SHARED_SHELL_SUFFIX + _DI_SHELL_SUFFIX]
 
     # Split on any heading boundary (##, ###, etc.) keeping the delimiter
     parts = re.split(r'(?m)(?=^#{1,3}\s)', md_content)
@@ -160,10 +418,12 @@ def _move_shell_suffix_to_end(md_content: str) -> str:
     return ''.join(main_parts).rstrip() + '\n\n' + ''.join(suffix_parts)
 
 
-def _find_missing_sections(md_content: str, cta: str) -> List[str]:
+def _find_missing_sections(
+    md_content: str, cta: str, required_sections: Optional[List[Tuple[str, str]]] = None
+) -> List[str]:
     normalized = _normalize_whitespace(_strip_table_of_contents(md_content)).lower()
     missing: List[str] = []
-    for label, pattern in QUANT_REQUIRED_SECTIONS.get(cta, []):
+    for label, pattern in (required_sections if required_sections is not None else QUANT_REQUIRED_SECTIONS.get(cta, [])):
         if not re.search(pattern, normalized, flags=re.IGNORECASE):
             missing.append(label)
     return missing
@@ -193,7 +453,9 @@ def _extract_markdown_headings(md_content: str) -> List[str]:
     return headings
 
 
-def _build_toc_markdown(cta: str, headings: List[str]) -> str:
+def _build_toc_markdown(
+    cta: str, headings: List[str], required_sections: Optional[List[Tuple[str, str]]] = None
+) -> str:
     if not headings:
         return ""
 
@@ -206,7 +468,8 @@ def _build_toc_markdown(cta: str, headings: List[str]) -> str:
                     ordered_entries.append(heading)
                 return
 
-    for _, pattern in QUANT_REQUIRED_SECTIONS.get(cta, []):
+    sections = required_sections if required_sections is not None else QUANT_REQUIRED_SECTIONS.get(cta, [])
+    for _, pattern in sections:
         append_if_present(pattern)
 
     if not ordered_entries:
@@ -221,8 +484,10 @@ def _build_toc_markdown(cta: str, headings: List[str]) -> str:
     return "\n".join(toc_lines)
 
 
-def _synchronize_toc(md_content: str, cta: str) -> str:
-    toc_markdown = _build_toc_markdown(cta, _extract_markdown_headings(md_content))
+def _synchronize_toc(
+    md_content: str, cta: str, required_sections: Optional[List[Tuple[str, str]]] = None
+) -> str:
+    toc_markdown = _build_toc_markdown(cta, _extract_markdown_headings(md_content), required_sections)
     if not toc_markdown:
         return md_content
 
@@ -295,11 +560,52 @@ async def _generate_report_markdown_once(payload: dict, system_prompt: str, expl
     return md
 
 
-def _append_supported_missing_sections(md_content: str, cta: str, missing_sections: List[str]) -> tuple[str, List[str]]:
+def _fallback_methodology_and_calibration(cta: str) -> str:
+    """DI's twin of qual's _fallback_research_methodology, under the renamed heading."""
+    return """## Methodology and Calibration
+
+This report was generated from quantitative survey simulation using Synthetic People AI's proprietary behavioral framework. Each persona's calibration score reflects how tightly its simulated responses are anchored to that persona's defined traits, and the Adaptive Report Modules above were selected from the research objective's stated priorities, checked against what the questionnaire actually measured. Findings are directional synthetic research outputs, useful for pattern recognition and decision preparation, and should be validated before high-stakes execution.
+"""
+
+
+def _ensure_di_methodology_content(md_content: str) -> str:
+    """DI-only twin of qual's _ensure_closing_section_content, for the renamed
+    'Methodology and Calibration' heading — the imported helper only recognizes
+    the literal 'Research Methodology' text (still correct for BEHAVIORAL_ARCHAEOLOGY,
+    which keeps that name), so a thin DI section would slip through undetected
+    without this.
+    """
+    pattern = r"(?im)^#{1,6}\s+methodology and calibration\s*$"
+    m = re.search(pattern, md_content)
+    if not m:
+        return md_content
+    after = md_content[m.end():]
+    body_match = re.match(r'(.*?)(?=^#{1,6}\s|\Z)', after, re.DOTALL | re.MULTILINE)
+    body = body_match.group(1).strip() if body_match else ""
+    if len(body) >= 80:
+        return md_content
+    result = re.sub(
+        pattern + r'.*?(?=^#{1,6}\s|\Z)',
+        '',
+        md_content,
+        flags=re.DOTALL | re.MULTILINE | re.IGNORECASE,
+    )
+    return result.rstrip() + f"\n\n{_fallback_methodology_and_calibration('DECISION_INTELLIGENCE').strip()}\n"
+
+
+def _append_supported_missing_sections(
+    md_content: str,
+    cta: str,
+    missing_sections: List[str],
+    required_sections: Optional[List[Tuple[str, str]]] = None,
+) -> Tuple[str, List[str]]:
     # Reuses the same deterministic fallback text qual uses for these two shared
     # closing sections, so a partial quant draft still ends with the identical shell.
+    # "Methodology and Calibration" is DI-only (see _fallback_methodology_and_calibration);
+    # it's harmless to always include since BA never produces that label.
     appenders = {
         "Research Methodology": lambda: _fallback_research_methodology(cta),
+        "Methodology and Calibration": lambda: _fallback_methodology_and_calibration(cta),
         "Limitations and Transparency": _fallback_limitations_and_transparency,
     }
     appendable = [label for label in missing_sections if label in appenders]
@@ -308,10 +614,15 @@ def _append_supported_missing_sections(md_content: str, cta: str, missing_sectio
 
     blocks = [appenders[label]() for label in appendable]
     repaired = f"{md_content.rstrip()}\n\n" + "\n\n".join(block.strip() for block in blocks) + "\n"
-    return repaired, _find_missing_sections(repaired, cta)
+    return repaired, _find_missing_sections(repaired, cta, required_sections)
 
 
-async def _generate_validated_report_markdown(payload: dict, cta: str, exploration_id: Optional[str] = None) -> str:
+async def _generate_validated_report_markdown(
+    payload: dict,
+    cta: str,
+    exploration_id: Optional[str] = None,
+    required_sections: Optional[List[Tuple[str, str]]] = None,
+) -> str:
     system_prompt = CTA_ROUTED_QUANT_REPORT_PROMPT_V2.replace("{REPORT_DATE}", _current_report_date())
 
     md = await _generate_report_markdown_once(payload, system_prompt, exploration_id)
@@ -321,10 +632,12 @@ async def _generate_validated_report_markdown(payload: dict, cta: str, explorati
     md = _strip_end_markers(md)
     md = _move_shell_suffix_to_end(md)
     md = _ensure_closing_section_content(md, cta)
-    md = _synchronize_toc(md, cta)
-    missing_sections = _find_missing_sections(md, cta)
-    md, missing_sections = _append_supported_missing_sections(md, cta, missing_sections)
-    md = _synchronize_toc(md, cta)
+    if cta == "DECISION_INTELLIGENCE":
+        md = _ensure_di_methodology_content(md)
+    md = _synchronize_toc(md, cta, required_sections)
+    missing_sections = _find_missing_sections(md, cta, required_sections)
+    md, missing_sections = _append_supported_missing_sections(md, cta, missing_sections, required_sections)
+    md = _synchronize_toc(md, cta, required_sections)
     if not missing_sections:
         return md.rstrip() + "\n\n---\n\n**END OF REPORT**\n"
 
@@ -347,12 +660,14 @@ async def _generate_validated_report_markdown(payload: dict, cta: str, explorati
     repaired_md = _strip_end_markers(repaired_md)
     repaired_md = _move_shell_suffix_to_end(repaired_md)
     repaired_md = _ensure_closing_section_content(repaired_md, cta)
-    repaired_md = _synchronize_toc(repaired_md, cta)
-    repaired_missing_sections = _find_missing_sections(repaired_md, cta)
+    if cta == "DECISION_INTELLIGENCE":
+        repaired_md = _ensure_di_methodology_content(repaired_md)
+    repaired_md = _synchronize_toc(repaired_md, cta, required_sections)
+    repaired_missing_sections = _find_missing_sections(repaired_md, cta, required_sections)
     repaired_md, repaired_missing_sections = _append_supported_missing_sections(
-        repaired_md, cta, repaired_missing_sections
+        repaired_md, cta, repaired_missing_sections, required_sections
     )
-    repaired_md = _synchronize_toc(repaired_md, cta)
+    repaired_md = _synchronize_toc(repaired_md, cta, required_sections)
     if repaired_missing_sections:
         raise ValueError(
             "Generated quant report is incomplete after retry. Missing required sections: "
@@ -376,6 +691,7 @@ async def get_simulation_results(
             SurveySimulation.total_sample_size,
             SurveySimulation.persona_sample_sizes,
             SurveySimulation.persona_id,
+            SurveySimulation.simulation_source_id,
         ).where(SurveySimulation.id == simulation_id)
     )
 
@@ -393,7 +709,83 @@ async def get_simulation_results(
         "total_sample_size": row.total_sample_size,
         "persona_sample_sizes": row.persona_sample_sizes,
         "persona_id": row.persona_id,
+        "simulation_source_id": row.simulation_source_id,
     }
+
+
+_MULTI_SELECT_QUESTION_TYPES = {"m", "multi_select", "grid_multi_select", "multiselect"}
+
+
+def _validate_survey_results_reconciliation(
+    survey_results: Dict[str, Any],
+    total_sample_size: int,
+    question_types: Dict[str, str],
+) -> List[str]:
+    """Reconciliation gate run before survey_results is handed to the LLM.
+
+    survey_results is always written by build_normalized_survey_results() /
+    _combine_persona_results() (see survey_results_normalize.py and
+    survey_simulation_combined.py), which already guarantee: single-select option
+    counts sum to total_sample_size, and every option's `pct` is
+    round(100 * count / total_sample_size, 1) — a respondent-count denominator, not a
+    response-count denominator, for both single- and multi-select questions. This check
+    re-verifies those invariants at read time so a future write path that skips that
+    helper (or stale/hand-edited data) can't silently ship a report with inflated
+    multi-select percentages or drifted single-select totals; it raises instead of
+    reaching the LLM.
+    """
+    issues: List[str] = []
+    if not survey_results or total_sample_size <= 0:
+        return issues
+
+    for q_text, rows in survey_results.items():
+        if not isinstance(rows, list) or not rows:
+            continue
+
+        qtype = str(question_types.get(q_text) or "").strip().lower().replace("-", "_")
+        is_multi = qtype in _MULTI_SELECT_QUESTION_TYPES
+        type_known = q_text in question_types
+
+        counts: List[float] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            count = row.get("count")
+            pct = row.get("pct")
+            if not isinstance(count, (int, float)):
+                # Open-ended questions store [{"verbatim": "..."}] rows (see
+                # build_normalized_survey_results) with no count/pct — nothing
+                # to reconcile, skip.
+                continue
+            counts.append(count)
+
+            if isinstance(pct, (int, float)):
+                expected_pct = round(100.0 * count / total_sample_size, 1)
+                if abs(pct - expected_pct) > 0.6:
+                    issues.append(
+                        f"{q_text!r} option {row.get('option')!r}: pct={pct} uses the wrong "
+                        f"denominator (expected {expected_pct} = 100*{count}/{total_sample_size} respondents)"
+                    )
+
+            if is_multi and count > total_sample_size:
+                issues.append(
+                    f"{q_text!r} option {row.get('option')!r}: count={count} exceeds "
+                    f"total_sample_size={total_sample_size}"
+                )
+
+        # Single-select must account for exactly one answer per respondent. Only enforced
+        # when the question's type is actually known, so a missing/incomplete question_types
+        # map (e.g. questionnaire lookup failed) can't produce false positives on real
+        # multi-select questions, whose counts legitimately don't sum to total_sample_size.
+        if type_known and not is_multi and counts:
+            total = sum(counts)
+            if abs(total - total_sample_size) > 1:
+                issues.append(
+                    f"{q_text!r} (single-select) option counts sum to {total}, "
+                    f"expected {total_sample_size} respondents"
+                )
+
+    return issues
 
 
 def pdf_file_to_buffer(pdf_path: str) -> io.BytesIO:
@@ -598,23 +990,62 @@ def _is_wide_table(headers: List[str], rows: List[List[str]]) -> bool:
 
 def _escape_text(value: str) -> str:
     safe = html.escape(value or "")
-    return safe.replace("\n", "<br/>")
+    safe = safe.replace("\n", "<br/>")
+    # A fully empty <td></td> (e.g. a blank "continuation of the row above"
+    # cell in a grouped table) breaks xhtml2pdf/reportlab's <colgroup> width
+    # resolution for the WHOLE table — verified empirically: an otherwise
+    # identical table with a single empty cell in one column collapses that
+    # column's width, overlapping neighboring columns. A non-breaking space
+    # keeps the cell visually blank while keeping the cell non-empty.
+    return safe or "&nbsp;"
+
+
+_WORD_SPLIT_RE = re.compile(r"[\s/]+")
+
+
+def _compact_table_colgroup(headers: List[str], rows: List[List[str]]) -> str:
+    """Build a <colgroup> sized to each column's longest unbreakable word.
+
+    xhtml2pdf/reportlab's `table-layout:fixed` does not reliably auto-size
+    columns from cell content the way a browser does, and a plain <table>
+    with no explicit column widths can end up with a column narrower than
+    its own longest word — the word then overflows into the neighboring
+    column instead of wrapping (word-wrap only breaks at whitespace).
+    Sizing by longest word (not longest full cell, which would just make
+    every column as wide as its longest phrase) keeps columns compact while
+    guaranteeing no single word is ever narrower than its column.
+    """
+    n = len(headers)
+    if n == 0:
+        return ""
+    widths: List[int] = []
+    for i, header in enumerate(headers):
+        longest = max((len(w) for w in _WORD_SPLIT_RE.split(header) if w), default=1)
+        for row in rows:
+            if i < len(row):
+                longest = max(longest, max((len(w) for w in _WORD_SPLIT_RE.split(row[i]) if w), default=0))
+        widths.append(max(longest, 1))
+    total = sum(widths)
+    pct = [max(10, round(100 * w / total)) for w in widths]
+    pct[pct.index(max(pct))] += 100 - sum(pct)  # absorb rounding drift into the widest column
+    return "<colgroup>" + "".join(f'<col style="width:{p}%">' for p in pct) + "</colgroup>"
 
 
 def _render_compact_table(headers: List[str], rows: List[List[str]]) -> str:
     width = max([len(headers)] + [len(row) for row in rows] + [0])
     normalized_headers = _pad_row(headers, width)
+    normalized_rows = [_pad_row(row, width) for row in rows]
+    colgroup = _compact_table_colgroup(normalized_headers, normalized_rows)
     head_html = "".join(f"<th>{_escape_text(header)}</th>" for header in normalized_headers)
 
     body_rows = []
-    for row in rows:
-        normalized_row = _pad_row(row, width)
+    for normalized_row in normalized_rows:
         row_html = "".join(f"<td>{_escape_text(cell)}</td>" for cell in normalized_row)
         body_rows.append(f"<tr>{row_html}</tr>")
 
     return (
         '<div class="quant-table-wrap">'
-        f"<table><thead><tr>{head_html}</tr></thead><tbody>{''.join(body_rows)}</tbody></table>"
+        f"<table>{colgroup}<thead><tr>{head_html}</tr></thead><tbody>{''.join(body_rows)}</tbody></table>"
         "</div>"
     )
 
@@ -725,8 +1156,134 @@ def _render_persona_table(headers: List[str], rows: List[List[str]]) -> str:
     )
 
 
-def _normalize_quant_tables(html_body: str) -> str:
+_AUDIENCE_CHARACTERISTICS_SECTION_RE = re.compile(
+    r"audience\s+characteristics|sample\s+characteristics", re.IGNORECASE
+)
+
+
+def _is_in_audience_characteristics_section(html_body: str, table_start: int) -> bool:
+    """Same backward heading-scan technique as _is_in_compact_table_section,
+    bounded by the nearest preceding h1/h2 (so sub-headings inside the
+    section, like a per-characteristic label, don't affect the result)."""
+    preceding = html_body[:table_start]
+    headings = list(re.finditer(r"<(h[1-6])[^>]*>(.*?)</h[1-6]>", preceding, re.IGNORECASE | re.DOTALL))
+    in_section = False
+    for m in headings:
+        if m.group(1).lower() in ("h1", "h2"):
+            text = re.sub(r"<[^>]+>", "", m.group(2)).strip()
+            in_section = bool(_AUDIENCE_CHARACTERISTICS_SECTION_RE.search(text))
+    return in_section
+
+
+def _split_audience_table_groups(
+    headers: List[str], rows: List[List[str]]
+) -> Optional[List[Tuple[str, List[List[str]]]]]:
+    """Split a combined Sample Characteristics/Sample Profile table into one
+    group per characteristic/question.
+
+    The prompt asks the LLM for ONE table per Table 1/Table 2 with columns
+    "Characteristic | Option | Count | Percentage" (or "Question | Response |
+    Count | Percentage"), where rows are grouped in blocks by question — the
+    first row of each block carries the label, continuation rows leave that
+    cell blank. Returns None (caller falls back to the plain compact-table
+    renderer) if the table doesn't have that shape, e.g. the first row's
+    first cell is blank (malformed/unexpected) or there are fewer than 2
+    columns to split on.
+    """
+    if len(headers) < 2 or not rows:
+        return None
+    if not (rows[0][0] if rows[0] else "").strip():
+        return None
+
+    groups: List[Tuple[str, List[List[str]]]] = []
+    current_label: Optional[str] = None
+    current_rows: List[List[str]] = []
+    for row in rows:
+        label = (row[0] if row else "").strip()
+        if label:
+            if current_label is not None:
+                groups.append((current_label, current_rows))
+            current_label = label
+            current_rows = [row[1:]]
+        else:
+            if current_label is None:
+                return None  # continuation row before any label — malformed
+            current_rows.append(row[1:])
+    if current_label is not None:
+        groups.append((current_label, current_rows))
+    return groups or None
+
+
+def _wrap_table_with_chart(heading: str, table_html: str, chart_data_uri: Optional[str] = None) -> str:
+    """Wrap a characteristic's subheading, its mini-table, and (if available) its
+    chart in ONE atomic table row — using a real HTML <table> for the side-by-side
+    layout, not CSS flex/grid, since xhtml2pdf (reportlab) has no flexbox support
+    but does support nested HTML tables as a layout mechanism.
+
+    The heading is placed INSIDE the table-column cell, above the mini-table,
+    rather than as its own preceding <tr> (colspan across a separate heading
+    row was tried and measured to still let xhtml2pdf split between the two
+    <tr>s at a page boundary — page-break-inside:avoid on the outer <table>
+    does not guarantee its child rows stay together) or as a sibling element
+    entirely (same problem, verified empirically). A single <tr> containing
+    both the chart <td> and the heading+table <td> is what's actually been
+    confirmed atomic: xhtml2pdf pushes that whole row to the next page as one
+    unsplittable unit instead of stranding the heading behind.
+    """
+    heading_html = f'<div class="quant-chart-heading-cell">{_escape_text(heading)}</div>'
+    if chart_data_uri:
+        return (
+            '<table class="quant-chart-table-layout"><tr>'
+            f'<td class="quant-chart-cell"><img src="{chart_data_uri}" class="quant-chart-image"/></td>'
+            f'<td class="quant-chart-table-cell">{heading_html}{table_html}</td>'
+            "</tr></table>"
+        )
+    return f'<div class="quant-audience-subblock">{heading_html}{table_html}</div>'
+
+
+def _render_audience_characteristics_table(
+    headers: List[str], rows: List[List[str]], charts: List[Tuple[str, str]]
+) -> str:
+    """Render a Sample Characteristics/Sample Profile table as one short
+    mini-table per characteristic, each paired side by side with its own
+    chart (matched by source order — see quant_report_charts.py).
+
+    Splitting into small per-characteristic blocks (rather than nesting the
+    whole, potentially page-spanning combined table inside a chart layout)
+    keeps each side-by-side unit short enough to safely paginate: xhtml2pdf
+    treats a table nested in a table cell as one atomic, unsplittable block,
+    so a single 10+ row table forced into a cell can strand a large blank
+    gap on the previous page (verified empirically) instead of flowing
+    naturally.
+    """
+    groups = _split_audience_table_groups(headers, rows)
+    if groups is None:
+        return _render_compact_table(headers, rows)
+
+    remaining_headers = headers[1:]
+    blocks: List[str] = []
+    for index, (label, group_rows) in enumerate(groups):
+        mini_table = _render_compact_table(remaining_headers, group_rows)
+        chart_uri = charts[index][1] if index < len(charts) else None
+        blocks.append(_wrap_table_with_chart(label, mini_table, chart_uri))
+    return "".join(blocks)
+
+
+def _normalize_quant_tables(
+    html_body: str, audience_charts: Optional[Dict[str, List[Tuple[str, str]]]] = None
+) -> str:
+    audience_charts = audience_charts or {}
+    # Table 1 (Sample Characteristics) and Table 2 (Sample Profile) are the
+    # only two tables ever expected inside the Audience Characteristics
+    # section, in that fixed order (Section 3.5 of the prompt) — matched
+    # positionally by which chart-eligible table is encountered Nth, not by
+    # text, since the LLM is free to reword a characteristic's label.
+    chart_groups = [
+        audience_charts.get("sample_characteristics") or [],
+        audience_charts.get("sample_profile") or [],
+    ]
     table_pattern = re.compile(r"<table>.*?</table>", re.IGNORECASE | re.DOTALL)
+    audience_table_index = {"n": 0}
 
     def _replace(match: re.Match[str]) -> str:
         table_html = match.group(0)
@@ -737,22 +1294,44 @@ def _normalize_quant_tables(html_body: str) -> str:
             return _render_persona_table(headers, rows)
         if _is_wide_table(headers, rows):
             return _render_record_table(headers, rows)
+        if _is_in_audience_characteristics_section(html_body, match.start()):
+            idx = audience_table_index["n"]
+            audience_table_index["n"] += 1
+            charts = chart_groups[idx] if idx < len(chart_groups) else []
+            return _render_audience_characteristics_table(headers, rows, charts)
         return _render_compact_table(headers, rows)
 
     normalized = table_pattern.sub(_replace, html_body)
     return f'<div class="quant-report-root">{normalized}</div>'
 
 
-def _quant_md_to_pdf(md_content: str, output_pdf_path: str, css_path: str) -> str:
+def _quant_md_to_pdf(
+    md_content: str,
+    output_pdf_path: str,
+    css_path: str,
+    audience_charts: Optional[Dict[str, List[Tuple[str, str]]]] = None,
+) -> str:
     md_content = sanitize_report_text(md_content)
     html_body = markdown.markdown(
         md_content, extensions=["tables", "fenced_code", "toc", "attr_list"]
     )
-    html_body = _normalize_quant_tables(html_body)
+    html_body = _normalize_quant_tables(html_body, audience_charts)
     return html_to_pdf(html_body, output_pdf_path, css_path)
 
 
-async def generate_md_report(exploration_id: str, sim_id: str, persona_details: Any, cta: str = "DECISION_INTELLIGENCE") -> bytes:
+async def generate_md_report(
+    exploration_id: str, sim_id: str, persona_details: Any, cta: str = "DECISION_INTELLIGENCE",
+    workspace_id: Optional[str] = None,
+) -> bytes:
+    # RECONCILIATION FLOW:
+    # 1. Load survey_results from SurveySimulation.results (source of truth; always written
+    #    by build_normalized_survey_results()/_combine_persona_results(), never a derived CSV).
+    # 2. Look up each question's type from the questionnaire, so multi- vs single-select can
+    #    be told apart.
+    # 3. Validate survey_results against total_sample_size (respondent-denominator invariant);
+    #    raise if it doesn't reconcile, before any LLM call is made.
+    # 4. Use survey_results as-is (no separate aggregation step — it's already the aggregate)
+    #    in the LLM payload.
     async with AsyncSession(async_engine) as session:
         data = await get_simulation_results(session, sim_id)
 
@@ -764,12 +1343,65 @@ async def generate_md_report(exploration_id: str, sim_id: str, persona_details: 
     if survey_results is None and isinstance(raw_results, dict):
         survey_results = raw_results
 
+    question_types: Dict[str, str] = {}
+    questionnaire_sections: List[Dict[str, Any]] = []
+    population_sim_id = data.get("simulation_source_id")
+    if workspace_id and population_sim_id:
+        try:
+            from app.services.questionnaire import get_questionnaire_by_simulation
+
+            questionnaire_sections = await get_questionnaire_by_simulation(workspace_id, exploration_id, population_sim_id) or []
+            for sec in questionnaire_sections:
+                for q in sec.get("questions") or []:
+                    qtext = (q.get("text") or "").strip()
+                    if qtext:
+                        question_types[qtext] = q.get("question_type") or "single_select"
+        except Exception as exc:
+            print(f"[quant_report] question_types lookup failed sim_id={sim_id!r}: {exc}")
+
+    if survey_results:
+        reconciliation_issues = _validate_survey_results_reconciliation(
+            survey_results, data.get("total_sample_size") or 0, question_types,
+        )
+        if reconciliation_issues:
+            raise ValueError(
+                "Quant report blocked: survey_results failed reconciliation against "
+                "total_sample_size — " + "; ".join(reconciliation_issues)
+            )
+
     research_objective = await get_description(exploration_id)
 
     raw_personas = persona_details if isinstance(persona_details, list) else (
         [persona_details] if persona_details else []
     )
     metadata = await _compute_quant_metadata(raw_personas, research_objective, exploration_id=exploration_id)
+
+    # Audience Characteristics (demographic fact) replaces Studied Personas (archetype
+    # table) for DECISION_INTELLIGENCE only. BEHAVIORAL_ARCHAEOLOGY keeps Studied Personas
+    # and does NOT also render Audience Characteristics — rendering both produced a
+    # duplicate persona-summary section in practice.
+    audience_characteristics: Dict[str, Any] = {}
+    audience_charts: Dict[str, List[Tuple[str, str]]] = {}
+    if cta == "DECISION_INTELLIGENCE":
+        audience_characteristics = extract_audience_characteristics(
+            questionnaire_sections, survey_results or {}, data.get("total_sample_size") or 0,
+        )
+        # Rendered straight from the same dict as Table 1 above, never from LLM
+        # output, so a chart can never disagree with the table beside it.
+        audience_charts = render_audience_characteristics_charts(audience_characteristics)
+
+    selected_modules: List[str] = []
+    required_sections: Optional[List[Tuple[str, str]]] = None
+    if cta == "DECISION_INTELLIGENCE":
+        # select_adaptive_modules() (RO-keyword matching) and check_suppression_rules()
+        # (data-availability check) are unchanged — same backend selection logic as
+        # before. What changed: a module without supporting data is now filtered out
+        # here, before it ever reaches the LLM payload/TOC/required sections, instead
+        # of being passed through and rendered as a suppression-note placeholder.
+        ro_matched_modules = select_adaptive_modules(str(research_objective or ""), question_types)
+        suppressions = check_suppression_rules(ro_matched_modules, question_types)
+        selected_modules = [m for m in ro_matched_modules if m not in suppressions]
+        required_sections = _build_di_required_sections(selected_modules)
 
     payload: Dict[str, Any] = {
         "research_objective": research_objective,
@@ -783,9 +1415,12 @@ async def generate_md_report(exploration_id: str, sim_id: str, persona_details: 
         "simulation_result": data.get("simulation_result"),
         "narrative": data.get("narrative"),
         "metadata": metadata,
+        "audience_characteristics": audience_characteristics,
+        "selected_modules": selected_modules,
+        "module_definitions": {mid: MODULE_DEFINITIONS[mid]["guidance"] for mid in selected_modules},
     }
 
-    md = await _generate_validated_report_markdown(payload, cta, exploration_id)
+    md = await _generate_validated_report_markdown(payload, cta, exploration_id, required_sections)
 
     output_pdf_path = generate_pdf_path(prefix="quant_survey")
     css_path = (
@@ -795,7 +1430,9 @@ async def generate_md_report(exploration_id: str, sim_id: str, persona_details: 
         if _REPORT_CSS_PATH.is_file()
         else "app/css/report_generation_quant.css"
     )
-    pdf_path = await asyncio.to_thread(_quant_md_to_pdf, md, output_pdf_path, css_path)
+    pdf_path = await asyncio.to_thread(
+        _quant_md_to_pdf, md, output_pdf_path, css_path, audience_charts
+    )
     pdf_buffer = pdf_file_to_buffer(pdf_path)
     return pdf_buffer.getvalue()
 

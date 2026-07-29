@@ -113,6 +113,35 @@
   flex: 1;
   overflow-y: auto;
   padding: 28px;
+  min-height: 0;
+}
+
+/* Variant used for the Decision Intelligence report — the iframe fills the
+   body edge-to-edge instead of sitting inside the usual text padding. */
+.qivm-body--pdf {
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Positioned wrapper guarantees the iframe fills all available space —
+   relying on flex stretch alone is unreliable for iframes in some browsers. */
+.qivm-pdf-wrapper {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
+.qivm-pdf-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: #ffffff;
 }
 
 /* Loading */
@@ -144,6 +173,15 @@
   min-height: 200px;
   color: rgba(255, 255, 255, 0.35);
   font-size: 0.9375rem;
+}
+
+/* Error variant — e.g. preview failed to load */
+.qivm-empty--error {
+  flex-direction: column;
+  gap: 10px;
+  color: rgba(255, 255, 255, 0.5);
+  text-align: center;
+  padding: 0 32px;
 }
 
 /* Placeholder */
