@@ -1,4 +1,5 @@
-import React, { useState, useCallback } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'react-toastify';
 import './DataPlayground.css';
 import FrequencyTable from './tabs/FrequencyTable';
 import CrossTabs from './tabs/CrossTabs';
@@ -7,6 +8,15 @@ import InsightsSummary from './tabs/InsightsSummary';
 import CodedData from './tabs/CodedData';
 import LabelledData from './tabs/LabelledData';
 import DownloadModal from './DownloadModal';
+import {
+  useDatasetsList,
+  useDatasetVariables,
+  useUploadDataset,
+  useRunFrequency,
+  useRunCrosstab,
+} from '../../../../../../hooks/useDataPlaygroundQueries';
+import { extractErrorMessage } from '../../../../../../services/dataPlaygroundService';
+import type { FrequencyResult, CrosstabTable } from '../../../../../../services/dataPlaygroundService';
 
 export type TabId =
   | 'frequency'
@@ -29,6 +39,8 @@ export interface DownloadOptions {
 }
 
 interface DataPlaygroundProps {
+  workspaceId?: string;
+  explorationId?: string;
   onClose?: () => void;
 }
 
@@ -55,40 +67,7 @@ const UPLOAD_TABS = new Set<TabId>(['frequency', 'crosstabs']);
 // immediately since they don't require variable selection).
 const ALWAYS_DOWNLOAD_TABS = new Set<TabId>(['coded', 'labelled']);
 
-export const ALL_VARIABLES: Variable[] = [
-  { id: 'respid', label: 'respid' },
-  { id: 'LOISec', label: 'LOISec' },
-  { id: 'status', label: 'status' },
-  { id: 'Comments', label: 'Comments' },
-  { id: 'S1', label: 'S1' },
-  { id: 'S1_14_other', label: 'S1_14_other' },
-  { id: 'S2', label: 'S2' },
-  { id: 'S3', label: 'S3' },
-  { id: 'S4', label: 'S4' },
-  { id: 'S4_24_other', label: 'S4_24_other' },
-  { id: 'S5', label: 'S5' },
-  { id: 'S5_9_other', label: 'S5_9_other' },
-  { id: 'S6', label: 'S6' },
-  { id: 'S6_7_other', label: 'S6_7_other' },
-  { id: 'S7_1', label: 'S7_1' },
-  { id: 'S7_2', label: 'S7_2' },
-  { id: 'S7_3', label: 'S7_3' },
-  { id: 'S7_4', label: 'S7_4' },
-  { id: 'S7_5', label: 'S7_5' },
-  { id: 'S7_6', label: 'S7_6' },
-  { id: 'S7_7', label: 'S7_7' },
-  { id: 'S8', label: 'S8' },
-  { id: 'S8_6_other', label: 'S8_6_other' },
-  { id: 'S9_1', label: 'S9_1' },
-  { id: 'Q1_1', label: 'Q1_1' },
-  { id: 'Q1_2', label: 'Q1_2' },
-  { id: 'Q1_3', label: 'Q1_3' },
-  { id: 'Q1_4', label: 'Q1_4' },
-  { id: 'Q1_5', label: 'Q1_5' },
-  { id: 'Q1_6', label: 'Q1_6' },
-  { id: 'Q1_7', label: 'Q1_7' },
-  { id: 'Q1_8', label: 'Q1_8' },
-];
+const ACCEPTED_FILE_TYPES = '.csv,.xlsx';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -127,17 +106,43 @@ function reorderItem<T>(arr: T[], from: number, to: number): T[] {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-const DataPlayground: React.FC<DataPlaygroundProps> = ({ onClose }) => {
+const DataPlayground: React.FC<DataPlaygroundProps> = ({ workspaceId, explorationId, onClose }) => {
   const [activeTab, setActiveTab] = useState<TabId>('frequency');
   const [hasResults, setHasResults] = useState(false);
   const [showDownload, setShowDownload] = useState(false);
 
+  // ── Dataset context ───────────────────────────────────────────────────────
+  // The Data Playground works against one active dataset per exploration:
+  // whatever was most recently uploaded. On open, we auto-select the latest
+  // existing dataset (if any) so returning users don't have to re-upload.
+
+  const [datasetId, setDatasetId] = useState<string | null>(null);
+  const datasetsQuery = useDatasetsList(workspaceId, explorationId);
+  const variablesQuery = useDatasetVariables(workspaceId, explorationId, datasetId);
+  const uploadMutation = useUploadDataset(workspaceId, explorationId);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (datasetId || !datasetsQuery.data?.length) return;
+    setDatasetId(datasetsQuery.data[0]!.dataset_id);
+  }, [datasetsQuery.data, datasetId]);
+
+  const allVariables: Variable[] = useMemo(
+    () => (variablesQuery.data ?? []).map((v) => ({ id: v.variable_name, label: v.display_name })),
+    [variablesQuery.data]
+  );
+
   // Frequency tab state
   const [selectedVars, setSelectedVars] = useState<Variable[]>([]);
+  const [frequencyResults, setFrequencyResults] = useState<FrequencyResult[] | null>(null);
 
   // Cross tabs state
   const [bannerVars, setBannerVars] = useState<Variable[]>([]);
   const [mainVars, setMainVars] = useState<Variable[]>([]);
+  const [crosstabTables, setCrosstabTables] = useState<CrosstabTable[] | null>(null);
+
+  const runFrequencyMutation = useRunFrequency();
+  const runCrosstabMutation = useRunCrosstab();
 
   const [downloadOptions, setDownloadOptions] = useState<DownloadOptions>({
     sheets: 'all',
@@ -145,6 +150,36 @@ const DataPlayground: React.FC<DataPlaygroundProps> = ({ onClose }) => {
     display: 'both',
     toc: true,
   });
+
+  // ── Upload ────────────────────────────────────────────────────────────────
+
+  const handleUploadClick = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  const handleFileSelected = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = ''; // allow re-selecting the same file later
+      if (!file) return;
+
+      try {
+        const dataset = await uploadMutation.mutateAsync(file);
+        setDatasetId(dataset.dataset_id);
+        // Previous selections referenced the old dataset's variables.
+        setSelectedVars([]);
+        setBannerVars([]);
+        setMainVars([]);
+        setFrequencyResults(null);
+        setCrosstabTables(null);
+        setHasResults(false);
+        toast.success(`"${file.name}" uploaded — ${dataset.rows} rows, ${dataset.columns} variables`);
+      } catch (err) {
+        toast.error(extractErrorMessage(err, 'Failed to upload dataset'));
+      }
+    },
+    [uploadMutation]
+  );
 
   // ── Tab change ────────────────────────────────────────────────────────────
 
@@ -176,9 +211,9 @@ const DataPlayground: React.FC<DataPlaygroundProps> = ({ onClose }) => {
   }, []);
 
   const handleFreqSelectAll = useCallback(() => {
-    setSelectedVars([...ALL_VARIABLES]);
+    setSelectedVars([...allVariables]);
     setHasResults(false);
-  }, []);
+  }, [allVariables]);
 
   const handleFreqMoveUp = useCallback((index: number) => {
     setSelectedVars((prev) => moveItemUp(prev, index));
@@ -237,21 +272,58 @@ const DataPlayground: React.FC<DataPlaygroundProps> = ({ onClose }) => {
 
   // ── Run ───────────────────────────────────────────────────────────────────
 
-  const handleRun = useCallback(() => {
-    setHasResults(true);
-  }, []);
+  const handleRun = useCallback(async () => {
+    if (!datasetId) return;
+
+    if (activeTab === 'frequency') {
+      try {
+        const results = await runFrequencyMutation.mutateAsync({
+          workspaceId,
+          explorationId,
+          datasetId,
+          variables: selectedVars.map((v) => v.id),
+        });
+        setFrequencyResults(results);
+        setHasResults(true);
+      } catch (err) {
+        toast.error(extractErrorMessage(err, 'Failed to run frequency table'));
+      }
+      return;
+    }
+
+    if (activeTab === 'crosstabs') {
+      try {
+        const tables = await runCrosstabMutation.mutateAsync({
+          workspaceId,
+          explorationId,
+          datasetId,
+          bannerVariables: bannerVars.map((v) => v.id),
+          mainVariables: mainVars.map((v) => v.id),
+        });
+        setCrosstabTables(tables);
+        setHasResults(true);
+      } catch (err) {
+        toast.error(extractErrorMessage(err, 'Failed to run cross tab'));
+      }
+    }
+  }, [
+    activeTab, datasetId, workspaceId, explorationId,
+    selectedVars, bannerVars, mainVars,
+    runFrequencyMutation, runCrosstabMutation,
+  ]);
 
   const getRunLabel = (): string => {
-    switch (activeTab) {
-      case 'frequency': return 'Run Frequency';
-      case 'crosstabs': return 'Run Cross Tab';
-      default: return 'Run';
-    }
+    if (activeTab === 'frequency') return runFrequencyMutation.isPending ? 'Running...' : 'Run Frequency';
+    if (activeTab === 'crosstabs') return runCrosstabMutation.isPending ? 'Running...' : 'Run Cross Tab';
+    return 'Run';
   };
 
   const isRunEnabled = (): boolean => {
-    if (activeTab === 'frequency') return selectedVars.length > 0;
-    if (activeTab === 'crosstabs') return bannerVars.length > 0 && mainVars.length > 0;
+    if (!datasetId) return false;
+    if (activeTab === 'frequency') return selectedVars.length > 0 && !runFrequencyMutation.isPending;
+    if (activeTab === 'crosstabs') {
+      return bannerVars.length > 0 && mainVars.length > 0 && !runCrosstabMutation.isPending;
+    }
     return true;
   };
 
@@ -280,9 +352,12 @@ const DataPlayground: React.FC<DataPlaygroundProps> = ({ onClose }) => {
       case 'frequency':
         return (
           <FrequencyTable
-            allVariables={ALL_VARIABLES}
+            allVariables={allVariables}
             selectedVars={selectedVars}
             hasResults={hasResults}
+            results={frequencyResults}
+            isRunning={runFrequencyMutation.isPending}
+            hasDataset={!!datasetId}
             onVarToggle={handleFreqVarToggle}
             onVarAdd={handleFreqVarAdd}
             onVarRemove={handleFreqVarRemove}
@@ -296,10 +371,13 @@ const DataPlayground: React.FC<DataPlaygroundProps> = ({ onClose }) => {
       case 'crosstabs':
         return (
           <CrossTabs
-            allVariables={ALL_VARIABLES}
+            allVariables={allVariables}
             bannerVars={bannerVars}
             mainVars={mainVars}
             hasResults={hasResults}
+            tables={crosstabTables}
+            isRunning={runCrosstabMutation.isPending}
+            hasDataset={!!datasetId}
             onAddToBanner={handleCrossAddToBanner}
             onAddToMain={handleCrossAddToMain}
             onBannerRemove={handleBannerRemove}
@@ -311,13 +389,41 @@ const DataPlayground: React.FC<DataPlaygroundProps> = ({ onClose }) => {
           />
         );
       case 'chart':
-        return <ChartVisuals allVariables={ALL_VARIABLES} />;
+        return (
+          <ChartVisuals
+            allVariables={allVariables}
+            workspaceId={workspaceId}
+            explorationId={explorationId}
+            datasetId={datasetId}
+          />
+        );
       case 'insights':
-        return <InsightsSummary />;
+        return (
+          <InsightsSummary
+            workspaceId={workspaceId}
+            explorationId={explorationId}
+            datasetId={datasetId}
+            active={activeTab === 'insights'}
+          />
+        );
       case 'coded':
-        return <CodedData />;
+        return (
+          <CodedData
+            workspaceId={workspaceId}
+            explorationId={explorationId}
+            datasetId={datasetId}
+            active={activeTab === 'coded'}
+          />
+        );
       case 'labelled':
-        return <LabelledData />;
+        return (
+          <LabelledData
+            workspaceId={workspaceId}
+            explorationId={explorationId}
+            datasetId={datasetId}
+            active={activeTab === 'labelled'}
+          />
+        );
       default:
         return null;
     }
@@ -337,10 +443,23 @@ const DataPlayground: React.FC<DataPlaygroundProps> = ({ onClose }) => {
           </div>
           <div className="dp-header-right">
             {showUploadBtn && (
-              <button className="dp-upload-btn">
-                <span className="dp-upload-icon">⤒</span>
-                Upload Data
-              </button>
+              <>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept={ACCEPTED_FILE_TYPES}
+                  style={{ display: 'none' }}
+                  onChange={handleFileSelected}
+                />
+                <button
+                  className="dp-upload-btn"
+                  onClick={handleUploadClick}
+                  disabled={uploadMutation.isPending}
+                >
+                  <span className="dp-upload-icon">⤒</span>
+                  {uploadMutation.isPending ? 'Uploading...' : 'Upload Data'}
+                </button>
+              </>
             )}
             <button className="dp-close-btn" onClick={onClose} aria-label="Close">
               ✕
@@ -397,7 +516,7 @@ const DataPlayground: React.FC<DataPlaygroundProps> = ({ onClose }) => {
           onChange={setDownloadOptions}
           onClose={() => setShowDownload(false)}
           onDownload={() => {
-            // TODO: wire actual download logic
+            toast.info('Export is coming soon');
             setShowDownload(false);
           }}
         />
