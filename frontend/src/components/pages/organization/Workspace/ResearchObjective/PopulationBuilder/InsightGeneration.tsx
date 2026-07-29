@@ -624,7 +624,11 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
            (or "Open" when revisiting) on the Data Playground insight card.
       ─────────────────────────────────────────────────────────────────────── */}
       {showDataPlayground && (
-        <DataPlayground onClose={() => setShowDataPlayground(false)} />
+        <DataPlayground
+          workspaceId={workspaceId}
+          explorationId={explorationId}
+          onClose={() => setShowDataPlayground(false)}
+        />
       )}
     </motion.div>
   );

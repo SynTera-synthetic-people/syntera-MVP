@@ -1,8 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { toast } from 'react-toastify';
 import type { Variable } from '../Index';
 import VariablePill from '../VariablePill';
 import '../DataPlayground.css';
 import OmiKeyboard from '../../../../../../../assets/Omi Animations/OmiKeyboard.mp4';
+import { useRunChart } from '../../../../../../../hooks/useDataPlaygroundQueries';
+import { extractErrorMessage } from '../../../../../../../services/dataPlaygroundService';
+import type { ChartResult } from '../../../../../../../services/dataPlaygroundService';
 
 // ══════════════════════════════════════════════════════════════════════════
 // Icons — plain named components, rendered by explicit reference (never via
@@ -137,6 +141,9 @@ interface MappingRow {
 
 interface ChartVisualsProps {
   allVariables: Variable[];
+  workspaceId?: string;
+  explorationId?: string;
+  datasetId?: string | null;
 }
 
 const LOADING_STEPS = [
@@ -147,7 +154,6 @@ const LOADING_STEPS = [
 ];
 
 const CATEGORY_LABELS = ['Figma', 'Sketch', 'XD', 'Photoshop', 'Illustrator', 'AfterEffect'];
-const SERIES_2023 = [56, 64, 76, 78, 70, 37];
 
 // Colors pixel-sampled from the Figma "Bar Chart.png" reference: purple
 // #7947c4, green #45c276, orange #c37148, teal #2099ad, plus two extra
@@ -159,13 +165,6 @@ const CHART_TYPE_LIST: { id: ChartType; label: string }[] = [
   { id: 'line', label: 'Line' },
   { id: 'pie', label: 'Pie/Polar' },
   { id: 'dual', label: 'Dual Axes' },
-];
-
-const BASE_MAPPING: MappingRow[] = [
-  { variable: 'S6', chartType: 'pie', linkedVars: 'S2, S6' },
-  { variable: 'S6', chartType: 'bar', linkedVars: 'S2, S6' },
-  { variable: 'S6', chartType: 'line', linkedVars: 'S2, S6' },
-  { variable: 'S6', chartType: 'select', linkedVars: 'S3, S6' },
 ];
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -400,7 +399,7 @@ function legendItemsFor(spec: GalleryCardSpec): { label: string; color: string }
 // Component
 // ══════════════════════════════════════════════════════════════════════════
 
-export default function ChartVisuals({ allVariables }: ChartVisualsProps) {
+export default function ChartVisuals({ allVariables, workspaceId, explorationId, datasetId }: ChartVisualsProps) {
   const [flow, setFlow] = useState<FlowState>('choice');
   const [loadingStep, setLoadingStep] = useState(0);
   const [toastVisible, setToastVisible] = useState(false);
@@ -410,6 +409,16 @@ export default function ChartVisuals({ allVariables }: ChartVisualsProps) {
   const [selectedVars, setSelectedVars] = useState<Variable[]>([]);
   const [galleryType, setGalleryType] = useState<ChartType>('bar');
   const [selectedCardId, setSelectedCardId] = useState<string>('bar1');
+  const [chartResult, setChartResult] = useState<ChartResult | null>(null);
+  const runChartMutation = useRunChart();
+
+  // A new dataset invalidates any variable selection / fetched chart from
+  // the previous one.
+  useEffect(() => {
+    setSelectedVars([]);
+    setChartResult(null);
+    setFlow('choice');
+  }, [datasetId]);
 
   const [props, setProps] = useState<ChartProperties>({
     showLegend: true,
@@ -452,8 +461,30 @@ export default function ChartVisuals({ allVariables }: ChartVisualsProps) {
   }
 
   function startOmiGeneration() {
+    if (!datasetId) {
+      toast.error('Upload a dataset first');
+      return;
+    }
+    if (selectedVars.length === 0) {
+      toast.error('Select at least one variable first');
+      return;
+    }
+
     setFlow('omi-loading');
     setLoadingStep(0);
+
+    // Fire the real fetch in parallel with the loading animation — Omi's
+    // "suggestion" heuristic in V1 is simple: two-or-more variables get a
+    // dual-axis chart, otherwise a bar chart.
+    const chartType: ChartType = selectedVars.length >= 2 ? 'dual' : 'bar';
+    const fetchPromise = runChartMutation.mutateAsync({
+      workspaceId,
+      explorationId,
+      datasetId,
+      variables: selectedVars.map((v) => v.id),
+      chartType,
+    });
+
     let step = 0;
     const advance = () => {
       step += 1;
@@ -461,8 +492,16 @@ export default function ChartVisuals({ allVariables }: ChartVisualsProps) {
         setLoadingStep(step);
         stepTimer.current = setTimeout(advance, 900);
       } else {
-        setFlow('preview');
-        flashToast();
+        fetchPromise
+          .then((result) => {
+            setChartResult(result);
+            setFlow('preview');
+            flashToast();
+          })
+          .catch((err) => {
+            toast.error(extractErrorMessage(err, 'Failed to generate chart'));
+            setFlow('choice');
+          });
       }
     };
     stepTimer.current = setTimeout(advance, 900);
@@ -474,9 +513,29 @@ export default function ChartVisuals({ allVariables }: ChartVisualsProps) {
     if (first) setSelectedCardId(first.id);
   }
 
-  function addChartFromGallery() {
-    setFlow('builder');
-    flashToast();
+  async function addChartFromGallery() {
+    if (!datasetId) {
+      toast.error('Upload a dataset first');
+      return;
+    }
+    if (selectedVars.length === 0) {
+      toast.error('Select at least one variable first');
+      return;
+    }
+    try {
+      const result = await runChartMutation.mutateAsync({
+        workspaceId,
+        explorationId,
+        datasetId,
+        variables: selectedVars.map((v) => v.id),
+        chartType: galleryType,
+      });
+      setChartResult(result);
+      setFlow('builder');
+      flashToast();
+    } catch (err) {
+      toast.error(extractErrorMessage(err, 'Failed to generate chart'));
+    }
   }
 
   const selectedIds = new Set(selectedVars.map((v) => v.id));
@@ -487,35 +546,42 @@ export default function ChartVisuals({ allVariables }: ChartVisualsProps) {
     const chartH = 140;
     const barW = 34;
     const gap = 18;
-    const totalW = CATEGORY_LABELS.length * (barW + gap);
-    const maxVal = 100;
+    const series = chartResult?.series[0];
+    const labels = chartResult?.labels ?? [];
+    const values = series?.values ?? [];
+    const totalW = Math.max(labels.length, 1) * (barW + gap);
+    const maxVal = Math.max(100, ...values);
     return (
       <div className="dp-chart-preview-wrap">
         {props.title1 && <div className="dp-chart-title">{props.title1}</div>}
         {props.title2 && <div className="dp-chart-subtitle">{props.title2}</div>}
-        <svg viewBox={`0 0 ${totalW + 40} ${chartH + 50}`} className="dp-chart-svg">
-          {SERIES_2023.map((val, i) => {
-            const barH = (val / maxVal) * chartH;
-            const x = 20 + i * (barW + gap);
-            const y = chartH - barH + 10;
-            return (
-              <g key={i}>
-                <rect x={x} y={y} width={barW} height={barH} fill="#7947c4" rx={3} opacity={0.9} />
-                {props.dataLabel !== 'counts' && (
-                  <text x={x + barW / 2} y={y - 6} textAnchor="middle" fontSize="10" fill="#ccc">{val}</text>
-                )}
-                <text x={x + barW / 2} y={chartH + 24} textAnchor="middle" fontSize="9" fill="#9a9eab">{CATEGORY_LABELS[i]}</text>
-              </g>
-            );
-          })}
-          <line x1="20" y1={chartH + 10} x2={totalW + 20} y2={chartH + 10} stroke="#2a2d33" strokeWidth="1" />
-        </svg>
-        {props.showBase && <div className="dp-chart-base">Base: All respondents (n=35)</div>}
-        {props.showLegend && (
+        {!chartResult ? (
+          <div style={{ color: '#9a9eab', fontSize: 12, padding: '20px 0' }}>No chart data yet.</div>
+        ) : (
+          <svg viewBox={`0 0 ${totalW + 40} ${chartH + 50}`} className="dp-chart-svg">
+            {values.map((val, i) => {
+              const barH = (val / maxVal) * chartH;
+              const x = 20 + i * (barW + gap);
+              const y = chartH - barH + 10;
+              return (
+                <g key={i}>
+                  <rect x={x} y={y} width={barW} height={barH} fill="#7947c4" rx={3} opacity={0.9} />
+                  {props.dataLabel !== 'counts' && (
+                    <text x={x + barW / 2} y={y - 6} textAnchor="middle" fontSize="10" fill="#ccc">{val}</text>
+                  )}
+                  <text x={x + barW / 2} y={chartH + 24} textAnchor="middle" fontSize="9" fill="#9a9eab">{labels[i]}</text>
+                </g>
+              );
+            })}
+            <line x1="20" y1={chartH + 10} x2={totalW + 20} y2={chartH + 10} stroke="#2a2d33" strokeWidth="1" />
+          </svg>
+        )}
+        {props.showBase && <div className="dp-chart-base">Base: All respondents (n={chartResult?.base ?? 0})</div>}
+        {props.showLegend && series && (
           <div className="dp-chart-legend">
             <div className="dp-chart-legend-item">
               <span className="dp-chart-legend-dot" style={{ background: '#7947c4' }} />
-              <span className="dp-chart-legend-label">2023</span>
+              <span className="dp-chart-legend-label">{series.name}</span>
             </div>
           </div>
         )}
@@ -650,15 +716,18 @@ export default function ChartVisuals({ allVariables }: ChartVisualsProps) {
   // ══════════════════════════════════════════════════════════════════════
   // Screens: Preview (Omi result) / Chart Builder (manual, full editing)
   //
-  // Both render the same underlying chart mapping. Preview is the
-  // read-mostly view Omi lands you on (3 rows, no Slicer column, no filter
-  // chips). Builder is the fully editable view, reached either via
-  // Preview's "Switch to Custom Charts" or via the Gallery's "+ Add Chart"
-  // (adds a 4th Select/slicer row plus Filter 1–4 chips).
+  // Both render the same underlying chart mapping: one row per selected
+  // variable, showing the chart type that was actually fetched and the
+  // full set of variables that went into that request.
   // ══════════════════════════════════════════════════════════════════════
 
   const isBuilder = flow === 'builder';
-  const visibleMapping = isBuilder ? BASE_MAPPING : BASE_MAPPING.filter((row) => row.chartType !== 'select');
+  const currentChartType: ChartType = (chartResult?.chart_type as ChartType) ?? galleryType;
+  const visibleMapping: MappingRow[] = selectedVars.map((v) => ({
+    variable: v.id,
+    chartType: currentChartType,
+    linkedVars: selectedVars.map((sv) => sv.id).join(', '),
+  }));
 
   return (
     <>
