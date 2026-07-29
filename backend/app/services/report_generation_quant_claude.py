@@ -69,6 +69,13 @@ _SHARED_SHELL_SUFFIX = [
     ("Research Methodology", r"\bresearch methodology\b"),
     ("Limitations and Transparency", r"\blimitations\s*(?:&|and)\s*transparency\b"),
 ]
+# DI-only closing suffix: "Methodology and Calibration" replaces "Research Methodology"
+# for DECISION_INTELLIGENCE. BEHAVIORAL_ARCHAEOLOGY keeps the original heading/content
+# (_SHARED_SHELL_SUFFIX above) — the two are never both rendered in the same report.
+_DI_SHELL_SUFFIX = [
+    ("Methodology and Calibration", r"\bmethodology and calibration\b"),
+    ("Limitations and Transparency", r"\blimitations\s*(?:&|and)\s*transparency\b"),
+]
 
 # DECISION_INTELLIGENCE's required sections are NOT a static list here: since the DI
 # narrative is now Decision Brief + Adaptive Modules A-L (selected per-report from the
@@ -239,30 +246,28 @@ def check_suppression_rules(
 
 
 def _build_di_required_sections(selected_modules: List[str]) -> List[Tuple[str, str]]:
-    """Build DECISION_INTELLIGENCE's required-sections list for this specific report.
+    """Build DECISION_INTELLIGENCE's required-sections list.
 
-    Unlike BA/CSV's fixed list, DI's body is Decision Brief + whichever Modules A-L
-    were selected from the research objective — so what's "required" is computed
-    per-report instead of read from a static constant. `selected_modules` is expected
-    to already be filtered to modules with supporting data (see generate_md_report) —
-    a module without data is simply never in this list, never rendered, and never
-    shown as a suppression note; there is no separate "suppressed but required" case
-    to track here anymore.
+    Deliberately a flat, fixed 6-entry list — NOT one entry per selected module.
+    Adding a per-module entry used to mean _build_toc_markdown (which scans body
+    headings for each required pattern) picked up every module's own "### {Name}"
+    sub-heading as its own top-level TOC line, producing a confusing nested module
+    listing even though the module content itself was already correctly nested
+    under the single "## ADAPTIVE REPORT MODULES" wrapper heading in the body. One
+    "Adaptive Report Modules" entry matches that wrapper heading instead, so the
+    TOC always shows exactly these 6 lines for DI regardless of module count.
+
+    `selected_modules` is accepted for call-site/API stability but not consulted
+    here anymore — module presence is validated structurally (the wrapper heading
+    must exist), not per-module.
     """
-    sections: List[Tuple[str, str]] = [
+    return [
         *_SHARED_SHELL_PREFIX,
         ("Audience Characteristics", r"\baudience characteristics\b"),
         ("Decision Brief", r"\bdecision brief\b"),
+        ("Adaptive Report Modules", r"\badaptive report modules\b"),
+        *_DI_SHELL_SUFFIX,
     ]
-    for module_id in selected_modules:
-        meta = MODULE_DEFINITIONS.get(module_id)
-        if not meta:
-            continue
-        # Label carries no "Module X:" prefix — that's now purely a display concern
-        # the LLM/TOC never surface (see _strip_section_prefixes).
-        sections.append((meta["name"], re.escape(meta["name"].lower())))
-    sections.extend(_SHARED_SHELL_SUFFIX)
-    return sections
 
 
 _CHARACTERISTICS_TITLE_RE = re.compile(r"characteristic", re.IGNORECASE)
@@ -381,8 +386,13 @@ def _move_shell_suffix_to_end(md_content: str) -> str:
     The LLM sometimes places these sections immediately after Studied Personas
     instead of after the CTA-specific body sections. This function moves any
     suffix sections found early in the document to the very end.
+
+    CTA-agnostic by design (no `cta` param), so it recognizes BOTH BA's "Research
+    Methodology" and DI's "Methodology and Calibration" — whichever one is actually
+    present in this particular report gets moved, the other pattern simply never
+    matches anything.
     """
-    suffix_patterns = [pattern for _, pattern in _SHARED_SHELL_SUFFIX]
+    suffix_patterns = [pattern for _, pattern in _SHARED_SHELL_SUFFIX + _DI_SHELL_SUFFIX]
 
     # Split on any heading boundary (##, ###, etc.) keeping the delimiter
     parts = re.split(r'(?m)(?=^#{1,3}\s)', md_content)
@@ -550,6 +560,39 @@ async def _generate_report_markdown_once(payload: dict, system_prompt: str, expl
     return md
 
 
+def _fallback_methodology_and_calibration(cta: str) -> str:
+    """DI's twin of qual's _fallback_research_methodology, under the renamed heading."""
+    return """## Methodology and Calibration
+
+This report was generated from quantitative survey simulation using Synthetic People AI's proprietary behavioral framework. Each persona's calibration score reflects how tightly its simulated responses are anchored to that persona's defined traits, and the Adaptive Report Modules above were selected from the research objective's stated priorities, checked against what the questionnaire actually measured. Findings are directional synthetic research outputs, useful for pattern recognition and decision preparation, and should be validated before high-stakes execution.
+"""
+
+
+def _ensure_di_methodology_content(md_content: str) -> str:
+    """DI-only twin of qual's _ensure_closing_section_content, for the renamed
+    'Methodology and Calibration' heading — the imported helper only recognizes
+    the literal 'Research Methodology' text (still correct for BEHAVIORAL_ARCHAEOLOGY,
+    which keeps that name), so a thin DI section would slip through undetected
+    without this.
+    """
+    pattern = r"(?im)^#{1,6}\s+methodology and calibration\s*$"
+    m = re.search(pattern, md_content)
+    if not m:
+        return md_content
+    after = md_content[m.end():]
+    body_match = re.match(r'(.*?)(?=^#{1,6}\s|\Z)', after, re.DOTALL | re.MULTILINE)
+    body = body_match.group(1).strip() if body_match else ""
+    if len(body) >= 80:
+        return md_content
+    result = re.sub(
+        pattern + r'.*?(?=^#{1,6}\s|\Z)',
+        '',
+        md_content,
+        flags=re.DOTALL | re.MULTILINE | re.IGNORECASE,
+    )
+    return result.rstrip() + f"\n\n{_fallback_methodology_and_calibration('DECISION_INTELLIGENCE').strip()}\n"
+
+
 def _append_supported_missing_sections(
     md_content: str,
     cta: str,
@@ -558,8 +601,11 @@ def _append_supported_missing_sections(
 ) -> Tuple[str, List[str]]:
     # Reuses the same deterministic fallback text qual uses for these two shared
     # closing sections, so a partial quant draft still ends with the identical shell.
+    # "Methodology and Calibration" is DI-only (see _fallback_methodology_and_calibration);
+    # it's harmless to always include since BA never produces that label.
     appenders = {
         "Research Methodology": lambda: _fallback_research_methodology(cta),
+        "Methodology and Calibration": lambda: _fallback_methodology_and_calibration(cta),
         "Limitations and Transparency": _fallback_limitations_and_transparency,
     }
     appendable = [label for label in missing_sections if label in appenders]
@@ -586,6 +632,8 @@ async def _generate_validated_report_markdown(
     md = _strip_end_markers(md)
     md = _move_shell_suffix_to_end(md)
     md = _ensure_closing_section_content(md, cta)
+    if cta == "DECISION_INTELLIGENCE":
+        md = _ensure_di_methodology_content(md)
     md = _synchronize_toc(md, cta, required_sections)
     missing_sections = _find_missing_sections(md, cta, required_sections)
     md, missing_sections = _append_supported_missing_sections(md, cta, missing_sections, required_sections)
@@ -612,6 +660,8 @@ async def _generate_validated_report_markdown(
     repaired_md = _strip_end_markers(repaired_md)
     repaired_md = _move_shell_suffix_to_end(repaired_md)
     repaired_md = _ensure_closing_section_content(repaired_md, cta)
+    if cta == "DECISION_INTELLIGENCE":
+        repaired_md = _ensure_di_methodology_content(repaired_md)
     repaired_md = _synchronize_toc(repaired_md, cta, required_sections)
     repaired_missing_sections = _find_missing_sections(repaired_md, cta, required_sections)
     repaired_md, repaired_missing_sections = _append_supported_missing_sections(

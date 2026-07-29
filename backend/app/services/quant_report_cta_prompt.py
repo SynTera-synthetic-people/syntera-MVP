@@ -325,7 +325,7 @@ If a value is not present in the payload, output "Not Available". Never omit a l
 
 ## TABLE OF CONTENTS
 Studied Personas and Audience Characteristics are MUTUALLY EXCLUSIVE — never list, and never render, both in the same report.
-- For DECISION_INTELLIGENCE: Research Objective, Audience Characteristics, then Decision Brief + the selected Adaptive Report Modules, then Research Methodology, Limitations and Transparency.
+- For DECISION_INTELLIGENCE: exactly these 6 entries, in this order — Research Objective, Audience Characteristics, Decision Brief, Adaptive Report Modules, Methodology and Calibration, Limitations and Transparency. "Adaptive Report Modules" is ONE line — never list individual module names (e.g. "Pricing and Willingness to Pay") as their own Table of Contents entries, even though each one gets its own "### {Name}" heading in the body.
 - For BEHAVIORAL_ARCHAEOLOGY: Research Objective, Studied Personas, then BA-1 through BA-11, then Research Methodology, Limitations and Transparency.
 Render as a "## TABLE OF CONTENTS" heading.
 
@@ -356,7 +356,12 @@ RULES:
 - If `audience_characteristics` is empty or a table has no rows, state plainly that this data wasn't available rather than inventing rows.
 
 ## RESEARCH METHODOLOGY
-1-2 paragraphs. Describe that this research was generated from quantitative survey simulation across the studied personas, using Synthetic People AI's proprietary behavioral framework, and name the analytical lens used for the selected CTA (decision intelligence synthesis, or behavioral archaeology synthesis).
+**BEHAVIORAL_ARCHAEOLOGY ONLY.** For DECISION_INTELLIGENCE, use Methodology and Calibration instead (below) — never render both.
+1-2 paragraphs. Describe that this research was generated from quantitative survey simulation across the studied personas, using Synthetic People AI's proprietary behavioral framework and behavioral archaeology synthesis.
+
+## METHODOLOGY AND CALIBRATION
+**DECISION_INTELLIGENCE ONLY.** For BEHAVIORAL_ARCHAEOLOGY, use Research Methodology instead (above) — never render both.
+1-2 paragraphs, plain language. Describe that this research was generated from quantitative survey simulation, using Synthetic People AI's proprietary behavioral framework and decision intelligence synthesis. Explain how persona calibration scores work (how tightly each simulated persona's responses are anchored to that persona's defined traits), and how the Adaptive Report Modules above were selected — matched from the research objective's stated priorities, then checked against what the questionnaire actually measured.
 
 ## LIMITATIONS AND TRANSPARENCY
 Three sub-sections, same as every Synthetic People AI report:
@@ -370,7 +375,7 @@ When the user clicks the DECISION_INTELLIGENCE CTA, generate a strategic Decisio
 Render the SHARED REPORT SHELL first (Study Details, Table of Contents, Research Objective, Audience Characteristics — NOT Studied Personas, see Section 3.5), then:
 1. **## DECISION BRIEF** — the leadership narrative (mandatory, always present).
 2. **## ADAPTIVE REPORT MODULES** — one "### {Name}" subsection (bare module name, no "Module X:" prefix, no letter) per entry in the payload's `selected_modules` list, in that order. `selected_modules` only ever contains modules the backend has already confirmed have supporting data — never render a module not in the list, never invent additional modules, never omit one that is in the list, and never mention or imply that any other module was skipped/suppressed. If `selected_modules` is empty, omit the "## ADAPTIVE REPORT MODULES" heading entirely rather than rendering it with nothing under it.
-3. **## REPORT CLOSURE** — Research Methodology and Limitations and Transparency, exactly as defined in the Shared Report Shell.
+3. **## REPORT CLOSURE** — Methodology and Calibration and Limitations and Transparency, exactly as defined in the Shared Report Shell.
 LANGUAGE REGISTER CONTROL (ANTI-JARGON, applies to the Decision Brief and every Adaptive Report Module):
 Write like a senior researcher explaining findings to a brand manager over coffee. Not like an academic. Not like a consultant justifying a fee.
 1.	If a finding can be stated in simple language, use simple language. “Consumers prefer faster delivery” beats “A pronounced consumer predilection toward expedited fulfillment modalities.”
@@ -467,22 +472,23 @@ Write like a senior researcher explaining findings to a brand manager over coffe
 ## ADAPTIVE REPORT MODULES
 Render ONE "### {Name}" subsection (bare name only — no "Module X:" prefix, no letter ID) per entry in the payload's `selected_modules` list, in the order given. Each module's specific guidance (what to show, what evidence to draw on) is in the payload's `module_definitions[{ID}]`, keyed internally by the module's letter ID — follow it, but that ID is an internal reference only and must never appear in the rendered heading or body text. Every module holds the same bar as the Decision Brief: plain language, a finding → evidence → implication structure, a qualitative Confidence Signal, and every claim traced to `survey_results`/`audience_characteristics` (never invented, never sourced from outside knowledge — see Input Block F).
 
+**NO TABLES IN MODULES:** Every module, and the Decision Brief's evidence cards, are prose narrative. Do NOT generate markdown tables, matrices, or other tabular data structures anywhere in the Decision Brief or Adaptive Report Modules — including persona-comparison tables and feature-prioritization matrices. Use bullet points sparingly, only for short lists of 3-4 items (e.g. Key Assumptions, Priority Stack). Tables and charts are reserved exclusively for the Audience Characteristics section (Section 3.5) — nowhere else in this CTA.
+
 **GENERIC MODULE STRUCTURE** (use for every module unless a format override below applies):
 1. **The Pattern** — the headline finding for this module's topic, in plain language
 2. **The Evidence** — narrative walkthrough of the supporting `survey_results` (use "six in ten," not "61.5%")
 3. **The Persona Split** — if personas differ meaningfully on this topic, show how; otherwise state plainly that they're similar
 4. **The Implication** — what this means for the decision at hand
 
-**MODULE C (Audience Segmentation and ICP) FORMAT OVERRIDE:** Render its evidence as a single cross-tab markdown table — PERSONAS ARE COLUMNS, DIMENSIONS ARE ROWS, first column "Dimension", final column "What It Means". Do not use separate tables per dimension.
+**MODULE C (Audience Segmentation and ICP) FORMAT OVERRIDE:** Structure as narrative persona-by-persona differentiation — NOT a table (see NO TABLES IN MODULES above). For each dimension where personas meaningfully differ: name the dimension, state each persona's position on it in one sentence, then note the strategic implication. Close with a one-line bottom-line synthesis.
 **Example Good Output:**
 > **How Karthik and Aman See the Market Differently**
 >
-> | Dimension | Karthik (Commuter) | Aman (Delivery) | What It Means |
-> |-----------|-------------------|-----------------|---------------|
-> | Price ceiling | Rs 1.06L | Rs 87K | Nearly Rs 20K gap — two price tiers needed |
-> | Cost sensitivity | Moderate | High | Aman feels every rupee more acutely |
-> | Battery swap need | Nice-to-have | Non-negotiable | Swap infrastructure is table stakes for delivery |
-> | Brand preference | Established brands | Performance proof | Karthik trusts Hero; Aman trusts other riders |
+> On price ceiling: Karthik will stretch to Rs 1.06L; Aman hits a hard wall at Rs 87K. That's nearly a Rs 20K gap — two price tiers, not one.
+>
+> On cost sensitivity: Karthik feels it moderately; Aman feels every rupee. Battery swap access is a nice-to-have for Karthik but non-negotiable for Aman — swap infrastructure is table stakes for the delivery segment.
+>
+> On brand trust: Karthik defaults to established names like Hero; Aman trusts other riders' word over any brand's marketing.
 >
 > The bottom line: Karthik's market is aspiration-driven. Aman's market is survival-driven. Same vehicle category, completely different entry points.
 
@@ -516,7 +522,7 @@ Render ONE "### {Name}" subsection (bare name only — no "Module X:" prefix, no
 **MODULES WITHOUT DATA:** The backend has already excluded, before you ever see this payload, any module whose topic the questionnaire didn't actually measure. `selected_modules` therefore only ever contains modules with real supporting data — there is nothing to suppress or flag here. Do not mention, list, or allude to any module that isn't in `selected_modules`; a reader should never learn that other modules exist or were considered.
 ---
 ## REPORT CLOSURE
-Render Research Methodology and Limitations and Transparency exactly as defined in the Shared Report Shell (Section 3.5) — same headings, same content rules, no changes for this CTA.
+Render Methodology and Calibration and Limitations and Transparency exactly as defined in the Shared Report Shell (Section 3.5) — same headings, same content rules. Do NOT render Research Methodology here — that heading is BEHAVIORAL_ARCHAEOLOGY only.
 ---
 ## 4.2 Decision Intelligence Quality Gates (Narrative Version)
 Applies to the Decision Brief AND every Adaptive Report Module.
@@ -530,7 +536,8 @@ Applies to the Decision Brief AND every Adaptive Report Module.
 | QG-DI-N6 | Sample sizes may appear only as "we surveyed N people" — never in test notation | Re-write |
 | QG-DI-N7 | Comparisons must use qualitative magnitude language | "Substantially higher" not "0.51 standard deviations" |
 | QG-DI-N8 | Risk scenarios must be narrative, not statistical sensitivity analysis | Re-write as "what if" story |
-| QG-DI-N9 | Render exactly the modules in `selected_modules` — no more, no fewer; suppressed ones render as an explanation, never by silent omission | Add/remove module heading to match `selected_modules` exactly |
+| QG-DI-N9 | Render exactly the modules in `selected_modules` — no more, no fewer; never mention or allude to a module that isn't in the list | Add/remove module heading to match `selected_modules` exactly |
+| QG-DI-N10 | No markdown tables, matrices, or tabular structures anywhere in the Decision Brief or Adaptive Report Modules | Rewrite as prose narrative (see NO TABLES IN MODULES) |
 ---
 # 5. CTA 3: BEHAVIORAL ARCHAEOLOGY OUTPUT (NARRATIVE)
 When the user clicks the BEHAVIORAL_ARCHAEOLOGY CTA, generate a behavioral excavation narrative that reveals what the numbers hide — told through human stories, not statistical outputs.
@@ -892,6 +899,7 @@ Every finding follows: **Insight → Interpretation → Decision Impact**
 | V2.0 | March 2026 | Initial narrative architecture. Statistical notation removed from frontend. Storyboarding framework added. Backend-frontend separation enforced. | Synthetic People AI |
 | V2.1 | July 2026 | DECISION_INTELLIGENCE restructured from fixed DI-1..7 to Decision Brief + Adaptive Report Modules (A-L, selected per study from the research objective) + Report Closure. Added Audience Characteristics to the shared shell. Added Ground Truth Declaration (Input Block F) and Automatic Suppression (AH-12, AH-13). BEHAVIORAL_ARCHAEOLOGY and CSV_DATA unchanged. | Synthetic People AI |
 | V2.2 | July 2026 | Removed "Module X:" letter prefixes from Adaptive Report Module headings (bare name only). Modules without supporting data are now filtered out by the backend before this prompt ever sees them (`selected_modules` only contains modules with data) — replaced the SUPPRESSED MODULES rendering mechanism and AH-13's suppression clause accordingly; no suppression note is ever written into the report body anymore. | Synthetic People AI |
+| V2.3 | July 2026 | DI's Table of Contents simplified to a fixed 6 entries (Research Objective, Audience Characteristics, Decision Brief, Adaptive Report Modules, Methodology and Calibration, Limitations and Transparency) — individual module names no longer appear as their own TOC lines. Tables/matrices banned inside the Decision Brief and Adaptive Report Modules (Module C's cross-tab table replaced with prose); tables remain exclusive to Audience Characteristics. DECISION_INTELLIGENCE's closing methodology section renamed Research Methodology → Methodology and Calibration (BEHAVIORAL_ARCHAEOLOGY unchanged). | Synthetic People AI |
 ---
-**END OF B2C QUANTITATIVE REPORT GENERATION PROMPT — CTA-ROUTED V2.2**
+**END OF B2C QUANTITATIVE REPORT GENERATION PROMPT — CTA-ROUTED V2.3**
 """
