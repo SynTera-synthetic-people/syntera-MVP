@@ -395,6 +395,16 @@ function legendItemsFor(spec: GalleryCardSpec): { label: string; color: string }
   return spec.years.map((year, i) => ({ label: String(year), color: PALETTE[i % PALETTE.length]! }));
 }
 
+/** Fallback variable(s) for "Generate Chart using Omi" / "+ Add Chart" when
+ * nothing was pre-selected (neither entry screen exposes a picker). Prefers
+ * the first non-identifier column — charting a respondent-id column just
+ * produces one bar of height 1 per respondent, which isn't a useful default. */
+function defaultChartVariables(allVariables: Variable[]): Variable[] {
+  const meaningful = allVariables.find((v) => v.dataType !== 'identifier');
+  const fallback = meaningful ?? allVariables[0];
+  return fallback ? [fallback] : [];
+}
+
 // ══════════════════════════════════════════════════════════════════════════
 // Component
 // ══════════════════════════════════════════════════════════════════════════
@@ -465,8 +475,14 @@ export default function ChartVisuals({ allVariables, workspaceId, explorationId,
       toast.error('Upload a dataset first');
       return;
     }
-    if (selectedVars.length === 0) {
-      toast.error('Select at least one variable first');
+    // Neither this screen nor the loading screen expose a variable picker
+    // (it only appears after generation, in Preview/Builder) — so "let Omi
+    // generate one from your selected variables" has to fall back to a
+    // sensible default when nothing's been pre-selected yet, rather than
+    // dead-ending on an error toast the user has no way to resolve here.
+    const effectiveVars = selectedVars.length > 0 ? selectedVars : defaultChartVariables(allVariables);
+    if (effectiveVars.length === 0) {
+      toast.error('No variables available. Upload a dataset first.');
       return;
     }
 
@@ -476,12 +492,12 @@ export default function ChartVisuals({ allVariables, workspaceId, explorationId,
     // Fire the real fetch in parallel with the loading animation — Omi's
     // "suggestion" heuristic in V1 is simple: two-or-more variables get a
     // dual-axis chart, otherwise a bar chart.
-    const chartType: ChartType = selectedVars.length >= 2 ? 'dual' : 'bar';
+    const chartType: ChartType = effectiveVars.length >= 2 ? 'dual' : 'bar';
     const fetchPromise = runChartMutation.mutateAsync({
       workspaceId,
       explorationId,
       datasetId,
-      variables: selectedVars.map((v) => v.id),
+      variables: effectiveVars.map((v) => v.id),
       chartType,
     });
 
@@ -495,6 +511,7 @@ export default function ChartVisuals({ allVariables, workspaceId, explorationId,
         fetchPromise
           .then((result) => {
             setChartResult(result);
+            setSelectedVars(effectiveVars); // keep the mapping table in sync with what was fetched
             setFlow('preview');
             flashToast();
           })
@@ -518,8 +535,12 @@ export default function ChartVisuals({ allVariables, workspaceId, explorationId,
       toast.error('Upload a dataset first');
       return;
     }
-    if (selectedVars.length === 0) {
-      toast.error('Select at least one variable first');
+    // Same reasoning as startOmiGeneration: the Gallery screen has no
+    // variable picker either, so fall back to a default instead of a
+    // dead-end error.
+    const effectiveVars = selectedVars.length > 0 ? selectedVars : defaultChartVariables(allVariables);
+    if (effectiveVars.length === 0) {
+      toast.error('No variables available. Upload a dataset first.');
       return;
     }
     try {
@@ -527,10 +548,11 @@ export default function ChartVisuals({ allVariables, workspaceId, explorationId,
         workspaceId,
         explorationId,
         datasetId,
-        variables: selectedVars.map((v) => v.id),
+        variables: effectiveVars.map((v) => v.id),
         chartType: galleryType,
       });
       setChartResult(result);
+      setSelectedVars(effectiveVars);
       setFlow('builder');
       flashToast();
     } catch (err) {
@@ -550,7 +572,9 @@ export default function ChartVisuals({ allVariables, workspaceId, explorationId,
     const labels = chartResult?.labels ?? [];
     const values = series?.values ?? [];
     const totalW = Math.max(labels.length, 1) * (barW + gap);
-    const maxVal = Math.max(100, ...values);
+    // Scale to the real data's own range, not a fixed 100 — real counts are
+    // often far below 100, which made bars render as barely-visible slivers.
+    const maxVal = Math.max(1, ...values);
     return (
       <div className="dp-chart-preview-wrap">
         {props.title1 && <div className="dp-chart-title">{props.title1}</div>}
