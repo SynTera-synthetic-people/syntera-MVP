@@ -332,6 +332,7 @@
   overflow: hidden;
   min-width: 0;
   background: #1e2126;
+  border-radius: 14px;
 }
 
 /* ── Shared Panel Styles (used by tabs) ── */
@@ -2110,6 +2111,116 @@
   padding: 20px;
 }
 
+/* Generate bar — lets the user regenerate with a different variable
+   combination without leaving Preview/Builder. Same visual language as
+   .dp-updown-bar (bordered strip under the panel's list). */
+.dp-cb-generate-bar {
+  display: flex;
+  padding: 8px 10px;
+  border-top: 1px solid #2a2d33;
+  flex-shrink: 0;
+}
+
+.dp-cb-generate-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  padding: 9px 12px;
+  background: #0e63ec;
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+
+.dp-cb-generate-btn:hover {
+  background: #0b52c9;
+}
+
+.dp-cb-generate-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Stacked, comprehensive chart list — one card per generated variable
+   combination, so the user can see everything they've built at once
+   instead of just the single most recent chart. */
+.dp-chart-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.dp-chart-card {
+  background: #121317;
+  border: 1px solid #2a2d33;
+  border-radius: 10px;
+  padding: 14px 16px 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.dp-chart-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 10px;
+}
+
+.dp-chart-card-vars {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dp-chart-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.dp-chart-card-type {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: capitalize;
+  color: #37ffce;
+  background: #0c2c24;
+  border: 1px solid #37ffce;
+  border-radius: 5px;
+  padding: 3px 8px;
+}
+
+.dp-chart-card-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: transparent;
+  border: 1px solid #3a3d44;
+  border-radius: 5px;
+  color: #9a9eab;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.dp-chart-card-remove:hover {
+  background: #3a1418;
+  border-color: #e5484d;
+  color: #e5484d;
+}
+
 /* Selected variable mapping table (Variables | Chart Type | Variables/Slicer) */
 .dp-cb-map-table {
   width: 100%;
@@ -2424,13 +2535,6 @@
   margin: 0 0 18px;
 }
 
-.dp-report-subtitle {
-  font-size: 14px;
-  font-weight: 700;
-  color: #e8e9ec;
-  margin: 0 0 10px;
-}
-
 .dp-report-list {
   margin: 0;
   padding-left: 20px;
@@ -2490,35 +2594,6 @@
 
 .dp-data-table tbody tr:hover td {
   background: #121317;
-}
-
-.dp-data-pager {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  padding: 10px 0 0;
-  flex-shrink: 0;
-}
-
-.dp-data-pager-btn {
-  background: #17181c;
-  border: 1px solid #2a2d33;
-  border-radius: 6px;
-  color: #e8e9ec;
-  font-size: 12px;
-  padding: 6px 12px;
-  cursor: pointer;
-}
-
-.dp-data-pager-btn:disabled {
-  color: #6b6f7a;
-  cursor: not-allowed;
-}
-
-.dp-data-pager-label {
-  font-size: 12px;
-  color: #9a9eab;
 }
 
 /* ══════════════════════════════════════════════════════════════════════

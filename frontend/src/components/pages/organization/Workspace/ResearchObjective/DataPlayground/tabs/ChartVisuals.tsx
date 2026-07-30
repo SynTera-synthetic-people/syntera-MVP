@@ -139,6 +139,17 @@ interface MappingRow {
   linkedVars: string;
 }
 
+/** One rendered chart card in the stacked "comprehensive view". Keyed by
+ * its variable combination — generating with the same combination again
+ * replaces this entry in place; a different combination creates a new one
+ * below it. See upsertChart(). */
+interface GeneratedChart {
+  id: string;
+  variables: Variable[];
+  chartType: ChartType;
+  result: ChartResult;
+}
+
 interface ChartVisualsProps {
   allVariables: Variable[];
   workspaceId?: string;
@@ -212,6 +223,9 @@ function seededValue(seed: number, min = 15, max = 95): number {
   const x = Math.sin(seed) * 10000;
   const frac = x - Math.floor(x);
   return Math.floor(frac * (max - min)) + min;
+}
+function truncateLabel(label: string, max = 12): string {
+  return label.length > max ? `${label.slice(0, max - 1)}…` : label;
 }
 
 function smoothPath(points: { x: number; y: number }[]): string {
@@ -405,6 +419,15 @@ function defaultChartVariables(allVariables: Variable[]): Variable[] {
   return fallback ? [fallback] : [];
 }
 
+/** Omi's "suggest a chart type" heuristic. Dual-axis only makes sense for
+ * exactly two variables (bars + a line) — for 3+, silently requesting
+ * "dual" doesn't map to anything computable, which is what was causing
+ * "Failed to compute chart" for multi-variable selections. */
+function omiSuggestedChartType(vars: Variable[]): ChartType {
+  if (vars.length === 2) return 'dual';
+  return 'bar';
+}
+
 // ══════════════════════════════════════════════════════════════════════════
 // Component
 // ══════════════════════════════════════════════════════════════════════════
@@ -413,20 +436,25 @@ export default function ChartVisuals({ allVariables, workspaceId, explorationId,
   const [flow, setFlow] = useState<FlowState>('choice');
   const [loadingStep, setLoadingStep] = useState(0);
   const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('Your chart is ready');
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stepTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [selectedVars, setSelectedVars] = useState<Variable[]>([]);
   const [galleryType, setGalleryType] = useState<ChartType>('bar');
   const [selectedCardId, setSelectedCardId] = useState<string>('bar1');
-  const [chartResult, setChartResult] = useState<ChartResult | null>(null);
+  // The full, comprehensive set of charts the user has generated so far —
+  // stacked and shown together so they can see everything they've built at
+  // once, instead of just the single most-recent chart.
+  const [charts, setCharts] = useState<GeneratedChart[]>([]);
+  const [isGenerating, setIsGenerating] = useState(false);
   const runChartMutation = useRunChart();
 
-  // A new dataset invalidates any variable selection / fetched chart from
-  // the previous one.
+  // A new dataset invalidates any variable selection / generated charts
+  // from the previous one.
   useEffect(() => {
     setSelectedVars([]);
-    setChartResult(null);
+    setCharts([]);
     setFlow('choice');
   }, [datasetId]);
 
@@ -455,10 +483,42 @@ export default function ChartVisuals({ allVariables, workspaceId, explorationId,
     setSelectedVars((prev) => (prev.some((x) => x.id === v.id) ? prev.filter((x) => x.id !== v.id) : [...prev, v]));
   }
 
-  function flashToast(ms = 3200) {
+  function flashToast(message = 'Your chart is ready', ms = 3200) {
+    setToastMessage(message);
     setToastVisible(true);
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToastVisible(false), ms);
+  }
+
+  /** Order-independent identity for a variable combination — this is what
+   * "same variables" means for the replace-vs-add-below rule below. */
+  function varsKey(vars: Variable[]): string {
+    return vars.map((v) => v.id).slice().sort().join('|');
+  }
+
+  /** Adds a newly generated chart to the comprehensive stack, or — if a
+   * chart already exists for this exact variable combination — replaces it
+   * in place instead of duplicating it. This is the core of "same
+   * variables = replace, different variables = add below" from the spec. */
+  function upsertChart(vars: Variable[], chartType: ChartType, result: ChartResult): 'added' | 'updated' {
+    const key = varsKey(vars);
+    const existingIndex = charts.findIndex((c) => varsKey(c.variables) === key);
+    if (existingIndex >= 0) {
+      setCharts((prev) => prev.map((c, i) => (i === existingIndex ? { ...c, chartType, result } : c)));
+      return 'updated';
+    }
+    const entry: GeneratedChart = {
+      id: `chart-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      variables: vars,
+      chartType,
+      result,
+    };
+    setCharts((prev) => [...prev, entry]);
+    return 'added';
+  }
+
+  function removeChart(id: string) {
+    setCharts((prev) => prev.filter((c) => c.id !== id));
   }
 
   function goToChoice() {
@@ -492,7 +552,7 @@ export default function ChartVisuals({ allVariables, workspaceId, explorationId,
     // Fire the real fetch in parallel with the loading animation — Omi's
     // "suggestion" heuristic in V1 is simple: two-or-more variables get a
     // dual-axis chart, otherwise a bar chart.
-    const chartType: ChartType = effectiveVars.length >= 2 ? 'dual' : 'bar';
+    const chartType: ChartType = omiSuggestedChartType(effectiveVars);
     const fetchPromise = runChartMutation.mutateAsync({
       ...(workspaceId !== undefined ? { workspaceId } : {}),
       ...(explorationId !== undefined ? { explorationId } : {}),
@@ -510,11 +570,11 @@ export default function ChartVisuals({ allVariables, workspaceId, explorationId,
       } else {
         fetchPromise
           .then((result) => {
-            setChartResult(result);
-            setSelectedVars(effectiveVars); // keep the mapping table in sync with what was fetched
+            upsertChart(effectiveVars, chartType, result);
+            setSelectedVars(effectiveVars); // keep the pending panel in sync with what was fetched
             setGalleryType(chartType); // keep the "what did we actually request" type in sync too
             setFlow('preview');
-            flashToast();
+            flashToast('Your chart is ready');
           })
           .catch((err) => {
             toast.error(extractErrorMessage(err, 'Failed to generate chart'));
@@ -544,6 +604,7 @@ export default function ChartVisuals({ allVariables, workspaceId, explorationId,
       toast.error('No variables available. Upload a dataset first.');
       return;
     }
+    setIsGenerating(true);
     try {
       const result = await runChartMutation.mutateAsync({
         ...(workspaceId !== undefined ? { workspaceId } : {}),
@@ -552,41 +613,76 @@ export default function ChartVisuals({ allVariables, workspaceId, explorationId,
         variables: effectiveVars.map((v) => v.id),
         chartType: galleryType,
       });
-      setChartResult(result);
+      // Same variable combination as an existing chart → replace it in
+      // place; a different combination → add it below as a new chart, so
+      // the Builder view stays a comprehensive picture of everything
+      // that's been generated rather than just the latest one.
+      const outcome = upsertChart(effectiveVars, galleryType, result);
       setSelectedVars(effectiveVars);
       setFlow('builder');
-      flashToast();
+      flashToast(outcome === 'updated' ? 'Chart updated' : 'Chart added');
     } catch (err) {
       toast.error(extractErrorMessage(err, 'Failed to generate chart'));
+    } finally {
+      setIsGenerating(false);
+    }
+  }
+
+  /** "Generate" — lets the user try a different variable combination
+   * without leaving Preview/Builder or going back through the Gallery.
+   * Same replace-in-place-vs-add-below rule as the Gallery's Add Chart. */
+  async function handleGenerateClick() {
+    if (!datasetId) {
+      toast.error('Upload a dataset first');
+      return;
+    }
+    const effectiveVars = selectedVars.length > 0 ? selectedVars : defaultChartVariables(allVariables);
+    if (effectiveVars.length === 0) {
+      toast.error('Select at least one variable first');
+      return;
+    }
+    const chartType: ChartType = isBuilder ? galleryType : omiSuggestedChartType(effectiveVars);
+    setIsGenerating(true);
+    try {
+      const result = await runChartMutation.mutateAsync({
+        ...(workspaceId !== undefined ? { workspaceId } : {}),
+        ...(explorationId !== undefined ? { explorationId } : {}),
+        datasetId,
+        variables: effectiveVars.map((v) => v.id),
+        chartType,
+      });
+      const outcome = upsertChart(effectiveVars, chartType, result);
+      flashToast(outcome === 'updated' ? 'Chart updated' : 'Chart added');
+    } catch (err) {
+      toast.error(extractErrorMessage(err, 'Failed to generate chart'));
+    } finally {
+      setIsGenerating(false);
     }
   }
 
   const selectedIds = new Set(selectedVars.map((v) => v.id));
 
-  // The chart type actually being displayed right now. In Builder mode this
-  // is whatever the user explicitly picked in the Gallery (galleryType) —
-  // that's the source of truth for "what did I ask for", and trusting it
-  // over the backend's echoed chart_type means picking "Line" and adding it
-  // always renders a line chart even if the API doesn't echo the type back
-  // exactly. In Preview mode (the Omi-generated result) there's no manual
-  // picker, so the backend's chart_type is authoritative there instead.
+  // isBuilder must exist before handleGenerateClick above can reference it,
+  // but function declarations are hoisted — only the const itself needs to
+  // land before first *call*, which happens later during render/events.
   const isBuilder = flow === 'builder';
-  const currentChartType: ChartType = isBuilder
-    ? galleryType
-    : (chartResult?.chart_type as ChartType) ?? galleryType;
 
-  // ── Live chart preview shared by Preview & Builder ────────────────────────
-  // Renders bar / line / pie / dual based on currentChartType — previously
-  // this always drew bars regardless of what was actually generated or
-  // picked in the Gallery, which is why switching chart types looked like
-  // it "did nothing."
+  // The chart type that WILL be used if the user hits Generate right now —
+  // shown in the pending-selection table below so they know what they're
+  // about to create before they create it.
+  const pendingChartType: ChartType = isBuilder ? galleryType : omiSuggestedChartType(selectedVars);
 
-  function LivePreview() {
+  // ── Chart card renderer — one per entry in the `charts` stack ─────────────
+  // Renders bar / line / pie / dual based on the card's own chartType and
+  // result, instead of a single shared "currentChartType" — this is what
+  // makes the comprehensive, multi-chart view possible.
+
+  function ChartCard({ chart }: { chart: GeneratedChart }) {
     const chartH = 140;
     const barW = 34;
     const gap = 18;
-    const labels = chartResult?.labels ?? [];
-    const seriesList = chartResult?.series ?? [];
+    const labels = chart.result.labels ?? [];
+    const seriesList = chart.result.series ?? [];
     const primary = seriesList[0];
     const secondary = seriesList[1];
     const values = primary?.values ?? [];
@@ -596,29 +692,37 @@ export default function ChartVisuals({ allVariables, workspaceId, explorationId,
     // slivers hugging the bottom of the chart.
     const maxVal = Math.max(1, ...values, ...(secondary?.values ?? []));
 
-    function renderBars(barValues: number[], color: string) {
+function renderBars(barValues: number[], color: string) {
       return barValues.map((val, i) => {
         const barH = (val / maxVal) * chartH;
         const x = 20 + i * (barW + gap);
         const y = chartH - barH + 10;
+        const labelX = x + barW / 2;
+        const labelY = chartH + 26;
         return (
           <g key={i}>
             <rect x={x} y={y} width={barW} height={barH} fill={color} rx={3} opacity={0.9} />
             {props.dataLabel !== 'counts' && (
-              <text x={x + barW / 2} y={y - 6} textAnchor="middle" fontSize="10" fill="#ccc">{val}</text>
+              <text x={labelX} y={y - 6} textAnchor="middle" fontSize="10" fill="#ccc">{val}</text>
             )}
-            <text x={x + barW / 2} y={chartH + 24} textAnchor="middle" fontSize="9" fill="#9a9eab">{labels[i]}</text>
+            <text
+              x={labelX}
+              y={labelY}
+              textAnchor="end"
+              fontSize="8"
+              fill="#9a9eab"
+              transform={`rotate(-40 ${labelX} ${labelY})`}
+            >
+              <title>{labels[i]}</title>
+              {truncateLabel(labels[i] ?? '')}
+            </text>
           </g>
         );
       });
     }
 
-    function renderChart() {
-      if (!chartResult) {
-        return <div style={{ color: '#9a9eab', fontSize: 12, padding: '20px 0' }}>No chart data yet.</div>;
-      }
-
-      if (currentChartType === 'pie') {
+    function renderVisual() {
+      if (chart.chartType === 'pie') {
         const w = 260;
         const h = 220;
         const cx = w / 2;
@@ -653,7 +757,7 @@ export default function ChartVisuals({ allVariables, workspaceId, explorationId,
         );
       }
 
-      if (currentChartType === 'line') {
+      if (chart.chartType === 'line') {
         const stepX = labels.length > 1 ? (totalW - 20) / (labels.length - 1) : 0;
         const points = values.map((val, i) => ({
           x: 20 + i * stepX,
@@ -661,15 +765,25 @@ export default function ChartVisuals({ allVariables, workspaceId, explorationId,
         }));
         const color = '#7947c4';
         return (
-          <svg viewBox={`0 0 ${totalW + 40} ${chartH + 50}`} className="dp-chart-svg">
+          <svg viewBox={`0 0 ${totalW + 40} ${chartH + 70}`} className="dp-chart-svg">
             <path d={smoothPath(points)} fill="none" stroke={color} strokeWidth={2} />
-            {points.map((p, i) => (
+{points.map((p, i) => (
               <g key={i}>
                 <circle cx={p.x} cy={p.y} r={3.5} fill="#121317" stroke={color} strokeWidth={1.8} />
                 {props.dataLabel !== 'counts' && (
                   <text x={p.x} y={p.y - 8} textAnchor="middle" fontSize="10" fill="#ccc">{values[i]}</text>
                 )}
-                <text x={p.x} y={chartH + 24} textAnchor="middle" fontSize="9" fill="#9a9eab">{labels[i]}</text>
+                <text
+                  x={p.x}
+                  y={chartH + 26}
+                  textAnchor="end"
+                  fontSize="8"
+                  fill="#9a9eab"
+                  transform={`rotate(-40 ${p.x} ${chartH + 26})`}
+                >
+                  <title>{labels[i]}</title>
+                  {truncateLabel(labels[i] ?? '')}
+                </text>
               </g>
             ))}
             <line x1="20" y1={chartH + 10} x2={totalW + 20} y2={chartH + 10} stroke="#2a2d33" strokeWidth="1" />
@@ -677,7 +791,7 @@ export default function ChartVisuals({ allVariables, workspaceId, explorationId,
         );
       }
 
-      if (currentChartType === 'dual' && secondary) {
+      if (chart.chartType === 'dual' && secondary) {
         const stepX = labels.length > 1 ? (totalW - 20) / (labels.length - 1) : 0;
         const linePoints = secondary.values.map((val, i) => ({
           x: 20 + i * stepX + barW / 2,
@@ -685,7 +799,7 @@ export default function ChartVisuals({ allVariables, workspaceId, explorationId,
         }));
         const lineColor = '#45c276';
         return (
-          <svg viewBox={`0 0 ${totalW + 40} ${chartH + 50}`} className="dp-chart-svg">
+          <svg viewBox={`0 0 ${totalW + 40} ${chartH + 70}`} className="dp-chart-svg">
             {renderBars(values, '#7947c4')}
             <path d={smoothPath(linePoints)} fill="none" stroke={lineColor} strokeWidth={2} />
             {linePoints.map((p, i) => (
@@ -698,7 +812,7 @@ export default function ChartVisuals({ allVariables, workspaceId, explorationId,
 
       // 'bar', and 'dual' without a second series to plot as a line
       return (
-        <svg viewBox={`0 0 ${totalW + 40} ${chartH + 50}`} className="dp-chart-svg">
+        <svg viewBox={`0 0 ${totalW + 40} ${chartH + 70}`} className="dp-chart-svg">
           {renderBars(values, '#7947c4')}
           <line x1="20" y1={chartH + 10} x2={totalW + 20} y2={chartH + 10} stroke="#2a2d33" strokeWidth="1" />
         </svg>
@@ -706,18 +820,35 @@ export default function ChartVisuals({ allVariables, workspaceId, explorationId,
     }
 
     return (
-      <div className="dp-chart-preview-wrap">
-        {props.title1 && <div className="dp-chart-title">{props.title1}</div>}
-        {props.title2 && <div className="dp-chart-subtitle">{props.title2}</div>}
-        {renderChart()}
-        {props.showBase && <div className="dp-chart-base">Base: All respondents (n={chartResult?.base ?? 0})</div>}
-        {props.showLegend && primary && currentChartType !== 'pie' && (
+      <div className="dp-chart-card">
+        <div className="dp-chart-card-header">
+          <div className="dp-chart-card-vars">
+            {chart.variables.map((v) => (
+              <span key={v.id} className="dp-cb-map-chip">{v.id}</span>
+            ))}
+          </div>
+          <div className="dp-chart-card-meta">
+            <span className="dp-chart-card-type">{chart.chartType}</span>
+            <button
+              type="button"
+              className="dp-chart-card-remove"
+              onClick={() => removeChart(chart.id)}
+              aria-label="Remove this chart"
+              title="Remove this chart"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+        {renderVisual()}
+        {props.showBase && <div className="dp-chart-base">Base: All respondents (n={chart.result.base ?? 0})</div>}
+        {props.showLegend && primary && chart.chartType !== 'pie' && (
           <div className="dp-chart-legend">
             <div className="dp-chart-legend-item">
               <span className="dp-chart-legend-dot" style={{ background: '#7947c4' }} />
               <span className="dp-chart-legend-label">{primary.name}</span>
             </div>
-            {secondary && currentChartType === 'dual' && (
+            {secondary && chart.chartType === 'dual' && (
               <div className="dp-chart-legend-item">
                 <span className="dp-chart-legend-dot" style={{ background: '#45c276' }} />
                 <span className="dp-chart-legend-label">{secondary.name}</span>
@@ -725,8 +856,6 @@ export default function ChartVisuals({ allVariables, workspaceId, explorationId,
             )}
           </div>
         )}
-        {props.footnote1 && <div className="dp-chart-footnote">{props.footnote1}</div>}
-        {props.footnote2 && <div className="dp-chart-footnote">{props.footnote2}</div>}
       </div>
     );
   }
@@ -861,9 +990,11 @@ export default function ChartVisuals({ allVariables, workspaceId, explorationId,
   // full set of variables that went into that request.
   // ══════════════════════════════════════════════════════════════════════
 
+  // Pending-selection preview — shows what WILL be created if the user
+  // hits Generate right now, before they've committed to it.
   const visibleMapping: MappingRow[] = selectedVars.map((v) => ({
     variable: v.id,
-    chartType: currentChartType,
+    chartType: pendingChartType,
     linkedVars: selectedVars.map((sv) => sv.id).join(', '),
   }));
 
@@ -872,7 +1003,7 @@ export default function ChartVisuals({ allVariables, workspaceId, explorationId,
       {toastVisible && (
         <div className="dp-toast">
           <span className="dp-toast-icon">✓</span>
-          Your chart is ready
+          {toastMessage}
           <button type="button" className="dp-toast-close" onClick={() => setToastVisible(false)}>✕</button>
         </div>
       )}
@@ -908,15 +1039,36 @@ export default function ChartVisuals({ allVariables, workspaceId, explorationId,
               </tr>
             </thead>
             <tbody>
-              {visibleMapping.map((row, i) => (
-                <tr key={i}>
-                  <td><span className="dp-cb-map-chip">{row.variable}</span></td>
-                  <td style={{ textTransform: 'capitalize' }}>{row.chartType}</td>
-                  <td>{row.linkedVars}</td>
+              {visibleMapping.length === 0 ? (
+                <tr>
+                  <td colSpan={3} style={{ color: '#6b6f7a', fontStyle: 'italic' }}>
+                    Pick variables on the left, then Generate
+                  </td>
                 </tr>
-              ))}
+              ) : (
+                visibleMapping.map((row, i) => (
+                  <tr key={i}>
+                    <td><span className="dp-cb-map-chip">{row.variable}</span></td>
+                    <td style={{ textTransform: 'capitalize' }}>{row.chartType}</td>
+                    <td>{row.linkedVars}</td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
+        </div>
+        {/* Lets the user try a different variable combination without
+            leaving this screen — same combination as an existing chart
+            replaces it, a new combination adds another chart below. */}
+        <div className="dp-cb-generate-bar">
+          <button
+            type="button"
+            className="dp-cb-generate-btn"
+            onClick={handleGenerateClick}
+            disabled={isGenerating}
+          >
+            <IconSparkle size={13} /> {isGenerating ? 'Generating…' : 'Generate'}
+          </button>
         </div>
       </div>
 
@@ -928,7 +1080,7 @@ export default function ChartVisuals({ allVariables, workspaceId, explorationId,
               Switch to Omi Generated Charts
             </button>
           ) : (
-            <button type="button" className="dp-cb-switch-btn" onClick={() => setFlow('builder')}>
+            <button type="button" className="dp-cb-switch-btn" onClick={() => setFlow('gallery')}>
               Switch to Custom Charts
             </button>
           )}
@@ -951,7 +1103,23 @@ export default function ChartVisuals({ allVariables, workspaceId, explorationId,
             </div>
           )}
 
-          <div className="dp-cb-preview-box"><LivePreview /></div>
+          <div className="dp-cb-preview-box">
+            {props.title1 && <div className="dp-chart-title">{props.title1}</div>}
+            {props.title2 && <div className="dp-chart-subtitle">{props.title2}</div>}
+            {charts.length === 0 ? (
+              <div style={{ color: '#9a9eab', fontSize: 12, padding: '20px 0' }}>
+                No chart data yet. Select variables on the left and click Generate.
+              </div>
+            ) : (
+              <div className="dp-chart-stack">
+                {charts.map((chart) => (
+                  <ChartCard key={chart.id} chart={chart} />
+                ))}
+              </div>
+            )}
+            {props.footnote1 && <div className="dp-chart-footnote">{props.footnote1}</div>}
+            {props.footnote2 && <div className="dp-chart-footnote">{props.footnote2}</div>}
+          </div>
 
           <div>
             <div className="dp-cb-field-label">Footer 1</div>
