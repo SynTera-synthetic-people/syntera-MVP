@@ -12,6 +12,8 @@ import re
 import unicodedata
 from typing import Any, Dict, List, Optional
 
+from app.services.question_engine import is_verbatim_question_type
+
 
 def _norm_label(s: str) -> str:
     t = unicodedata.normalize("NFKC", s or "")
@@ -163,6 +165,25 @@ def build_normalized_survey_results(
         qtext = (fq.get("text") or "").strip()
         question_type = str(fq.get("question_type") or "single_select").lower().strip()
         is_multi_select = question_type in {"m", "multi_select", "grid_multi_select"}
+
+        if is_verbatim_question_type(question_type):
+            row = _pick_llm_row(llm_rows, i, qtext)
+            raw_verbatims = (row.get("verbatims") or []) if row else []
+            verbatims: List[str] = []
+            seen = set()
+            for v in raw_verbatims:
+                text = str(v or "").strip()
+                if not text:
+                    continue
+                key = _norm_label(text)
+                if key in seen:
+                    continue
+                seen.add(key)
+                verbatims.append(text)
+                if len(verbatims) >= 8:
+                    break
+            out[qtext] = [{"verbatim": text} for text in verbatims]
+            continue
 
         raw_opts = fq.get("option_schema") or fq.get("options") or []
         if not raw_opts and isinstance(fq.get("config"), dict):

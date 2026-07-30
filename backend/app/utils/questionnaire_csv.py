@@ -249,6 +249,13 @@ def questionnaire_sections_to_csv_bytes(
         elif block and isinstance(block, list):
             for item in block:
                 if isinstance(item, dict):
+                    if "verbatim" in item:
+                        # Open-ended question: no option/count semantics, just the quote.
+                        row = [q_no, q_text, str(item.get("verbatim", ""))]
+                        if include_count:
+                            row.append("")
+                        writer.writerow(row)
+                        continue
                     try:
                         count = int(item.get("count", 0) or 0)
                     except (TypeError, ValueError):
@@ -266,11 +273,79 @@ def questionnaire_sections_to_csv_bytes(
     return ("\ufeff" + buffer.getvalue()).encode("utf-8")
 
 
+_MULTI_SELECT_TYPES = {"m", "multi_select", "grid_multi_select", "multiselect"}
+
+
+def _is_multi_select_type(question_type: Optional[str]) -> bool:
+    if not question_type:
+        return False
+    return str(question_type).strip().lower().replace("-", "_") in _MULTI_SELECT_TYPES
+
+
+def _lookup_question_type(question_types: Dict[str, str], q_text: str) -> Optional[str]:
+    if q_text in question_types:
+        return question_types[q_text]
+    nk = _norm_key(q_text)
+    for k, v in question_types.items():
+        if _norm_key(k) == nk:
+            return v
+    return None
+
+
+def _exact_single_select_assignment(
+    rng: random.Random, opts: List[str], counts: List[int], n: int
+) -> List[str]:
+    """One option per respondent; tally of assignments equals `counts` exactly."""
+    pool: List[str] = []
+    for opt, c in zip(opts, counts):
+        pool.extend([opt] * max(int(c), 0))
+    if len(pool) < n:
+        pool.extend([opts[-1] if opts else ""] * (n - len(pool)))
+    elif len(pool) > n:
+        pool = pool[:n]
+    rng.shuffle(pool)
+    return pool
+
+
+def _exact_multi_select_assignment(
+    rng: random.Random, opts: List[str], counts: List[int], n: int
+) -> List[List[str]]:
+    """Each option gets its own independent, exact-count assignment across respondents
+    (multi-select options are not mutually exclusive), so a respondent can end up with
+    zero, one, or several options \u2014 and each option's marginal tally equals `counts`.
+    """
+    flags_by_option: List[List[bool]] = []
+    for _opt, c in zip(opts, counts):
+        c = max(0, min(int(c), n))
+        flags = [True] * c + [False] * (n - c)
+        rng.shuffle(flags)
+        flags_by_option.append(flags)
+
+    picks: List[List[str]] = []
+    for i in range(n):
+        picks.append([opt for opt, flags in zip(opts, flags_by_option) if flags[i]])
+    return picks
+
+
+def _verbatim_pool(opts_data: Any) -> List[str]:
+    """Extract the quote pool from a { "verbatim": "..." } row shape (open-ended
+    questions) — distinct from the { "option", "count" } shape used elsewhere.
+    """
+    if not isinstance(opts_data, list):
+        return []
+    return [
+        str(d.get("verbatim", "")).strip()
+        for d in opts_data
+        if isinstance(d, dict) and str(d.get("verbatim", "")).strip()
+    ]
+
+
 def build_survey_results_csv_bytes(
     results: Dict[str, Any],
     persona_sample_sizes: Dict[str, int],
     persona_names_map: Dict[str, str],
     seed: Optional[str] = None,
+    question_types: Optional[Dict[str, str]] = None,
 ) -> bytes:
     """
     Generates a per-respondent wide-format CSV matching the reference format:
@@ -283,15 +358,23 @@ def build_survey_results_csv_bytes(
     - persona_sample_sizes: { persona_id: sample_size }
     - persona_names_map: { persona_id: persona_name }
     - seed: deterministic seed (use simulation_id) so same run always produces same CSV
+    - question_types: { question_text: question_type } from the questionnaire (e.g. "single_select",
+      "multi_select"). Used to decide whether a respondent can be assigned more than one option.
 
-    Uses weighted random sampling from the aggregate distribution per question.
-    Since per-persona breakdowns are not stored separately, the aggregate distribution
-    is used for all personas (consistent with what the simulation stores).
+    Each respondent's per-question value(s) are drawn from an EXACT shuffled realization of the
+    aggregate option counts in `results`, not independent weighted sampling \u2014 so the per-option
+    tallies in this file always reconcile with questionnaire_overview.csv's Count column for the
+    same simulation. Multi-select questions assign each option independently (a respondent can get
+    0, 1, or several, joined by "; " in the cell); single-select questions assign exactly one.
+    Since per-persona breakdowns are not stored separately, the aggregate distribution is used for
+    all personas (consistent with what the simulation stores), but the exact-count pool is built once
+    across the full respondent population so cross-persona totals still reconcile.
     """
     if not results or not persona_sample_sizes:
         return b""
 
     rng = random.Random(seed or "default")
+    question_types = question_types or {}
 
     # Build ordered question list + short column labels
     # question_text -> [{option, count}]
@@ -312,26 +395,46 @@ def build_survey_results_csv_bytes(
     # below the header so it's visible without cross-referencing the other CSV.
     question_text_row = ["", "", ""] + [q.strip() for q in questions]
 
+    total_respondents = sum(max(int(v or 0), 0) for v in persona_sample_sizes.values())
+
+    # One exact-count assignment pool per question, shared across all respondents/personas.
+    per_question_assignment: List[List[Any]] = []
+    for q_text in questions:
+        opts_data = results.get(q_text) or []
+
+        verbatim_pool = _verbatim_pool(opts_data)
+        if verbatim_pool:
+            # Open-ended question: no aggregate count to reconcile against, just a
+            # representative quote pool. Assign each respondent one quote (with
+            # replacement, since the pool is far smaller than the respondent count).
+            per_question_assignment.append(
+                [rng.choice(verbatim_pool) for _ in range(total_respondents)]
+            )
+            continue
+
+        if isinstance(opts_data, list):
+            opts = [str(d.get("option", "")) for d in opts_data if isinstance(d, dict)]
+            counts = [max(int(d.get("count", 0) or 0), 0) for d in opts_data if isinstance(d, dict)]
+        else:
+            opts, counts = [], []
+
+        is_multi = _is_multi_select_type(_lookup_question_type(question_types, q_text))
+
+        if not opts or total_respondents == 0:
+            per_question_assignment.append([([] if is_multi else "") for _ in range(total_respondents)])
+        elif is_multi:
+            per_question_assignment.append(_exact_multi_select_assignment(rng, opts, counts, total_respondents))
+        else:
+            per_question_assignment.append(_exact_single_select_assignment(rng, opts, counts, total_respondents))
+
     buffer = io.StringIO()
     writer = csv.writer(buffer)
     writer.writerow(headers)
     writer.writerow(question_text_row)
 
+    respondent_idx = 0
     for persona_idx, (persona_id, sample_size) in enumerate(persona_sample_sizes.items(), 1):
         persona_name = persona_names_map.get(persona_id, f"Persona_{persona_idx}")
-
-        # Pre-build option lists + weights per question (reused across all respondents)
-        q_options: List[List[str]] = []
-        q_weights: List[List[float]] = []
-        for q_text in questions:
-            opts_data = results.get(q_text) or []
-            if isinstance(opts_data, list):
-                opts = [str(d.get("option", "")) for d in opts_data if isinstance(d, dict)]
-                counts = [max(float(d.get("count", 0) or 0), 0) for d in opts_data if isinstance(d, dict)]
-            else:
-                opts, counts = [], []
-            q_options.append(opts)
-            q_weights.append(counts if sum(counts) > 0 else [1.0] * len(opts))
 
         for respondent_num in range(1, sample_size + 1):
             row: List[Any] = [
@@ -339,13 +442,11 @@ def build_survey_results_csv_bytes(
                 persona_name,
                 sample_size,
             ]
-            for opts, weights in zip(q_options, q_weights):
-                if opts:
-                    chosen = rng.choices(opts, weights=weights, k=1)[0]
-                else:
-                    chosen = ""
-                row.append(chosen)
+            for q_assignment in per_question_assignment:
+                value = q_assignment[respondent_idx] if respondent_idx < len(q_assignment) else ""
+                row.append("; ".join(value) if isinstance(value, list) else value)
             writer.writerow(row)
+            respondent_idx += 1
 
     return ("\ufeff" + buffer.getvalue()).encode("utf-8")
 

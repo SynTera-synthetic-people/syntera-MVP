@@ -183,7 +183,7 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
     • Minimum: 4 questions per section (mandatory) 
     • Target: 4-6 questions per section (recommended) 
     • Maximum: 8 questions per section (avoid survey fatigue) 
-    • No exceptions — all sections including S1 Population Characteristics must have minimum 4 questions
+    • No exceptions — all sections including S1 Sample Characteristics must have minimum 4 questions
     TOTAL QUESTIONS BY COMPLEXITY: 
     • Simple objectives (3-5 sections): 12-30 questions total 
     • Moderate objectives (5-8 sections): 20-48 questions total 
@@ -1105,7 +1105,7 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
 
     Apply this gold-standard funnel (sections may be reordered based on flow logic, but generally follow safe-to-vulnerable, concrete-to-abstract progression):
 
-    S1: Population Characteristics
+    S1: Sample Characteristics
         Qualify respondents. Confirm eligibility.
         Primarily S questions. Tagged for demographic and behavioral qualification.
 
@@ -1267,9 +1267,9 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
     • Complex objectives (6-8 themes) → 7-10 sections
 
     MANDATORY SECTIONS (always include):
-    • S1: Population Characteristics (Theme: Contextual Framing)
+    • S1: Sample Characteristics (Theme: Contextual Framing)
     • S_DEMO: final section, Theme: Contextual Framing. Its "title" MUST be the exact
-      literal string "Population Profile" — do not rename, paraphrase, or invent an
+      literal string "Sample Profile" — do not rename, paraphrase, or invent an
       alternative (e.g. "My Profile", "About You", "Demographics & Classification").
       This is the one section exempt from the "make titles objective-specific" rule below.
 
@@ -1291,7 +1291,7 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
     • Target 4-6 questions per section for optimal coverage
 
     MANDATORY QUESTION ALLOCATION: 
-    • S1 Population Characteristics: 4-6 questions (qualification + context setting)
+    • S1 Sample Characteristics: 4-6 questions (qualification + context setting)
     • S_DEMO
 
     Demographics: 4-6 questions (standard demographics) 
@@ -1382,10 +1382,10 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
         - Complex objectives (6-8 themes): 7-10 sections generated
     □ Each relevant theme from Step 3 has a dedicated section
     □ No more than 2 sections share the same section_theme value
-    □ Minimum section count: at least 3 sections (Population Characteristics, Core, Demographics)
+    □ Minimum section count: at least 3 sections (Sample Characteristics, Core, Demographics)
     
     QUESTION COUNT PER SECTION (MANDATORY)
-    □ Every section has MINIMUM 4 questions — NO exceptions, including S1 Population Characteristics
+    □ Every section has MINIMUM 4 questions — NO exceptions, including S1 Sample Characteristics
     □ Every thematic section has at least 3 S/M questions 
         - Ensures statistical validity - Prevents OE-only sections
     □ No section exceeds 8 questions - Prevents respondent overload in single theme
@@ -1479,7 +1479,7 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
     "$res_desc"
     Generate section names that are SPECIFIC to that research objective — not generic labels.
     EXCEPTION: the final S_DEMO section's title is NOT objective-specific — it MUST always be
-    the exact literal string "Population Profile", verbatim, regardless of research objective.
+    the exact literal string "Sample Profile", verbatim, regardless of research objective.
 
     NOTE: This template shows the REQUIRED question density. ALL sections including S1 must have 4-6 questions.
     Replicate the S2 pattern for every section — no section may have fewer than 4 questions.
@@ -1489,7 +1489,7 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
     {
       "section_id": "S1",
       "section_theme": "Contextual Framing",
-      "title": "Population Characteristics",
+      "title": "Sample Characteristics",
       "questions": [
         {
           "question_id": "Q1",
@@ -1620,7 +1620,7 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
     {
       "section_id": "S_DEMO",
       "section_theme": "Contextual Framing",
-      "title": "Population Profile",
+      "title": "Sample Profile",
       "questions": [ "*** GENERATE 4-6 QUESTIONS FOLLOWING THE S2 PATTERN ABOVE ***" ]
     }
   ]
@@ -1680,7 +1680,7 @@ async def generate_questionnaire(objective, personas_list, population, explorati
         data = json.loads(raw)
         sections = data.get("sections", [])
         if sections:
-            sections[0]["title"] = "Population Characteristics"
+            sections[0]["title"] = "Sample Characteristics"
         return data, None
     except:
         return None, "Invalid JSON from LLM"

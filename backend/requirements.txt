@@ -30,6 +30,7 @@ Markdown==3.10.2
 pandas>=2.1.4
 numpy>=1.26.2
 openpyxl
+matplotlib>=3.8.0
 
 # ML Models
 scikit-learn==1.8.0

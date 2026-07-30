@@ -601,6 +601,9 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
         {viewingCard !== null && (
           <InsightViewerModalQuant
             cardId={viewingCard}
+            workspaceId={workspaceId}
+            explorationId={explorationId}
+            getSimulationId={ensureSurveySimulationId}
             onClose={() => setViewingCard(null)}
             onDownload={handleModalDownload}
             isDownloading={isModalDownloading}

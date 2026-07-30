@@ -277,3 +277,85 @@ pre, code {
     line-height: 1.5;
     margin: 0;
 }
+
+/* ── Audience Characteristics: chart + table side-by-side ──
+   Uses a real HTML table for the two-column layout (not flex/grid) since
+   xhtml2pdf's reportlab backend does not support CSS flexbox or grid. */
+.quant-chart-table-layout {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    margin: 10px 0 14px 0;
+    page-break-inside: avoid;
+}
+
+.quant-chart-table-layout td {
+    border: none;
+    background: transparent;
+    padding: 0;
+    vertical-align: top;
+}
+
+.quant-chart-cell {
+    width: 38%;
+    padding-right: 12px;
+}
+
+.quant-chart-table-cell {
+    width: 62%;
+}
+
+.quant-chart-table-cell table {
+    margin: 0;
+}
+
+.quant-chart-image {
+    /* xhtml2pdf (reportlab) cannot resolve percentage widths on <img> —
+       it logs "getSize: Not a float '100%'" and falls back to the image's
+       native pixel size, which can overflow the cell. Fixed mm sized for a
+       .quant-chart-grid-cell (~50% of the ~182mm content width, minus cell
+       padding) avoids that — see .quant-chart-grid below. */
+    width: 78mm;
+}
+
+.quant-chart-heading-cell {
+    /* Lives inside .quant-chart-table-cell, above the mini-table, in the
+       SAME <tr> as the chart <td> (not a preceding sibling row/element) so
+       the heading can never be stranded on the previous page while the
+       unsplittable chart+table row below it moves to the next one. */
+    font-size: 10.5px;
+    font-weight: 700;
+    color: #1F4788;
+    margin: 0 0 4px 0;
+}
+
+/* Fallback for a characteristic with no chart available (audience_charts
+   empty/missing) — heading and mini-table as plain sibling elements; no
+   nested-table atomicity concern here since there's no image cell involved. */
+.quant-audience-subblock {
+    margin: 0 0 10px 0;
+    page-break-inside: avoid;
+}
+
+/* ── Audience Characteristics: 2-column chart grid ──
+   Each pair of characteristics is its own small <table> (not one big table
+   with many <tr>s, and not CSS grid/flex — xhtml2pdf's reportlab backend
+   supports neither) so page-break-inside:avoid keeps a PAIR together without
+   forcing the whole grid to stay on one page; natural page breaks can still
+   fall between pairs. Wraps to a new row every 2 items; an odd final item
+   gets an empty sibling cell so its column width stays consistent. */
+.quant-chart-grid {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    margin: 0 0 10px 0;
+    page-break-inside: avoid;
+}
+
+.quant-chart-grid-cell {
+    width: 50%;
+    padding: 0 8px 10px 0;
+    vertical-align: top;
+    border: none;
+    background: transparent;
+}
