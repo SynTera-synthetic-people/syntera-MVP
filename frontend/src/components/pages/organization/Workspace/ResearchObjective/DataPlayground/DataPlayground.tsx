@@ -1,4 +1,5 @@
-import React, { useState, useCallback } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { toast } from 'react-toastify';
 import './DataPlayground.css';
 import FrequencyTable from './tabs/FrequencyTable';
 import CrossTabs from './tabs/CrossTabs';
@@ -7,6 +8,14 @@ import InsightsSummary from './tabs/InsightsSummary';
 import CodedData from './tabs/CodedData';
 import LabelledData from './tabs/LabelledData';
 import DownloadModal from './DownloadModal';
+import EmptyState from './EmptyState';
+import {
+  useDatasetFromSurveySimulation,
+  useRunFrequency,
+  useRunCrosstab,
+} from '../../../../../../hooks/useDataPlaygroundQueries';
+import { extractErrorMessage } from '../../../../../../services/dataPlaygroundService';
+import type { FrequencyResult, CrosstabTable } from '../../../../../../services/dataPlaygroundService';
 
 export type TabId =
   | 'frequency'
@@ -19,6 +28,10 @@ export type TabId =
 export interface Variable {
   id: string;
   label: string;
+  /** Backend-inferred type (categorical/numeric/open_text/demographic/identifier) — optional
+   * since it's only populated once a real dataset is loaded; used to pick sensible defaults
+   * (e.g. skipping identifier columns) without needing a second lookup. */
+  dataType?: string;
 }
 
 export interface DownloadOptions {
@@ -29,6 +42,13 @@ export interface DownloadOptions {
 }
 
 interface DataPlaygroundProps {
+  workspaceId?: string;
+  explorationId?: string;
+  /** Survey simulation to auto-load as the active dataset — Data Playground
+   * has no manual upload step; the Insight Generation page only enables
+   * this card once a survey simulation exists, so this should always be
+   * present by the time the modal opens. */
+  surveySimulationId?: string;
   onClose?: () => void;
 }
 
@@ -41,42 +61,13 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'labelled', label: 'Labelled Data' },
 ];
 
-const RUN_TABS = new Set<TabId>(['frequency', 'crosstabs', 'chart']);
+// Tabs that use the "Run <X>" primary action in the footer.
+const RUN_TABS = new Set<TabId>(['frequency', 'crosstabs']);
 
-export const ALL_VARIABLES: Variable[] = [
-  { id: 'respid', label: 'respid' },
-  { id: 'LOISec', label: 'LOISec' },
-  { id: 'status', label: 'status' },
-  { id: 'Comments', label: 'Comments' },
-  { id: 'S1', label: 'S1' },
-  { id: 'S1_14_other', label: 'S1_14_other' },
-  { id: 'S2', label: 'S2' },
-  { id: 'S3', label: 'S3' },
-  { id: 'S4', label: 'S4' },
-  { id: 'S4_24_other', label: 'S4_24_other' },
-  { id: 'S5', label: 'S5' },
-  { id: 'S5_9_other', label: 'S5_9_other' },
-  { id: 'S6', label: 'S6' },
-  { id: 'S6_7_other', label: 'S6_7_other' },
-  { id: 'S7_1', label: 'S7_1' },
-  { id: 'S7_2', label: 'S7_2' },
-  { id: 'S7_3', label: 'S7_3' },
-  { id: 'S7_4', label: 'S7_4' },
-  { id: 'S7_5', label: 'S7_5' },
-  { id: 'S7_6', label: 'S7_6' },
-  { id: 'S7_7', label: 'S7_7' },
-  { id: 'S8', label: 'S8' },
-  { id: 'S8_6_other', label: 'S8_6_other' },
-  { id: 'S9_1', label: 'S9_1' },
-  { id: 'Q1_1', label: 'Q1_1' },
-  { id: 'Q1_2', label: 'Q1_2' },
-  { id: 'Q1_3', label: 'Q1_3' },
-  { id: 'Q1_4', label: 'Q1_4' },
-  { id: 'Q1_5', label: 'Q1_5' },
-  { id: 'Q1_6', label: 'Q1_6' },
-  { id: 'Q1_7', label: 'Q1_7' },
-  { id: 'Q1_8', label: 'Q1_8' },
-];
+// Tabs whose footer always shows a download-style action, regardless of
+// whether a "Run" has produced hasResults (Coded/Labelled data render
+// immediately since they don't require variable selection).
+const ALWAYS_DOWNLOAD_TABS = new Set<TabId>(['coded', 'labelled']);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -104,19 +95,54 @@ function moveItemDown<T>(arr: T[], index: number): T[] {
   return next;
 }
 
+/** Move the item at `from` to sit at index `to`, shifting the rest. */
+function reorderItem<T>(arr: T[], from: number, to: number): T[] {
+  if (from === to || from < 0 || to < 0 || from >= arr.length || to >= arr.length) return arr;
+  const next = [...arr];
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved!);
+  return next;
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
-const DataPlayground: React.FC<DataPlaygroundProps> = ({ onClose }) => {
+const DataPlayground: React.FC<DataPlaygroundProps> = ({
+  workspaceId, explorationId, surveySimulationId, onClose,
+}) => {
   const [activeTab, setActiveTab] = useState<TabId>('frequency');
   const [hasResults, setHasResults] = useState(false);
   const [showDownload, setShowDownload] = useState(false);
 
+  // ── Dataset context ───────────────────────────────────────────────────────
+  // No manual upload: Data Playground's dataset is always the current
+  // exploration's survey simulation results, auto-imported the moment this
+  // modal opens (the entry point on Insight Generation stays disabled until
+  // a survey simulation exists, so surveySimulationId should already be set).
+
+  const surveyImportQuery = useDatasetFromSurveySimulation(workspaceId, explorationId, surveySimulationId);
+  const dataset = surveyImportQuery.data;
+  const datasetId = dataset?.dataset_id ?? null;
+
+  const allVariables: Variable[] = useMemo(
+    () => (dataset?.variables ?? []).map((v) => ({
+      id: v.variable_name,
+      label: v.display_name,
+      dataType: v.data_type,
+    })),
+    [dataset]
+  );
+
   // Frequency tab state
   const [selectedVars, setSelectedVars] = useState<Variable[]>([]);
+  const [frequencyResults, setFrequencyResults] = useState<FrequencyResult[] | null>(null);
 
   // Cross tabs state
   const [bannerVars, setBannerVars] = useState<Variable[]>([]);
   const [mainVars, setMainVars] = useState<Variable[]>([]);
+  const [crosstabTables, setCrosstabTables] = useState<CrosstabTable[] | null>(null);
+
+  const runFrequencyMutation = useRunFrequency();
+  const runCrosstabMutation = useRunCrosstab();
 
   const [downloadOptions, setDownloadOptions] = useState<DownloadOptions>({
     sheets: 'all',
@@ -124,6 +150,23 @@ const DataPlayground: React.FC<DataPlaygroundProps> = ({ onClose }) => {
     display: 'both',
     toc: true,
   });
+
+  // A newly-loaded dataset invalidates any variable selection / results
+  // picked against whatever was active before.
+  useEffect(() => {
+    setSelectedVars([]);
+    setBannerVars([]);
+    setMainVars([]);
+    setFrequencyResults(null);
+    setCrosstabTables(null);
+    setHasResults(false);
+  }, [datasetId]);
+
+  useEffect(() => {
+    if (surveyImportQuery.isError) {
+      toast.error(extractErrorMessage(surveyImportQuery.error, 'Failed to load survey results'));
+    }
+  }, [surveyImportQuery.isError, surveyImportQuery.error]);
 
   // ── Tab change ────────────────────────────────────────────────────────────
 
@@ -155,9 +198,9 @@ const DataPlayground: React.FC<DataPlaygroundProps> = ({ onClose }) => {
   }, []);
 
   const handleFreqSelectAll = useCallback(() => {
-    setSelectedVars([...ALL_VARIABLES]);
+    setSelectedVars([...allVariables]);
     setHasResults(false);
-  }, []);
+  }, [allVariables]);
 
   const handleFreqMoveUp = useCallback((index: number) => {
     setSelectedVars((prev) => moveItemUp(prev, index));
@@ -165,6 +208,15 @@ const DataPlayground: React.FC<DataPlaygroundProps> = ({ onClose }) => {
 
   const handleFreqMoveDown = useCallback((index: number) => {
     setSelectedVars((prev) => moveItemDown(prev, index));
+  }, []);
+
+  const handleFreqReorder = useCallback((from: number, to: number) => {
+    setSelectedVars((prev) => reorderItem(prev, from, to));
+  }, []);
+
+  const handleFreqVarAdd = useCallback((variable: Variable) => {
+    setHasResults(false);
+    setSelectedVars((prev) => (prev.find((v) => v.id === variable.id) ? prev : [...prev, variable]));
   }, []);
 
   // ── Cross tab handlers ────────────────────────────────────────────────────
@@ -207,52 +259,134 @@ const DataPlayground: React.FC<DataPlaygroundProps> = ({ onClose }) => {
 
   // ── Run ───────────────────────────────────────────────────────────────────
 
-  const handleRun = useCallback(() => {
-    setHasResults(true);
-  }, []);
+  const handleRun = useCallback(async () => {
+    if (!datasetId) return;
+
+    if (activeTab === 'frequency') {
+      try {
+        const results = await runFrequencyMutation.mutateAsync({
+          workspaceId,
+          explorationId,
+          datasetId,
+          variables: selectedVars.map((v) => v.id),
+        });
+        setFrequencyResults(results);
+        setHasResults(true);
+      } catch (err) {
+        toast.error(extractErrorMessage(err, 'Failed to run frequency table'));
+      }
+      return;
+    }
+
+    if (activeTab === 'crosstabs') {
+      try {
+        const tables = await runCrosstabMutation.mutateAsync({
+          workspaceId,
+          explorationId,
+          datasetId,
+          bannerVariables: bannerVars.map((v) => v.id),
+          mainVariables: mainVars.map((v) => v.id),
+        });
+        setCrosstabTables(tables);
+        setHasResults(true);
+      } catch (err) {
+        toast.error(extractErrorMessage(err, 'Failed to run cross tab'));
+      }
+    }
+  }, [
+    activeTab, datasetId, workspaceId, explorationId,
+    selectedVars, bannerVars, mainVars,
+    runFrequencyMutation, runCrosstabMutation,
+  ]);
 
   const getRunLabel = (): string => {
-    switch (activeTab) {
-      case 'frequency': return 'Run Frequency';
-      case 'crosstabs': return 'Run Cross Tab';
-      case 'chart': return 'Generate Chart';
-      default: return 'Run';
-    }
+    if (activeTab === 'frequency') return runFrequencyMutation.isPending ? 'Running...' : 'Run Frequency';
+    if (activeTab === 'crosstabs') return runCrosstabMutation.isPending ? 'Running...' : 'Run Cross Tab';
+    return 'Run';
   };
 
   const isRunEnabled = (): boolean => {
-    if (activeTab === 'frequency') return selectedVars.length > 0;
-    if (activeTab === 'crosstabs') return bannerVars.length > 0 && mainVars.length > 0;
+    if (!datasetId) return false;
+    if (activeTab === 'frequency') return selectedVars.length > 0 && !runFrequencyMutation.isPending;
+    if (activeTab === 'crosstabs') {
+      return bannerVars.length > 0 && mainVars.length > 0 && !runCrosstabMutation.isPending;
+    }
     return true;
   };
 
   const showRunBtn = RUN_TABS.has(activeTab);
+  // Footer download button: label differs for the report vs raw-data tabs,
+  // and Coded/Labelled Data show it unconditionally since there's no "Run"
+  // step gating their content.
+  const showDownloadBtn =
+    ALWAYS_DOWNLOAD_TABS.has(activeTab) ||
+    activeTab === 'chart' ||
+    activeTab === 'insights' ||
+    (hasResults && (activeTab === 'frequency' || activeTab === 'crosstabs'));
+
+  const getDownloadLabel = (): string => {
+    if (activeTab === 'insights') return 'Download Report';
+    if (activeTab === 'coded' || activeTab === 'labelled') return 'Download Data';
+    return 'Download Data';
+  };
 
   // ── Render tab content ────────────────────────────────────────────────────
 
   const renderTabContent = () => {
+    if (surveyImportQuery.isLoading) {
+      return (
+        <div className="dp-content-area">
+          <EmptyState title="Loading your survey results…" subtitle="This only takes a moment" />
+        </div>
+      );
+    }
+
+    if (surveyImportQuery.isError) {
+      return (
+        <div className="dp-content-area">
+          <EmptyState
+            title="Couldn't load survey results"
+            subtitle={extractErrorMessage(surveyImportQuery.error, 'Something went wrong — please try again')}
+          />
+          <div style={{ display: 'flex', justifyContent: 'center', marginTop: 12 }}>
+            <button className="dp-toolbar-btn" onClick={() => surveyImportQuery.refetch()}>
+              Retry
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     switch (activeTab) {
       case 'frequency':
         return (
           <FrequencyTable
-            allVariables={ALL_VARIABLES}
+            allVariables={allVariables}
             selectedVars={selectedVars}
             hasResults={hasResults}
+            results={frequencyResults}
+            isRunning={runFrequencyMutation.isPending}
+            hasDataset={!!datasetId}
             onVarToggle={handleFreqVarToggle}
+            onVarAdd={handleFreqVarAdd}
             onVarRemove={handleFreqVarRemove}
             onClearAll={handleFreqClearAll}
             onSelectAll={handleFreqSelectAll}
             onMoveUp={handleFreqMoveUp}
             onMoveDown={handleFreqMoveDown}
+            onReorder={handleFreqReorder}
           />
         );
       case 'crosstabs':
         return (
           <CrossTabs
-            allVariables={ALL_VARIABLES}
+            allVariables={allVariables}
             bannerVars={bannerVars}
             mainVars={mainVars}
             hasResults={hasResults}
+            tables={crosstabTables}
+            isRunning={runCrosstabMutation.isPending}
+            hasDataset={!!datasetId}
             onAddToBanner={handleCrossAddToBanner}
             onAddToMain={handleCrossAddToMain}
             onBannerRemove={handleBannerRemove}
@@ -266,16 +400,39 @@ const DataPlayground: React.FC<DataPlaygroundProps> = ({ onClose }) => {
       case 'chart':
         return (
           <ChartVisuals
-            allVariables={ALL_VARIABLES}
-            hasResults={hasResults}
+            allVariables={allVariables}
+            workspaceId={workspaceId}
+            explorationId={explorationId}
+            datasetId={datasetId}
           />
         );
       case 'insights':
-        return <InsightsSummary />;
+        return (
+          <InsightsSummary
+            workspaceId={workspaceId}
+            explorationId={explorationId}
+            datasetId={datasetId}
+            active={activeTab === 'insights'}
+          />
+        );
       case 'coded':
-        return <CodedData />;
+        return (
+          <CodedData
+            workspaceId={workspaceId}
+            explorationId={explorationId}
+            datasetId={datasetId}
+            active={activeTab === 'coded'}
+          />
+        );
       case 'labelled':
-        return <LabelledData />;
+        return (
+          <LabelledData
+            workspaceId={workspaceId}
+            explorationId={explorationId}
+            datasetId={datasetId}
+            active={activeTab === 'labelled'}
+          />
+        );
       default:
         return null;
     }
@@ -294,10 +451,6 @@ const DataPlayground: React.FC<DataPlaygroundProps> = ({ onClose }) => {
             </p>
           </div>
           <div className="dp-header-right">
-            <button className="dp-upload-btn">
-              <span className="dp-upload-icon">↑</span>
-              Upload Data
-            </button>
             <button className="dp-close-btn" onClick={onClose} aria-label="Close">
               ✕
             </button>
@@ -323,13 +476,13 @@ const DataPlayground: React.FC<DataPlaygroundProps> = ({ onClose }) => {
         {/* ── Footer ── */}
         <div className="dp-footer">
           <div className="dp-footer-left">
-            {hasResults && (
+            {showDownloadBtn && (
               <button
                 className="dp-download-btn"
                 onClick={() => setShowDownload(true)}
               >
                 <span className="dp-download-icon">⬇</span>
-                Download Data
+                {getDownloadLabel()}
               </button>
             )}
           </div>
@@ -353,7 +506,7 @@ const DataPlayground: React.FC<DataPlaygroundProps> = ({ onClose }) => {
           onChange={setDownloadOptions}
           onClose={() => setShowDownload(false)}
           onDownload={() => {
-            // TODO: wire actual download logic
+            toast.info('Export is coming soon');
             setShowDownload(false);
           }}
         />

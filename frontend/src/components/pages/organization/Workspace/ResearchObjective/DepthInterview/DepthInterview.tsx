@@ -3,7 +3,7 @@ import { useObjectives } from '../../../../../../context/ObjectiveContext';
 import { useLoaderActive } from '../../../../../../context/LoaderActiveContext';
 import ChatView from './ChatView';
 import { motion, AnimatePresence } from 'framer-motion';
-import { TbLoader, TbX, TbPlus, TbAlertCircle, TbPaperclip, TbExternalLink, TbDownload } from 'react-icons/tb';
+import { TbLoader, TbX, TbPlus, TbAlertCircle } from 'react-icons/tb';
 import SpIcon from '../../../../../SPIcon';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import GuideValidationModal from './components/GuideValidationModal';
@@ -18,13 +18,8 @@ import {
   useDownloadDiscussionGuide,
 } from '../../../../../../hooks/useDiscussionGuide';
 import { useOmniWorkflow } from '../../../../../../hooks/useOmiWorkflow';
-import { usePersonaBuilder } from '../../../../../../hooks/usePersonaBuilder';
-import { useArtifactPipelineRun, getArtifactRunStageLabel } from '../../../../../../hooks/useArtifactPipelineRun';
-import { artifactPipelineService } from '../../../../../../services/artifactPipelineService';
-import { interviewService } from '../../../../../../services/interviewService';
 import { getAxiosErrorMessage } from '../../../../../../utils/axiosBlobError';
 import DiscussionGuideLoader from './DiscussionGuideLoader';
-import OmiKeyboard from "../../../../../../assets/Omi Animations/OmiKeyboard.mp4";
 import './DepthInterview.css';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -77,70 +72,6 @@ const validateFile = (file: File): UploadError => {
   if (file.size > MAX_FILE_SIZE_BYTES) return 'size';
   return null;
 };
-
-// ── Submitted artifact data (Research Objective Framer) ──────────────────────
-//
-// Mirrors ResearchObjectiveFramer's localStorage snapshot key. That component
-// strips raw File objects before persisting (see stripFilesForStorage there),
-// so file entries here only carry fileName/fileSizeLabel — never bytes. `url`
-// is included defensively in case a backend-hosted URL is ever added to that
-// payload; when present it's used to render an actual image preview instead
-// of a generic file icon.
-
-interface SubmittedArtifactFile {
-  fileName: string;
-  fileSizeLabel?: string | null;
-  // Base64 data URL of the file's actual bytes, written by
-  // ResearchObjectiveFramer's handleSubmitArtifact right before the
-  // submitted snapshot is persisted. This is what lets us render a real
-  // image preview (or offer a real download for non-image files) instead
-  // of just a filename. Absent for artifacts submitted before this field
-  // existed, or if the read failed — in that case we fall back to a
-  // plain, non-interactive file card.
-  dataUrl?: string | null;
-}
-
-interface SubmittedArtifactData {
-  instruction: string;
-  links: string[];
-  files: SubmittedArtifactFile[];
-}
-
-const framerSubmittedDataKey = (objectiveId?: string) =>
-  `ro_framer_submitted_data_${objectiveId ?? 'unknown'}`;
-
-const loadSubmittedArtifact = (objectiveId?: string): SubmittedArtifactData | null => {
-  try {
-    const saved = localStorage.getItem(framerSubmittedDataKey(objectiveId));
-    if (!saved) return null;
-    const parsed = JSON.parse(saved);
-    const artifact = parsed?.material?.artifact;
-    if (!artifact) return null;
-
-    const links: string[] = Array.isArray(artifact.links)
-      ? artifact.links
-          .map((l: any) => (typeof l === 'string' ? l : l?.value))
-          .filter((v: any): v is string => Boolean(v && String(v).trim()))
-      : [];
-
-    const files: SubmittedArtifactFile[] = Array.isArray(artifact.files)
-      ? artifact.files
-          .filter((f: any) => f?.fileName)
-          .map((f: any) => ({
-            fileName: f.fileName,
-            fileSizeLabel: f.fileSizeLabel ?? null,
-            dataUrl: f.dataUrl ?? null,
-          }))
-      : [];
-
-    if (!links.length && !files.length) return null;
-    return { instruction: artifact.instruction ?? '', links, files };
-  } catch {
-    return null;
-  }
-};
-
-const isImageFileName = (name: string) => /\.(png|jpe?g|gif|webp|svg)$/i.test(name);
 
 // ── Shared Modal Shell ────────────────────────────────────────────────────────
 
@@ -285,112 +216,6 @@ const DeleteModal: React.FC<DeleteModalProps> = ({ target, isPending, onConfirm,
   </ModalOverlay>
 );
 
-// ── Artifact File Card ─────────────────────────────────────────────────────
-//
-// Three states, in order of preference:
-//  1. Image + we have its dataUrl  → render an actual <img> preview.
-//  2. Any other file + dataUrl     → whole card becomes a clickable
-//                                     download (video, doc, etc.) so the
-//                                     user gets the real file rather than
-//                                     just being told its name.
-//  3. No dataUrl available         → plain, non-interactive file card
-//                                     (legacy artifacts submitted before
-//                                     dataUrl capture existed).
-
-const ArtifactFileCard: React.FC<{ file: SubmittedArtifactFile }> = ({ file }) => {
-  const isImage = isImageFileName(file.fileName);
-
-  if (isImage && file.dataUrl) {
-    return (
-      <div className="di-artifact-modal__file-card">
-        <img src={file.dataUrl} alt={file.fileName} />
-        <span className="di-artifact-modal__file-name">{file.fileName}</span>
-        {file.fileSizeLabel && (
-          <span className="di-artifact-modal__file-size">{file.fileSizeLabel}</span>
-        )}
-      </div>
-    );
-  }
-
-  if (file.dataUrl) {
-    return (
-      <a
-        className="di-artifact-modal__file-card di-artifact-modal__file-card--download"
-        href={file.dataUrl}
-        download={file.fileName}
-        title={`Download ${file.fileName}`}
-      >
-        <span className="di-artifact-modal__file-download-icon">
-          <SpIcon name="sp-File-File_Blank" size={22} />
-          <TbDownload size={11} className="di-artifact-modal__file-download-badge" />
-        </span>
-        <span className="di-artifact-modal__file-name">{file.fileName}</span>
-        {file.fileSizeLabel && (
-          <span className="di-artifact-modal__file-size">{file.fileSizeLabel}</span>
-        )}
-      </a>
-    );
-  }
-
-  return (
-    <div className="di-artifact-modal__file-card">
-      <SpIcon name="sp-File-File_Blank" size={22} />
-      <span className="di-artifact-modal__file-name">{file.fileName}</span>
-      {file.fileSizeLabel && (
-        <span className="di-artifact-modal__file-size">{file.fileSizeLabel}</span>
-      )}
-    </div>
-  );
-};
-
-// ── Artifact View Modal ───────────────────────────────────────────────────────
-
-const ArtifactViewModal: React.FC<{ data: SubmittedArtifactData; onClose: () => void }> = ({ data, onClose }) => (
-  <ModalOverlay onClose={onClose}>
-    <button className="di-modal__close" onClick={onClose}><TbX size={18} /></button>
-    <h2 className="di-modal__title">Uploaded Artifact</h2>
-    <p className="di-modal__subtitle">Material shared for this exploration</p>
-
-    <div className="di-artifact-modal__body">
-      {data.instruction && (
-        <p className="di-artifact-modal__instruction">{data.instruction}</p>
-      )}
-
-      {data.links.length > 0 && (
-        <div className="di-artifact-modal__section">
-          <h4 className="di-artifact-modal__section-title">Links</h4>
-          <ul className="di-artifact-modal__link-list">
-            {data.links.map((link, i) => (
-              <li key={`${link}-${i}`}>
-                <a
-                  className="di-artifact-modal__link"
-                  href={link.startsWith('http') ? link : `https://${link}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <span className="di-artifact-modal__link-text">{link}</span>
-                  <TbExternalLink size={14} className="di-artifact-modal__link-icon" />
-                </a>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {data.files.length > 0 && (
-        <div className="di-artifact-modal__section">
-          <h4 className="di-artifact-modal__section-title">Files</h4>
-          <div className="di-artifact-modal__file-grid">
-            {data.files.map((file, i) => (
-              <ArtifactFileCard file={file} key={`${file.fileName}-${i}`} />
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  </ModalOverlay>
-);
-
 // ── Main Component ────────────────────────────────────────────────────────────
 
 const DepthInterview: React.FC = () => {
@@ -417,29 +242,14 @@ const DepthInterview: React.FC = () => {
   const { trigger } = useOmniWorkflow();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // ── Artifact pipeline (runs before interviews start) ────────────────────────
-
-  const { personas: fetchedPersonas } = usePersonaBuilder(workspaceId, objectiveId);
-  const personaIds: string[] = ((fetchedPersonas as any)?.data ?? []).map((p: any) => p.id);
-
-  const {
-    startAndAwaitRun,
-    status: artifactRunStatus,
-  } = useArtifactPipelineRun(workspaceId!, objectiveId!);
-
-  const [preparingArtifact, setPreparingArtifact] = useState(false);
-
   // ── UI state ──────────────────────────────────────────────────────────────
 
   const [showChat, setShowChat] = useState(false);
   const [showLoader, setShowLoader] = useState(false);
 
   // Sync loader visibility with the layout so StepSidebar hides Back button
-  // while the discussion guide is being generated/uploaded, or while the
-  // artifact pipeline is running ahead of the interview.
-  useEffect(() => {
-    setLoaderActive(showLoader || preparingArtifact);
-  }, [showLoader, preparingArtifact, setLoaderActive]);
+  // while the discussion guide is being generated or uploaded.
+  useEffect(() => { setLoaderActive(showLoader); }, [showLoader, setLoaderActive]);
   useEffect(() => () => setLoaderActive(false), [setLoaderActive]);
   const [showReadyToast, setShowReadyToast] = useState(false);
   const [openKebabId, setOpenKebabId] = useState<string | null>(null);
@@ -449,16 +259,6 @@ const DepthInterview: React.FC = () => {
 
   // ── Upload validation error ───────────────────────────────────────────────
   const [uploadError, setUploadError] = useState<UploadError>(null);
-
-  // ── Uploaded artifact (from Research Objective Framer / File Upload Modal) ──
-  const [artifactData, setArtifactData] = useState<SubmittedArtifactData | null>(null);
-  const [showArtifactModal, setShowArtifactModal] = useState(false);
-
-  useEffect(() => {
-    setArtifactData(loadSubmittedArtifact(objectiveId));
-    // Re-check whenever the guide data changes/reloads, in case an artifact
-    // was submitted elsewhere in the flow since this screen last mounted.
-  }, [objectiveId, guideData]);
 
   type ModalState =
     | { type: 'editSection'; sectionId: string; currentTitle: string }
@@ -658,83 +458,10 @@ const DepthInterview: React.FC = () => {
   };
 
   // ── Start Interview ───────────────────────────────────────────────────────
-  // Sequential flow: run the artifact pipeline to completion first (if there
-  // are artifact files + personas to run it against), THEN navigate into the
-  // interview flow exactly as before. If there's nothing to run, or the fetch
-  // of available files fails, we skip straight to interviews so this never
-  // becomes a hard blocker.
-  //
-  // Re-visit guard: checked against the BACKEND, not localStorage. If
-  // interviews already exist for this objective (i.e. the user has already
-  // been through this step before — visible as green checkmarks in the
-  // sidebar), the artifact pipeline is skipped entirely and no loader is
-  // ever shown. This is authoritative across browsers/sessions/reloads,
-  // unlike a client-side flag.
 
-  const handleStartInterview = async () => {
+  const handleStartInterview = () => {
     if (objectiveId) localStorage.setItem(`qualitative_sub1_${objectiveId}`, '1');
-
-    const goToInterview = () => {
-      navigate(
-        `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/chatview`,
-        { state: { viewOnly: isViewOnly } }
-      );
-    };
-
-    if (isViewOnly || !workspaceId || !objectiveId) {
-      goToInterview();
-      return;
-    }
-
-    // Already past this step — interviews exist for this objective already,
-    // so don't touch the artifact pipeline at all, don't show its loader.
-    try {
-      const interviewsRes = await interviewService.getInterviews(workspaceId, objectiveId);
-      const existingInterviews = (interviewsRes as any)?.data ?? interviewsRes;
-      if (Array.isArray(existingInterviews) && existingInterviews.length > 0) {
-        goToInterview();
-        return;
-      }
-    } catch (err) {
-      // If we can't tell, don't block on it — fall through to the normal
-      // artifact-pipeline-then-interview flow below.
-      console.error('Could not check for existing interviews:', err);
-    }
-
-    let availableFiles: any[] = [];
-    try {
-      const res = await artifactPipelineService.getAvailableFiles(workspaceId, objectiveId);
-      availableFiles = res?.data ?? [];
-    } catch (err) {
-      console.error('Could not fetch available artifact files, skipping artifact pipeline:', err);
-      goToInterview();
-      return;
-    }
-
-    if (!availableFiles.length || !personaIds.length) {
-      goToInterview();
-      return;
-    }
-
-    setPreparingArtifact(true);
-    try {
-      const finalStatus = await startAndAwaitRun({
-        sourceFileIds: availableFiles,
-        personaIds,
-      });
-
-      // Even on failure we don't hard-block interviews — the run failing
-      // shouldn't trap the user on this screen. Surface it, but proceed.
-      if (!finalStatus || finalStatus.status === 'failed') {
-        console.warn('Artifact pipeline did not complete successfully; proceeding to interviews anyway.');
-      }
-    } catch (err) {
-      console.error('Artifact pipeline threw unexpectedly; proceeding to interviews anyway:', err);
-    } finally {
-      setPreparingArtifact(false);
-    }
-
-    goToInterview();
+    navigate(`/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/chatview`, { state: { viewOnly: isViewOnly } });
   };
 
   const handleDownloadGuide = async () => {
@@ -787,39 +514,6 @@ const DepthInterview: React.FC = () => {
   // ── Render guards ─────────────────────────────────────────────────────────
 
   if (showChat) return <ChatView />;
-
-  // Artifact pipeline running ahead of the interview — blocks this screen
-  // until the run reaches a terminal state, then handleStartInterview
-  // navigates into ChatView on its own.
-  if (preparingArtifact) {
-    return (
-      <div className="di-page di-page--centered">
-        <div className="di-loading">
-          <div className="di-loading__omi-wrap">
-            <video
-              className="di-loading__omi-video"
-              src={OmiKeyboard}
-              autoPlay
-              loop
-              muted
-              playsInline
-            />
-          </div>
-          <p className="di-loading__text">
-            {getArtifactRunStageLabel(artifactRunStatus)}
-          </p>
-          {artifactRunStatus?.status === 'failed' && artifactRunStatus?.error_message && (
-            <p className="di-loading__subtext">{artifactRunStatus.error_message}</p>
-          )}
-          {artifactRunStatus?.status !== 'failed' && artifactRunStatus?.persona_progress && (
-            <p className="di-loading__subtext">
-              {artifactRunStatus.persona_progress.completed}/{artifactRunStatus.persona_progress.total} personas processed
-            </p>
-          )}
-        </div>
-      </div>
-    );
-  }
 
   if (showLoader) return (
     <>
@@ -934,35 +628,23 @@ const DepthInterview: React.FC = () => {
                 Structured to uncover behaviours, motivations, and decision triggers
               </p>
             </div>
-            <div className="di-guide-page-header-right">
-              {artifactData && (
-                <button
-                  className="di-artifact-btn"
-                  onClick={() => setShowArtifactModal(true)}
-                  type="button"
+            <AnimatePresence>
+              {showReadyToast && (
+                <motion.div
+                  className="di-ready-toast"
+                  initial={{ opacity: 0, y: -8, scale: 0.97 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -8, scale: 0.97 }}
+                  transition={{ duration: 0.22 }}
                 >
-                  <TbPaperclip size={16} className="di-artifact-btn__icon" />
-                  Artifact
-                </button>
+                  <SpIcon name="sp-Warning-Circle_Check" size={18} className="di-ready-toast__icon" />
+                  <span>Your Discussion Guide is Ready</span>
+                  <button className="di-ready-toast__close" onClick={() => setShowReadyToast(false)}>
+                    <TbX size={14} />
+                  </button>
+                </motion.div>
               )}
-              <AnimatePresence>
-                {showReadyToast && (
-                  <motion.div
-                    className="di-ready-toast"
-                    initial={{ opacity: 0, y: -8, scale: 0.97 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: -8, scale: 0.97 }}
-                    transition={{ duration: 0.22 }}
-                  >
-                    <SpIcon name="sp-Warning-Circle_Check" size={18} className="di-ready-toast__icon" />
-                    <span>Your Discussion Guide is Ready</span>
-                    <button className="di-ready-toast__close" onClick={() => setShowReadyToast(false)}>
-                      <TbX size={14} />
-                    </button>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
+            </AnimatePresence>
           </div>
 
           <div className="di-guide-card">
@@ -1115,13 +797,6 @@ const DepthInterview: React.FC = () => {
         {modal?.type === 'deleteQuestion' && (
           <DeleteModal target="question" isPending={deleteQuestionMutation.isPending}
             onConfirm={() => deleteQuestion(modal.questionId)} onClose={() => setModal(null)} />
-        )}
-      </AnimatePresence>
-
-      {/* ── Artifact view modal ── */}
-      <AnimatePresence>
-        {showArtifactModal && artifactData && (
-          <ArtifactViewModal data={artifactData} onClose={() => setShowArtifactModal(false)} />
         )}
       </AnimatePresence>
 

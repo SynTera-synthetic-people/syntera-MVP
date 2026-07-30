@@ -15,24 +15,24 @@ export const listPopulationSimulations = async ({ workspaceId, explorationId }) 
   return Array.isArray(payload?.data) ? payload.data : [];
 };
 
-/** Download all questionnaire sections for an exploration as PDF (no simulation needed — questionnaire design page). */
+/** Download all questionnaire sections for an exploration as CSV (no simulation needed — questionnaire design page). */
 export const downloadExplorationQuestionnaireCsv = async ({ workspaceId, explorationId }) => {
   const response = await axiosInstance.get(
     `/workspaces/${workspaceId}/explorations/${explorationId}/questionnaire/export-csv`,
     { responseType: "blob" }
   );
-  const blob = new Blob([response.data], { type: "application/pdf" });
+  const blob = new Blob([response.data], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "questionnaire.pdf";
+  a.download = "questionnaire.csv";
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 };
 
-/** Download questionnaire PDF from server (Q No., Question, Options). */
+/** Download questionnaire CSV from server (Q No., Question, Options). */
 export const downloadQuestionnaireCsvExport = async ({
   workspaceId,
   explorationId,
@@ -47,11 +47,11 @@ export const downloadQuestionnaireCsvExport = async ({
     `/workspaces/${workspaceId}/explorations/${explorationId}/questionnaire/export-csv/${simulationId}${qs}`,
     { responseType: "blob" }
   );
-  const blob = new Blob([response.data], { type: "application/pdf" });
+  const blob = new Blob([response.data], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "questionnaire_exploration.pdf";
+  a.download = "questionnaire_exploration.csv";
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

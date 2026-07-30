@@ -39,7 +39,6 @@ from app.services.report_generation_qual_claude import (
 )
 from app.services.survey_simulation import parse_survey_results_field
 from app.utils.anthropic_client import get_async_anthropic_client
-from app.services.llm_usage_tracker import record_llm_usage, extract_usage_anthropic_message
 
 load_dotenv()
 
@@ -640,8 +639,6 @@ async def call_anthropic(
     model: str = "claude-sonnet-4-5",
     max_tokens: int = 20000,
     temperature: float = 0.9,
-    *,
-    exploration_id: Optional[str] = None,
 ):
     client = get_async_anthropic_client()
     async with client.messages.stream(
@@ -656,24 +653,13 @@ async def call_anthropic(
             }
         ],
     ) as stream:
-        final_message = await stream.get_final_message()
-        input_tokens, output_tokens, usage_raw = extract_usage_anthropic_message(final_message)
-        await record_llm_usage(
-            exploration_id=exploration_id,
-            stage="quant_report",
-            provider="anthropic",
-            model=model,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            usage_raw=usage_raw,
-        )
-        return final_message
+        return await stream.get_final_message()
 
 
-async def _generate_report_markdown_once(payload: dict, system_prompt: str, exploration_id: Optional[str] = None) -> str:
+async def _generate_report_markdown_once(payload: dict, system_prompt: str) -> str:
     try:
         response = await asyncio.wait_for(
-            call_anthropic(payload=payload, system_prompt=system_prompt, exploration_id=exploration_id),
+            call_anthropic(payload=payload, system_prompt=system_prompt),
             timeout=QUANT_REPORT_LLM_TIMEOUT_SECONDS,
         )
     except asyncio.TimeoutError as exc:
@@ -817,7 +803,7 @@ async def _generate_validated_report_markdown(
 ) -> str:
     system_prompt = CTA_ROUTED_QUANT_REPORT_PROMPT_V2.replace("{REPORT_DATE}", _current_report_date())
 
-    md = await _generate_report_markdown_once(payload, system_prompt, exploration_id)
+    md = await _generate_report_markdown_once(payload, system_prompt)
     md = _normalize_cover_header(md)
     md = _fix_cover_linebreaks(md)
     md = _strip_section_prefixes(md)
@@ -847,7 +833,7 @@ async def _generate_validated_report_markdown(
         "- Return only the corrected final markdown report."
     )
 
-    repaired_md = await _generate_report_markdown_once(payload, repair_prompt, exploration_id)
+    repaired_md = await _generate_report_markdown_once(payload, repair_prompt)
     repaired_md = _normalize_cover_header(repaired_md)
     repaired_md = _fix_cover_linebreaks(repaired_md)
     repaired_md = _strip_section_prefixes(repaired_md)
@@ -1056,7 +1042,7 @@ async def _compute_quant_metadata(
             domains_to_try = [inferred_domain] if inferred_domain else list(VALID_DOMAINS)
             for d in domains_to_try:
                 try:
-                    subject_key = await find_subject_key(d, workspace_id=workspace_id)
+                    subject_key = await find_subject_key(workspace_id, d)
                 except Exception as exc:
                     print(f"[ML:quant_persona] find_subject_key failed domain={d!r}: {exc}")
                     break

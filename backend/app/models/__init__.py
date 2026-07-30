@@ -9,12 +9,11 @@ from importlib import import_module
 
 
 MODEL_MODULES = (
-    "artifact_pipeline",
     "billing",
+    "data_playground",
     "decision_room",
     "exploration",
     "interview",
-    "llm_usage",
     "omi",
     "organization",
     "persona",

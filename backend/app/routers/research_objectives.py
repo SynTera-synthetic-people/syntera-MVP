@@ -181,75 +181,31 @@ async def create_objective(
 
 
 
-# Content-category vocabulary the artifact stimulus pipeline's dimension
-# library keys off (see backend/app/data/artifact_dimensions_library.json's
-# artifact_types). Kept here (not imported from the ml library module) since
-# this router only needs the valid-value set for a 400, not the full library.
-ARTIFACT_CONTENT_CATEGORIES = {
-    "ad_creative", "product_concept", "packaging", "landing_page",
-    "pricing_offer", "claim", "script_storyboard",
-}
-# Frontend's own comparison-mode vocabulary (ArtifactCategory in
-# ResearchObjectiveFramer.tsx) — validated here, mapped to ComparisonMode
-# later by the artifact pipeline's create_run, not renamed on the wire.
-ARTIFACT_COMPARISON_MODES = {"compare", "campaign_set"}
-
-
 @router.post("/framer-materials", response_model=SuccessResponse, status_code=201)
 async def submit_framer_material_section(
     exploration_id: str,
     kind: str = Form(...),
     instruction: Optional[str] = Form(None),
-    files: List[UploadFile] = File(default=[]),
+    file: Optional[UploadFile] = File(None),
     links: List[str] = Form(default=[]),
-    artifact_category: Optional[str] = Form(None),
-    comparison_mode: Optional[str] = Form(None),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_active_user),
 ):
     """
-    Submits one Framer "Add Material" section (Research Brief or Artifact) —
-    one-to-several files and/or one-to-several links, plus a shared
-    instruction. Each item is extracted/fetched and LLM-summarized
-    synchronously, in this same request, matching the UI's real-time
-    "processing -> done" bar. Persisted against exploration_id (no
-    ResearchObjectives row exists yet); research_objectives_id is backfilled
-    once the Framer is finally submitted (see /from-framer and
+    Submits one Framer "Add Material" section (Research Brief or Artifact) — a
+    file and/or one-to-several links, plus a shared instruction. Each item is
+    extracted/fetched and LLM-summarized synchronously, in this same request,
+    matching the UI's real-time "processing -> done" bar. Persisted against
+    exploration_id (no ResearchObjectives row exists yet); research_objectives_id
+    is backfilled once the Framer is finally submitted (see /from-framer and
     generate_and_save_research_objective).
 
-    kind="brief": re-submitting REPLACES this section's previous materials —
-    there's only ever one current version, and submitting with nothing
-    clears it (unchanged from before).
-
-    kind="artifact": new files/links are APPENDED to whatever already exists
-    for this exploration instead of replacing it, so a multi-file/multi-link
-    artifact set can be built up across several submissions. artifact_category
-    is required whenever files or links are attached (drives Stage 2
-    dimension selection in the artifact pipeline); comparison_mode is
-    optional and only meaningful once 2+ artifacts exist in total.
+    Re-submitting clicks REPLACE this section's previous materials for this
+    exploration — there's only ever one current version per section. Submitting
+    with no file and no links clears the section.
     """
     if kind not in ("brief", "artifact"):
         raise HTTPException(status_code=400, detail="kind must be 'brief' or 'artifact'")
-
-    clean_links = [l.strip() for l in links if l and l.strip()]
-    clean_files = [f for f in files if f and f.filename]
-
-    if kind == "artifact":
-        if (clean_files or clean_links) and artifact_category not in ARTIFACT_CONTENT_CATEGORIES:
-            raise HTTPException(
-                status_code=400,
-                detail=f"artifact_category is required and must be one of {sorted(ARTIFACT_CONTENT_CATEGORIES)}",
-            )
-        if comparison_mode is not None and comparison_mode not in ARTIFACT_COMPARISON_MODES:
-            raise HTTPException(
-                status_code=400,
-                detail=f"comparison_mode must be one of {sorted(ARTIFACT_COMPARISON_MODES)}",
-            )
-    else:
-        # "brief" materials don't carry these fields — ignore rather than
-        # error, so a stray artifact-shaped payload can't corrupt brief rows.
-        artifact_category = None
-        comparison_mode = None
 
     exploration = await get_exploration_by_id(session, exploration_id)
     if not exploration:
@@ -261,18 +217,18 @@ async def submit_framer_material_section(
             detail="Only workspace admins can submit exploration materials"
         )
 
+    clean_links = [l.strip() for l in links if l and l.strip()]
+
     items: list[dict] = []
 
-    for upload in clean_files:
+    if file:
         try:
-            stored_name, size, content_type, ext = await save_material_file(upload)
+            stored_name, size, content_type, ext = await save_material_file(file)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         try:
             extracted_context = await material_extraction.process_material(
-                material_file_path(stored_name), ext, content_type, instruction or "",
-                exploration_id=exploration_id, workspace_id=exploration.workspace_id,
-                created_by=current_user.id,
+                material_file_path(stored_name), ext, content_type, instruction or ""
             )
         except Exception as e:
             # Extraction/summarization failing should not block the submission — the
@@ -281,22 +237,16 @@ async def submit_framer_material_section(
             extracted_context = ""
         items.append({
             "stored_name": stored_name,
-            "original_name": upload.filename,
+            "original_name": file.filename,
             "content_type": content_type,
             "size": size,
             "instruction": instruction,
             "extracted_context": extracted_context,
-            "artifact_category": artifact_category,
-            "comparison_mode": comparison_mode,
         })
 
     for link in clean_links:
         try:
-            result = await material_extraction.process_material_url(
-                link, instruction or "",
-                exploration_id=exploration_id, workspace_id=exploration.workspace_id,
-                created_by=current_user.id,
-            )
+            result = await material_extraction.process_material_url(link, instruction or "")
         except Exception as e:
             print(f"Error processing Framer material link ({link}): {e}")
             result = {"extracted_context": "", "stored_name": None, "size": None, "content_type": None}
@@ -308,17 +258,14 @@ async def submit_framer_material_section(
             "source_url": link,
             "instruction": instruction,
             "extracted_context": result.get("extracted_context", ""),
-            "artifact_category": artifact_category,
-            "comparison_mode": comparison_mode,
         })
 
     materials = await exp_service.replace_framer_materials_for_kind(
-        session, exploration_id=exploration_id, material_kind=kind, items=items,
-        replace=(kind == "brief"),
+        session, exploration_id=exploration_id, material_kind=kind, items=items
     )
 
     return SuccessResponse(
-        message="Section cleared" if not materials and kind == "brief" else "Saved",
+        message="Section cleared" if not materials else "Saved",
         data=[exp_service.map_material_to_out(m) for m in materials],
     )
 
@@ -353,10 +300,7 @@ async def create_objective_from_framer(
     framer = body.model_dump()
     materials = await exp_service.get_unlinked_materials(session, exploration_id)
     try:
-        synthesis = await exp_service.synthesize_research_objective_from_framer(
-            framer, materials,
-            exploration_id=exploration_id, workspace_id=exploration.workspace_id, created_by=current_user.id,
-        )
+        synthesis = await exp_service.synthesize_research_objective_from_framer(framer, materials)
     except Exception as e:
         # Transient LLM failure (timeout/rate limit/network) — nothing was persisted
         # yet, the Framer's fields and any uploaded/linked materials are untouched,
@@ -387,9 +331,6 @@ async def create_objective_from_framer(
                 description=synthesis["final_objective"],
                 conversation=[],
                 materials=materials,
-                exploration_id=exploration_id,
-                workspace_id=exploration.workspace_id,
-                created_by=current_user.id,
             )
         except Exception as e:
             print(f"Error generating Omi follow-up for Framer submission: {e}")
@@ -545,12 +486,7 @@ async def update_objective(
         )
 
     if description is not None:
-        validation = await exp_service.validate_description_with_llm(
-            description,
-            exploration_id=exploration_id,
-            workspace_id=exploration.workspace_id,
-            created_by=current_user.id,
-        )
+        validation = await exp_service.validate_description_with_llm(description)
 
         if not validation.get("valid", False):
             missing = validation.get("missing", [])

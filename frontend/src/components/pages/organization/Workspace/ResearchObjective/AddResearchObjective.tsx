@@ -645,7 +645,6 @@ const AddResearchObjective: React.FC = () => {
         files: value.artifactFiles,
         links: value.artifactLinks,
         category: value.artifactCategory,
-        artifact_category: value.artifactContentCategory,
       }));
     }
 
@@ -700,7 +699,7 @@ const AddResearchObjective: React.FC = () => {
         onRemove: () => setUploadedMaterial(prev => prev ? { ...prev, briefLink: '' } : null),
       });
     }
-    uploadedMaterial.artifactFiles.forEach((file, i) => {
+        uploadedMaterial.artifactFiles.forEach((file, i) => {
       materialItems.push({
         key: `af-${i}`, type: 'file', label: file.name, badge: 'Artifact',
         onRemove: () => setUploadedMaterial(prev => {

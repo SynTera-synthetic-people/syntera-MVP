@@ -117,32 +117,6 @@ export const usePersonaPreview = (workspaceId, objectiveId, personaId, options =
     queryKey: personaKeys.preview(workspaceId, objectiveId, personaId),
     queryFn: () => personaService.getPersonaPreview(workspaceId, objectiveId, personaId),
     enabled: !!(workspaceId && objectiveId && personaId),
-    // Knowledge Enrichment (enrich_persona_ke_sources) runs as a
-    // fire-and-forget background task AFTER persona generation/calibration's
-    // HTTP response already returned, so the very first preview fetch — made
-    // right after generation, which is the normal "review your persona" flow
-    // — can land before that background task has patched
-    // persona_details.ke_evidence_coverage into the DB. Without polling, the
-    // Evidence Sources modal falls back to a random client-side placeholder
-    // ("Platforms and communities...") forever, even though the real
-    // Knowledge Enrichment data exists moments later — same "poll until the
-    // async job's data lands" pattern already used by useQuestionnaires in
-    // useQuantitativeQueries.ts. Stops as soon as ke_evidence_coverage is
-    // present, is never started for draft (not-yet-calibrated) personas
-    // (KE hasn't run yet by design), and gives up after 3 minutes so a
-    // persona that genuinely never gets KE data (e.g. a provider outage)
-    // doesn't poll forever. 3 minutes, not 90s, because the web-search
-    // fallback step alone was measured taking up to ~86s in a live run
-    // (Anthropic web_search across up to 6 batched queries) — a tighter
-    // cutoff risked giving up moments before real data actually landed.
-    refetchInterval: (query) => {
-      const traits = query.state.data?.data?.traits;
-      if (!traits || traits.ke_evidence_coverage) return false;
-      if (traits.calibration_status === 'draft') return false;
-      const createdAtMs = traits.created_at ? new Date(traits.created_at).getTime() : null;
-      if (createdAtMs && Date.now() - createdAtMs > 180_000) return false;
-      return 4_000;
-    },
     ...options,
   });
 };

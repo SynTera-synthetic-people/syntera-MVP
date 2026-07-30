@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useRef, useState } from "react";
 import SpIcon from "../../../../SPIcon";
 import "./FileUploadModal.css";
 
@@ -12,9 +12,7 @@ const ARTIFACT_MAX_BYTES = 10 * 1024 * 1024;
 
 const ARTIFACT_MAX_LINKS = 3;
 const ARTIFACT_MAX_FILES = 4;
-const ARTIFACT_COMING_SOON = false;
-
-const MATERIAL_INSTRUCTION_MAX_LENGTH = 500;
+const ARTIFACT_COMING_SOON = true;
 
 // How Omi should relate 2+ artifacts within this section to each other.
 // Only surfaced once a second artifact (link or file) is attached — a lone
@@ -38,31 +36,6 @@ const ARTIFACT_CATEGORIES: { id: ArtifactCategory; label: string; description: s
   //   label: "Sequence",
   //   description: "Assets meant to be seen in order — a funnel, a teaser-to-reveal, or a multi-step flow. Omi tests whether each step earns the next.",
   // },
-];
-
-// The kind of creative asset this is — separate from ArtifactCategory
-// (comparison mode) above. Drives dimension selection in the artifact
-// stimulus pipeline (Stage 2) — must match one of the artifact_types keys
-// in backend/app/data/artifact_dimensions_library.json. Required whenever
-// at least one artifact (file or link) is attached, regardless of count.
-// Kept in sync with ResearchObjectiveFramer's ArtifactContentCategory.
-export type ArtifactContentCategory =
-  | "ad_creative"
-  | "product_concept"
-  | "packaging"
-  | "landing_page"
-  | "pricing_offer"
-  | "claim"
-  | "script_storyboard";
-
-const ARTIFACT_CONTENT_CATEGORIES: { id: ArtifactContentCategory; label: string }[] = [
-  { id: "ad_creative", label: "Ad Creative" },
-  { id: "landing_page", label: "Landing Page" },
-  { id: "packaging", label: "Packaging" },
-  { id: "product_concept", label: "Product Concept" },
-  { id: "pricing_offer", label: "Pricing Offer" },
-  { id: "claim", label: "Claim" },
-  { id: "script_storyboard", label: "Script / Storyboard" },
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -100,14 +73,11 @@ interface LinkEntry {
 }
 
 export interface FileUploadModalValue {
-  briefInstruction: string;
   briefFile: File | null;
   briefLink: string;
-  artifactInstruction: string;
   artifactFiles: File[];
   artifactLinks: string[];
   artifactCategory: ArtifactCategory | null;
-  artifactContentCategory: ArtifactContentCategory | null;
 }
 
 interface FileUploadModalProps {
@@ -134,45 +104,6 @@ const PlusIcon: React.FC = () => (
     <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
   </svg>
 );
-
-// ─── Tooltip — fixed: rendered outside normal flow so it never gets clipped
-// by the modal's overflow-y: auto scroll container.
-// ─────────────────────────────────────────────────────────────────────────────
-
-const Tooltip: React.FC<{ text: string }> = ({ text }) => {
-  const [visible, setVisible] = useState(false);
-  const [pos, setPos] = useState({ top: 0, left: 0 });
-  const iconRef = useRef<HTMLSpanElement>(null);
-
-  const showTooltip = () => {
-    if (iconRef.current) {
-      const rect = iconRef.current.getBoundingClientRect();
-      setPos({
-        top: rect.top - 8,   // 8px gap above the icon
-        left: rect.left + rect.width / 2,
-      });
-    }
-    setVisible(true);
-  };
-
-  return (
-    <span
-      className="fum-tooltip-wrap"
-      onMouseEnter={showTooltip}
-      onMouseLeave={() => setVisible(false)}
-    >
-      <span ref={iconRef} className="fum-tooltip-icon" aria-label="More info">?</span>
-      {visible && (
-        <span
-          className="fum-tooltip-bubble"
-          style={{ top: pos.top, left: pos.left }}
-        >
-          {text}
-        </span>
-      )}
-    </span>
-  );
-};
 
 // ─── Upload zone with drag-and-drop (single file — used by Research Brief) ──
 
@@ -445,115 +376,6 @@ const ArtifactCategoryChips: React.FC<ArtifactCategoryChipsProps> = ({ value, on
   </div>
 );
 
-// ─── Custom select (dark-themed dropdown — used for Artifact Content Category) ──
-
-interface CustomSelectOption<T extends string> {
-  id: T;
-  label: string;
-}
-
-interface CustomSelectProps<T extends string> {
-  id?: string | undefined;
-  value: T | null;
-  placeholder: string;
-  options: CustomSelectOption<T>[];
-  onChange: (value: T) => void;
-  disabled?: boolean | undefined;
-}
-
-function CustomSelect<T extends string>({
-  id, value, placeholder, options, onChange, disabled,
-}: CustomSelectProps<T>) {
-  const [open, setOpen] = useState(false);
-  const wrapRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const handleClick = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    const handleKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
-    document.addEventListener("mousedown", handleClick);
-    document.addEventListener("keydown", handleKey);
-    return () => {
-      document.removeEventListener("mousedown", handleClick);
-      document.removeEventListener("keydown", handleKey);
-    };
-  }, [open]);
-
-  const selectedLabel = options.find(o => o.id === value)?.label ?? null;
-
-  return (
-    <div className="fum-custom-select" ref={wrapRef}>
-      <button
-        type="button"
-        id={id}
-        className={[
-          "fum-custom-select-trigger",
-          !selectedLabel ? "fum-custom-select-trigger--placeholder" : "",
-          open ? "fum-custom-select-trigger--open" : "",
-        ].filter(Boolean).join(" ")}
-        onClick={() => !disabled && setOpen(o => !o)}
-        disabled={disabled}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-      >
-        <span>{selectedLabel ?? placeholder}</span>
-        <svg className="fum-custom-select-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </button>
-      {open && (
-        <ul className="fum-custom-select-menu" role="listbox">
-          {options.map(opt => (
-            <li
-              key={opt.id}
-              role="option"
-              aria-selected={opt.id === value}
-              className={[
-                "fum-custom-select-option",
-                opt.id === value ? "fum-custom-select-option--active" : "",
-              ].filter(Boolean).join(" ")}
-              onClick={() => { onChange(opt.id); setOpen(false); }}
-            >
-              {opt.label}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-interface ArtifactContentCategorySelectProps {
-  value: ArtifactContentCategory | null;
-  onChange: (category: ArtifactContentCategory) => void;
-  disabled?: boolean | undefined;
-}
-
-// Required whenever at least one artifact (file or link) is attached —
-// unlike ArtifactCategoryChips (comparison mode) above, which only applies
-// once there are 2+. A single artifact still needs a content category for
-// Stage 2 dimension selection to make sense.
-const ArtifactContentCategorySelect: React.FC<ArtifactContentCategorySelectProps> = ({ value, onChange, disabled }) => (
-  <div className="fum-field-group">
-    <div className="fum-field-label-row">
-      <label className="fum-label" htmlFor="fum-artifact-content-category">
-        Artifact Content Category
-      </label>
-      <Tooltip text="What kind of creative asset is this? Drives which questions Omi asks personas about it." />
-    </div>
-    <CustomSelect
-      id="fum-artifact-content-category"
-      value={value}
-      placeholder="Select a category…"
-      options={ARTIFACT_CONTENT_CATEGORIES}
-      onChange={onChange}
-      disabled={disabled}
-    />
-  </div>
-);
-
 // ─── Link row ─────────────────────────────────────────────────────────────────
 
 interface LinkRowProps {
@@ -610,7 +432,6 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
   isOpen, onClose, onDone, initialValue,
 }) => {
   // Brief
-  const [briefInstruction, setBriefInstruction] = useState(initialValue?.briefInstruction ?? "");
   const [briefLink, setBriefLink] = useState(initialValue?.briefLink ?? "");
   const [briefFile, setBriefFile] = useState<SlotFile | null>(
     initialValue?.briefFile
@@ -619,7 +440,6 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
   );
 
   // Artifact
-  const [artifactInstruction, setArtifactInstruction] = useState(initialValue?.artifactInstruction ?? "");
   const [artifactLinks, setArtifactLinks] = useState<LinkEntry[]>(() => {
     const saved = initialValue?.artifactLinks?.filter(Boolean) ?? [];
     return saved.length
@@ -632,35 +452,25 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
   const [artifactCategory, setArtifactCategory] = useState<ArtifactCategory | null>(
     initialValue?.artifactCategory ?? null
   );
-  const [artifactContentCategory, setArtifactContentCategory] = useState<ArtifactContentCategory | null>(
-    initialValue?.artifactContentCategory ?? null
-  );
 
   if (!isOpen) return null;
 
   // Counts distinct artifacts attached so far (filled links + files), so the
-  // category selectors only appear once there's actually something to relate.
+  // category selector only appears once there's actually something to relate.
   const artifactItemCount =
     artifactLinks.filter(l => l.value.trim()).length + artifactFiles.length;
-  // With 2+ artifacts, a comparison category is required — otherwise Omi
-  // doesn't know whether to compare, unify, or sequence them.
+  // With 2+ artifacts, a category is required — otherwise Omi doesn't know
+  // whether to compare, unify, or sequence them.
   const artifactNeedsCategory = artifactItemCount >= 2 && !artifactCategory;
-  // With 1+ artifacts, a content category is required (independent of
-  // comparison mode) — Stage 2 dimension selection needs it even for a
-  // single artifact.
-  const artifactNeedsContentCategory = artifactItemCount >= 1 && !artifactContentCategory;
 
   const handleDone = () => {
-    if (artifactNeedsCategory || artifactNeedsContentCategory) return;
+    if (artifactNeedsCategory) return;
     onDone({
-      briefInstruction: briefInstruction.trim(),
       briefFile: briefFile?.file ?? null,
       briefLink: briefLink.trim(),
-      artifactInstruction: artifactInstruction.trim(),
       artifactFiles: artifactFiles.map(s => s.file),
       artifactLinks: artifactLinks.map(l => l.value.trim()).filter(Boolean),
       artifactCategory,
-      artifactContentCategory,
     });
     onClose();
   };
@@ -714,29 +524,8 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
               <div className="fum-section-head">
                 <h3 className="fum-section-title">Research Brief</h3>
                 <p className="fum-section-sub">
-                  Share documents that help Omi understand the business problem,
-                  category, audience, key unknowns, or research scope.
+                  Documents, reports, or references to help Omi understand the business context.
                 </p>
-              </div>
-
-              <div className="fum-field-group">
-                <div className="fum-field-label-row">
-                  <label className="fum-label" htmlFor="fum-brief-instruction">
-                    What should Omi understand about this document?
-                    <span className="fum-label-optional">Optional</span>
-                  </label>
-                  <Tooltip text="Tell Omi what to take from this document and how to use it." />
-                </div>
-                <textarea
-                  id="fum-brief-instruction"
-                  className="fum-textarea"
-                  placeholder="This is a research brief. Use it to understand the category, audience, key unknowns, hypotheses, and decisions this exploration should support…"
-                  value={briefInstruction}
-                  maxLength={MATERIAL_INSTRUCTION_MAX_LENGTH}
-                  onChange={e => setBriefInstruction(e.target.value.slice(0, MATERIAL_INSTRUCTION_MAX_LENGTH))}
-                  rows={3}
-                />
-                <p className="fum-field-charcount">{briefInstruction.length}/{MATERIAL_INSTRUCTION_MAX_LENGTH}</p>
               </div>
 
               <LinkRow
@@ -769,83 +558,55 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                   <span className="fum-coming-soon-badge">Coming Soon</span>
                 </div>
               )}
-
-              <div className="fum-section-head">
-                <h3 className="fum-section-title">Artifact</h3>
-                <p className="fum-section-sub">
-                  Share creatives, videos, images, landing pages, claims,
-                  storyboards, prototypes, product flows, or anything you want
-                  Omi to test with personas.
-                </p>
-              </div>
-
-              <div className="fum-field-group">
-                <div className="fum-field-label-row">
-                  <label className="fum-label" htmlFor="fum-artifact-instruction">
-                    What should Omi do with this artifact?
-                    <span className="fum-label-optional">Optional</span>
-                  </label>
-                  <Tooltip text="Tell Omi what to test, decode, or react to in this artifact." />
+              <div className="fum-section">
+                <div className="fum-section-head">
+                  <h3 className="fum-section-title">Artifact</h3>
+                  <p className="fum-section-sub">
+                    Creatives, videos, images, or landing pages for Omi to test with personas.
+                  </p>
                 </div>
-                <textarea
-                  id="fum-artifact-instruction"
-                  className="fum-textarea"
-                  placeholder="This is a campaign creative. Test whether the message is clear, believable, distinctive, and likely to drive interest or purchase intent…."
-                  value={artifactInstruction}
-                  maxLength={MATERIAL_INSTRUCTION_MAX_LENGTH}
-                  onChange={e => setArtifactInstruction(e.target.value.slice(0, MATERIAL_INSTRUCTION_MAX_LENGTH))}
-                  rows={3}
+
+                {artifactLinks.map((link, idx) => (
+                  <LinkRow
+                    key={link.id}
+                    value={link.value}
+                    placeholder="Paste a YouTube, video, image, or page URL"
+                    onChange={value => updateArtifactLink(link.id, value)}
+                    removable={artifactLinks.length > 1 || idx > 0}
+                    onRemove={() => removeArtifactLink(link.id)}
+                  />
+                ))}
+
+                {canAddArtifactLink && (
+                  <button
+                    type="button"
+                    className="fum-add-link-btn"
+                    onClick={() =>
+                      setArtifactLinks(prev => [...prev, { id: makeLinkId(), value: "" }])
+                    }
+                  >
+                    <PlusIcon /> Add another link
+                  </button>
+                )}
+
+                <MultiUploadZone
+                  slots={artifactFiles}
+                  acceptExtensions={ARTIFACT_EXTENSIONS}
+                  maxBytes={ARTIFACT_MAX_BYTES}
+                  maxFiles={ARTIFACT_MAX_FILES}
+                  formatsLabel="PNG, JPG, GIF, WEBP"
+                  compact
+                  onFilesAccepted={addArtifactFiles}
+                  onRemoveAt={removeArtifactFileAt}
                 />
-                <p className="fum-field-charcount">{artifactInstruction.length}/{MATERIAL_INSTRUCTION_MAX_LENGTH}</p>
+
+                {artifactItemCount >= 2 && (
+                  <ArtifactCategoryChips
+                    value={artifactCategory}
+                    onChange={setArtifactCategory}
+                  />
+                )}
               </div>
-
-              {artifactLinks.map((link, idx) => (
-                <LinkRow
-                  key={link.id}
-                  value={link.value}
-                  placeholder="Paste a YouTube, video, image, or page URL"
-                  onChange={value => updateArtifactLink(link.id, value)}
-                  removable={artifactLinks.length > 1 || idx > 0}
-                  onRemove={() => removeArtifactLink(link.id)}
-                />
-              ))}
-
-              {canAddArtifactLink && (
-                <button
-                  type="button"
-                  className="fum-add-link-btn"
-                  onClick={() =>
-                    setArtifactLinks(prev => [...prev, { id: makeLinkId(), value: "" }])
-                  }
-                >
-                  <PlusIcon /> Add another link
-                </button>
-              )}
-
-              <MultiUploadZone
-                slots={artifactFiles}
-                acceptExtensions={ARTIFACT_EXTENSIONS}
-                maxBytes={ARTIFACT_MAX_BYTES}
-                maxFiles={ARTIFACT_MAX_FILES}
-                formatsLabel="PNG, JPG, GIF, WEBP"
-                compact
-                onFilesAccepted={addArtifactFiles}
-                onRemoveAt={removeArtifactFileAt}
-              />
-
-              {artifactItemCount >= 1 && (
-                <ArtifactContentCategorySelect
-                  value={artifactContentCategory}
-                  onChange={setArtifactContentCategory}
-                />
-              )}
-
-              {artifactItemCount >= 2 && (
-                <ArtifactCategoryChips
-                  value={artifactCategory}
-                  onChange={setArtifactCategory}
-                />
-              )}
             </div>
 
           </div>
@@ -860,17 +621,14 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
             </button>
             <div className="fum-footer-done-wrap">
               <button
-                className={["fum-btn-done", (artifactNeedsCategory || artifactNeedsContentCategory) ? "fum-btn-done--disabled" : ""].filter(Boolean).join(" ")}
+                className={["fum-btn-done", artifactNeedsCategory ? "fum-btn-done--disabled" : ""].filter(Boolean).join(" ")}
                 onClick={handleDone}
-                disabled={artifactNeedsCategory || artifactNeedsContentCategory}
+                disabled={artifactNeedsCategory}
                 type="button"
               >
                 Done
               </button>
-              {artifactNeedsContentCategory && (
-                <p className="fum-done-hint">Pick an artifact content category to continue</p>
-              )}
-              {!artifactNeedsContentCategory && artifactNeedsCategory && (
+              {artifactNeedsCategory && (
                 <p className="fum-done-hint">Pick how the artifacts relate to continue</p>
               )}
             </div>

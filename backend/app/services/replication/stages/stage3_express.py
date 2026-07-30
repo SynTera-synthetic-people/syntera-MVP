@@ -21,7 +21,7 @@ Model: gpt-4o — re-expression requires behavioral simulation quality.
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from openai import AsyncOpenAI
 
@@ -33,7 +33,6 @@ from app.services.replication.models import (
 )
 from app.services.replication.prompts import STAGE3_SYSTEM, STAGE3_USER
 from app.services.replication.utils import parse_llm_json
-from app.services.llm_usage_tracker import record_llm_usage, extract_usage_openai_chat
 
 import json
 
@@ -55,11 +54,6 @@ async def re_express_persona(
     psychographic_core: PsychographicCore,
     market_context: MarketContext,
     schema_contract: dict[str, Any],
-    *,
-    exploration_id: Optional[str] = None,
-    workspace_id: Optional[str] = None,
-    persona_id: Optional[str] = None,
-    created_by: Optional[str] = None,
 ) -> ReplicatedTraits:
     """
     Stage 3: rebuild the persona for the target market.
@@ -101,19 +95,6 @@ async def re_express_persona(
         ],
         temperature=0.5,
         response_format={"type": "json_object"},
-    )
-    input_tokens, output_tokens, usage_raw = extract_usage_openai_chat(response)
-    await record_llm_usage(
-        exploration_id=exploration_id,
-        stage="replication_stage3",
-        provider="openai",
-        model="gpt-4o",
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        usage_raw=usage_raw,
-        workspace_id=workspace_id,
-        persona_id=persona_id,
-        created_by=created_by,
     )
 
     full_persona = parse_llm_json(

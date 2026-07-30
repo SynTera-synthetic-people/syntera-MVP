@@ -35,17 +35,6 @@ class Settings(BaseSettings):
     # OpenAI model for combined survey simulation (gpt-4o-mini is fast; gpt-4.1 is slower, often richer)
     SURVEY_SIMULATION_MODEL: str = "gpt-4o-mini"
 
-    # Artifact stimulus pipeline (asset dissection via Gemini, dimension
-    # extraction/discussion guide/persona response via OpenAI). Model strings
-    # here must exactly match the _MODEL_RATES keys in
-    # app/services/llm_usage_tracker.py, or cost tracking for this pipeline
-    # silently records cost_usd=NULL for every call.
-    GEMINI_API_KEY: Optional[str] = None
-    ARTIFACT_DISSECTION_MODEL: str = "gemini-2.5-flash"
-    ARTIFACT_REASONING_MODEL: str = "gpt-4o-mini"
-    # Bound on concurrent Stage-4 (persona response) LLM calls per pipeline run
-    ARTIFACT_PERSONA_CONCURRENCY: int = 5
-
     # Exploration limits per pricing tier (overridable via environment)
     TIER1_EXPLORATION_LIMIT: int = 3
     ENTERPRISE_EXPLORATION_LIMIT: int = 10
@@ -71,56 +60,6 @@ class Settings(BaseSettings):
 
     # Background ingestion worker: how often to check for pending chunks (seconds)
     INGEST_POLL_INTERVAL_SECONDS: int = 60
-
-    # ============================================================
-    # KE Evidence Sources — quality filter + web-search topup
-    # ============================================================
-    KE_MIN_EVIDENCE_SOURCES: int = 10
-    # Rule 1 (universal): hide any source whose indexed content is under this
-    # many characters — nothing citable fits in less than this, regardless of
-    # authority_tier.
-    KE_HARD_FLOOR_CHARS: int = 50
-    # Rule 2 (user_uploaded only, conjunctive with a generic-category title
-    # match): hide only if content is ALSO under this stricter bar.
-    KE_SOFT_THRESHOLD_CHARS: int = 300
-    # Max web-search-origin sources allowed per domain in the topup selection.
-    KE_MAX_PER_DOMAIN: int = 2
-    KE_WEB_SOURCE_CACHE_TTL_HOURS: int = 48
-
-    # ============================================================
-    # KE Query Generation — structured RO-driven query construction
-    # (see app/services/ro_extractor.py: build_ke_search_queries())
-    # ============================================================
-    # Configurable "mandatory" research-format intents mixed into generated
-    # queries (e.g. "... market research report"). Kept as data, not code, so
-    # new intents can be added/removed without touching query-generation
-    # logic, and so they apply uniformly to any RO category.
-    KE_MANDATORY_RESEARCH_INTENTS: list[str] = [
-        "survey", "study", "research", "report",
-        "market research", "consumer research", "public opinion",
-    ]
-    # Configurable "insight" intents — attitudinal/behavioural angles. Which
-    # ones get used per RO is content-matched against the RO's own
-    # business_objective/key_questions/hypotheses text (see
-    # _select_insight_intents), not hardcoded per category.
-    KE_INSIGHT_INTENTS: list[str] = [
-        "awareness", "perception", "attitude", "behavior", "preference",
-        "motivation", "barrier", "adoption", "trust", "acceptance",
-    ]
-    # How many insight intents to weave into a single RO's query set.
-    KE_INSIGHT_INTENT_COUNT: int = 2
-    # Raw Qdrant cosine-similarity floor applied ONLY to KE Sourcebank queries
-    # (fetch_ke_sources -> controlled_sourcebank_search). Filters the
-    # near-zero/noise tail before the authority/quality/domain/keyword
-    # reweighting in _score_result() runs, without touching
-    # search_qdrant()'s own default (0.0), which stays unchanged for every
-    # other caller (report generation, etc.) outside KEL. Deliberately
-    # conservative — see the threshold-change reasoning in the KEL P0 fix
-    # notes: this embedding model's cosine scores are not zero-centered
-    # (~0.5 already reads as "strong match" per
-    # _compute_ke_confidence_from_sources), so a low floor removes clearly
-    # unrelated noise without risking real coverage loss.
-    KE_SOURCEBANK_SCORE_THRESHOLD: float = 0.15
 
     class Config:
         env_file = ".env"

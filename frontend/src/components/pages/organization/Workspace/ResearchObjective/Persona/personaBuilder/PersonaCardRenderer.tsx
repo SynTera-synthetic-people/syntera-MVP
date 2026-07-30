@@ -1,58 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// PersonaCardRenderer.tsx  — "Dossier" edition  v10
-//
-// v10 = v9 + a cross-check pass against the current PersonaPreview.tsx that
-// found the v9 changelog described fixes that were never actually applied in
-// code. Fixed here for real:
-//   • BUG FIX — Source Mix legend overlap/clipped text (STILL BROKEN in v9
-//     despite the changelog claiming it was fixed): SourceTypeBar was still
-//     using a 3-column CSS grid with overflow:hidden + textOverflow:'ellipsis'
-//     per label — the exact construct html2canvas cannot reliably clip,
-//     which is what produced the overlapping/clipped "Academic Researcl",
-//     "Behaviour Science P", "White Papers & Artic" text in the exported
-//     PDF. Now genuinely switched to a single full-width column with a
-//     JS-side hard-truncation backstop (truncateLabel()), so label width
-//     never depends on CSS ellipsis behaviour.
-//   • BUG FIX — Knowledge Enrichment real-data wiring was silently broken:
-//     computeKnowledgeEnrichment(persona) was being called as
-//     computeKnowledgeEnrichment(persona.id || personaName) — i.e. passed a
-//     *string*, not the persona object. Since the function reads
-//     persona.ke_source_type_breakdown / persona.ke_confidence off its
-//     argument, this meant hasRealBreakdown was always false and the card
-//     ALWAYS rendered the seeded placeholder Source Mix instead of real KE
-//     Sourcebank data, even for fully enriched personas — silently
-//     diverging from PersonaPreview. Fixed to pass the actual persona object.
-//   • BUG FIX — Knowledge Enrichment "Confidence Components" bars were
-//     hardcoded to the module-level KE_CONFIDENCE_COMPONENTS constant
-//     instead of reading the computed knowledgeEnrichment.confidenceComponents
-//     prop (which already correctly blends in persona.ke_confidence.components
-//     when present) — the prop type didn't even declare the field, so the
-//     JSX silently fell back to the hardcoded fallback for every persona.
-//     Now reads the real computed value.
-//   • BUG FIX — Real Actions Signal confidence was still using the old
-//     25/35/40 Dimensions/Depth-Layer/Pattern weighted blend inside
-//     computeRealActionsSignal(), even though the v9 changelog said this had
-//     been replaced with persona.predominant_patterns.score (matching
-//     PersonaPreview's realActionsConfidenceScore). Fixed to read
-//     predominant_patterns.score first, falling back to the pattern-only
-//     accuracy heuristic — identical priority order to the live preview.
-//     Pattern detail chips now also prefer persona.predominant_patterns.patterns
-//     (real backend strings) over the depth-layer-derived text, again
-//     matching the preview.
-//   • BUG FIX — Dimensions Triggered / Depth Layer rows were rendering a
-//     numeric accuracy bar + percentage in the PDF (visible in the reported
-//     screenshot as stray "100%" bars), even though the changelog said these
-//     were demoted to context-only rows matching PersonaPreview's
-//     DepthSignalSection (only the Predominant-Patterns row shows a
-//     confidence bar there, labelled "Research Objective Alignment").
-//     DepthSignalRow now honours a showAccuracy/accuracyLabel flag on each
-//     stat, and computeRealActionsSignal sets those flags the same way the
-//     preview does.
-//
-// v9 = v8 + a data-consistency pass against the current PersonaPreview.tsx,
-// plus a fix for the Knowledge Enrichment "Source Mix" legend overlapping
-// itself in the exported PDF (see v10 notes above — the v9 fix described
-// here did not actually land in the code and has now been corrected).
+// PersonaCardRenderer.tsx  — "Dossier" edition  v8
 //
 // v8 = v7 (calibration-model alignment) + the html2canvas rendering fixes
 // that were made on top of v6:
@@ -284,23 +231,6 @@ export interface PersonaCardData {
     traits?: Array<{ name: string; score: number }>;
   };
 
-  // Predominant Patterns Extracted — backend-computed Research-Objective-
-  // Alignment score for the pattern layer. This is the *only* input that
-  // drives Real Actions Signal confidence in PersonaPreview (Dimensions /
-  // Depth Layer accuracy are shown for context only), so the PDF card reads
-  // it too instead of re-deriving confidence from a 25/35/40 weighted blend.
-  predominant_patterns?: {
-    score?: number;
-    patterns?: string[];
-  };
-
-  // Real Knowledge-Enrichment sourcebank data (populated by
-  // enrich_persona_ke_sources()). When present, these override the
-  // deterministic seeded placeholder so the PDF card matches PersonaPreview's
-  // "real data when available, seeded fallback otherwise" behaviour.
-  ke_source_type_breakdown?: Record<string, number>;
-  ke_confidence?: { overall?: number; components?: Record<string, number> };
-
   tags?: string[];
   [key: string]: unknown;
 }
@@ -351,18 +281,6 @@ function formatCompact(n: number): string {
   if (n >= 1_000_000) return `${parseFloat((n / 1_000_000).toFixed(1))}M`;
   if (n >= 1_000) return `${parseFloat((n / 1_000).toFixed(1))}K`;
   return String(n);
-}
-
-/** Hard JS-side truncation backstop for labels rendered inside html2canvas
- *  captures. html2canvas does not reliably honour CSS text-overflow:ellipsis,
- *  so any label that could realistically overflow its row must be truncated
- *  here in JS instead of relying on CSS clipping. Used as a safety net only —
- *  layouts that give labels a full row's width (see SourceTypeBar) shouldn't
- *  need to truncate in practice, but arbitrary backend-supplied category
- *  names can still be longer than expected. */
-function truncateLabel(s: string, maxChars: number): string {
-  if (s.length <= maxChars) return s;
-  return `${s.slice(0, Math.max(0, maxChars - 1)).trimEnd()}…`;
 }
 
 // ── URL / source-annotation helpers ──────────────────────────────────────────
@@ -571,48 +489,17 @@ function scaleSourceTypesToTotal(sourceTypes: KESourceType[], total: number): KE
   return scaled;
 }
 
-function computeKnowledgeEnrichment(persona: PersonaCardData): {
+function computeKnowledgeEnrichment(seed: string): {
   total: number;
   sourceTypes: KESourceType[];
   confidenceScore: number;
-  confidenceComponents: Array<{ label: string; score: number }>;
 } {
-  const seed = persona.id || 'persona';
-
-  // Real KE Sourcebank data (enrich_persona_ke_sources()) — same "real data
-  // when available" pattern PersonaPreview uses, so an enriched persona
-  // shows identical Source Mix numbers in the PDF as in the live preview.
-  const realBreakdown = persona.ke_source_type_breakdown;
-  const hasRealBreakdown = !!realBreakdown && Object.keys(realBreakdown).length > 0;
-
-  const seededTotal = seededSourceTotal(seed);
-  const realTotal = hasRealBreakdown
-    ? Object.values(realBreakdown!).reduce((a, b) => a + b, 0)
-    : 0;
-  const total = hasRealBreakdown && realTotal > 0 ? realTotal : seededTotal;
-
-  const sourceTypes = hasRealBreakdown
-    ? (() => {
-      const mapped = KE_SOURCE_TYPES
-        .map(t => ({ ...t, value: realBreakdown![t.name] ?? 0 }))
-        .filter(t => t.value > 0);
-      return mapped.length > 0 ? mapped : scaleSourceTypesToTotal(KE_SOURCE_TYPES, total);
-    })()
-    : scaleSourceTypesToTotal(KE_SOURCE_TYPES, total);
-
-  const confidenceScore = typeof persona.ke_confidence?.overall === 'number'
-    && !Number.isNaN(persona.ke_confidence.overall)
-    ? Math.round(persona.ke_confidence.overall)
-    : KE_CONFIDENCE_SCORE;
-
-  const confidenceComponents = persona.ke_confidence?.components
-    ? KE_CONFIDENCE_COMPONENTS.map(c => ({
-      label: c.label,
-      score: persona.ke_confidence!.components![c.label] ?? c.score,
-    }))
-    : KE_CONFIDENCE_COMPONENTS;
-
-  return { total, sourceTypes, confidenceScore, confidenceComponents };
+  const total = seededSourceTotal(seed);
+  return {
+    total,
+    sourceTypes: scaleSourceTypesToTotal(KE_SOURCE_TYPES, total),
+    confidenceScore: KE_CONFIDENCE_SCORE,
+  };
 }
 
 // ── Real Actions Signal — depth-signal computation (layer 1 addendum) ───────
@@ -625,13 +512,6 @@ interface DepthSignalStat {
   color: string;
   detailLabel: string;
   details: string[];
-  showAccuracy?: boolean;
-  accuracyLabel?: string;
-  // Whether to render the numeric count (formatCompact(displayValue)) in the
-  // row header. Mirrors PersonaPreview's showCount prop — only used to hide
-  // the "55 Million people analyzed" style figure on the Predominant
-  // Patterns row per design feedback; defaults to true for the other rows.
-  showCount?: boolean;
 }
 
 interface RealActionsSignalResult {
@@ -642,11 +522,8 @@ interface RealActionsSignalResult {
   stats: DepthSignalStat[];
 }
 
-// Real Actions Signal confidence is driven solely by the Predominant
-// Patterns / Research-Objective-Alignment score (persona.predominant_patterns
-// .score), identical to how PersonaPreview's realActionsConfidenceScore is
-// computed — Dimensions Triggered and Depth Layer accuracy are shown for
-// context only and no longer feed into the confidence number.
+// Weights: Dimensions 25%, Depth Layer 35%, Pattern Extracted 40% — identical
+// to the weighting used in PersonaPreview's DepthSignalSection.
 function computeRealActionsSignal(persona: PersonaCardData): RealActionsSignalResult {
   const dimensionsActivated = persona.stage_2_dimensions?.activated_dimensions ?? [];
   const dimensionsTriggeredCount = dimensionsActivated.length > 0 ? dimensionsActivated.length : 8;
@@ -660,16 +537,7 @@ function computeRealActionsSignal(persona: PersonaCardData): RealActionsSignalRe
   const dimAccuracy = Math.round(Math.min(dimensionsTriggeredCount / 16, 1) * 100);
   const dlAccuracy = Math.round(Math.min(depthLayerCount / 10, 1) * 100);
   const patAccuracy = Math.round(Math.min(patternsExtractedCount / 20, 1) * 100);
-
-  // Prefer the backend-computed Research-Objective-Alignment score for the
-  // pattern layer — same field, same priority order, as PersonaPreview's
-  // realActionsConfidenceScore. Only fall back to the count-derived heuristic
-  // for personas that haven't had predominant_patterns generated yet.
-  const predominantPatterns = persona.predominant_patterns;
-  const confidenceScore =
-    typeof predominantPatterns?.score === 'number' && !Number.isNaN(predominantPatterns.score)
-      ? Math.round(predominantPatterns.score)
-      : patAccuracy;
+  const confidenceScore = Math.round(dimAccuracy * 0.25 + dlAccuracy * 0.35 + patAccuracy * 0.40);
 
   const activatedDimNames = dimensionsActivated.map(d => {
     const id = typeof d === 'number' ? d : parseInt(String(d), 10);
@@ -691,14 +559,7 @@ function computeRealActionsSignal(persona: PersonaCardData): RealActionsSignalRe
     'Peer clustering detected in 3 cities',
   ];
 
-  // Pattern detail chips prefer the real backend pattern strings off
-  // predominant_patterns.patterns — same source and same priority order
-  // PersonaPreview's patternRealDetails uses — before falling back to
-  // depth-layer-derived text or the hardcoded fallback list.
-  const patternRealDetails = Array.isArray(predominantPatterns?.patterns)
-    ? predominantPatterns!.patterns!.filter((p): p is string => typeof p === 'string' && !!p)
-    : [];
-  const patternDerivedDetails = actionDataVerdicts
+  const patternDetails = actionDataVerdicts
     .map(v => String(v?.behavioral_signal ?? v?.pattern_detected ?? '').trim())
     .filter(Boolean);
   const fallbackPatternDetails = [
@@ -709,11 +570,6 @@ function computeRealActionsSignal(persona: PersonaCardData): RealActionsSignalRe
     'COD preference signals trust friction in Tier-2',
     'Premium brand aspiration vs budget-brand behaviour gap',
   ];
-  const patternDetails = patternRealDetails.length > 0
-    ? patternRealDetails
-    : patternDerivedDetails.length > 0
-      ? patternDerivedDetails
-      : fallbackPatternDetails;
 
   const stats: DepthSignalStat[] = [
     {
@@ -724,8 +580,6 @@ function computeRealActionsSignal(persona: PersonaCardData): RealActionsSignalRe
       color: ACCENT,
       detailLabel: 'Behavioral dimensions activated for this persona',
       details: activatedDimNames.length > 0 ? activatedDimNames : fallbackDimNames,
-      // Context-only row — no numeric confidence bar, matching PersonaPreview.
-      showAccuracy: false,
     },
     {
       name: 'Depth Layer',
@@ -735,24 +589,20 @@ function computeRealActionsSignal(persona: PersonaCardData): RealActionsSignalRe
       color: GREEN,
       detailLabel: 'Patterns detected across depth layers',
       details: depthLayerDetails.length > 0 ? depthLayerDetails : fallbackDepthDetails,
-      // Context-only row — no numeric confidence bar, matching PersonaPreview.
-      showAccuracy: false,
     },
     {
-      name: 'Predominant Patterns Extracted',
+      name: 'Pattern Extracted',
       value: patternsExtractedCount,
+      // UI-scaled to benchmark level — mirrors PersonaPreview, since the
+      // headline stat (750M actions ingested) implies patterns at that scale
+      // even while backend per-persona data is still small.
       displayValue: patternsExtractedCount > 0
         ? Math.min(patternsExtractedCount * 12_000_000, 750_000_000)
         : 84_000_000,
       accuracy: patAccuracy,
       color: PURPLE,
       detailLabel: 'Behavioral signals extracted from action patterns',
-      details: patternDetails,
-      showAccuracy: true,
-      accuracyLabel: 'Research Objective Alignment',
-      // Commented out per design feedback — no longer showing the large
-      // "X Million" figure next to this row, matching PersonaPreview.
-      showCount: false,
+      details: patternDetails.length > 0 ? patternDetails : fallbackPatternDetails,
     },
   ];
 
@@ -1137,8 +987,6 @@ function GTComingSoonBlock({ number, title, subtitle }: { number: number; title:
 // ── Depth-signal metric row (Dimensions / Depth Layer / Pattern Extracted) ──
 
 function DepthSignalRow({ stat }: { stat: DepthSignalStat }) {
-  const showAccuracy = stat.showAccuracy !== false;
-  const showCount = stat.showCount !== false;
   return (
     <div style={{ background: SURFACE_EL, border: `1px solid ${BORDER}`, borderRadius: 10, padding: '12px 14px', marginBottom: 8 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
@@ -1146,27 +994,16 @@ function DepthSignalRow({ stat }: { stat: DepthSignalStat }) {
           <span style={{ width: 7, height: 7, borderRadius: '50%', background: stat.color, flexShrink: 0 }} />
           <span style={{ fontFamily: SANS, fontSize: 12, fontWeight: 600, color: TEXT_PRI }}>{stat.name}</span>
         </div>
-        {showCount && (
-          <span style={{ fontFamily: MONO, fontSize: 14, fontWeight: 700, color: stat.color }}>{formatCompact(stat.displayValue)}</span>
-        )}
+        <span style={{ fontFamily: MONO, fontSize: 14, fontWeight: 700, color: stat.color }}>{formatCompact(stat.displayValue)}</span>
       </div>
-      {showAccuracy && (
-        <>
-          {stat.accuracyLabel && (
-            <div style={{ marginBottom: 4 }}>
-              <span style={{ fontFamily: SANS, fontSize: 10, color: TEXT_TER }}>{stat.accuracyLabel}</span>
-            </div>
-          )}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: stat.details.length ? 8 : 0 }}>
-            <div style={{ flex: 1, height: 4, background: 'rgba(255,255,255,0.06)', borderRadius: 99, overflow: 'hidden' }}>
-              {stat.accuracy > 0 && <div style={{ height: '100%', width: `${stat.accuracy}%`, background: stat.color, borderRadius: 99 }} />}
-            </div>
-            <span style={{ fontFamily: MONO, fontSize: 10, fontWeight: 700, color: stat.color, minWidth: 30, textAlign: 'right' as const }}>{stat.accuracy}%</span>
-          </div>
-        </>
-      )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: stat.details.length ? 8 : 0 }}>
+        <div style={{ flex: 1, height: 4, background: 'rgba(255,255,255,0.06)', borderRadius: 99, overflow: 'hidden' }}>
+          {stat.accuracy > 0 && <div style={{ height: '100%', width: `${stat.accuracy}%`, background: stat.color, borderRadius: 99 }} />}
+        </div>
+        <span style={{ fontFamily: MONO, fontSize: 10, fontWeight: 700, color: stat.color, minWidth: 30, textAlign: 'right' as const }}>{stat.accuracy}%</span>
+      </div>
       {stat.details.length > 0 && (
-        <p style={{ fontFamily: SANS, fontSize: 10, lineHeight: 1.5, color: TEXT_TER, margin: showAccuracy ? 0 : '6px 0 0' }}>
+        <p style={{ fontFamily: SANS, fontSize: 10, lineHeight: 1.5, color: TEXT_TER, margin: 0 }}>
           {stat.detailLabel}: {stat.details.slice(0, 3).join(' · ')}
         </p>
       )}
@@ -1175,17 +1012,7 @@ function DepthSignalRow({ stat }: { stat: DepthSignalStat }) {
 }
 
 // ── Source-type proportion bar + legend (Knowledge Enrichment Layer) ────────
-//
-// FIXED: previously a 3-column CSS grid relying on overflow:hidden +
-// textOverflow:'ellipsis' per label. At this section's actual rendered width,
-// columns were as narrow as ~120px, and labels like "Behaviour Science
-// Papers" or "White Papers & Articles" didn't fit — and html2canvas does not
-// reliably render CSS text-overflow:ellipsis during PDF export, so instead of
-// a clean "…" truncation the label text overflowed its box and visually
-// collided with the row below (the exact bug shown in the reported
-// screenshot). Now a single full-width column, one label per row, with a
-// JS-side hard-truncation backstop (truncateLabel) instead of depending on
-// CSS clipping.
+
 function SourceTypeBar({ segments, total }: { segments: KESourceType[]; total: number }) {
   return (
     <div>
@@ -1194,13 +1021,11 @@ function SourceTypeBar({ segments, total }: { segments: KESourceType[]; total: n
           <div key={s.name} style={{ width: `${Math.max((s.value / total) * 100, 0.6)}%`, background: s.color }} />
         ))}
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 8, marginTop: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px 14px', marginTop: 12 }}>
         {segments.map(s => (
-          <div key={s.name} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+          <div key={s.name} style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: s.color, flexShrink: 0 }} />
-            <span style={{ fontFamily: SANS, fontSize: 11, color: TEXT_SEC, flex: 1, minWidth: 0, whiteSpace: 'nowrap' as const }}>
-              {truncateLabel(s.name, 40)}
-            </span>
+            <span style={{ fontFamily: SANS, fontSize: 10, color: TEXT_SEC, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{s.name}</span>
             <span style={{ fontFamily: MONO, fontSize: 10, color: TEXT_TER, flexShrink: 0 }}>{s.value}</span>
           </div>
         ))}
@@ -1219,12 +1044,7 @@ function GroundTruthFoundation({
   persona: PersonaCardData;
   isManualMode: boolean;
   realActionsSignal: RealActionsSignalResult;
-  knowledgeEnrichment: {
-    total: number;
-    sourceTypes: KESourceType[];
-    confidenceScore: number;
-    confidenceComponents: Array<{ label: string; score: number }>;
-  };
+  knowledgeEnrichment: { total: number; sourceTypes: KESourceType[]; confidenceScore: number };
   multiPlatform: { platformCounts: Record<string, number>; confidenceComponents: Record<string, number>; confidenceScore: number };
 }) {
   const half = Math.ceil(ML_FEATURES_CARD.length / 2);
@@ -1307,14 +1127,14 @@ function GroundTruthFoundation({
         {/* Dimensions / Depth Layer / Pattern Extracted */}
         <div style={{ marginBottom: 18 }}>
           <div style={{ fontFamily: MONO, fontSize: 9, textTransform: 'uppercase' as const, letterSpacing: '0.10em', color: TEXT_TER, fontWeight: 600, marginBottom: 10 }}>
-            Dimensions, Depth Layer &amp; Pattern Signals <span style={{ color: 'rgba(255,255,255,0.25)', textTransform: 'none' as const, letterSpacing: 0 }}>(only Predominant Patterns drives confidence)</span>
+            Dimensions, Depth Layer &amp; Pattern Signals <span style={{ color: 'rgba(255,255,255,0.25)', textTransform: 'none' as const, letterSpacing: 0 }}>(weighted 25 / 35 / 40%)</span>
           </div>
           {realActionsSignal.stats.map(s => <DepthSignalRow key={s.name} stat={s} />)}
         </div>
 
         {/* Feature table */}
         <div>
-          {/* <div style={{ fontFamily: MONO, fontSize: 9, textTransform: 'uppercase' as const, letterSpacing: '0.10em', color: TEXT_TER, fontWeight: 600, marginBottom: 10 }}>
+          <div style={{ fontFamily: MONO, fontSize: 9, textTransform: 'uppercase' as const, letterSpacing: '0.10em', color: TEXT_TER, fontWeight: 600, marginBottom: 10 }}>
             Behaviour Signals Extracted
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
@@ -1336,7 +1156,7 @@ function GroundTruthFoundation({
                 </table>
               </div>
             ))}
-          </div> */}
+          </div>
 
           <div style={{ fontFamily: MONO, fontSize: 9, textTransform: 'uppercase' as const, letterSpacing: '0.10em', color: TEXT_TER, fontWeight: 600, marginBottom: 10 }}>
             Parameter Integrated
@@ -1388,12 +1208,7 @@ function GroundTruthFoundation({
             <div style={{ fontFamily: MONO, fontSize: 9, textTransform: 'uppercase' as const, letterSpacing: '0.10em', color: TEXT_TER, fontWeight: 600, marginBottom: 10 }}>
               Confidence Components
             </div>
-            {/* FIXED: was hardcoded to the module-level KE_CONFIDENCE_COMPONENTS
-                constant regardless of persona data. Now reads the computed
-                prop, which already blends in persona.ke_confidence.components
-                when the backend has enriched this persona — matching
-                PersonaPreview's keConfidenceComponents. */}
-            {knowledgeEnrichment.confidenceComponents.map(c => <ConfidenceBar key={c.label} label={c.label} value={c.score} />)}
+            {KE_CONFIDENCE_COMPONENTS.map(c => <ConfidenceBar key={c.label} label={c.label} value={c.score} />)}
           </div>
         </div>
 
@@ -1593,17 +1408,9 @@ const PersonaCardRenderer = React.forwardRef<HTMLDivElement, Props>(
     // ── Calibration layers — same three-layer average PersonaPreview uses ──
     const isManualMode = !!persona.calibration_breakdown?.is_manual_mode;
     const realActionsSignal = React.useMemo(() => computeRealActionsSignal(persona), [persona]);
-    // FIXED: previously called as computeKnowledgeEnrichment(persona.id ||
-    // personaName) — a *string*, not the persona object — so
-    // persona.ke_source_type_breakdown / persona.ke_confidence were always
-    // read off a string and hasRealBreakdown was permanently false. The card
-    // therefore silently ignored real KE Sourcebank data for every persona
-    // and always fell back to the seeded placeholder mix, diverging from
-    // PersonaPreview. Now passes the full persona object, matching the
-    // function's actual signature.
     const knowledgeEnrichment = React.useMemo(
-      () => computeKnowledgeEnrichment(persona),
-      [persona]
+      () => computeKnowledgeEnrichment(persona.id || personaName),
+      [persona.id, personaName]
     );
     const multiPlatform = React.useMemo(() => computeMultiPlatform(persona), [persona]);
 

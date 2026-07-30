@@ -207,9 +207,6 @@ vcs.xml
 # Generated PDF reports (local dev)
 reports/
 
-# User-uploaded files (local dev) — must never be committed
-uploads/
-
 # Marimo
 marimo/_static/
 marimo/_lsp/

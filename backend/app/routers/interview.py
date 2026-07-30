@@ -51,22 +51,21 @@ async def download_discussion_guide(
     exploration_id: str,
     current_user: User = Depends(get_current_active_user),
 ):
-    """Download the current discussion guide as a branded PDF generated from DB state."""
+    """Download the current discussion guide as a DOCX generated from DB state."""
     members = await ws_service.list_workspace_members(workspace_id)
     if not any(m.get("user_id") == current_user.id for m in members):
         raise HTTPException(status_code=403, detail=ErrorResponse(status="error", message="Not a member").dict())
 
     try:
-        pdf_path = await interview_service.generate_discussion_guide_pdf(workspace_id, exploration_id)
+        content = await interview_service.generate_discussion_guide_docx_bytes(workspace_id, exploration_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    return FileResponse(
-        path=pdf_path,
-        media_type="application/pdf",
-        filename=f"discussion_guide_{exploration_id}.pdf",
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={
-            "Content-Disposition": f'attachment; filename="discussion_guide_{exploration_id}.pdf"'
+            "Content-Disposition": f'attachment; filename="discussion_guide_{exploration_id}.docx"'
         },
     )
 

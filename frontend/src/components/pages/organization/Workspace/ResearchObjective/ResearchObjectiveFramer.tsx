@@ -19,11 +19,6 @@ interface Competitor {
     name: string;
 }
 
-interface Geography {
-    id: string;
-    name: string;
-}
-
 interface ContextData {
     companyName: string;
     industry: string;
@@ -46,7 +41,6 @@ interface DecisionMomentData {
 
 interface AudienceSegmentsData {
     audience: string;
-    geographies: Geography[];
 }
 
 type MaterialUploadStatus = "idle" | "processing" | "done";
@@ -58,13 +52,6 @@ interface MaterialSlot {
     // The actual selected File — kept so Submit can send the real bytes.
     // (fileName/fileSizeLabel alone were display-only and discarded the file.)
     file: File | null;
-    // Base64 data URL of the file's contents. Unlike `file`, this string
-    // DOES survive JSON.stringify/localStorage, so it's what lets the
-    // read-only "Artifact" viewer on the Discussion Guide screen actually
-    // show an image preview (or offer a download for non-image files)
-    // instead of just a filename. Populated for Artifact-section files
-    // right before they're marked submitted — see handleSubmitArtifact.
-    dataUrl: string | null;
 }
 
 // A single URL entry (used within the Artifact section's link list)
@@ -84,21 +71,7 @@ interface BriefSectionData {
 // How Omi should relate multiple artifacts in this section to each other.
 // Only meaningful once 2+ artifacts (links/file) are attached — with a
 // single artifact there's nothing to compare/group/sequence.
-type ArtifactCategory = "compare" | "campaign_set";
-
-// The kind of creative asset this is — separate from ArtifactCategory
-// (comparison mode) above. Drives dimension selection in the artifact
-// stimulus pipeline (Stage 2) — must match one of the artifact_types keys
-// in backend/app/data/artifact_dimensions_library.json. Required whenever
-// at least one artifact (file or link) is attached, regardless of count.
-type ArtifactContentCategory =
-    | "ad_creative"
-    | "product_concept"
-    | "packaging"
-    | "landing_page"
-    | "pricing_offer"
-    | "claim"
-    | "script_storyboard";
+type ArtifactCategory = "compare" | "campaign_set" ;
 
 // Artifact section — own instruction, up to ARTIFACT_MAX_LINKS URL fields,
 // up to ARTIFACT_MAX_FILES file uploads, own submit lifecycle.
@@ -107,7 +80,6 @@ interface ArtifactSectionData {
     links: MaterialLink[];
     files: MaterialSlot[];
     category: ArtifactCategory | null;
-    contentCategory: ArtifactContentCategory | null;
     submitted: boolean;
 }
 
@@ -147,7 +119,6 @@ function buildFramerPayload(data: ROFramerData) {
         information_gap: data.customerUnknown.unknown || undefined,
         decision_problem: data.decisionMoment.decision || undefined,
         target_audience: data.audienceSegments.audience || undefined,
-        geography: data.audienceSegments.geographies.map(g => g.name),
         // Materials are NOT sent here — each section (Research Brief/Artifact)
         // is already submitted, extracted, and persisted against exploration_id
         // independently via its own "Submit" button (see MaterialTab). The
@@ -163,7 +134,7 @@ function buildFramerPayload(data: ROFramerData) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const framerDraftKey = (objectiveId?: string) => `ro_framer_draft_${objectiveId ?? "unknown"}`;
-const ARTIFACT_COMING_SOON = false;
+const ARTIFACT_COMING_SOON = true;
 // ─────────────────────────────────────────────────────────────────────────────
 // Local "has this objective's Framer been submitted" flag.
 //
@@ -234,7 +205,6 @@ const emptySlot = (): MaterialSlot => ({
     fileSizeLabel: null,
     uploadStatus: "idle",
     file: null,
-    dataUrl: null,
 });
 
 const emptyBriefSection = (): BriefSectionData => ({
@@ -249,7 +219,6 @@ const emptyArtifactSection = (): ArtifactSectionData => ({
     links: [{ id: makeLinkIdForEmptySection(), value: "" }],
     files: [],
     category: null,
-    contentCategory: null,
     submitted: false,
 });
 
@@ -258,7 +227,7 @@ const emptyFramerData = (): ROFramerData => ({
     businessTrigger: { trigger: "" },
     customerUnknown: { unknown: "" },
     decisionMoment: { decision: "" },
-    audienceSegments: { audience: "", geographies: [] },
+    audienceSegments: { audience: "" },
     material: {
         brief: emptyBriefSection(),
         artifact: emptyArtifactSection(),
@@ -270,8 +239,6 @@ const emptyFramerData = (): ROFramerData => ({
 // localStorage doesn't choke or silently lose data. Display fields
 // (fileName/fileSizeLabel) are kept so the review screen still shows what
 // was attached, even though the raw file itself won't survive a reload.
-// `dataUrl` (see MaterialSlot) is a plain string and IS kept — it's what
-// survives storage and lets the Artifact viewer preview/download the file.
 const stripFilesForStorage = (data: ROFramerData): ROFramerData => ({
     ...data,
     material: {
@@ -297,13 +264,7 @@ const hydrateFramerData = (parsed: any): ROFramerData => {
         businessTrigger: { ...base.businessTrigger, ...parsed.businessTrigger },
         customerUnknown: { ...base.customerUnknown, ...parsed.customerUnknown },
         decisionMoment: { ...base.decisionMoment, ...parsed.decisionMoment },
-        audienceSegments: {
-            ...base.audienceSegments,
-            ...parsed.audienceSegments,
-            geographies: Array.isArray(parsed.audienceSegments?.geographies)
-                ? parsed.audienceSegments.geographies
-                : base.audienceSegments.geographies,
-        },
+        audienceSegments: { ...base.audienceSegments, ...parsed.audienceSegments },
         otherInformation: { ...base.otherInformation, ...parsed.otherInformation },
         material: {
             brief: {
@@ -966,39 +927,11 @@ interface AudienceSegmentsTabProps {
 const AudienceSegmentsTab: React.FC<AudienceSegmentsTabProps> = ({
     data, onChange, onOmiStateChange, onContinue, onBack,
 }) => {
-    const [geoInput, setGeoInput] = useState("");
-
     const canContinue = data.audience.trim().length > 0;
     const handleFieldFocus = () => onOmiStateChange("typing");
     const handleFieldBlur = () => { if (!data.audience) onOmiStateChange("idle"); };
     const handleContinueClick = () => { if (!canContinue) return; onOmiStateChange("navigating"); setTimeout(onContinue, 400); };
     const handleBackClick = () => { onOmiStateChange("navigating"); setTimeout(onBack, 400); };
-
-    const addGeography = () => {
-        const val = geoInput.trim();
-        if (!val) return;
-        const alreadyExists = data.geographies.some(
-            g => g.name.toLowerCase() === val.toLowerCase()
-        );
-        if (alreadyExists) {
-            setGeoInput("");
-            return;
-        }
-        onChange({
-            ...data,
-            geographies: [
-                ...data.geographies,
-                { id: `geo-${Date.now()}`, name: val },
-            ],
-        });
-        setGeoInput("");
-    };
-
-    const removeGeography = (id: string) =>
-        onChange({
-            ...data,
-            geographies: data.geographies.filter(g => g.id !== id),
-        });
 
     return (
         <div className="rofp-tab-content">
@@ -1015,65 +948,6 @@ const AudienceSegmentsTab: React.FC<AudienceSegmentsTabProps> = ({
                     </div>
                     <textarea id="rof-audience-segments" className="rofp-textarea rofp-textarea--lg" placeholder={"We want to understand audience, especially segments...\n\nCurrent users, prospects, lapsed users, switchers, loyalists, first-time buyers, premium buyers, value seekers, skeptics, heavy users..."} value={data.audience} onFocus={handleFieldFocus} onBlur={handleFieldBlur} onChange={e => onChange({ ...data, audience: e.target.value })} rows={6} />
                     <p className="rofp-field-static-note">Keep it directional for now. You'll define detailed personas, demographics, and traits in the next step.</p>
-                </div>
-
-                {/* Geography */}
-                <div className="rofp-field-group">
-                    <div className="rofp-field-label-row">
-                        <label className="rofp-label" htmlFor="rof-geography">
-                            Geography
-                            <span className="rofp-label-optional">Optional</span>
-                        </label>
-                        <Tooltip text="Add the countries, states, or cities this exploration should focus on." />
-                    </div>
-                    <div className="rofp-input-row">
-                        <input
-                            id="rof-geography"
-                            className="rofp-input"
-                            type="text"
-                            placeholder="e.g., India, California, Mumbai"
-                            value={geoInput}
-                            onFocus={handleFieldFocus}
-                            onBlur={handleFieldBlur}
-                            onChange={e => setGeoInput(e.target.value)}
-                            onKeyDown={e => {
-                                if (e.key === "Enter") {
-                                    e.preventDefault();
-                                    addGeography();
-                                }
-                            }}
-                            autoComplete="off"
-                        />
-                        <button
-                            className="rofp-btn-add"
-                            onClick={addGeography}
-                            type="button"
-                        >
-                            Add
-                        </button>
-                    </div>
-
-                    <div className="rofp-comp-list-box">
-                        {data.geographies.length === 0 ? (
-                            <span className="rofp-comp-list-empty">
-                                Added countries, states, or cities will appear here
-                            </span>
-                        ) : (
-                            data.geographies.map(g => (
-                                <span key={g.id} className="rofp-comp-pill">
-                                    <span className="rofp-comp-pill-name">{g.name}</span>
-                                    <button
-                                        className="rofp-comp-pill-rm"
-                                        onClick={() => removeGeography(g.id)}
-                                        type="button"
-                                        aria-label={`Remove ${g.name}`}
-                                    >
-                                        ×
-                                    </button>
-                                </span>
-                            ))
-                        )}
-                    </div>
                 </div>
             </div>
             <div className="rofp-tab-cta">
@@ -1102,64 +976,32 @@ const ARTIFACT_MAX_BYTES = 10 * 1024 * 1024;
 const ARTIFACT_MAX_LINKS = 3;
 const ARTIFACT_MAX_FILES = 4;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// DISABLED — artifact categorization (Compare / Campaign Set / Sequence)
-//
-// No immediate client requirement for this yet. Everything below (the
-// category config, the label helper, and the chip-selector component) is
-// left in place but unused so the feature can be turned back on later by:
-//   1. Uncommenting ARTIFACT_CATEGORIES / artifactCategoryLabel / countArtifactItems
-//      / ArtifactCategoryChipsProps / ArtifactCategoryChips below.
-//   2. Restoring `artifactItemCount` / `artifactNeedsCategory` in MaterialTab
-//      and adding `&& !artifactNeedsCategory` back into canSubmitArtifact.
-//   3. Uncommenting the <ArtifactCategoryChips /> render block and the
-//      "Pick how these relate to continue" hint in MaterialTab's JSX.
-//   4. Uncommenting the "Artifact grouping" line in buildPreviewSections.
-// The `category` field itself is left active on ArtifactSectionData/emptyArtifactSection
-// so stored/submitted data keeps a stable shape either way — it will just
-// always be `null` while this feature is off.
-// ─────────────────────────────────────────────────────────────────────────────
-
-// const ARTIFACT_CATEGORIES: { id: ArtifactCategory; label: string; description: string }[] = [
-//     {
-//         id: "compare",
-//         label: "Compare",
-//         description: "Different concepts competing for the same spot. Omi shows personas the options together and finds out which one resonates more, and why.",
-//     },
-//     {
-//         id: "campaign_set",
-//         label: "Campaign Set",
-//         description: "Assets from one campaign, meant to work together. Omi checks whether they feel consistent and tell one story, rather than picking a favorite.",
-//     },
-//     // {
-//     //     id: "sequence",
-//     //     label: "Sequence",
-//     //     description: "Assets meant to be seen in order — a funnel, a teaser-to-reveal, or a multi-step flow. Omi tests whether each step earns the next.",
-//     // },
-// ];
-
-// Comparison-mode label lookup — unused while ArtifactCategoryChips is
-// disabled (see the DISABLED block near ARTIFACT_MAX_FILES for how to
-// re-enable both together).
-// const artifactCategoryLabel = (id: ArtifactCategory | null): string | null =>
-//     id ? ARTIFACT_CATEGORIES.find(c => c.id === id)?.label ?? null : null;
-
-// What kind of creative asset this is — feeds the artifact pipeline's
-// Stage 2 dimension selection. Values must match
-// backend/app/data/artifact_dimensions_library.json's artifact_types keys.
-const ARTIFACT_CONTENT_CATEGORIES: { id: ArtifactContentCategory; label: string }[] = [
-    { id: "ad_creative", label: "Ad Creative" },
-    { id: "landing_page", label: "Landing Page" },
-    { id: "packaging", label: "Packaging" },
-    { id: "product_concept", label: "Product Concept" },
-    { id: "pricing_offer", label: "Pricing Offer" },
-    { id: "claim", label: "Claim" },
-    { id: "script_storyboard", label: "Script / Storyboard" },
+// How Omi should relate 2+ artifacts within this section to each other.
+// Only surfaced once a second artifact (link or file) is attached — a lone
+// artifact has nothing to be compared, unified, or sequenced against.
+const ARTIFACT_CATEGORIES: { id: ArtifactCategory; label: string; description: string }[] = [
+    {
+        id: "compare",
+        label: "Compare",
+        description: "Different concepts competing for the same spot. Omi shows personas the options together and finds out which one resonates more, and why.",
+    },
+    {
+        id: "campaign_set",
+        label: "Campaign Set",
+        description: "Assets from one campaign, meant to work together. Omi checks whether they feel consistent and tell one story, rather than picking a favorite.",
+    },
+    // {
+    //     id: "sequence",
+    //     label: "Sequence",
+    //     description: "Assets meant to be seen in order — a funnel, a teaser-to-reveal, or a multi-step flow. Omi tests whether each step earns the next.",
+    // },
 ];
 
-// Counts distinct artifacts attached so far (filled links + files) — still
-// active (unlike the comparison-mode chips above): the content-category
-// selector below needs it even while comparison mode is disabled.
+const artifactCategoryLabel = (id: ArtifactCategory | null): string | null =>
+    id ? ARTIFACT_CATEGORIES.find(c => c.id === id)?.label ?? null : null;
+
+// Counts distinct artifacts attached so far (filled links + files), so the
+// category selector only appears once there's actually something to relate.
 const countArtifactItems = (artifact: ArtifactSectionData): number =>
     artifact.links.filter(l => l.value.trim()).length + artifact.files.length;
 
@@ -1214,18 +1056,6 @@ const formatFileSize = (bytes: number): string => {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 };
 
-// Reads a File's bytes into a base64 data URL — the only File "shape" that
-// survives JSON.stringify, so it's what gets persisted to localStorage
-// (see handleSubmitArtifact) for later preview/download in the read-only
-// Artifact viewer on the Discussion Guide screen.
-const fileToDataUrl = (file: File): Promise<string> =>
-    new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = () => reject(reader.error ?? new Error("Failed to read file"));
-        reader.readAsDataURL(file);
-    });
-
 const MaterialCheckIcon: React.FC = () => (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
         <path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
@@ -1262,7 +1092,7 @@ const UploadSlot: React.FC<UploadSlotProps> = ({
             return;
         }
         setFileError(null);
-        onSlotChange({ fileName: file.name, fileSizeLabel: formatFileSize(file.size), uploadStatus: "idle", file, dataUrl: null });
+        onSlotChange({ fileName: file.name, fileSizeLabel: formatFileSize(file.size), uploadStatus: "idle", file });
     };
 
     const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1282,7 +1112,7 @@ const UploadSlot: React.FC<UploadSlotProps> = ({
     const handleRemove = () => {
         if (disabled) return;
         setFileError(null);
-        onSlotChange({ fileName: null, fileSizeLabel: null, uploadStatus: "idle", file: null, dataUrl: null });
+        onSlotChange({ fileName: null, fileSizeLabel: null, uploadStatus: "idle", file: null });
     };
 
     return (
@@ -1385,7 +1215,7 @@ const MultiUploadSlot: React.FC<MultiUploadSlotProps> = ({
                 error = `File too large. Maximum size is ${formatFileSize(maxBytes)}.`;
                 continue;
             }
-            accepted.push({ fileName: file.name, fileSizeLabel: formatFileSize(file.size), uploadStatus: "idle", file, dataUrl: null });
+            accepted.push({ fileName: file.name, fileSizeLabel: formatFileSize(file.size), uploadStatus: "idle", file });
         }
 
         setFileError(error);
@@ -1551,145 +1381,35 @@ const LinkRow: React.FC<LinkRowProps> = ({ value, placeholder, onChange, onFocus
     );
 };
 
-// DISABLED alongside ARTIFACT_CATEGORIES above — see the block comment near
-// ARTIFACT_MAX_FILES for how to re-enable.
-// interface ArtifactCategoryChipsProps {
-//     value: ArtifactCategory | null;
-//     onChange: (category: ArtifactCategory) => void;
-//     disabled?: boolean;
-// }
-//
-// const ArtifactCategoryChips: React.FC<ArtifactCategoryChipsProps> = ({ value, onChange, disabled }) => (
-//     <div className="rofp-field-group">
-//         <div className="rofp-field-label-row">
-//             <label className="rofp-label">How should Omi treat these together?</label>
-//         </div>
-//         <div className="rofp-artifact-cat-row">
-//             {ARTIFACT_CATEGORIES.map(cat => (
-//                 <button
-//                     key={cat.id}
-//                     type="button"
-//                     className={[
-//                         "rofp-artifact-cat-chip",
-//                         value === cat.id ? "rofp-artifact-cat-chip--active" : "",
-//                     ].filter(Boolean).join(" ")}
-//                     onClick={() => !disabled && onChange(cat.id)}
-//                     disabled={disabled}
-//                     aria-pressed={value === cat.id}
-//                 >
-//                     {cat.label}
-//                 </button>
-//             ))}
-//         </div>
-//         {value && <p className="rofp-artifact-cat-desc">{ARTIFACT_CATEGORIES.find(c => c.id === value)?.description}</p>}
-//     </div>
-// );
-interface CustomSelectOption<T extends string> {
-    id: T;
-    label: string;
-}
-
-interface CustomSelectProps<T extends string> {
-    id?: string | undefined;
-    value: T | null;
-    placeholder: string;
-    options: CustomSelectOption<T>[];
-    onChange: (value: T) => void;
-    disabled?: boolean | undefined;
-}
-
-function CustomSelect<T extends string>({
-    id, value, placeholder, options, onChange, disabled,
-}: CustomSelectProps<T>) {
-    const [open, setOpen] = useState(false);
-    const wrapRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-        if (!open) return;
-        const handleClick = (e: MouseEvent) => {
-            if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
-        };
-        const handleKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
-        document.addEventListener("mousedown", handleClick);
-        document.addEventListener("keydown", handleKey);
-        return () => {
-            document.removeEventListener("mousedown", handleClick);
-            document.removeEventListener("keydown", handleKey);
-        };
-    }, [open]);
-
-    const selectedLabel = options.find(o => o.id === value)?.label ?? null;
-
-    return (
-        <div className="rofp-custom-select" ref={wrapRef}>
-            <button
-                type="button"
-                id={id}
-                className={[
-                    "rofp-custom-select-trigger",
-                    !selectedLabel ? "rofp-custom-select-trigger--placeholder" : "",
-                    open ? "rofp-custom-select-trigger--open" : "",
-                ].filter(Boolean).join(" ")}
-                onClick={() => !disabled && setOpen(o => !o)}
-                disabled={disabled}
-                aria-haspopup="listbox"
-                aria-expanded={open}
-            >
-                <span>{selectedLabel ?? placeholder}</span>
-                <svg className="rofp-custom-select-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-            </button>
-            {open && (
-                <ul className="rofp-custom-select-menu" role="listbox">
-                    {options.map(opt => (
-                        <li
-                            key={opt.id}
-                            role="option"
-                            aria-selected={opt.id === value}
-                            className={[
-                                "rofp-custom-select-option",
-                                opt.id === value ? "rofp-custom-select-option--active" : "",
-                            ].filter(Boolean).join(" ")}
-                            onClick={() => { onChange(opt.id); setOpen(false); }}
-                        >
-                            {opt.id === value && (
-                                <span className="rofp-custom-select-option-check"><MaterialCheckIcon /></span>
-                            )}
-                            {opt.label}
-                        </li>
-                    ))}
-                </ul>
-            )}
-        </div>
-    );
-}
-interface ArtifactContentCategorySelectProps {
-    value: ArtifactContentCategory | null;
-    onChange: (category: ArtifactContentCategory) => void;
+interface ArtifactCategoryChipsProps {
+    value: ArtifactCategory | null;
+    onChange: (category: ArtifactCategory) => void;
     disabled?: boolean;
 }
 
-// Required whenever at least one artifact (file or link) is attached —
-// unlike ArtifactCategoryChips (comparison mode) above, which only applies
-// once there are 2+. A single artifact still needs a content category for
-// Stage 2 dimension selection to make sense.
-const ArtifactContentCategorySelect: React.FC<ArtifactContentCategorySelectProps> = ({ value, onChange, disabled }) => (
+const ArtifactCategoryChips: React.FC<ArtifactCategoryChipsProps> = ({ value, onChange, disabled }) => (
     <div className="rofp-field-group">
         <div className="rofp-field-label-row">
-            <label className="rofp-label" htmlFor="rof-artifact-content-category">
-                Artifact Content Category
-            </label>
-            <Tooltip text="What kind of creative asset is this? Drives which questions Omi asks personas about it." />
+            <label className="rofp-label">How should Omi treat these together?</label>
         </div>
-        <CustomSelect
-            id="rof-artifact-content-category"
-            value={value}
-            placeholder="Select a category…"
-            options={ARTIFACT_CONTENT_CATEGORIES}
-            onChange={onChange}
-            disabled={disabled}
-        />
+        <div className="rofp-artifact-cat-row">
+            {ARTIFACT_CATEGORIES.map(cat => (
+                <button
+                    key={cat.id}
+                    type="button"
+                    className={[
+                        "rofp-artifact-cat-chip",
+                        value === cat.id ? "rofp-artifact-cat-chip--active" : "",
+                    ].filter(Boolean).join(" ")}
+                    onClick={() => !disabled && onChange(cat.id)}
+                    disabled={disabled}
+                    aria-pressed={value === cat.id}
+                >
+                    {cat.label}
+                </button>
+            ))}
+        </div>
+        {value && <p className="rofp-artifact-cat-desc">{ARTIFACT_CATEGORIES.find(c => c.id === value)?.description}</p>}
     </div>
 );
 
@@ -1777,16 +1497,11 @@ const MaterialTab: React.FC<MaterialTabProps> = ({
     const artifactHasContent = data.artifact.links.some(l => l.value.trim()) || data.artifact.files.length > 0;
     const artifactLinksValid = data.artifact.links.every(l => isLikelyValidUrl(l.value));
     const artifactItemCount = countArtifactItems(data.artifact);
-    // DISABLED alongside the comparison-mode chips below — see the block
-    // comment near ARTIFACT_MAX_FILES for how to re-enable:
-    // const artifactNeedsCategory = artifactItemCount >= 2 && !data.artifact.category;
-    // Content category (separate from comparison mode) is required as soon as
-    // there's anything to categorize at all — Stage 2 dimension selection
-    // needs it even for a single artifact, independent of comparison mode.
-    const artifactNeedsContentCategory = artifactItemCount >= 1 && !data.artifact.contentCategory;
+    // With 2+ artifacts, a category is required — otherwise Omi doesn't know
+    // whether to compare, unify, or sequence them.
+    const artifactNeedsCategory = artifactItemCount >= 2 && !data.artifact.category;
     // Same reasoning as canSubmitBrief — not gated on artifactHasContent.
-    const canSubmitArtifact = artifactLinksValid && !artifactProcessing && !data.artifact.submitted
-        && !artifactNeedsContentCategory;
+    const canSubmitArtifact = artifactLinksValid && !artifactProcessing && !data.artifact.submitted && !artifactNeedsCategory;
     const canAddArtifactLink = data.artifact.links.length < ARTIFACT_MAX_LINKS;
 
     const updateArtifact = (patch: Partial<ArtifactSectionData>) =>
@@ -1802,24 +1517,11 @@ const MaterialTab: React.FC<MaterialTabProps> = ({
                 instruction: data.artifact.instruction,
                 files: data.artifact.files.map(f => f.file).filter((f): f is File => f !== null),
                 links: data.artifact.links.map(l => l.value).filter(Boolean),
-                comparison_mode: data.artifact.category,
-                artifact_category: data.artifact.contentCategory,
+                category: data.artifact.category,
             });
-            // Capture each file's bytes as a base64 data URL before we lose
-            // the raw File reference — this is what survives into the
-            // localStorage snapshot (stripFilesForStorage nulls out `file`
-            // but keeps `dataUrl`) and lets the Discussion Guide's Artifact
-            // viewer actually preview images / offer downloads later.
-            const filesWithDataUrls = await Promise.all(
-                data.artifact.files.map(async (f) => ({
-                    ...f,
-                    uploadStatus: "done" as MaterialUploadStatus,
-                    dataUrl: f.file ? await fileToDataUrl(f.file).catch(() => f.dataUrl ?? null) : f.dataUrl,
-                }))
-            );
             updateArtifact({
                 submitted: true,
-                files: filesWithDataUrls,
+                files: data.artifact.files.map(f => ({ ...f, uploadStatus: "done" as MaterialUploadStatus })),
             });
         } catch (error: any) {
             setArtifactError(
@@ -1938,7 +1640,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({
                         </div>
                     </div>
 
-                    {/* ── Section 2: Artifact ─────────────────────────────── */}
+{/* ── Section 2: Artifact ─────────────────────────────── */}
                     <div
                         className={[
                             "rofp-material-section",
@@ -1950,91 +1652,82 @@ const MaterialTab: React.FC<MaterialTabProps> = ({
                                 <span className="rofp-coming-soon-badge">Coming Soon</span>
                             </div>
                         )}
-                        <div className="rofp-material-section-head">
-                            <h3 className="rofp-material-section-title">Artifact</h3>
-                            <p className="rofp-material-section-sub">
-                                Share creatives, videos, images, landing pages, claims,
-                                storyboards, prototypes, product flows, or anything you want
-                                Omi to test with personas.
-                            </p>
-                        </div>
-
-                        <div className="rofp-material-section-body">
-                            <div className="rofp-field-group">
-                                <div className="rofp-field-label-row">
-                                    <label className="rofp-label" htmlFor="rof-artifact-instruction">
-                                        What should Omi do with this artifact?
-                                        <span className="rofp-label-optional">Optional</span>
-                                    </label>
-                                    <Tooltip text="Tell Omi what to test, decode, or react to in this artifact." />
-                                </div>
-                                <textarea
-                                    id="rof-artifact-instruction"
-                                    className="rofp-textarea rofp-textarea--lg"
-                                    placeholder="This is a campaign creative. Test whether the message is clear, believable, distinctive, and likely to drive interest or purchase intent…."
-                                    value={data.artifact.instruction}
-                                    maxLength={MATERIAL_INSTRUCTION_MAX_LENGTH}
-                                    onFocus={handleFieldFocus}
-                                    onBlur={handleFieldBlur}
-                                    onChange={e => updateArtifact({ instruction: e.target.value.slice(0, MATERIAL_INSTRUCTION_MAX_LENGTH) })}
-                                    rows={3}
-                                    disabled={data.artifact.submitted}
-                                />
-                                <p className="rofp-field-charcount">{data.artifact.instruction.length}/{MATERIAL_INSTRUCTION_MAX_LENGTH}</p>
+                        <div className="rofp-material-section">
+                            <div className="rofp-material-section-head">
+                                <h3 className="rofp-material-section-title">Artifact</h3>
+                                <p className="rofp-material-section-sub">
+                                    Share creatives, videos, images, landing pages, claims,
+                                    storyboards, prototypes, product flows, or anything you want
+                                    Omi to test with personas.
+                                </p>
                             </div>
 
-                            {data.artifact.links.map((link, idx) => (
-                                <LinkRow
-                                    key={link.id}
-                                    value={link.value}
-                                    placeholder="Paste a YouTube, video, image, landing page, product page, or creative URL"
-                                    onChange={value => updateArtifact({
-                                        links: data.artifact.links.map(l => l.id === link.id ? { ...l, value } : l),
-                                    })}
-                                    removable={data.artifact.links.length > 1 || idx > 0}
-                                    onRemove={() => updateArtifact({ links: data.artifact.links.filter(l => l.id !== link.id) })}
-                                    onFocus={handleFieldFocus}
-                                    onBlur={handleFieldBlur}
+                            <div className="rofp-material-section-body">
+                                <div className="rofp-field-group">
+                                    <div className="rofp-field-label-row">
+                                        <label className="rofp-label" htmlFor="rof-artifact-instruction">
+                                            What should Omi do with this artifact?
+                                            <span className="rofp-label-optional">Optional</span>
+                                        </label>
+                                        <Tooltip text="Tell Omi what to test, decode, or react to in this artifact." />
+                                    </div>
+                                    <textarea
+                                        id="rof-artifact-instruction"
+                                        className="rofp-textarea rofp-textarea--lg"
+                                        placeholder="This is a campaign creative. Test whether the message is clear, believable, distinctive, and likely to drive interest or purchase intent…."
+                                        value={data.artifact.instruction}
+                                        maxLength={MATERIAL_INSTRUCTION_MAX_LENGTH}
+                                        onFocus={handleFieldFocus}
+                                        onBlur={handleFieldBlur}
+                                        onChange={e => updateArtifact({ instruction: e.target.value.slice(0, MATERIAL_INSTRUCTION_MAX_LENGTH) })}
+                                        rows={3}
+                                        disabled={data.artifact.submitted}
+                                    />
+                                    <p className="rofp-field-charcount">{data.artifact.instruction.length}/{MATERIAL_INSTRUCTION_MAX_LENGTH}</p>
+                                </div>
+
+                                {data.artifact.links.map((link, idx) => (
+                                    <LinkRow
+                                        key={link.id}
+                                        value={link.value}
+                                        placeholder="Paste a YouTube, video, image, landing page, product page, or creative URL"
+                                        onChange={value => updateArtifact({
+                                            links: data.artifact.links.map(l => l.id === link.id ? { ...l, value } : l),
+                                        })}
+                                        removable={data.artifact.links.length > 1 || idx > 0}
+                                        onRemove={() => updateArtifact({ links: data.artifact.links.filter(l => l.id !== link.id) })}
+                                        onFocus={handleFieldFocus}
+                                        onBlur={handleFieldBlur}
+                                        disabled={data.artifact.submitted}
+                                    />
+                                ))}
+
+                                <p className="rofp-field-static-note rofp-field-static-note--italic">
+                                    Links are recommended for videos, social creatives, landing pages, hosted images, and product pages.
+                                </p>
+
+                                {canAddArtifactLink && !data.artifact.submitted && (
+                                    <button
+                                        type="button"
+                                        className="rofp-material-add-link-btn"
+                                        onClick={() => updateArtifact({ links: [...data.artifact.links, emptyLink()] })}
+                                    >
+                                        <PlusIcon /> Add another link
+                                    </button>
+                                )}
+
+                                <MultiUploadSlot
+                                    label="Image"
+                                    acceptExtensions={ARTIFACT_EXTENSIONS}
+                                    maxBytes={ARTIFACT_MAX_BYTES}
+                                    maxFiles={ARTIFACT_MAX_FILES}
+                                    formatsLabel="PNG, JPG, GIF, WEBP"
+                                    files={data.artifact.files}
+                                    onFilesChange={files => updateArtifact({ files })}
                                     disabled={data.artifact.submitted}
+                                    compact
                                 />
-                            ))}
 
-                            <p className="rofp-field-static-note rofp-field-static-note--italic">
-                                Links are recommended for videos, social creatives, landing pages, hosted images, and product pages.
-                            </p>
-
-                            {canAddArtifactLink && !data.artifact.submitted && (
-                                <button
-                                    type="button"
-                                    className="rofp-material-add-link-btn"
-                                    onClick={() => updateArtifact({ links: [...data.artifact.links, emptyLink()] })}
-                                >
-                                    <PlusIcon /> Add another link
-                                </button>
-                            )}
-
-                            <MultiUploadSlot
-                                label="Image"
-                                acceptExtensions={ARTIFACT_EXTENSIONS}
-                                maxBytes={ARTIFACT_MAX_BYTES}
-                                maxFiles={ARTIFACT_MAX_FILES}
-                                formatsLabel="PNG, JPG, GIF, WEBP"
-                                files={data.artifact.files}
-                                onFilesChange={files => updateArtifact({ files })}
-                                disabled={data.artifact.submitted}
-                                compact
-                            />
-
-                            {artifactItemCount >= 1 && (
-                                <ArtifactContentCategorySelect
-                                    value={data.artifact.contentCategory}
-                                    onChange={contentCategory => updateArtifact({ contentCategory })}
-                                    disabled={data.artifact.submitted}
-                                />
-                            )}
-
-                            {/* DISABLED — comparison-mode categorization UI. See the
-                                    block comment near ARTIFACT_MAX_FILES for how to re-enable.
                                 {artifactItemCount >= 2 && (
                                     <ArtifactCategoryChips
                                         value={data.artifact.category}
@@ -2042,46 +1735,41 @@ const MaterialTab: React.FC<MaterialTabProps> = ({
                                         disabled={data.artifact.submitted}
                                     />
                                 )}
-                                */}
-                        </div>
+                            </div>
 
-                        {artifactProcessing && <OmiProcessingBar messageIndex={artifactMsgIndex} />}
+                            {artifactProcessing && <OmiProcessingBar messageIndex={artifactMsgIndex} />}
 
-                        {artifactError && !artifactProcessing && (
-                            <p className="rofp-upload-slot-error">{artifactError}</p>
-                        )}
+                            {artifactError && !artifactProcessing && (
+                                <p className="rofp-upload-slot-error">{artifactError}</p>
+                            )}
 
-                        {data.artifact.submitted && !artifactProcessing && (
-                            <div className="rofp-upload-complete">
-                                <span className="rofp-upload-complete-icon"><MaterialCheckIcon /></span>
-                                <div className="rofp-upload-complete-text">
-                                    <div className="rofp-upload-complete-title">Artifact saved</div>
-                                    <div className="rofp-upload-complete-sub">Omi can now test this against your personas.</div>
+                            {data.artifact.submitted && !artifactProcessing && (
+                                <div className="rofp-upload-complete">
+                                    <span className="rofp-upload-complete-icon"><MaterialCheckIcon /></span>
+                                    <div className="rofp-upload-complete-text">
+                                        <div className="rofp-upload-complete-title">Artifact saved</div>
+                                        <div className="rofp-upload-complete-sub">Omi can now test this against your personas.</div>
+                                    </div>
+                                    <button className="rofp-material-edit-btn" onClick={handleEditArtifact} type="button">
+                                        <EditIcon /> Edit
+                                    </button>
                                 </div>
-                                <button className="rofp-material-edit-btn" onClick={handleEditArtifact} type="button">
-                                    <EditIcon /> Edit
+                            )}
+
+                            <div className="rofp-material-section-cta">
+                                <button
+                                    className={["rofp-btn-section-submit", !canSubmitArtifact ? "rofp-btn-section-submit--disabled" : ""].filter(Boolean).join(" ")}
+                                    disabled={!canSubmitArtifact}
+                                    onClick={handleSubmitArtifact}
+                                    type="button"
+                                >
+                                    {artifactProcessing ? "Saving…" : data.artifact.submitted ? "Saved" : "Submit"}
                                 </button>
                             </div>
-                        )}
-
-                        <div className="rofp-material-section-cta">
-                            <button
-                                className={["rofp-btn-section-submit", !canSubmitArtifact ? "rofp-btn-section-submit--disabled" : ""].filter(Boolean).join(" ")}
-                                disabled={!canSubmitArtifact}
-                                onClick={handleSubmitArtifact}
-                                type="button"
-                            >
-                                {artifactProcessing ? "Saving…" : data.artifact.submitted ? "Saved" : "Submit"}
-                            </button>
-                        </div>
-                        {artifactNeedsContentCategory && !artifactProcessing && (
-                            <p className="rofp-cta-hint" style={{ textAlign: "right" }}>Pick an artifact content category to continue</p>
-                        )}
-                        {/* DISABLED alongside the comparison-mode chips above.
                             {artifactNeedsCategory && !artifactProcessing && (
                                 <p className="rofp-cta-hint" style={{ textAlign: "right" }}>Pick how these relate to continue</p>
                             )}
-                            */}
+                        </div>
                     </div>
 
                 </div>{/* END .rofp-material-sections-row */}
@@ -2189,16 +1877,7 @@ const buildPreviewSections = (data: ROFramerData): PreviewSection[] => {
     if (data.businessTrigger.trigger.trim()) sections.push({ heading: "Business Trigger", body: data.businessTrigger.trigger.trim() });
     if (data.customerUnknown.unknown.trim()) sections.push({ heading: "Customer Unknown", body: data.customerUnknown.unknown.trim() });
     if (data.decisionMoment.decision.trim()) sections.push({ heading: "Decision Moment", body: data.decisionMoment.decision.trim() });
-
-    const { audienceSegments } = data;
-    if (audienceSegments.audience.trim() || audienceSegments.geographies.length > 0) {
-        const lines: string[] = [];
-        if (audienceSegments.audience.trim()) lines.push(audienceSegments.audience.trim());
-        if (audienceSegments.geographies.length) {
-            lines.push(`Geography: ${audienceSegments.geographies.map(g => g.name).join(", ")}`);
-        }
-        sections.push({ heading: "Audience & Segments", body: lines.join("\n") });
-    }
+    if (data.audienceSegments.audience.trim()) sections.push({ heading: "Audience & Segments", body: data.audienceSegments.audience.trim() });
 
     const briefLink = data.material.brief.link.trim();
     const artifactLinks = data.material.artifact.links.map(l => l.value.trim()).filter(Boolean);
@@ -2216,9 +1895,8 @@ const buildPreviewSections = (data: ROFramerData): PreviewSection[] => {
         if (data.material.artifact.instruction.trim()) lines.push(`Artifact instruction: ${data.material.artifact.instruction.trim()}`);
         artifactFileNames.forEach(name => lines.push(`Artifact file: ${name}`));
         artifactLinks.forEach(link => lines.push(`Artifact link: ${link}`));
-        // DISABLED alongside the categorization feature above.
-        // const categoryLabel = artifactCategoryLabel(data.material.artifact.category);
-        // if (categoryLabel) lines.push(`Artifact grouping: ${categoryLabel}`);
+        const categoryLabel = artifactCategoryLabel(data.material.artifact.category);
+        if (categoryLabel) lines.push(`Artifact grouping: ${categoryLabel}`);
         sections.push({ heading: "Add Material", body: lines.join("\n") });
     }
 

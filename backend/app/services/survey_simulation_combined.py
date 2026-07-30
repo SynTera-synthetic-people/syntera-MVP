@@ -1,7 +1,6 @@
 import asyncio
 import json
 import logging
-import uuid
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 from app.models.survey_simulation import SurveySimulation
@@ -17,8 +16,6 @@ from app.utils.survey_results_normalize import build_canonical_survey_results, b
 from app.services.question_engine import analysis_options_for_question
 from app.services.persona import get_persona
 from app.services.auto_generated_persona import get_description
-from app.services.llm_usage_tracker import record_llm_usage, extract_usage_openai_chat
-from app.services.anti_sycophancy_rules import ANTI_SYCOPHANCY_RULES
 
 logger = logging.getLogger(__name__)
 
@@ -371,10 +368,6 @@ PART 7: QUESTIONNAIRE
 
 ═══════════════════════════════════════════════════════════════════════════════
 
-{ANTI_SYCOPHANCY_RULES}
-
-═══════════════════════════════════════════════════════════════════════════════
-
 RESPONSE GENERATION REQUIREMENTS:
 
 1) SAMPLE SIZE: Exactly {sample_size} respondents; for single-select [S] questions each respondent
@@ -439,19 +432,9 @@ async def _call_single_brain_llm(
     ocean: Dict[str, float],
     sample_size: int,
     flat_questions: List[Dict],
-    *,
-    exploration_id: Optional[str] = None,
-    workspace_id: Optional[str] = None,
-    persona_id: Optional[str] = None,
-    created_by: Optional[str] = None,
-    request_id: Optional[str] = None,
 ) -> Dict:
     """Call the LLM for one brain archetype's individually-varied responses.
-    Falls back to _fallback_simulation() if the call or JSON parsing fails.
-
-    Shared by both _simulate_single_brain and _simulate_multiple_brains
-    (one call per persona) — instrumenting here covers both flows.
-    """
+    Falls back to _fallback_simulation() if the call or JSON parsing fails."""
     flavor_framework = _build_brain_variation_framework(brain_assignment, ocean)
 
     prompt = _build_single_brain_simulation_prompt(
@@ -477,21 +460,6 @@ async def _call_single_brain_llm(
                 {"role": "user", "content": prompt},
             ],
             temperature=0.8,
-        )
-        input_tokens, output_tokens, usage_raw = extract_usage_openai_chat(res)
-        await record_llm_usage(
-            exploration_id=exploration_id,
-            stage="survey_simulation",
-            operation="persona_simulation",
-            provider="openai",
-            model=survey_model,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            usage_raw=usage_raw,
-            workspace_id=workspace_id,
-            persona_id=persona_id,
-            created_by=created_by,
-            request_id=request_id,
         )
         raw = res.choices[0].message.content
         data = raw if isinstance(raw, (dict, list)) else json.loads(raw)
@@ -571,8 +539,6 @@ async def _simulate_single_brain(
     user_id: str,
     exploration_id: str,
     replace_existing: bool,
-    *,
-    request_id: Optional[str] = None,
 ) -> Dict:
     """1 persona -> `sample_size` respondents, all sharing one brain archetype
     with individual flavor variation."""
@@ -602,11 +568,6 @@ async def _simulate_single_brain(
         ocean=ctx["ocean"],
         sample_size=sample_size,
         flat_questions=flat_questions,
-        exploration_id=exploration_id,
-        workspace_id=workspace_id,
-        persona_id=persona_id,
-        created_by=user_id,
-        request_id=request_id,
     )
 
     normalized_results = build_normalized_survey_results(
@@ -668,8 +629,6 @@ async def _simulate_multiple_brains(
     user_id: str,
     exploration_id: str,
     replace_existing: bool,
-    *,
-    request_id: Optional[str] = None,
 ) -> Dict:
     """2+ personas, each with their own sample size and brain archetype. Each
     persona gets its own LLM call (individual flavor variation), then results
@@ -706,11 +665,6 @@ async def _simulate_multiple_brains(
                 ocean=ctx["ocean"],
                 sample_size=sample_size,
                 flat_questions=flat_questions,
-                exploration_id=exploration_id,
-                workspace_id=workspace_id,
-                persona_id=persona_id,
-                created_by=user_id,
-                request_id=request_id,
             )
             persona_name = ctx["persona"].get("name", "Unknown")
             brain_name = ctx["brain_assignment"].get("primary_brain")
@@ -868,10 +822,6 @@ async def simulate_combined_and_store(
         workspace_id, exploration_id, len(personas_selection), total_sample, user_id,
     )
 
-    # One request_id per simulation run — correlates every per-persona
-    # llm_usage_event row from this call (single- or multi-brain).
-    request_id = uuid.uuid4().hex
-
     async def _dispatch():
         if len(personas_selection) == 1:
             return await _simulate_single_brain(
@@ -884,7 +834,6 @@ async def simulate_combined_and_store(
                 user_id=user_id,
                 exploration_id=exploration_id,
                 replace_existing=replace_existing,
-                request_id=request_id,
             )
         return await _simulate_multiple_brains(
             workspace_id=workspace_id,
@@ -896,7 +845,6 @@ async def simulate_combined_and_store(
             user_id=user_id,
             exploration_id=exploration_id,
             replace_existing=replace_existing,
-            request_id=request_id,
         )
 
     if not simulation_id:

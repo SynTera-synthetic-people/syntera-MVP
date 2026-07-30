@@ -3,15 +3,7 @@ import axiosInstance from '../utils/axiosConfig';
 
 export const interviewService = {
   // Start an interview. forceNew bypasses idempotency; lightweight skips batch LLM (Conversation Studio).
-  /**
- * @param {string | undefined} workspaceId
- * @param {string | undefined} explorationId
- * @param {string} personaId
- * @param {boolean} [forceNew=false]
- * @param {boolean} [lightweight=false]
- * @param {string | null} [sessionGroupId=null]
- */
-  startInterview: async (workspaceId, explorationId, personaId, forceNew = false, lightweight = false, sessionGroupId =  null) => {
+  startInterview: async (workspaceId, explorationId, personaId, forceNew = false, lightweight = false, sessionGroupId = null) => {
     const response = await axiosInstance.post(
       `/workspaces/${workspaceId}/explorations/${explorationId}/in-depth/interviews`,
       { persona_id: personaId, force_new: forceNew, lightweight, session_group_id: sessionGroupId },

@@ -1,8 +1,12 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   Data Playground — styles
+   Palette sampled directly from Figma (Data Playground Figma/*.png)
+   ══════════════════════════════════════════════════════════════════════════ */
 
 .dp-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.7);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -11,18 +15,21 @@
 
 /* Modal */
 .dp-modal {
-  background: #141414;
+  background: #1e2126;
   border-radius: 16px;
-  width: 90vw;
-  max-width: 1200px;
-  height: 85vh;
+  width: 94vw;
+  max-width: 1600px;
+  height: 90vh;
+  max-height: 960px;
+  min-height: 600px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid #2e2e2e;
-  color: #e8e8e8;
+  border: 1px solid #2a2d33;
+  color: #e8e9ec;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 14px;
+  position: relative;
 }
 
 /* ── Header ── */
@@ -32,26 +39,28 @@
   justify-content: space-between;
   gap: 12px;
   padding: 20px 24px 16px;
-  border-bottom: 1px solid #2e2e2e;
+  background: #1e2126;
+  border-bottom: 1px solid #2a2d33;
   flex-shrink: 0;
 }
 
 .dp-header-left {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
 }
 
 .dp-header-title {
-  font-size: 18px;
+  font-size: 19px;
   font-weight: 600;
-  color: #f0f0f0;
+  color: #f5f6f7;
   margin: 0;
+  letter-spacing: -0.01em;
 }
 
 .dp-header-subtitle {
   font-size: 13px;
-  color: #888;
+  color: #9a9eab;
   margin: 0;
 }
 
@@ -65,29 +74,30 @@
 .dp-upload-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   padding: 8px 16px;
-  background: #1e1e1e;
-  border: 1px solid #3a3a3a;
+  background: #121317;
+  border: 1px solid #3a3d44;
   border-radius: 8px;
-  color: #e8e8e8;
+  color: #e8e9ec;
   font-size: 13px;
   cursor: pointer;
   transition: background 0.15s;
 }
 
 .dp-upload-btn:hover {
-  background: #2a2a2a;
+  background: #2a2d33;
 }
 
 .dp-upload-icon {
   font-size: 14px;
+  line-height: 1;
 }
 
 .dp-close-btn {
   background: none;
   border: none;
-  color: #888;
+  color: #9a9eab;
   font-size: 18px;
   cursor: pointer;
   padding: 4px 8px;
@@ -97,8 +107,8 @@
 }
 
 .dp-close-btn:hover {
-  background: #2a2a2a;
-  color: #e8e8e8;
+  background: #2a2d33;
+  color: #f5f6f7;
 }
 
 /* ── Tabs ── */
@@ -106,7 +116,8 @@
   display: flex;
   gap: 6px;
   padding: 12px 24px;
-  border-bottom: 1px solid #2e2e2e;
+  background: #1e2126;
+  border-bottom: 1px solid #2a2d33;
   flex-shrink: 0;
   overflow-x: auto;
   scrollbar-width: none;
@@ -117,36 +128,40 @@
 }
 
 .dp-tab {
-  padding: 7px 18px;
+  padding: 8px 18px;
   border-radius: 8px;
-  border: 1px solid #2e2e2e;
+  border: 1px solid #2a2d33;
   background: transparent;
-  color: #888;
+  color: #9a9eab;
   font-size: 13px;
   cursor: pointer;
   white-space: nowrap;
   transition: all 0.15s;
+  font-family: inherit;
 }
 
 .dp-tab:hover {
-  color: #e8e8e8;
-  background: #252525;
-  border-color: #3a3a3a;
+  color: #e8e9ec;
+  background: #23262c;
+  border-color: #3a3d44;
 }
 
 .dp-tab--active {
-  background: #252525;
-  color: #f0f0f0;
-  border-color: #555;
-  font-weight: 500;
+  background: #2a2d33;
+  color: #f5f6f7;
+  border-color: #4a4d54;
+  font-weight: 600;
 }
 
 /* ── Body ── */
 .dp-body {
   flex: 1;
   display: flex;
+  gap: 16px;
+  padding: 16px;
   overflow: hidden;
   min-height: 0;
+  background: #1e2126;
 }
 
 /* ── Footer ── */
@@ -155,7 +170,8 @@
   align-items: center;
   justify-content: space-between;
   padding: 14px 24px;
-  border-top: 1px solid #2e2e2e;
+  background: #1e2126;
+  border-top: 1px solid #2a2d33;
   flex-shrink: 0;
 }
 
@@ -168,23 +184,25 @@
 .dp-download-btn {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 8px 16px;
+  gap: 8px;
+  padding: 9px 16px;
   background: transparent;
-  border: 1px solid #3a3a3a;
+  border: 1px solid #3a3d44;
   border-radius: 8px;
-  color: #e8e8e8;
+  color: #e8e9ec;
   font-size: 13px;
   cursor: pointer;
   transition: background 0.15s;
+  font-family: inherit;
 }
 
 .dp-download-btn:hover {
-  background: #252525;
+  background: #23262c;
 }
 
 .dp-download-icon {
   font-size: 14px;
+  line-height: 1;
 }
 
 .dp-run-btn {
@@ -192,7 +210,7 @@
   align-items: center;
   gap: 8px;
   padding: 10px 22px;
-  background: #2563eb;
+  background: #0e63ec;
   border: none;
   border-radius: 8px;
   color: #fff;
@@ -200,10 +218,11 @@
   font-weight: 500;
   cursor: pointer;
   transition: background 0.15s;
+  font-family: inherit;
 }
 
 .dp-run-btn:hover {
-  background: #1d4ed8;
+  background: #0b52c9;
 }
 
 .dp-run-btn:disabled {
@@ -213,13 +232,116 @@
 
 .dp-run-arrow {
   font-size: 16px;
+  line-height: 1;
+}
+
+/* ── Toast ── */
+.dp-toast {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: #17a668;
+  color: #fff;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  z-index: 50;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.dp-toast-icon {
+  font-size: 15px;
+}
+
+.dp-toast-close {
+  background: none;
+  border: none;
+  color: #fff;
+  opacity: 0.85;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 0 0 6px;
+  line-height: 1;
+}
+
+.dp-toast-close:hover {
+  opacity: 1;
+}
+
+/* ── Left "zone" wrapper ──────────────────────────────────────────────────
+   Groups the variable-selection panels (All Variables / Selected /
+   Banner / Main) on a shared, slightly-darker recessed background, per
+   Figma. Panels sit "on top of" this zone with their own lighter fill
+   (see .dp-panel below) — the zone is the darker of the two tones. ── */
+/* ── Full-bleed "zone" wrapper (Frequency Table / Cross Tabs) ─────────────
+   Per Figma, the dark recessed zone isn't confined to the variable panels —
+   it spans the *entire* tab body edge-to-edge, and the results content
+   area (the "Data will appear here" card / results table) floats on top
+   of it using the same lighter tone the panels use. This wrapper bleeds
+   out through .dp-body's own padding (negative margin) and re-applies it
+   as its own padding, so it reaches the full width/height of the body. ── */
+.dp-zone-body {
+  flex: 1;
+  display: flex;
+  align-items: stretch;
+  gap: 16px;
+  margin: -16px;
+  /* Top + left only — per Figma the content-area card is flush against
+     the zone's right and bottom edges; only the panel side (top/left)
+     keeps an inset. */
+  padding: 16px 0 0 16px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: #121317;
+}
+
+/* The variable panels still want a bottom gap before the zone's edge —
+   since the zone itself no longer has bottom padding (so the content-area
+   can go flush), give the panel columns their own margin instead. This
+   only targets direct children of the full-bleed zone, so it doesn't
+   affect .dp-panel usage elsewhere (e.g. Chart/Visuals' .dp-left-zone). */
+.dp-zone-body > .dp-panel,
+.dp-zone-body > .dp-cross-panels {
+  margin-bottom: 16px;
+}
+
+/* Legacy small wrapper — still used by Chart/Visuals, which isn't part of
+   this pass. Kept separate from .dp-zone-body above. */
+.dp-left-zone {
+  display: flex;
+  align-items: stretch;
+  gap: 16px;
+  padding: 10px;
+  background: #121317;
+  border: 1px solid #2a2d33;
+  border-radius: 14px;
+  flex-shrink: 0;
+  min-height: 0;
+}
+
+.dp-content-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+  background: #1e2126;
+  border-radius: 14px;
 }
 
 /* ── Shared Panel Styles (used by tabs) ── */
 .dp-panel {
   display: flex;
   flex-direction: column;
-  border-right: 1px solid #2e2e2e;
+  background: #17181c;
+  border: 1px solid #2f323a;
+  border-radius: 12px;
   overflow: hidden;
   flex-shrink: 0;
 }
@@ -229,44 +351,106 @@
   align-items: center;
   justify-content: space-between;
   padding: 10px 14px;
-  border-bottom: 1px solid #2e2e2e;
+  border-bottom: 1px solid #2a2d33;
   flex-shrink: 0;
 }
 
 .dp-panel-title {
-  font-size: 12px;
-  font-weight: 500;
-  color: #888;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  font-size: 13px;
+  font-weight: 600;
+  color: #e8e9ec;
 }
 
 .dp-panel-arrow-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
-  background: #1e1e1e;
-  border: 1px solid #2e2e2e;
-  border-radius: 6px;
-  color: #888;
+  width: 32px;
+  height: 32px;
+  background: #121317;
+  border: 1px solid #3a3d44;
+  border-radius: 8px;
+  color: #e8e9ec;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 14px;
   transition: background 0.15s, color 0.15s;
 }
 
 .dp-panel-arrow-btn:hover {
-  background: #2a2a2a;
-  color: #e8e8e8;
+  background: #2a2d33;
+  color: #e8e9ec;
+}
+
+.dp-panel-arrow-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.dp-panel-arrow-btn:disabled:hover {
+  background: #121317;
+  color: #e8e9ec;
+}
+
+/* "Group by" entry — created when 2+ multi-selected variables are moved
+   into Banner/Main together in one batch. Collapsible header pill (same
+   mint language as an "added" source pill) with its members nested and
+   indented underneath. */
+.dp-var-group {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  gap: 6px;
+}
+
+.dp-var-group-header {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  background: #37ffce;
+  border: none;
+  border-radius: 6px;
+  color: #0d0e12;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.dp-var-group-caret {
+  font-size: 12px;
+  line-height: 1;
+  transition: transform 0.15s;
+}
+
+.dp-var-group-caret--open {
+  transform: rotate(180deg);
+}
+
+.dp-var-group-members {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding-left: 14px;
+  border-left: 2px solid #2a2d33;
+  margin-left: 4px;
 }
 
 .dp-var-list {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
   scrollbar-width: thin;
-  scrollbar-color: #3a3a3a transparent;
+  scrollbar-color: #3a3d44 transparent;
 }
 
 .dp-var-list::-webkit-scrollbar {
@@ -278,56 +462,141 @@
 }
 
 .dp-var-list::-webkit-scrollbar-thumb {
-  background: #3a3a3a;
+  background: #3a3d44;
   border-radius: 2px;
 }
 
-/* ── Variable Pill ── */
+/* ── Variable Pill ──────────────────────────────────────────────────────────
+   Colors pixel-sampled from Figma:
+   - default fill  #393c45, text #e8e9ec (pill background NEVER changes,
+     whether "added" in the source list or "focused" in a selected list —
+     the mint indicator is always the fused arrow badge, not a full-pill fill)
+   - fused arrow badge fill #37ffce, text #0e0f12, full pill height, flush
+     with the pill's edge (clipped to the pill's own border-radius via
+     `overflow: hidden` on .dp-pill — no gap, no floating rounded square)
+   ── */
 .dp-pill {
   display: flex;
-  align-items: center;
-  width: 100%;
-  padding: 6px 10px;
-  margin: 2px 0;
-  background: #1e1e1e;
-  border: 1px solid #2e2e2e;
-  border-radius: 6px;
-  color: #c8c8c8;
-  font-size: 12px;
+  align-items: stretch;
+  width: auto;
+  max-width: 100%;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0;
+  background: #393c45;
+  border: 1px solid #16181c;
+  border-radius: 8px;
+  color: #e8e9ec;
+  font-size: 13px;
   cursor: pointer;
   text-align: left;
-  transition: all 0.15s;
-  gap: 6px;
+  transition: background 0.15s;
+  gap: 0;
+  overflow: hidden;
   font-family: inherit;
 }
 
 .dp-pill:hover {
-  background: #252525;
-  border-color: #444;
+  background: #454850;
 }
 
-.dp-pill--selected {
-  background: #0d2b22;
-  border-color: #00e5b3;
-  color: #00e5b3;
+/* "source" pill (All Variables list) once added to a target list —
+   pill background stays the neutral slate; only the fused badge (below)
+   turns mint. Kept as a state hook but intentionally carries no override. */
+.dp-pill--added {
 }
 
-.dp-pill--selected:hover {
-  background: #102f26;
+/* "selected" pill (Selected/Banner/Main lists) that Up/Down acts on —
+   again, no outline/fill override; the fused badge is the sole indicator. */
+.dp-pill--focused {
 }
 
 .dp-pill-label {
   flex: 1;
   min-width: 0;
+  display: flex;
+  align-items: center;
+  padding: 8px 14px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.dp-pill-arrow {
+/* Fused mint arrow segment: full pill height, flush against the edge.
+   Visible permanently when pinned (added / focused); otherwise revealed
+   on hover only. Width is reserved at all times so hovering never shifts
+   the pill's layout. */
+.dp-pill-arrow-badge {
   flex-shrink: 0;
-  font-size: 11px;
-  color: #00e5b3;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  background: #37ffce;
+  color: #0e0f12;
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.dp-pill:hover .dp-pill-arrow-badge {
+  opacity: 1;
+}
+
+.dp-pill-arrow-badge--pinned {
+  opacity: 1;
+}
+
+/* Drag & drop affordances */
+.dp-pill[draggable='true'] {
+  cursor: grab;
+}
+
+.dp-pill--drag-over {
+  outline: 2px dashed #37ffce;
+  outline-offset: 2px;
+}
+
+.dp-pill--dragging {
+  opacity: 0.4;
+}
+
+/* ── "Add Variable" empty dropzone (Frequency Table, before any selection) ── */
+.dp-add-variable-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 8px;
+  padding: 24px 16px;
+  transition: background 0.15s, border-color 0.15s;
+  border: 1px dashed transparent;
+}
+
+.dp-add-variable-zone--active {
+  background: #17311f;
+  border-color: #37ffce;
+}
+
+.dp-add-variable-icon {
+  color: #6b6f7a;
+  margin-bottom: 4px;
+}
+
+.dp-add-variable-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #f5f6f7;
+}
+
+.dp-add-variable-subtitle {
+  font-size: 12px;
+  color: #9a9eab;
+  line-height: 1.5;
+  max-width: 160px;
 }
 
 /* ── Up/Down Bar ── */
@@ -336,50 +605,57 @@
   align-items: center;
   gap: 6px;
   padding: 8px 10px;
-  border-top: 1px solid #2e2e2e;
+  border-top: 1px solid #2a2d33;
   flex-shrink: 0;
 }
 
 .dp-updown-label {
   font-size: 11px;
-  color: #666;
+  color: #6b6f7a;
 }
 
 .dp-updown-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  background: #1e1e1e;
-  border: 1px solid #2e2e2e;
-  border-radius: 6px;
-  color: #888;
+  width: 32px;
+  height: 32px;
+  background: #121317;
+  border: 1px solid #3a3d44;
+  border-radius: 8px;
+  color: #e8e9ec;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 13px;
   transition: background 0.15s, color 0.15s;
 }
 
 .dp-updown-btn:hover {
-  background: #2a2a2a;
-  color: #e8e8e8;
+  background: #2a2d33;
+  color: #f5f6f7;
+}
+
+.dp-updown-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.dp-updown-btn--accent {
+  color: #37ffce;
+}
+
+.dp-updown-btn--accent:hover {
+  color: #37ffce;
+  background: #103527;
+  border-color: #37ffce;
 }
 
 /* ── Content Area ── */
-.dp-content-area {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  min-width: 0;
-}
-
 .dp-content-scroll {
   flex: 1;
   overflow-y: auto;
   padding: 20px;
   scrollbar-width: thin;
-  scrollbar-color: #3a3a3a transparent;
+  scrollbar-color: #3a3d44 transparent;
 }
 
 .dp-content-scroll::-webkit-scrollbar {
@@ -391,7 +667,7 @@
 }
 
 .dp-content-scroll::-webkit-scrollbar-thumb {
-  background: #3a3a3a;
+  background: #3a3d44;
   border-radius: 3px;
 }
 
@@ -414,13 +690,13 @@
 .dp-empty-title {
   font-size: 15px;
   font-weight: 500;
-  color: #666;
+  color: #9a9eab;
   margin: 0;
 }
 
 .dp-empty-subtitle {
   font-size: 13px;
-  color: #555;
+  color: #6b6f7a;
   margin: 0;
 }
 
@@ -434,7 +710,7 @@
   font-weight: 500;
   color: #ccc;
   padding-bottom: 10px;
-  border-bottom: 1px solid #2e2e2e;
+  border-bottom: 1px solid #2a2d33;
   margin-bottom: 12px;
 }
 
@@ -445,24 +721,25 @@
 }
 
 .dp-freq-table th {
-  background: #1e1e1e;
-  color: #888;
+  background: #0e0f12;
+  color: #9a9eab;
   font-weight: 500;
   font-size: 12px;
   padding: 8px 12px;
-  border: 1px solid #2e2e2e;
+  border: 1px solid #2a2d33;
   text-align: left;
   white-space: nowrap;
 }
 
 .dp-freq-table td {
+  background: #0e0f12;
   padding: 8px 12px;
-  border: 1px solid #2e2e2e;
-  color: #c8c8c8;
+  border: 1px solid #2a2d33;
+  color: #c8cad0;
 }
 
 .dp-freq-table tbody tr:hover td {
-  background: #1e1e1e;
+  background: #121317;
 }
 
 /* ── Cross Tab Table ── */
@@ -473,12 +750,12 @@
 }
 
 .dp-cross-table th {
-  background: #1e1e1e;
-  color: #888;
+  background: #121317;
+  color: #9a9eab;
   font-weight: 500;
   font-size: 11px;
   padding: 7px 10px;
-  border: 1px solid #2e2e2e;
+  border: 1px solid #2a2d33;
   text-align: right;
   white-space: nowrap;
 }
@@ -489,8 +766,8 @@
 
 .dp-cross-table td {
   padding: 7px 10px;
-  border: 1px solid #2e2e2e;
-  color: #c8c8c8;
+  border: 1px solid #2a2d33;
+  color: #c8cad0;
   text-align: right;
 }
 
@@ -499,7 +776,7 @@
 }
 
 .dp-cross-table tbody tr:hover td {
-  background: #1e1e1e;
+  background: #121317;
 }
 
 .dp-cross-table .dp-cross-row--base td,
@@ -508,52 +785,196 @@
   color: #e0e0e0;
 }
 
+.dp-cross-block {
+  margin-bottom: 32px;
+}
+
+.dp-cross-block-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #2a2d33;
+  margin-bottom: 12px;
+}
+
 .dp-cross-block-title {
   font-size: 13px;
   font-weight: 500;
   color: #ccc;
-  padding-bottom: 10px;
-  border-bottom: 1px solid #2e2e2e;
-  margin-bottom: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.dp-nett-hint {
+  font-size: 11px;
+  color: #37ffce;
+  margin: -6px 0 10px;
+}
+
+/* Sigma / Mean statistic toggle pills */
+.dp-cross-stat-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px 0;
+}
+
+.dp-cross-stat-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  background: #1e2126;
+  border: 1px solid #3a3d44;
+  border-radius: 8px;
+  color: #e8e9ec;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+
+.dp-cross-stat-pill:hover {
+  background: #1c1e23;
+  border-color: #4a4d54;
+}
+
+.dp-cross-stat-pill--active {
+  background: #0c2c24;
+  border-color: #37ffce;
+  color: #37ffce;
+}
+
+.dp-cross-stat-pill--disabled,
+.dp-cross-stat-pill:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.dp-cross-stat-info {
+  font-size: 12px;
+  color: #6b6f7a;
+  cursor: help;
+}
+
+.dp-cross-stat-pill--active .dp-cross-stat-info {
+  color: #37ffce;
+}
+
+/* Minus-to-remove icon inline in Sigma/Mean/NETT row labels */
+.dp-row-remove-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-left: 8px;
+  background: transparent;
+  border: 1px solid #3a3d44;
+  border-radius: 4px;
+  color: #9a9eab;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+.dp-row-remove-btn:hover {
+  background: #3a1418;
+  border-color: #e5484d;
+  color: #e5484d;
+}
+
+/* Mean Factors popup */
+.dp-mean-box {
+  background: #1c1e23;
+  border: 1px solid #3a3d44;
+  border-radius: 12px;
+  padding: 20px;
+  min-width: 420px;
+  max-width: 90vw;
+}
+
+.dp-mean-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin: 14px 0;
+}
+
+.dp-mean-table th {
+  background: #121317;
+  color: #9a9eab;
+  font-weight: 500;
+  padding: 8px 10px;
+  border: 1px solid #2a2d33;
+  text-align: left;
+}
+
+.dp-mean-table td {
+  padding: 6px 10px;
+  border: 1px solid #2a2d33;
+  color: #c8cad0;
+}
+
+.dp-mean-factor-input {
+  width: 70px;
+  padding: 5px 8px;
+  background: #121317;
+  border: 1px solid #3a3d44;
+  border-radius: 6px;
+  color: #e8e9ec;
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.dp-mean-factor-input:focus {
+  outline: none;
+  border-color: #37ffce;
 }
 
 /* ── Where Modal (inline in panel) ── */
 .dp-where-overlay {
-  position: absolute;
+  position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.6);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 20;
+  z-index: 2000;
   border-radius: 0;
 }
 
 .dp-where-box {
-  background: #252525;
-  border: 1px solid #3a3a3a;
+  background: #121317;
+  border: 1px solid #3a3d44;
   border-radius: 12px;
   padding: 20px;
   min-width: 220px;
 }
 
 .dp-where-title {
-  font-size: 14px;
-  color: #888;
+  font-size: 20px;
+  color: #f5f6f7;
   margin: 0 0 14px;
-  font-weight: 400;
+  font-weight: 700;
 }
 
 .dp-where-option {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   width: 100%;
-  padding: 10px 14px;
+  padding: 12px 14px;
   margin: 4px 0;
-  background: #1e1e1e;
-  border: 1px solid #2e2e2e;
+  background: #17181c;
+  border: 1px solid #2a2d33;
   border-radius: 8px;
-  color: #e8e8e8;
-  font-size: 13px;
+  color: #e8e9ec;
+  font-size: 14px;
+  font-weight: 600;
   cursor: pointer;
   text-align: left;
   font-family: inherit;
@@ -561,32 +982,37 @@
 }
 
 .dp-where-option:hover {
-  background: #0d2b22;
-  border-color: #00e5b3;
-  color: #00e5b3;
+  background: #0c2c24;
+  border-color: #37ffce;
+  color: #37ffce;
+}
+
+.dp-where-option-check {
+  color: #37ffce;
+  font-size: 13px;
 }
 
 .dp-where-note {
   font-size: 11px;
-  color: #555;
+  color: #6b6f7a;
   text-align: center;
   margin-top: 10px;
 }
 
 /* ── Value Modal (inline in panel) ── */
 .dp-val-overlay {
-  position: absolute;
+  position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.6);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 20;
+  z-index: 2000;
 }
 
 .dp-val-box {
-  background: #252525;
-  border: 1px solid #3a3a3a;
+  background: #121317;
+  border: 1px solid #3a3d44;
   border-radius: 12px;
   padding: 20px;
   min-width: 200px;
@@ -596,18 +1022,18 @@
 }
 
 .dp-val-title {
-  font-size: 14px;
-  color: #888;
+  font-size: 20px;
+  color: #f5f6f7;
   margin: 0;
-  font-weight: 400;
+  font-weight: 700;
 }
 
 .dp-val-select {
   width: 100%;
-  background: #1e1e1e;
-  border: 1px solid #3a3a3a;
+  background: #17181c;
+  border: 1px solid #3a3d44;
   border-radius: 7px;
-  color: #e8e8e8;
+  color: #e8e9ec;
   padding: 8px 10px;
   font-size: 13px;
   font-family: inherit;
@@ -617,7 +1043,7 @@
 .dp-val-ok-btn {
   width: 100%;
   padding: 9px;
-  background: #2563eb;
+  background: #0e63ec;
   border: none;
   border-radius: 7px;
   color: #fff;
@@ -629,7 +1055,7 @@
 }
 
 .dp-val-ok-btn:hover {
-  background: #1d4ed8;
+  background: #0b52c9;
 }
 
 /* ── Download Modal ── */
@@ -644,14 +1070,14 @@
 }
 
 .dp-dl-modal {
-  background: #1f1f1f;
-  border: 1px solid #3a3a3a;
+  background: #17181c;
+  border: 1px solid #3a3d44;
   border-radius: 16px;
   padding: 32px 28px;
   width: 420px;
   max-width: 95vw;
   position: relative;
-  color: #e8e8e8;
+  color: #e8e9ec;
 }
 
 .dp-dl-close {
@@ -660,7 +1086,7 @@
   right: 16px;
   background: none;
   border: none;
-  color: #888;
+  color: #9a9eab;
   font-size: 18px;
   cursor: pointer;
   padding: 4px 8px;
@@ -670,21 +1096,21 @@
 }
 
 .dp-dl-close:hover {
-  background: #2a2a2a;
-  color: #e8e8e8;
+  background: #2a2d33;
+  color: #e8e9ec;
 }
 
 .dp-dl-title {
-  font-size: 22px;
-  font-weight: 600;
+  font-size: 24px;
+  font-weight: 700;
   text-align: center;
   margin: 0 0 6px;
-  color: #f0f0f0;
+  color: #f5f6f7;
 }
 
 .dp-dl-subtitle {
   font-size: 13px;
-  color: #888;
+  color: #9a9eab;
   text-align: center;
   margin: 0 0 24px;
 }
@@ -692,7 +1118,7 @@
 .dp-dl-section {
   padding-bottom: 18px;
   margin-bottom: 18px;
-  border-bottom: 1px solid #2e2e2e;
+  border-bottom: 1px solid #2a2d33;
 }
 
 .dp-dl-section:last-of-type {
@@ -703,7 +1129,7 @@
 
 .dp-dl-section-label {
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   color: #ccc;
   margin-bottom: 10px;
 }
@@ -717,7 +1143,7 @@
 }
 
 .dp-dl-radio-row input[type='radio'] {
-  accent-color: #00e5b3;
+  accent-color: #37ffce;
   width: 16px;
   height: 16px;
   cursor: pointer;
@@ -725,7 +1151,7 @@
 
 .dp-dl-radio-row label {
   font-size: 13px;
-  color: #c8c8c8;
+  color: #c8cad0;
   cursor: pointer;
 }
 
@@ -743,7 +1169,7 @@
 }
 
 .dp-dl-check-row input[type='checkbox'] {
-  accent-color: #00e5b3;
+  accent-color: #37ffce;
   width: 16px;
   height: 16px;
   cursor: pointer;
@@ -751,7 +1177,7 @@
 
 .dp-dl-check-row label {
   font-size: 13px;
-  color: #c8c8c8;
+  color: #c8cad0;
   cursor: pointer;
 }
 
@@ -765,9 +1191,9 @@
   flex: 1;
   padding: 11px;
   background: transparent;
-  border: 1px solid #3a3a3a;
+  border: 1px solid #3a3d44;
   border-radius: 8px;
-  color: #e8e8e8;
+  color: #e8e9ec;
   font-size: 14px;
   cursor: pointer;
   font-family: inherit;
@@ -775,13 +1201,13 @@
 }
 
 .dp-dl-cancel-btn:hover {
-  background: #252525;
+  background: #23262c;
 }
 
 .dp-dl-download-btn {
   flex: 1;
   padding: 11px;
-  background: #2563eb;
+  background: #0e63ec;
   border: none;
   border-radius: 8px;
   color: #fff;
@@ -793,17 +1219,16 @@
 }
 
 .dp-dl-download-btn:hover {
-  background: #1d4ed8;
+  background: #0b52c9;
 }
 
 /* ── Cross Tabs Two-Column Panel ── */
 .dp-cross-panels {
   display: flex;
   flex-direction: column;
+  gap: 12px;
   width: 190px;
   flex-shrink: 0;
-  border-right: 1px solid #2e2e2e;
-  overflow: hidden;
 }
 
 .dp-cross-section {
@@ -811,12 +1236,10 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border-bottom: 1px solid #2e2e2e;
   min-height: 0;
-}
-
-.dp-cross-section:last-child {
-  border-bottom: none;
+  background: #17181c;
+  border: 1px solid #2f323a;
+  border-radius: 12px;
 }
 
 /* ── Placeholder tabs ── */
@@ -837,7 +1260,7 @@
 
 .dp-placeholder-text {
   font-size: 15px;
-  color: #666;
+  color: #9a9eab;
 }
 
 /* ── Panel empty hint ── */
@@ -845,21 +1268,11 @@
   padding: 20px 8px;
   text-align: center;
   font-size: 12px;
-  color: #555;
+  color: #6b6f7a;
   line-height: 1.5;
 }
 
-/* ── Pill focused state (for up/down tracking) ── */
-.dp-pill--focused {
-  outline: 2px solid #00e5b366;
-  outline-offset: 1px;
-}
-
-/* ── Updown btn disabled ── */
-.dp-updown-btn:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
+/* (dp-pill--focused is defined once, in the Variable Pill section above) */
 
 /* ── Cross tab toolbar ── */
 .dp-crosstab-toolbar {
@@ -867,7 +1280,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 10px 16px;
-  border-bottom: 1px solid #2e2e2e;
+  border-bottom: 1px solid #2a2d33;
   flex-shrink: 0;
   gap: 10px;
   flex-wrap: wrap;
@@ -883,7 +1296,7 @@
 /* Col% / Row% toggle */
 .dp-pct-toggle {
   display: flex;
-  border: 1px solid #3a3a3a;
+  border: 1px solid #3a3d44;
   border-radius: 6px;
   overflow: hidden;
 }
@@ -892,7 +1305,7 @@
   padding: 5px 14px;
   background: transparent;
   border: none;
-  color: #888;
+  color: #9a9eab;
   font-size: 12px;
   cursor: pointer;
   font-family: inherit;
@@ -900,23 +1313,23 @@
 }
 
 .dp-pct-btn:hover {
-  background: #252525;
-  color: #e8e8e8;
+  background: #23262c;
+  color: #e8e9ec;
 }
 
 .dp-pct-btn--active {
-  background: #252525;
-  color: #00e5b3;
+  background: #23262c;
+  color: #37ffce;
   font-weight: 500;
 }
 
 /* Toolbar action buttons */
 .dp-toolbar-btn {
   padding: 5px 12px;
-  background: #1e1e1e;
-  border: 1px solid #3a3a3a;
+  background: #121317;
+  border: 1px solid #3a3d44;
   border-radius: 6px;
-  color: #c8c8c8;
+  color: #c8cad0;
   font-size: 12px;
   cursor: pointer;
   font-family: inherit;
@@ -925,9 +1338,9 @@
 }
 
 .dp-toolbar-btn:hover {
-  background: #2a2a2a;
+  background: #2a2d33;
   border-color: #555;
-  color: #e8e8e8;
+  color: #e8e9ec;
 }
 
 /* Add Row dropdown */
@@ -939,13 +1352,13 @@
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
-  background: #252525;
-  border: 1px solid #3a3a3a;
+  background: #23262c;
+  border: 1px solid #3a3d44;
   border-radius: 8px;
   overflow: hidden;
   z-index: 30;
   min-width: 110px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
 
 .dp-addrow-option {
@@ -954,7 +1367,7 @@
   padding: 9px 14px;
   background: transparent;
   border: none;
-  color: #e8e8e8;
+  color: #e8e9ec;
   font-size: 13px;
   cursor: pointer;
   text-align: left;
@@ -963,8 +1376,8 @@
 }
 
 .dp-addrow-option:hover {
-  background: #0d2b22;
-  color: #00e5b3;
+  background: #0c2c24;
+  color: #37ffce;
 }
 
 /* NETT input inline */
@@ -976,10 +1389,10 @@
 
 .dp-nett-input {
   padding: 5px 9px;
-  background: #1e1e1e;
-  border: 1px solid #3a3a3a;
+  background: #121317;
+  border: 1px solid #3a3d44;
   border-radius: 6px;
-  color: #e8e8e8;
+  color: #e8e9ec;
   font-size: 12px;
   font-family: inherit;
   width: 130px;
@@ -987,10 +1400,10 @@
 
 .dp-nett-ok-btn {
   padding: 5px 10px;
-  background: #00e5b322;
-  border: 1px solid #00e5b3;
+  background: #37ffce22;
+  border: 1px solid #37ffce;
   border-radius: 6px;
-  color: #00e5b3;
+  color: #37ffce;
   font-size: 12px;
   cursor: pointer;
   font-family: inherit;
@@ -999,7 +1412,7 @@
 .dp-nett-cancel-btn {
   background: none;
   border: none;
-  color: #666;
+  color: #6b6f7a;
   cursor: pointer;
   font-size: 13px;
   padding: 3px 6px;
@@ -1008,20 +1421,20 @@
 .dp-nett-badge {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   margin: 0 0 8px 0;
-  padding: 4px 10px;
-  background: #0d2b22;
-  border: 1px solid #00e5b3;
+  padding: 5px 10px;
+  background: #0c2c24;
+  border: 1px solid #37ffce;
   border-radius: 6px;
   font-size: 12px;
-  color: #00e5b3;
+  color: #37ffce;
 }
 
 .dp-nett-badge-remove {
   background: none;
   border: none;
-  color: #00e5b3;
+  color: #37ffce;
   cursor: pointer;
   font-size: 11px;
   padding: 0;
@@ -1041,10 +1454,10 @@
   text-align: left;
   min-width: 260px;
   font-size: 11px;
-  color: #888;
-  background: #1e1e1e;
+  color: #9a9eab;
+  background: #0e0f12;
   padding: 7px 10px;
-  border: 1px solid #2e2e2e;
+  border: 1px solid #2a2d33;
   font-weight: 500;
 }
 
@@ -1052,63 +1465,134 @@
   text-align: right;
   white-space: nowrap;
   font-size: 11px;
-  color: #888;
-  background: #1e1e1e;
+  color: #9a9eab;
+  background: #0e0f12;
   padding: 7px 10px;
-  border: 1px solid #2e2e2e;
+  border: 1px solid #2a2d33;
   font-weight: 500;
 }
 
 .dp-cross-th--subhead {
   text-align: right;
   font-size: 10px;
-  color: #555;
-  background: #1a1a1a;
+  color: #6b6f7a;
+  background: #0e0f12;
   padding: 5px 10px;
-  border: 1px solid #2e2e2e;
+  border: 1px solid #2a2d33;
   font-weight: 400;
 }
 
 .dp-cross-td--label {
   text-align: left;
   font-size: 12px;
-  color: #c8c8c8;
+  color: #c8cad0;
+  background: #0e0f12;
   padding: 7px 10px;
-  border: 1px solid #2e2e2e;
+  border: 1px solid #2a2d33;
   min-width: 260px;
 }
 
 .dp-cross-td--num {
   text-align: right;
   font-size: 12px;
-  color: #c8c8c8;
+  color: #c8cad0;
+  background: #0e0f12;
   padding: 7px 10px;
-  border: 1px solid #2e2e2e;
+  border: 1px solid #2a2d33;
   white-space: nowrap;
 }
 
 .dp-cross-row--base .dp-cross-td--label,
 .dp-cross-row--base .dp-cross-td--num {
   font-weight: 600;
-  color: #e0e0e0;
+  color: #e8e9ec;
 }
 
 .dp-cross-row--sigma .dp-cross-td--label,
 .dp-cross-row--sigma .dp-cross-td--num {
-  font-weight: 500;
-  color: #888;
-  font-style: italic;
+  font-weight: 600;
+  color: #e8e9ec;
 }
 
 .dp-cross-row--mean .dp-cross-td--label,
 .dp-cross-row--mean .dp-cross-td--num {
   font-weight: 500;
-  color: #00e5b3;
+  color: #37ffce;
+}
+
+.dp-cross-row--nett .dp-cross-td--label,
+.dp-cross-row--nett .dp-cross-td--num {
+  background: #17181c;
+  font-weight: 600;
+  color: #e8e9ec;
+}
+
+.dp-cross-row--nett-child .dp-cross-td--label,
+.dp-cross-row--nett-child .dp-cross-td--num {
+  background: #0c2c24;
 }
 
 .dp-cross-table tbody tr:hover .dp-cross-td--label,
 .dp-cross-table tbody tr:hover .dp-cross-td--num {
-  background: #1e1e1e;
+  background: #121317;
+}
+
+/* Row up/down hover controls (Table Behaviour spec) */
+.dp-cross-td--rowctl {
+  width: 40px;
+  padding: 0;
+  border: 1px solid #2a2d33;
+  text-align: center;
+  background: #0e0f12;
+}
+
+.dp-row-updown {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.dp-cross-table tbody tr:hover .dp-row-updown {
+  opacity: 1;
+}
+
+.dp-row-updown-btn {
+  background: none;
+  border: none;
+  color: #9a9eab;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px;
+  line-height: 1;
+}
+
+.dp-row-updown-btn:hover {
+  color: #37ffce;
+}
+
+.dp-row-link-icon {
+  color: #6b6f7a;
+  font-size: 12px;
+}
+
+/* Editable header cell (per dev note: all row & col headers are editable) */
+.dp-editable {
+  outline: none;
+  border-radius: 3px;
+  padding: 1px 3px;
+  margin: -1px -3px;
+}
+
+.dp-editable:hover {
+  background: #23262c;
+}
+
+.dp-editable:focus {
+  background: #0c2c24;
+  box-shadow: 0 0 0 1px #37ffce;
 }
 
 /* ── Chart Visuals ── */
@@ -1117,7 +1601,7 @@
   align-items: center;
   gap: 6px;
   padding: 10px 16px;
-  border-bottom: 1px solid #2e2e2e;
+  border-bottom: 1px solid #2a2d33;
   flex-shrink: 0;
   overflow-x: auto;
 }
@@ -1128,10 +1612,10 @@
   align-items: center;
   gap: 2px;
   padding: 6px 12px;
-  background: #1e1e1e;
-  border: 1px solid #2e2e2e;
+  background: #121317;
+  border: 1px solid #2a2d33;
   border-radius: 7px;
-  color: #888;
+  color: #9a9eab;
   cursor: pointer;
   font-family: inherit;
   transition: all 0.15s;
@@ -1139,15 +1623,15 @@
 }
 
 .dp-chart-type-btn:hover {
-  background: #252525;
-  border-color: #444;
-  color: #e8e8e8;
+  background: #23262c;
+  border-color: #454850;
+  color: #e8e9ec;
 }
 
 .dp-chart-type-btn--active {
-  background: #0d2b22;
-  border-color: #00e5b3;
-  color: #00e5b3;
+  background: #0c2c24;
+  border-color: #37ffce;
+  color: #37ffce;
 }
 
 .dp-chart-type-icon {
@@ -1162,9 +1646,9 @@
   margin-left: auto;
   padding: 5px 12px;
   background: transparent;
-  border: 1px solid #3a3a3a;
+  border: 1px solid #3a3d44;
   border-radius: 6px;
-  color: #888;
+  color: #9a9eab;
   font-size: 12px;
   cursor: pointer;
   font-family: inherit;
@@ -1173,8 +1657,8 @@
 }
 
 .dp-chart-prop-toggle:hover {
-  background: #252525;
-  color: #e8e8e8;
+  background: #23262c;
+  color: #e8e9ec;
 }
 
 .dp-chart-body {
@@ -1188,17 +1672,17 @@
 .dp-properties-panel {
   width: 200px;
   flex-shrink: 0;
-  border-left: 1px solid #2e2e2e;
+  border-left: 1px solid #2a2d33;
   overflow-y: auto;
   padding: 12px;
   scrollbar-width: thin;
-  scrollbar-color: #3a3a3a transparent;
+  scrollbar-color: #3a3d44 transparent;
 }
 
 .dp-properties-title {
   font-size: 12px;
   font-weight: 600;
-  color: #888;
+  color: #9a9eab;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin-bottom: 12px;
@@ -1207,7 +1691,7 @@
 .dp-prop-section {
   margin-bottom: 14px;
   padding-bottom: 14px;
-  border-bottom: 1px solid #2e2e2e;
+  border-bottom: 1px solid #2a2d33;
 }
 
 .dp-prop-section:last-child {
@@ -1216,7 +1700,7 @@
 
 .dp-prop-label {
   font-size: 11px;
-  color: #888;
+  color: #9a9eab;
   margin-bottom: 6px;
   font-weight: 500;
 }
@@ -1227,11 +1711,11 @@
   gap: 7px;
   cursor: pointer;
   font-size: 12px;
-  color: #c8c8c8;
+  color: #c8cad0;
 }
 
 .dp-prop-toggle-row input[type='checkbox'] {
-  accent-color: #00e5b3;
+  accent-color: #37ffce;
   cursor: pointer;
 }
 
@@ -1241,29 +1725,29 @@
   gap: 7px;
   cursor: pointer;
   font-size: 12px;
-  color: #c8c8c8;
+  color: #c8cad0;
   margin: 4px 0;
 }
 
 .dp-prop-radio-row input[type='radio'] {
-  accent-color: #00e5b3;
+  accent-color: #37ffce;
   cursor: pointer;
 }
 
 .dp-prop-input {
   width: 100%;
   padding: 6px 8px;
-  background: #1e1e1e;
-  border: 1px solid #3a3a3a;
+  background: #121317;
+  border: 1px solid #3a3d44;
   border-radius: 6px;
-  color: #e8e8e8;
+  color: #e8e9ec;
   font-size: 12px;
   font-family: inherit;
 }
 
 .dp-prop-input:focus {
   outline: none;
-  border-color: #00e5b3;
+  border-color: #37ffce;
 }
 
 /* Chart preview */
@@ -1284,25 +1768,25 @@
 .dp-chart-title {
   font-size: 14px;
   font-weight: 600;
-  color: #e8e8e8;
+  color: #e8e9ec;
   text-align: center;
 }
 
 .dp-chart-subtitle {
   font-size: 12px;
-  color: #888;
+  color: #9a9eab;
   text-align: center;
 }
 
 .dp-chart-base {
   font-size: 11px;
-  color: #666;
+  color: #6b6f7a;
   text-align: center;
 }
 
 .dp-chart-footnote {
   font-size: 11px;
-  color: #666;
+  color: #6b6f7a;
   font-style: italic;
 }
 
@@ -1328,10 +1812,801 @@
 
 .dp-chart-legend-label {
   font-size: 11px;
-  color: #888;
+  color: #9a9eab;
 }
 
 /* ── All vars panel default width ── */
 .dp-panel--all {
   width: 190px;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Chart / Visuals — entry choice screen ("Generate Charts")
+   ══════════════════════════════════════════════════════════════════════ */
+
+.dp-chart-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 14px;
+  text-align: center;
+  padding: 20px;
+}
+
+.dp-chart-choice-icons {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  color: #e8e9ec;
+  font-size: 22px;
+  margin-bottom: 6px;
+}
+
+.dp-chart-choice-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #f5f6f7;
+  margin: 0;
+}
+
+.dp-chart-choice-subtitle {
+  font-size: 13px;
+  color: #9a9eab;
+  margin: 0 0 8px;
+}
+
+.dp-chart-choice-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.dp-chart-choice-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+
+.dp-chart-choice-btn--outline {
+  background: transparent;
+  border: 1px solid #3a3d44;
+  color: #e8e9ec;
+}
+
+.dp-chart-choice-btn--outline:hover {
+  background: #23262c;
+}
+
+.dp-chart-choice-btn--primary {
+  background: #0e63ec;
+  border: none;
+  color: #fff;
+}
+
+.dp-chart-choice-btn--primary:hover {
+  background: #0b52c9;
+}
+
+/* ── Omi generation loader ── */
+.dp-gen-loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 24px;
+  padding: 20px;
+}
+
+.dp-gen-loader-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #f5f6f7;
+  margin: 0;
+  text-align: center;
+}
+
+.dp-gen-loader-subtitle {
+  font-size: 13px;
+  color: #9a9eab;
+  margin: -14px 0 0;
+  text-align: center;
+}
+
+.dp-gen-step {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid #2a2d33;
+  border-radius: 12px;
+  overflow: hidden;
+  min-width: 460px;
+  max-width: 90%;
+}
+
+.dp-gen-step-left {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 18px 24px;
+  border-right: 1px solid #2a2d33;
+}
+
+.dp-gen-step-avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dp-gen-step-avatar-ring {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  padding: 3px;
+  background: conic-gradient(#2563eb 0deg 270deg, #1c1e23 270deg 360deg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: dp-spin 1.4s linear infinite;
+}
+
+.dp-gen-step-avatar-video {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  background: #0d0e14;
+  /* Undo the parent ring's spin so the video itself stays upright while
+     only the ring behind it rotates. */
+  animation: dp-spin-reverse 1.4s linear infinite;
+}
+
+.dp-gen-ring {
+  transform-origin: 32px 32px;
+  animation: dp-spin 1.4s linear infinite;
+}
+
+@keyframes dp-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes dp-spin-reverse {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(-360deg); }
+}
+
+.dp-gen-step-label {
+  font-size: 12px;
+  color: #9a9eab;
+}
+
+.dp-gen-step-right {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  font-size: 14px;
+  color: #e8e9ec;
+}
+
+/* ── Chart Builder ── */
+.dp-chart-builder {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  background: #17181c;
+  border-radius: 14px;
+}
+
+.dp-cb-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px 0;
+  flex-shrink: 0;
+}
+
+.dp-cb-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #f5f6f7;
+}
+
+.dp-cb-switch-btn {
+  padding: 7px 14px;
+  background: #1e2126;
+  border: 1px solid #3a3d44;
+  border-radius: 7px;
+  color: #e8e9ec;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+
+.dp-cb-switch-btn:hover {
+  background: #23262c;
+}
+
+.dp-cb-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.dp-cb-field-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #c8cad0;
+  margin-bottom: 6px;
+}
+
+.dp-cb-input {
+  width: 100%;
+  padding: 9px 12px;
+  background: #272a30;
+  border: 1px solid #3a3d44;
+  border-radius: 8px;
+  color: #e8e9ec;
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.dp-cb-input::placeholder {
+  color: #6b6f7a;
+}
+
+.dp-cb-input:focus {
+  outline: none;
+  border-color: #37ffce;
+}
+
+.dp-cb-filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dp-cb-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  background: #1e2126;
+  border: 1px solid #3a3d44;
+  border-radius: 7px;
+  color: #c8cad0;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.dp-cb-filter-chip:hover {
+  background: #23262c;
+}
+
+.dp-cb-preview-box {
+  background: #1e2126;
+  border: 1px solid #2a2d33;
+  border-radius: 10px;
+  padding: 20px;
+}
+
+/* Generate bar — lets the user regenerate with a different variable
+   combination without leaving Preview/Builder. Same visual language as
+   .dp-updown-bar (bordered strip under the panel's list). */
+.dp-cb-generate-bar {
+  display: flex;
+  padding: 8px 10px;
+  border-top: 1px solid #2a2d33;
+  flex-shrink: 0;
+}
+
+.dp-cb-generate-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  padding: 9px 12px;
+  background: #0e63ec;
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+
+.dp-cb-generate-btn:hover {
+  background: #0b52c9;
+}
+
+.dp-cb-generate-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Stacked, comprehensive chart list — one card per generated variable
+   combination, so the user can see everything they've built at once
+   instead of just the single most recent chart. */
+.dp-chart-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.dp-chart-card {
+  background: #121317;
+  border: 1px solid #2a2d33;
+  border-radius: 10px;
+  padding: 14px 16px 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.dp-chart-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 10px;
+}
+
+.dp-chart-card-vars {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dp-chart-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.dp-chart-card-type {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: capitalize;
+  color: #37ffce;
+  background: #0c2c24;
+  border: 1px solid #37ffce;
+  border-radius: 5px;
+  padding: 3px 8px;
+}
+
+.dp-chart-card-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: transparent;
+  border: 1px solid #3a3d44;
+  border-radius: 5px;
+  color: #9a9eab;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.dp-chart-card-remove:hover {
+  background: #3a1418;
+  border-color: #e5484d;
+  color: #e5484d;
+}
+
+/* Selected variable mapping table (Variables | Chart Type | Variables/Slicer) */
+.dp-cb-map-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.dp-cb-map-table th {
+  background: #121317;
+  color: #9a9eab;
+  font-weight: 500;
+  padding: 7px 10px;
+  border: 1px solid #2a2d33;
+  text-align: left;
+}
+
+.dp-cb-map-table td {
+  padding: 6px 8px;
+  border: 1px solid #2a2d33;
+  color: #c8cad0;
+}
+
+.dp-cb-map-chip {
+  display: inline-flex;
+  padding: 3px 8px;
+  background: #121317;
+  border: 1px solid #3a3d44;
+  border-radius: 5px;
+  font-size: 11px;
+  color: #c8cad0;
+}
+
+.dp-cb-map-select {
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: #c8cad0;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Chart Gallery ("Create Custom Charts")
+   ══════════════════════════════════════════════════════════════════════ */
+
+.dp-gallery {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.dp-gallery-sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  background: #121317;
+  border-right: 1px solid #2a2d33;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.dp-gallery-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  margin-bottom: 14px;
+  background: transparent;
+  border: 1px solid #3a3d44;
+  border-radius: 7px;
+  color: #9a9eab;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+
+.dp-gallery-back-btn:hover {
+  background: #1c1e23;
+  color: #e8e9ec;
+}
+
+.dp-panel-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.dp-panel-back-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid #3a3d44;
+  border-radius: 7px;
+  color: #9a9eab;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.dp-panel-back-btn:hover {
+  background: #1c1e23;
+  color: #e8e9ec;
+}
+
+.dp-gallery-sidebar-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #f5f6f7;
+  margin-bottom: 12px;
+}
+
+.dp-gallery-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #121317;
+  border: 1px solid #3a3d44;
+  border-radius: 8px;
+  color: #6b6f7a;
+  font-size: 12px;
+  margin-bottom: 14px;
+}
+
+.dp-gallery-search input {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #e8e9ec;
+  font-size: 12px;
+  font-family: inherit;
+  width: 100%;
+}
+
+.dp-gallery-type-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: #c8cad0;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: inherit;
+  margin-bottom: 4px;
+  transition: all 0.15s;
+}
+
+.dp-gallery-type-btn:hover {
+  background: #121317;
+}
+
+.dp-gallery-type-btn--active {
+  background: #1e2126;
+  border-color: #37ffce;
+  color: #37ffce;
+}
+
+.dp-gallery-type-icon {
+  font-size: 14px;
+  width: 18px;
+  text-align: center;
+}
+
+.dp-gallery-type-caret {
+  margin-left: auto;
+  font-size: 10px;
+  color: #6b6f7a;
+}
+
+.dp-gallery-main {
+  flex: 1;
+  overflow-y: auto;
+  background: #121317;
+  padding: 20px 24px;
+}
+
+.dp-gallery-main-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #f5f6f7;
+  margin-bottom: 16px;
+}
+
+.dp-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.dp-gallery-card {
+  background: #0e0f12;
+  border: 1px solid #2a2d33;
+  border-radius: 12px;
+  padding: 14px 16px 16px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.dp-gallery-card:hover {
+  border-color: #454850;
+}
+
+.dp-gallery-card--selected {
+  border-color: #37ffce;
+}
+
+.dp-gallery-card-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #e8e9ec;
+  margin-bottom: 4px;
+}
+
+.dp-gallery-card-rule {
+  height: 2px;
+  width: 28px;
+  background: #37ffce;
+  margin-bottom: 10px;
+}
+
+.dp-gallery-card-legend {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+.dp-gallery-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 14px 24px;
+  background: #121317;
+  border-top: 1px solid #2a2d33;
+  flex-shrink: 0;
+}
+
+.dp-gallery-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: #0e63ec;
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.dp-gallery-add-btn:hover {
+  background: #0b52c9;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Insights / Summary — report view
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* ── Full-bleed wrapper for panel-less tabs (Insights / Coded / Labelled) ──
+   Per Figma, these have no side panels, so unlike .dp-zone-body their
+   content fills the *entire* tab body edge-to-edge — no gap on any side.
+   Bleeds through .dp-body's own 16px padding on all four sides. ── */
+.dp-data-full-bleed {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  margin: -16px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Insights/Summary variant — same full-bleed idea, but with the zone-dark
+   fill and its own inner padding since it's prose, not a table. */
+.dp-report-zone {
+  flex: 1;
+  margin: -16px;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  background: #121317;
+  padding: 32px;
+}
+
+.dp-report {
+  max-width: 900px;
+}
+
+.dp-report-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #f5f6f7;
+  margin: 0 0 16px;
+}
+
+.dp-report-paragraph {
+  font-size: 14px;
+  line-height: 1.7;
+  color: #c8cad0;
+  margin: 0 0 18px;
+}
+
+.dp-report-list {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dp-report-list li {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #c8cad0;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Coded Data / Labelled Data tables
+   ══════════════════════════════════════════════════════════════════════ */
+
+.dp-data-table-wrap {
+  overflow: auto;
+  height: 100%;
+}
+
+.dp-data-table {
+  border-collapse: collapse;
+  font-size: 12px;
+  width: max-content;
+  min-width: 100%;
+}
+
+.dp-data-table th {
+  position: sticky;
+  top: 0;
+  background: #17181c;
+  color: #e8e9ec;
+  font-weight: 600;
+  padding: 9px 14px;
+  border: 1px solid #2a2d33;
+  text-align: left;
+  white-space: nowrap;
+  z-index: 2;
+}
+
+.dp-data-table td {
+  padding: 8px 14px;
+  border: 1px solid #2a2d33;
+  color: #c8cad0;
+  white-space: nowrap;
+  background: #0e0f12;
+}
+
+.dp-data-table .dp-data-subrow td {
+  color: #6b6f7a;
+  font-style: italic;
+  background: #17181c;
+}
+
+.dp-data-table tbody tr:hover td {
+  background: #121317;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Table Behaviour dev-note callout (optional, for internal/staging use)
+   ══════════════════════════════════════════════════════════════════════ */
+
+.dp-dev-note {
+  display: inline-block;
+  background: #f5a623;
+  color: #17181c;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  max-width: 260px;
 }

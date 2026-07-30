@@ -38,23 +38,10 @@ from app.services.replication.stages import (
     re_score_confidence,
 )
 from app.services.replication.utils import extract_schema_contract, parse_llm_json
-from app.services.llm_usage_tracker import record_llm_usage, extract_usage_openai_chat
 
 logger = logging.getLogger(__name__)
 
 _client = AsyncOpenAI(api_key=OPENAI_API_KEY)
-
-
-def _persona_context(source_persona: dict[str, Any]) -> dict[str, Optional[str]]:
-    """Extracts exploration_id/workspace_id/persona_id/created_by from a
-    persona_to_dict()-shaped dict, so every replication stage can tag its
-    usage rows without new params threaded in from further up the call chain."""
-    return {
-        "exploration_id": source_persona.get("exploration_id"),
-        "workspace_id": source_persona.get("workspace_id"),
-        "persona_id": source_persona.get("id"),
-        "created_by": source_persona.get("created_by"),
-    }
 
 
 class ReplicationResult:
@@ -286,16 +273,6 @@ async def _fast_replicate(
         max_tokens=2500,
         timeout=150.0,
     )
-    input_tokens, output_tokens, usage_raw = extract_usage_openai_chat(response)
-    await record_llm_usage(
-        stage="replication_fast",
-        provider="openai",
-        model="gpt-4o-mini",
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        usage_raw=usage_raw,
-        **_persona_context(source_persona),
-    )
     raw_content = response.choices[0].message.content
     logger.info(
         "replication.fast:llm_done source=%s target=%r elapsed_ms=%d finish_reason=%s response_bytes=%d",
@@ -384,7 +361,7 @@ async def _anchor_preview(
     )
 
     stage_started_at = time.perf_counter()
-    core = await extract_psychographic_core(source_details, **_persona_context(source_persona))
+    core = await extract_psychographic_core(source_details)
     logger.info(
         "replication.anchor_preview:stage1_core_done source=%s elapsed_ms=%d",
         source_id,
@@ -392,9 +369,7 @@ async def _anchor_preview(
     )
 
     stage_started_at = time.perf_counter()
-    market_context = await inject_market_context(
-        core, target_country, seed_inputs, **_persona_context(source_persona),
-    )
+    market_context = await inject_market_context(core, target_country, seed_inputs)
     logger.info(
         "replication.anchor_preview:stage2_market_done source=%s elapsed_ms=%d",
         source_id,
@@ -451,7 +426,7 @@ async def _deep_replicate(
 
     # Stage 1 — extract psychographic core
     stage_started_at = time.perf_counter()
-    core = await extract_psychographic_core(source_details, **_persona_context(source_persona))
+    core = await extract_psychographic_core(source_details)
     logger.info(
         "replication.deep:stage1_core_done source=%s elapsed_ms=%d",
         source_id,
@@ -460,9 +435,7 @@ async def _deep_replicate(
 
     # Stage 2 — inject market context
     stage_started_at = time.perf_counter()
-    market_context = await inject_market_context(
-        core, target_country, seed_inputs, **_persona_context(source_persona),
-    )
+    market_context = await inject_market_context(core, target_country, seed_inputs)
     logger.info(
         "replication.deep:stage2_market_done source=%s elapsed_ms=%d",
         source_id,
@@ -474,9 +447,7 @@ async def _deep_replicate(
     # source_details must NOT be passed to Stage 3 directly — only its structural shape.
     schema_contract = extract_schema_contract(source_details)
     stage_started_at = time.perf_counter()
-    replicated_traits = await re_express_persona(
-        core, market_context, schema_contract, **_persona_context(source_persona),
-    )
+    replicated_traits = await re_express_persona(core, market_context, schema_contract)
     logger.info(
         "replication.deep:stage3_express_done source=%s elapsed_ms=%d",
         source_id,
@@ -493,7 +464,6 @@ async def _deep_replicate(
         replicated_persona_json=adapted,
         psychographic_core=core,
         target_country=target_country,
-        **_persona_context(source_persona),
     )
     logger.info(
         "replication.deep:stage4_diverge_done source=%s flags=%d elapsed_ms=%d",

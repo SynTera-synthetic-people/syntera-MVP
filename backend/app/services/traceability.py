@@ -15,7 +15,6 @@ from app.models.interview import Interview, InterviewSection, InterviewQuestion
 from app.models.survey_simulation import SurveySimulation
 from app.models.rebuttal import RebuttalSession
 from app.models.exploration import Exploration
-from app.services.llm_usage_tracker import record_llm_usage, extract_usage_openai_chat
 
 
 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
@@ -159,14 +158,7 @@ async def fetch_all_context(workspace_id: str, exploration_id: str) -> Dict[str,
     }
 
 
-async def generate_traceability_layers_from_context(
-    context: Dict[str, Any],
-    custom_notes: Optional[str] = "",
-    *,
-    exploration_id: Optional[str] = None,
-    workspace_id: Optional[str] = None,
-    created_by: Optional[str] = None,
-) -> Dict[str, Any]:
+async def generate_traceability_layers_from_context(context: Dict[str, Any], custom_notes: Optional[str] = "") -> Dict[str, Any]:
     """
     Given the combined context dict, produce a traceability report using the LLM.
     Returns dict with foundation_layer, generation_process, validation_layer, narrative_summary.
@@ -247,18 +239,6 @@ REQUIRED JSON STRUCTURE:
                 {"role": "user", "content": prompt}
             ],
         )
-        input_tokens, output_tokens, usage_raw = extract_usage_openai_chat(res)
-        await record_llm_usage(
-            exploration_id=exploration_id,
-            stage="traceability_layers",
-            provider="openai",
-            model="gpt-4o-mini",
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            usage_raw=usage_raw,
-            workspace_id=workspace_id,
-            created_by=created_by,
-        )
         raw = res.choices[0].message.content
         data = raw if isinstance(raw, dict) else json.loads(raw)
         
@@ -288,10 +268,7 @@ async def create_traceability(
     """
     context = await fetch_all_context(workspace_id, exploration_id)
 
-    logs = await generate_traceability_layers_from_context(
-        context, custom_notes or "",
-        exploration_id=exploration_id, workspace_id=workspace_id, created_by=created_by,
-    )
+    logs = await generate_traceability_layers_from_context(context, custom_notes or "")
 
     async with AsyncSession(async_engine) as session:
         rec = TraceabilityRecord(
@@ -323,10 +300,7 @@ async def regenerate_traceability(record_id: str, custom_notes: Optional[str] = 
             return None
 
         context = await fetch_all_context(rec.workspace_id, rec.exploration_id)
-        logs = await generate_traceability_layers_from_context(
-            context, custom_notes or "",
-            exploration_id=rec.exploration_id, workspace_id=rec.workspace_id, created_by=rec.created_by,
-        )
+        logs = await generate_traceability_layers_from_context(context, custom_notes or "")
 
         rec.foundation_layer = logs.get("foundation_layer", {})
         rec.generation_process = logs.get("generation_process", {})
@@ -357,10 +331,7 @@ async def get_traceability_layer(payload: Dict):
             return None
 
         context = await fetch_all_context(rec.workspace_id, rec.exploration_id)
-        logs = await generate_traceability_layers_from_context(
-            context, payload.custom_notes or "",
-            exploration_id=rec.exploration_id, workspace_id=rec.workspace_id, created_by=rec.created_by,
-        )
+        logs = await generate_traceability_layers_from_context(context, payload.custom_notes or "")
 
         rec.foundation_layer = logs.get("foundation_layer", {})
         rec.generation_process = logs.get("generation_process", {})

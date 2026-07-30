@@ -1,5 +1,6 @@
 import logging
 from typing import Optional
+from io import BytesIO
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import update
 from app.models.survey_simulation import SurveySimulation
@@ -35,8 +36,7 @@ from app.services.persona import get_persona
 from app.services.population import get_simulation
 from app.services.exploration import get_exploration
 from app.services.questionnaire import get_full_questionnaire, get_questionnaire_by_simulation as get_questionnaire_by_sim
-from fastapi.responses import Response, FileResponse
-from app.services.questionnaire_pdf import generate_questionnaire_pdf
+from fastapi.responses import StreamingResponse, Response
 from app.utils.pdf_generator import generate_survey_pdf
 from app.services.survey_simulation import (
     get_survey_simulation_by_id,
@@ -50,6 +50,7 @@ from app.services.exploration import get_exploration
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Form, Query
 from app.services import questionnaire as questionnaire_service
 from app.services import workspace as ws_service
+from app.utils.questionnaire_csv import questionnaire_sections_to_csv_bytes
 from app.services.question_engine import analysis_options_for_question, get_question_type_catalog
 
 
@@ -345,17 +346,16 @@ async def export_questionnaire_csv_for_exploration(
     exploration_id: str,
     current_user: User = Depends(get_current_active_user),
 ):
-    """Download all questionnaire sections for an exploration as a branded PDF (no simulation needed)."""
+    """Download all questionnaire sections for an exploration as CSV (no simulation needed)."""
     await _ensure_workspace_member(workspace_id, current_user)
     questionnaires = await service.get_full_questionnaire(workspace_id, exploration_id)
     if not questionnaires:
         raise HTTPException(status_code=404, detail="No questionnaire found for this exploration")
-    pdf_path = await generate_questionnaire_pdf(questionnaires)
-    return FileResponse(
-        path=pdf_path,
-        media_type="application/pdf",
-        filename="questionnaire.pdf",
-        headers={"Content-Disposition": 'attachment; filename="questionnaire.pdf"'},
+    body = questionnaire_sections_to_csv_bytes(questionnaires, None)
+    return StreamingResponse(
+        BytesIO(body),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="questionnaire.csv"'},
     )
 
 
@@ -370,7 +370,7 @@ async def export_questionnaire_csv(
     ),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Download questionnaire as a branded PDF: question text + options."""
+    """Download questionnaire as CSV: Q No., Question Description, Options."""
     await _ensure_workspace_member(workspace_id, current_user)
 
     questionnaires = await service.get_questionnaire_by_simulation(workspace_id, exploration_id, simulation_id)
@@ -390,12 +390,11 @@ async def export_questionnaire_csv(
     else:
         counts_map = await get_latest_survey_results_map(simulation_id)
 
-    pdf_path = await generate_questionnaire_pdf(questionnaires, counts_map)
-    return FileResponse(
-        path=pdf_path,
-        media_type="application/pdf",
-        filename="questionnaire_exploration.pdf",
-        headers={"Content-Disposition": 'attachment; filename="questionnaire_exploration.pdf"'},
+    body = questionnaire_sections_to_csv_bytes(questionnaires, counts_map)
+    return StreamingResponse(
+        BytesIO(body),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="questionnaire_exploration.csv"'},
     )
 
 

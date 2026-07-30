@@ -236,21 +236,18 @@ async def get_user_features(subject_key: str, domain: str) -> dict:
     return await asyncio.to_thread(_get_features_sync, subject_key, domain)
 
 
-def _find_subject_key_sync(domain: str, min_tx: int = 1, workspace_id: str | None = None) -> str | None:
+def _find_subject_key_sync(domain: str, min_tx: int = 1) -> str | None:
     """
-    Return the subject_key with the most qualifying transactions for the given
-    domain. Searches across all workspaces unless workspace_id is given, in
-    which case the search is scoped to that workspace's own transactions.
+    Return the subject_key with the most qualifying transactions for the given domain.
+    Searches across all workspaces.
     """
     domain_filter, _ = _domain_filter_sql(domain)
-    workspace_clause = "AND workspace_id = :workspace_id" if workspace_id else ""
 
     query = text(f"""
         SELECT subject_key, COUNT(*) AS tx_count
         FROM sync_action.record
         WHERE subject_key IS NOT NULL
           AND {domain_filter}
-          {workspace_clause}
           AND (
               data->'payload'->>'order_time'        IS NOT NULL OR
               data->'payload'->>'pickupTime'        IS NOT NULL OR
@@ -263,65 +260,18 @@ def _find_subject_key_sync(domain: str, min_tx: int = 1, workspace_id: str | Non
         LIMIT 1
     """)
 
-    params: dict = {"min_tx": min_tx}
-    if workspace_id:
-        params["workspace_id"] = workspace_id
-
-    print(f"[ML:find_subject_key] domain={domain!r} min_tx={min_tx} workspace_id={workspace_id!r}")
+    print(f"[ML:find_subject_key] domain={domain!r} min_tx={min_tx}")
     with _get_engine().connect() as conn:
-        row = conn.execute(query, params).fetchone()
+        row = conn.execute(query, {"min_tx": min_tx}).fetchone()
 
     if row:
         print(f"[ML:find_subject_key] ✓ found subject_key={row[0]!r} tx_count={row[1]}")
         return row[0]
 
-    print(f"[ML:find_subject_key] ✗ no data found for domain={domain!r} workspace_id={workspace_id!r}")
+    print(f"[ML:find_subject_key] ✗ no data found for domain={domain!r}")
     return None
 
 
-async def find_subject_key(domain: str, min_tx: int = 1, workspace_id: str | None = None) -> str | None:
-    """
-    Async wrapper — find best subject_key for a domain. Searches across all
-    workspaces unless workspace_id is given.
-    """
-    return await asyncio.to_thread(_find_subject_key_sync, domain, min_tx, workspace_id)
-
-
-def _find_subject_keys_sync(domain: str, limit: int, min_tx: int = 1) -> list[str]:
-    """
-    Return up to `limit` subject_keys with the most qualifying transactions for
-    the given domain, ranked by transaction count descending. Used to ground
-    multiple personas in distinct real behavior profiles instead of all of
-    them sharing the single top transactor's stats.
-    """
-    domain_filter, _ = _domain_filter_sql(domain)
-
-    query = text(f"""
-        SELECT subject_key, COUNT(*) AS tx_count
-        FROM sync_action.record
-        WHERE subject_key IS NOT NULL
-          AND {domain_filter}
-          AND (
-              data->'payload'->>'order_time'        IS NOT NULL OR
-              data->'payload'->>'pickupTime'        IS NOT NULL OR
-              data->'payload'->>'receivedDate'      IS NOT NULL OR
-              data->'payload'->>'transaction_date'  IS NOT NULL
-          )
-        GROUP BY subject_key
-        HAVING COUNT(*) >= :min_tx
-        ORDER BY tx_count DESC
-        LIMIT :limit
-    """)
-
-    print(f"[ML:find_subject_keys] domain={domain!r} min_tx={min_tx} limit={limit}")
-    with _get_engine().connect() as conn:
-        rows = conn.execute(query, {"min_tx": min_tx, "limit": limit}).fetchall()
-
-    keys = [row[0] for row in rows]
-    print(f"[ML:find_subject_keys] found {len(keys)} subject_key(s) for domain={domain!r}")
-    return keys
-
-
-async def find_subject_keys(domain: str, limit: int, min_tx: int = 1) -> list[str]:
-    """Async wrapper — find up to `limit` distinct subject_keys for a domain, ranked by activity."""
-    return await asyncio.to_thread(_find_subject_keys_sync, domain, limit, min_tx)
+async def find_subject_key(domain: str, min_tx: int = 1) -> str | None:
+    """Async wrapper — find best subject_key for a domain across all workspaces."""
+    return await asyncio.to_thread(_find_subject_key_sync, domain, min_tx)

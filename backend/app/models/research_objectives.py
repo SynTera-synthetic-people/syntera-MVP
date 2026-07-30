@@ -47,18 +47,6 @@ class ResearchObjectivesFile(SQLModel, table=True):
     # scope replace-on-resubmit (re-submitting a section replaces only that
     # section's previous materials, not the other section's).
     material_kind: Optional[str] = None
-    # Artifact-section-only (NULL for "brief" materials). The dimension-library
-    # key driving Stage 2 dimension selection in the artifact stimulus pipeline
-    # — e.g. "ad_creative" | "product_concept" | "packaging" | "landing_page" |
-    # "pricing_offer" | "claim" | "script_storyboard". Set once per submission,
-    # identical across every file/link created in that same submission.
-    artifact_category: Optional[str] = None
-    # Artifact-section-only (NULL for "brief" materials). The frontend's own
-    # vocabulary for how Omi should relate multiple artifacts to each other:
-    # "compare" | "campaign_set". Mapped to ComparisonMode by the artifact
-    # pipeline's create_run (see app/services/artifact_pipeline_orchestrator.py)
-    # rather than renamed here, to avoid rippling a rename through the FE.
-    comparison_mode: Optional[str] = None
     # Framer-material-specific fields. extracted_context is the LLM-summarized,
     # prompt-ready representation produced at upload/fetch time (not raw
     # file/page text) — this is what gets woven into Research Objective synthesis.

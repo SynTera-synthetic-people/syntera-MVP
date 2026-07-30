@@ -22,7 +22,6 @@ from app.services.decision_room_context import assemble_context
 from app.services.decision_room_prompt import DECISION_ROOM_SYSTEM_PROMPT
 from app.utils.anthropic_client import get_async_anthropic_client
 from app.utils.id_generator import generate_id
-from app.services.llm_usage_tracker import record_llm_usage, extract_usage_anthropic_message
 
 logger = logging.getLogger(__name__)
 
@@ -362,7 +361,6 @@ async def send_message(
         output_tokens = response.usage.output_tokens
         cost = _compute_cost(DECISION_ROOM_MODEL, input_tokens, output_tokens)
         evidence = _extract_evidence(analyst_text)
-        _, _, usage_raw = extract_usage_anthropic_message(response)
 
         # Persist analyst message
         analyst_msg = DecisionRoomMessage(
@@ -387,26 +385,6 @@ async def send_message(
         session.token_total_output += output_tokens
         session.cost_usd_total += cost
         session.updated_at = datetime.utcnow()
-
-        # Dual-write into the shared llm_usage_event log (see
-        # docs/llm_usage_tracking_plan.md, Section 4) — rides this same
-        # transaction, decision_room's own columns above are untouched.
-        await record_llm_usage(
-            db=db,
-            exploration_id=session.exploration_id,
-            workspace_id=session.workspace_id,
-            stage="decision_room",
-            operation="send_message",
-            provider="anthropic",
-            model=DECISION_ROOM_MODEL,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            usage_raw=usage_raw,
-            latency_ms=latency_ms,
-            session_id=session_id,
-            created_by=user_id,
-        )
-
         await db.commit()
 
         # Schedule title generation after first real exchange
@@ -419,9 +397,6 @@ async def send_message(
                 first_user_message=user_text,
                 first_analyst_response=analyst_text,
                 ro_description=ro_desc,
-                exploration_id=session.exploration_id,
-                workspace_id=session.workspace_id,
-                created_by=user_id,
             )
 
     return {
@@ -446,9 +421,6 @@ async def _stream_generator(
     user_text: str,
     next_seq: int,
     background_tasks: Optional[BackgroundTasks],
-    exploration_id: str,
-    workspace_id: str,
-    user_id: str,
 ) -> AsyncGenerator[str, None]:
     messages = _build_messages_for_claude(history, user_text, context_rendered)
     client = get_async_anthropic_client()
@@ -474,7 +446,6 @@ async def _stream_generator(
         latency_ms = int((time.monotonic() - started) * 1000)
         cost = _compute_cost(DECISION_ROOM_MODEL, input_tokens, output_tokens)
         evidence = _extract_evidence(full_text)
-        _, _, usage_raw = extract_usage_anthropic_message(final_msg)
 
         # Persist analyst message
         analyst_msg_id = generate_id()
@@ -506,26 +477,6 @@ async def _stream_generator(
                 ),
                 {"in_": input_tokens, "out_": output_tokens, "cost": cost, "sid": session_id},
             )
-
-            # Dual-write into the shared llm_usage_event log (see
-            # docs/llm_usage_tracking_plan.md, Section 4) — rides this same
-            # transaction, decision_room's own columns above are untouched.
-            await record_llm_usage(
-                db=db,
-                exploration_id=exploration_id,
-                workspace_id=workspace_id,
-                stage="decision_room",
-                operation="send_message",
-                provider="anthropic",
-                model=DECISION_ROOM_MODEL,
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                usage_raw=usage_raw,
-                latency_ms=latency_ms,
-                session_id=session_id,
-                created_by=user_id,
-            )
-
             await db.commit()
 
         # Title generation after first exchange
@@ -538,9 +489,6 @@ async def _stream_generator(
                 first_user_message=user_text,
                 first_analyst_response=full_text,
                 ro_description=ro_desc,
-                exploration_id=exploration_id,
-                workspace_id=workspace_id,
-                created_by=user_id,
             )
 
         yield f"data: {json.dumps({'type': 'done', 'message_id': analyst_msg_id, 'session_id': session_id, 'usage': {'input': input_tokens, 'output': output_tokens}, 'cost_usd': cost, 'evidence': evidence})}\n\n"
@@ -572,8 +520,6 @@ async def stream_message(
         _context_rendered = session.context_rendered or ""
         _context_metadata = session.context_metadata or {}
         _session_title = session.title
-        _exploration_id = session.exploration_id
-        _workspace_id = session.workspace_id
 
         msgs_result = await db.execute(
             select(DecisionRoomMessage)
@@ -604,7 +550,6 @@ async def stream_message(
         _stream_generator(
             session_id, _context_rendered, _context_metadata, _session_title,
             history_rows, user_text, next_seq, background_tasks,
-            _exploration_id, _workspace_id, user_id,
         ),
         media_type="text/event-stream",
         headers={
@@ -622,9 +567,6 @@ async def _generate_and_apply_title(
     first_user_message: str,
     first_analyst_response: str,
     ro_description: str,
-    exploration_id: Optional[str] = None,
-    workspace_id: Optional[str] = None,
-    created_by: Optional[str] = None,
 ) -> None:
     """Generate an intelligent session title via Haiku (background task, non-critical)."""
     try:
@@ -641,21 +583,6 @@ async def _generate_and_apply_title(
             model=TITLE_MODEL,
             max_tokens=32,
             messages=[{"role": "user", "content": prompt}],
-        )
-        input_tokens, output_tokens, usage_raw = extract_usage_anthropic_message(result)
-        await record_llm_usage(
-            db=None,
-            exploration_id=exploration_id,
-            workspace_id=workspace_id,
-            stage="decision_room",
-            operation="title_generation",
-            provider="anthropic",
-            model=TITLE_MODEL,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            usage_raw=usage_raw,
-            session_id=session_id,
-            created_by=created_by,
         )
         title = result.content[0].text.strip()[:120]
         if title:

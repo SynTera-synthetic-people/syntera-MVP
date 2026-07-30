@@ -1,15 +1,13 @@
 import React from 'react';
-import '../DataPlayground.css';
+import DataGrid from './DataGrid';
 
-const CodedData: React.FC = () => (
-  <div className="dp-content-area">
-    <div className="dp-content-scroll">
-      <div className="dp-placeholder">
-        <div className="dp-placeholder-icon">🏷</div>
-        <p className="dp-placeholder-text">Coded data view will appear here</p>
-      </div>
-    </div>
-  </div>
-);
+interface CodedDataProps {
+  workspaceId?: string;
+  explorationId?: string;
+  datasetId?: string | null;
+  active: boolean;
+}
+
+const CodedData: React.FC<CodedDataProps> = (props) => <DataGrid {...props} mode="coded" />;
 
 export default CodedData;

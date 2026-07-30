@@ -88,7 +88,7 @@ const BASE_TABS = [
 ] as const;
 
 const FORMATIVE_TAB = { key: 'formative', label: 'Formative Experience', fields: [] } as const;
-const AUTO_FILL_TAB = { key: 'autofill', label: 'Traits Calibration', fields: [] } as const;
+const AUTO_FILL_TAB = { key: 'autofill', label: 'AI Auto-Fill Report', fields: [] } as const;
 
 type BaseTabKey = typeof BASE_TABS[number]['key'];
 type TabKey = BaseTabKey | 'formative' | 'autofill';
@@ -838,10 +838,8 @@ const DepthSignalSection: React.FC<{
             stat={patternStat}
             weight={1}
             showBar={true}
-            // showCount={true} — commented out: no longer showing the "X Million
-            // people analyzed" figure next to this row, per design feedback.
-            showCount={false}
-            showWeight={false}
+            showCount={true}   // was false — bring the number back
+            showWeight={false} // was true — remove "Weight in Real Actions Signal confidence"
           />
         )}
       </div>
@@ -1190,17 +1188,9 @@ const MultiPlatformCalibCard: React.FC<MultiPlatformCalibCardProps> = ({
     return () => clearTimeout(timer);
   }, [confidenceComponents]);
 
-  const safeDecodeURIComponent = (s: string): string => {
-    try {
-      return decodeURIComponent(s);
-    } catch {
-      return s;
-    }
-  };
-
   const donutData: DonutEntry[] = Object.entries(platformCounts).map(
     ([name, value], i) => ({
-      name: safeDecodeURIComponent(name),
+      name,
       value,
       color: DONUT_COLORS[i % DONUT_COLORS.length]!,
     })
@@ -2207,7 +2197,7 @@ const PersonaPreview: React.FC = () => {
 
   // ── Real Actions Signal confidence (average of depth-layer / action-data
   // verdict confidence scores, when available) ───────────────────────────────
-  const actionDataVerdicts = (
+const actionDataVerdicts = (
     (mergedTraits?.evidence_metadata as Record<string, unknown> | undefined)?.depth_layers ??
     (rawData?.evidence_metadata as Record<string, unknown> | undefined)?.depth_layers ??
     (mergedTraits?.evidence as Record<string, unknown> | undefined)?.action_data ??
@@ -2265,13 +2255,13 @@ const PersonaPreview: React.FC = () => {
       reasoning:
         'DL_010 (Peer Clustering): multiple users in the same city purchasing the same brands. EB_LINKEDIN mentions friend recommendations in 40% of threads — a weaker, secondary signal alongside the primary Explorer assignment.',
     };
-  const behavioralDepthProfile = (
+const behavioralDepthProfile = (
     mergedTraits?.BEHAVIORAL_DEPTH_PROFILE ??
     rawData?.BEHAVIORAL_DEPTH_PROFILE ??
     personaDetails?.BEHAVIORAL_DEPTH_PROFILE
   ) as Record<string, unknown> | undefined;
 
-  const BEHAVIORAL_DEPTH_CATEGORY_LABELS: Record<string, string> = {
+const BEHAVIORAL_DEPTH_CATEGORY_LABELS: Record<string, string> = {
     white_spaces: 'White Space',
     cognitive_biases: 'Cognitive Bias',
     adoption_frictions: 'Adoption Friction',
@@ -2283,8 +2273,8 @@ const PersonaPreview: React.FC = () => {
     ritual_habit_architecture: 'Ritual / Habit',
   };
 
-  const depthLayerEntries: string[] = [];
-  if (behavioralDepthProfile) {
+const depthLayerEntries: string[] = [];
+if (behavioralDepthProfile) {
     for (const [key, label] of Object.entries(BEHAVIORAL_DEPTH_CATEGORY_LABELS)) {
       const arr = behavioralDepthProfile[key];
       if (!Array.isArray(arr)) continue;
@@ -2300,7 +2290,7 @@ const PersonaPreview: React.FC = () => {
     }
   }
   // ── Depth signal stats (Dimensions Triggered / Depth Layer / Predominant Patterns Extracted) ──
-  const dimensionsActivated = (
+const dimensionsActivated = (
     (mergedTraits?.evidence_metadata as Record<string, unknown> | undefined)?.activated_dimensions ??
     (rawData?.evidence_metadata as Record<string, unknown> | undefined)?.activated_dimensions ??
     (rawData?.stage_2_dimensions as Record<string, unknown> | undefined)?.activated_dimensions ??
@@ -2312,7 +2302,7 @@ const PersonaPreview: React.FC = () => {
     ? dimensionsActivated.length
     : 8;
 
-  const depthLayerCount = depthLayerEntries.length > 0
+const depthLayerCount = depthLayerEntries.length > 0
     ? depthLayerEntries.length
     : 6;
 
@@ -2332,32 +2322,22 @@ const PersonaPreview: React.FC = () => {
     ? Math.round(roAlignmentEntry.score <= 1 ? roAlignmentEntry.score * 100 : roAlignmentEntry.score)
     : Math.round(Math.min(patternsExtractedCount / 20, 1) * 100);
 
-  // predominant_patterns.score is a newer backend field intended to represent
-  // the same "RO Alignment" concept as the legacy confidence.components /
-  // confidenceDetail.ro_alignment_score entry (patAccuracy). The two can drift
-  // out of sync depending on which backend routine last recalculated them, so
-  // rather than picking one source and risking a stale low value hiding a
-  // legitimately higher, fresher one, we take whichever is higher.
-  //
-  // patAccuracy is the primary/legacy source; predominantPatternsScore is the
-  // backup/newer source. TODO: once backend guarantees both are recomputed
-  // together on every recalibration, this can go back to a single source of truth.
-  const RO_ALIGNMENT_RELIABLE_THRESHOLD = 60;
-
-  const predominantPatterns = (
+  // Only Predominant Patterns Extracted contributes to the Real Actions Signal confidence.
+  // predominant_patterns.score is the exact "RO Alignment" number the backend's
+  // compute_master_calibration_confidence() uses for this layer — reading it here
+  // (rather than the legacy confidence.components.ro_alignment_score entry that
+  // patAccuracy falls back through) keeps this pill in sync with the master ring
+  // instead of showing an unrelated older score next to it. patAccuracy remains the
+  // fallback for personas that don't have predominant_patterns generated yet.
+const predominantPatterns = (
     rawData?.predominant_patterns ??
     mergedTraits?.predominant_patterns ??
     personaDetails?.predominant_patterns
   ) as { score?: number; patterns?: string[] } | undefined;
 
-  const predominantPatternsScore =
+  const realActionsConfidenceScore =
     typeof predominantPatterns?.score === 'number' && !Number.isNaN(predominantPatterns.score)
       ? Math.round(predominantPatterns.score)
-      : null;
-
-  const realActionsConfidenceScore =
-    patAccuracy < RO_ALIGNMENT_RELIABLE_THRESHOLD && predominantPatternsScore !== null
-      ? Math.max(patAccuracy, predominantPatternsScore)
       : patAccuracy;
 
   // ── Master Calibration Confidence ─────────────────────────────────────────
@@ -2397,7 +2377,7 @@ const PersonaPreview: React.FC = () => {
   ];
 
   // ── Depth layer verdicts: use real pattern_detected strings for detail drawer ──
-  const depthLayerDetails = depthLayerEntries;
+const depthLayerDetails = depthLayerEntries;
   const fallbackDepthDetails = [
     '2347 users switch brands in this category',
     '2057 users show repeat-brand loyalty',
@@ -2410,7 +2390,7 @@ const PersonaPreview: React.FC = () => {
   // ── Patterns extracted: real pattern_detected values (same source); the
   // large UI-scaled numeric count is no longer shown in the header (only the
   // accuracy bar and the detail chips remain) ─────────────────────────────
-  const patternRealDetails = Array.isArray(predominantPatterns?.patterns)
+const patternRealDetails = Array.isArray(predominantPatterns?.patterns)
     ? predominantPatterns.patterns.filter(Boolean)
     : [];
   const fallbackPatternDetails = [
@@ -2456,7 +2436,7 @@ const PersonaPreview: React.FC = () => {
       value: patternsExtractedCount,
       displayValue: patternPeopleAnalyzed,
       countSubtitle: 'people analyzed',
-      accuracy: realActionsConfidenceScore,
+      accuracy: patAccuracy,
       accuracyLabel: 'Research Objective Alignment',
       color: '#5D74EB',
       detailLabel: 'Behavioral signals extracted from action patterns:',
@@ -2728,7 +2708,7 @@ const PersonaPreview: React.FC = () => {
                         </div>
                       ))}
                     </div>
-                    {/* 
+
                     {(autoFillReport.total_sub_traits ?? 0) > 0 && (
                       <div style={{ marginBottom: 24 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'rgba(255,255,255,0.5)', marginBottom: 6 }}>
@@ -2745,12 +2725,12 @@ const PersonaPreview: React.FC = () => {
                           }} />
                         </div>
                       </div>
-                    )} */}
+                    )}
 
                     {(autoFillReport.auto_filled_traits ?? []).length > 0 && (
                       <div className="pp-list-card">
                         <h4 className="pp-list-card-title">
-                          Traits Calibration ({autoFillReport.auto_filled_count ?? 0})
+                          AI Auto-Filled Traits ({autoFillReport.auto_filled_count ?? 0})
                         </h4>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
                           {(autoFillReport.auto_filled_traits ?? []).map((t, i) => (
@@ -2771,7 +2751,7 @@ const PersonaPreview: React.FC = () => {
                     )}
                   </>
                 ) : (
-                  <p className="pp-empty">Traits Calibration not available for this persona. Calibrate the persona to generate it.</p>
+                  <p className="pp-empty">Auto-fill report not available for this persona. Calibrate the persona to generate it.</p>
                 )}
               </div>
             )}
@@ -2937,8 +2917,12 @@ const PersonaPreview: React.FC = () => {
                   {/* ── Multi-platform card with eye CTA ── */}
                   {/* ── Multi-platform card with eye CTA ── */}
                   <MultiPlatformCalibCard
-                    title="Multi-platform Conversation"
-                    subtitle="Calibrated against real consumer conversations across multiple platforms."
+                    title={isManualMode ? 'RO Alignment Score' : 'Multi-platform Conversation'}
+                    subtitle={
+                      isManualMode
+                        ? 'Research Objective alignment scored across 4 dimensions: demographics, psychographics, behaviour, and trait completeness.'
+                        : 'Calibrated against real consumer conversations across multiple platforms.'
+                    }
                     totalCount={getCalibCount('multi')}
                     totalCountLabel={getCalibLabel('multi', 'Total conversations inferred')}
                     platformCounts={platformCounts}
