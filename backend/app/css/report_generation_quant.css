@@ -312,9 +312,10 @@ pre, code {
 .quant-chart-image {
     /* xhtml2pdf (reportlab) cannot resolve percentage widths on <img> —
        it logs "getSize: Not a float '100%'" and falls back to the image's
-       native pixel size, which can overflow the cell. Fixed mm matching
-       the .quant-chart-cell column width avoids that. */
-    width: 60mm;
+       native pixel size, which can overflow the cell. Fixed mm sized for a
+       .quant-chart-grid-cell (~50% of the ~182mm content width, minus cell
+       padding) avoids that — see .quant-chart-grid below. */
+    width: 78mm;
 }
 
 .quant-chart-heading-cell {
@@ -334,4 +335,27 @@ pre, code {
 .quant-audience-subblock {
     margin: 0 0 10px 0;
     page-break-inside: avoid;
+}
+
+/* ── Audience Characteristics: 2-column chart grid ──
+   Each pair of characteristics is its own small <table> (not one big table
+   with many <tr>s, and not CSS grid/flex — xhtml2pdf's reportlab backend
+   supports neither) so page-break-inside:avoid keeps a PAIR together without
+   forcing the whole grid to stay on one page; natural page breaks can still
+   fall between pairs. Wraps to a new row every 2 items; an odd final item
+   gets an empty sibling cell so its column width stays consistent. */
+.quant-chart-grid {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    margin: 0 0 10px 0;
+    page-break-inside: avoid;
+}
+
+.quant-chart-grid-cell {
+    width: 50%;
+    padding: 0 8px 10px 0;
+    vertical-align: top;
+    border: none;
+    background: transparent;
 }

@@ -70,11 +70,14 @@ _SHARED_SHELL_SUFFIX = [
     ("Limitations and Transparency", r"\blimitations\s*(?:&|and)\s*transparency\b"),
 ]
 # DI-only closing suffix: "Methodology and Calibration" replaces "Research Methodology"
-# for DECISION_INTELLIGENCE. BEHAVIORAL_ARCHAEOLOGY keeps the original heading/content
-# (_SHARED_SHELL_SUFFIX above) — the two are never both rendered in the same report.
+# for DECISION_INTELLIGENCE, followed by its own top-level "Assumptions" section (the
+# old Decision Brief "What Could Go Wrong," moved and renamed — a separate section, NOT
+# nested inside Methodology and Calibration). DI does NOT render Limitations and
+# Transparency at all (CEO decision) — BEHAVIORAL_ARCHAEOLOGY keeps both the original
+# heading/content and Limitations and Transparency, unchanged (_SHARED_SHELL_SUFFIX above).
 _DI_SHELL_SUFFIX = [
     ("Methodology and Calibration", r"\bmethodology and calibration\b"),
-    ("Limitations and Transparency", r"\blimitations\s*(?:&|and)\s*transparency\b"),
+    ("Assumptions", r"\bassumptions\b"),
 ]
 
 # DECISION_INTELLIGENCE's required sections are NOT a static list here: since the DI
@@ -104,7 +107,11 @@ QUANT_REQUIRED_SECTIONS = {
 
 
 # ---------------------------------------------------------------------------
-# Adaptive Report Modules (A-L) — DECISION_INTELLIGENCE only.
+# Strategic Observations modules (A-L) — DECISION_INTELLIGENCE only. Rendered
+# under the "## STRATEGIC OBSERVATIONS" heading in the report (internal module
+# names/IDs below are a backend selection concern only; the CEO-facing rename
+# from "Adaptive Report Modules" is purely a display change, so MODULE_DEFINITIONS
+# and its keys keep their original names for backward compatibility).
 #
 # Replaces the old fixed DI-1..7 narrative with Decision Brief + a subset of
 # these modules, selected per-report from the research objective's keywords
@@ -253,9 +260,13 @@ def _build_di_required_sections(selected_modules: List[str]) -> List[Tuple[str, 
     headings for each required pattern) picked up every module's own "### {Name}"
     sub-heading as its own top-level TOC line, producing a confusing nested module
     listing even though the module content itself was already correctly nested
-    under the single "## ADAPTIVE REPORT MODULES" wrapper heading in the body. One
-    "Adaptive Report Modules" entry matches that wrapper heading instead, so the
+    under the single "## STRATEGIC OBSERVATIONS" wrapper heading in the body. One
+    "Strategic Observations" entry matches that wrapper heading instead, so the
     TOC always shows exactly these 6 lines for DI regardless of module count.
+    No "Limitations and Transparency" entry — CEO decision: DI reports never
+    include that section (BEHAVIORAL_ARCHAEOLOGY keeps it, unchanged); "Assumptions"
+    (the old Decision Brief "What Could Go Wrong," moved+renamed) is its own entry,
+    a separate top-level section after Methodology and Calibration, not nested in it.
 
     `selected_modules` is accepted for call-site/API stability but not consulted
     here anymore — module presence is validated structurally (the wrapper heading
@@ -265,7 +276,7 @@ def _build_di_required_sections(selected_modules: List[str]) -> List[Tuple[str, 
         *_SHARED_SHELL_PREFIX,
         ("Audience Characteristics", r"\baudience characteristics\b"),
         ("Decision Brief", r"\bdecision brief\b"),
-        ("Adaptive Report Modules", r"\badaptive report modules\b"),
+        ("Strategic Observations", r"\bstrategic observations\b"),
         *_DI_SHELL_SUFFIX,
     ]
 
@@ -335,6 +346,101 @@ def extract_audience_characteristics(
             ]
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# Multi-country detection (CEO feedback Section 2.1, 4.1-4.3, 5.2) —
+# DECISION_INTELLIGENCE only.
+# ---------------------------------------------------------------------------
+
+# Pragmatic keyword list, not an exhaustive ISO-3166 gazetteer: covers the country
+# names/short forms that actually show up in research objectives written in
+# English. A country outside this list simply won't trigger the multi-country
+# sections (Differences/Commonalities/Regional Dynamics) or "Other" filtering —
+# acceptable since those are additive narrative sections, not correctness-critical.
+_COUNTRY_ALIASES: Dict[str, List[str]] = {
+    "United States": ["united states", "u.s.", "usa", " us "],
+    "Germany": ["germany", "deutschland"],
+    "United Kingdom": ["united kingdom", "u.k.", "britain", " uk "],
+    "France": ["france"],
+    "India": ["india"],
+    "Canada": ["canada"],
+    "Australia": ["australia"],
+    "Japan": ["japan"],
+    "China": ["china"],
+    "Brazil": ["brazil"],
+    "Mexico": ["mexico"],
+    "Spain": ["spain"],
+    "Italy": ["italy"],
+    "Netherlands": ["netherlands", "the netherlands", "holland"],
+    "South Korea": ["south korea", "korea"],
+    "Singapore": ["singapore"],
+    "United Arab Emirates": ["united arab emirates", "u.a.e.", "uae"],
+    "Saudi Arabia": ["saudi arabia"],
+    "South Africa": ["south africa"],
+}
+
+
+def extract_countries_from_ro(research_objective: str) -> List[str]:
+    """Best-effort country detection from the research objective's text. Used only
+    to decide whether to render the multi-country sections and to filter the
+    "Other" geography bucket — never to change any numeric finding.
+    """
+    text = f" {(research_objective or '').lower()} "
+    return [country for country, aliases in _COUNTRY_ALIASES.items() if any(alias in text for alias in aliases)]
+
+
+def should_add_geographic_sections(research_objective: str) -> bool:
+    """True when the research objective names 2+ countries — triggers Differences/
+    Commonalities (Decision Brief) and Regional Dynamics (Strategic Observations)."""
+    return len(extract_countries_from_ro(research_objective)) > 1
+
+
+_GEOGRAPHY_QUESTION_KEYWORDS = ("countr", "geograph", "location", "market", "region")
+_OTHER_OPTION_LABELS = {"other", "others"}
+
+
+def filter_demographics_by_ro_countries(
+    audience_characteristics: Dict[str, Any], research_objective: str
+) -> Dict[str, Any]:
+    """When the RO names 2+ countries, drop any "Other"/"Others" option from
+    geography-shaped demographic questions (question text mentions country/
+    geography/location/market/region) in both Audience Characteristics tables —
+    CEO decision: a multi-country study should show only the countries actually
+    being compared, not a catch-all bucket.
+
+    No-op for a single-country (or country-less) research objective, and a no-op
+    for any question that isn't geography-shaped regardless of country count.
+    Mutates and returns `audience_characteristics` for convenience at the call site.
+    """
+    if not audience_characteristics or len(extract_countries_from_ro(research_objective)) <= 1:
+        return audience_characteristics
+
+    def _is_geography_question(question_text: Any) -> bool:
+        lowered = str(question_text or "").lower()
+        return any(kw in lowered for kw in _GEOGRAPHY_QUESTION_KEYWORDS)
+
+    def _filter_rows(rows: List[Dict[str, Any]], options_key: str) -> None:
+        for row in rows:
+            if not isinstance(row, dict) or not _is_geography_question(row.get("question")):
+                continue
+            options = row.get(options_key)
+            if not isinstance(options, dict):
+                continue
+            row[options_key] = {
+                label: value for label, value in options.items()
+                if str(label or "").strip().lower() not in _OTHER_OPTION_LABELS
+            }
+
+    _filter_rows(
+        audience_characteristics.get("sample_characteristics", {}).get("questions_and_options", []) or [],
+        "options",
+    )
+    _filter_rows(
+        audience_characteristics.get("sample_profile", {}).get("questions", []) or [],
+        "responses",
+    )
+    return audience_characteristics
 
 
 def _normalize_whitespace(value: str) -> str:
@@ -454,8 +560,20 @@ def _extract_markdown_headings(md_content: str) -> List[str]:
 
 
 def _build_toc_markdown(
-    cta: str, headings: List[str], required_sections: Optional[List[Tuple[str, str]]] = None
+    cta: str,
+    headings: List[str],
+    required_sections: Optional[List[Tuple[str, str]]] = None,
+    toc_sections: Optional[List[Tuple[str, str]]] = None,
 ) -> str:
+    """`required_sections` drives validation (_find_missing_sections) elsewhere;
+    `toc_sections` — when given — is the (possibly smaller) list actually used to
+    build the Table of Contents. They can differ: e.g. DI's "Assumptions" is a
+    required subsection of Methodology and Calibration (still validated, still
+    gets a fallback if missing) but must NOT get its own Table of Contents line
+    since it's nested under Methodology and Calibration, not a top-level section.
+    Falls back to `required_sections`, then the static QUANT_REQUIRED_SECTIONS,
+    when `toc_sections` isn't given — unchanged behavior for BA/CSV.
+    """
     if not headings:
         return ""
 
@@ -468,7 +586,12 @@ def _build_toc_markdown(
                     ordered_entries.append(heading)
                 return
 
-    sections = required_sections if required_sections is not None else QUANT_REQUIRED_SECTIONS.get(cta, [])
+    if toc_sections is not None:
+        sections = toc_sections
+    elif required_sections is not None:
+        sections = required_sections
+    else:
+        sections = QUANT_REQUIRED_SECTIONS.get(cta, [])
     for _, pattern in sections:
         append_if_present(pattern)
 
@@ -485,9 +608,14 @@ def _build_toc_markdown(
 
 
 def _synchronize_toc(
-    md_content: str, cta: str, required_sections: Optional[List[Tuple[str, str]]] = None
+    md_content: str,
+    cta: str,
+    required_sections: Optional[List[Tuple[str, str]]] = None,
+    toc_sections: Optional[List[Tuple[str, str]]] = None,
 ) -> str:
-    toc_markdown = _build_toc_markdown(cta, _extract_markdown_headings(md_content), required_sections)
+    toc_markdown = _build_toc_markdown(
+        cta, _extract_markdown_headings(md_content), required_sections, toc_sections
+    )
     if not toc_markdown:
         return md_content
 
@@ -564,7 +692,7 @@ def _fallback_methodology_and_calibration(cta: str) -> str:
     """DI's twin of qual's _fallback_research_methodology, under the renamed heading."""
     return """## Methodology and Calibration
 
-This report was generated from quantitative survey simulation using Synthetic People AI's proprietary behavioral framework. Each persona's calibration score reflects how tightly its simulated responses are anchored to that persona's defined traits, and the Adaptive Report Modules above were selected from the research objective's stated priorities, checked against what the questionnaire actually measured. Findings are directional synthetic research outputs, useful for pattern recognition and decision preparation, and should be validated before high-stakes execution.
+This report was generated from quantitative survey simulation using Synthetic People AI's proprietary behavioral framework. Each persona's calibration score reflects how tightly its simulated responses are anchored to that persona's defined traits, and the Strategic Observations above were selected from the research objective's stated priorities, checked against what the questionnaire actually measured. Findings are directional synthetic research outputs, useful for pattern recognition and decision preparation, and should be validated before high-stakes execution.
 """
 
 
@@ -574,8 +702,58 @@ def _ensure_di_methodology_content(md_content: str) -> str:
     the literal 'Research Methodology' text (still correct for BEHAVIORAL_ARCHAEOLOGY,
     which keeps that name), so a thin DI section would slip through undetected
     without this.
+
+    Replaces the thin section IN PLACE (not remove-then-append-at-the-end, unlike
+    qual's version) because "### Assumptions" is nested directly under this section
+    and must stay immediately after it — appending at the document's end would push
+    the fallback text after Assumptions instead of before it.
     """
     pattern = r"(?im)^#{1,6}\s+methodology and calibration\s*$"
+    m = re.search(pattern, md_content)
+    if not m:
+        return md_content
+    after = md_content[m.end():]
+    body_match = re.match(r'(.*?)(?=^#{1,6}\s|\Z)', after, re.DOTALL | re.MULTILINE)
+    body = body_match.group(1).strip() if body_match else ""
+    if len(body) >= 80:
+        return md_content
+    replacement = _fallback_methodology_and_calibration("DECISION_INTELLIGENCE").strip() + "\n\n"
+    return re.sub(
+        pattern + r'.*?(?=^#{1,6}\s|\Z)',
+        lambda _match: replacement,
+        md_content,
+        count=1,
+        flags=re.DOTALL | re.MULTILINE | re.IGNORECASE,
+    )
+
+
+def _fallback_assumptions() -> str:
+    """DI's final content — the old Decision Brief "What Could Go Wrong," moved and
+    renamed, now a "### Assumptions" subsection nested under Methodology and
+    Calibration (not its own top-level "##" section, not its own Table of Contents
+    line — see toc_sections in generate_md_report) — but still the last thing in
+    the document.
+    """
+    return """### Assumptions
+
+**What Must Be True**
+
+This recommendation assumes the market conditions described in this report hold as stated, and that respondent-stated intent translates to real-world behavior within a reasonable margin.
+
+**What Breaks the Case**
+
+*Scenario: Market conditions shift materially.* If the assumptions above don't hold, the recommendation in the Decision Brief should be revisited before execution.
+"""
+
+
+def _ensure_di_assumptions_content(md_content: str) -> str:
+    """DI-only thin-content safety net for the 'Assumptions' heading, mirroring
+    _ensure_di_methodology_content — Assumptions is a new heading name the
+    imported qual helper has no knowledge of. Remove-then-append-at-the-end is
+    safe here (unlike the methodology version) because Assumptions really is the
+    last thing in a DI report.
+    """
+    pattern = r"(?im)^#{1,6}\s+assumptions\s*$"
     m = re.search(pattern, md_content)
     if not m:
         return md_content
@@ -590,7 +768,19 @@ def _ensure_di_methodology_content(md_content: str) -> str:
         md_content,
         flags=re.DOTALL | re.MULTILINE | re.IGNORECASE,
     )
-    return result.rstrip() + f"\n\n{_fallback_methodology_and_calibration('DECISION_INTELLIGENCE').strip()}\n"
+    return result.rstrip() + f"\n\n{_fallback_assumptions().strip()}\n"
+
+
+def _strip_di_limitations_section(md_content: str) -> str:
+    """CEO decision: DECISION_INTELLIGENCE reports never include a Limitations and
+    Transparency section (BEHAVIORAL_ARCHAEOLOGY keeps it, unchanged — see
+    _SHARED_SHELL_SUFFIX vs _DI_SHELL_SUFFIX). Defensive strip for when the LLM
+    includes one anyway despite the prompt instructing otherwise; a no-op when
+    the heading isn't present.
+    """
+    pattern = r'(?im)^#{1,6}\s+limitations?\s*(?:&|and)\s*transparency\s*$.*?(?=^#{1,6}\s|\Z)'
+    stripped = re.sub(pattern, '', md_content, flags=re.DOTALL | re.MULTILINE | re.IGNORECASE)
+    return stripped if stripped == md_content else stripped.rstrip() + "\n"
 
 
 def _append_supported_missing_sections(
@@ -606,6 +796,7 @@ def _append_supported_missing_sections(
     appenders = {
         "Research Methodology": lambda: _fallback_research_methodology(cta),
         "Methodology and Calibration": lambda: _fallback_methodology_and_calibration(cta),
+        "Assumptions": lambda: _fallback_assumptions(),
         "Limitations and Transparency": _fallback_limitations_and_transparency,
     }
     appendable = [label for label in missing_sections if label in appenders]
@@ -622,6 +813,7 @@ async def _generate_validated_report_markdown(
     cta: str,
     exploration_id: Optional[str] = None,
     required_sections: Optional[List[Tuple[str, str]]] = None,
+    toc_sections: Optional[List[Tuple[str, str]]] = None,
 ) -> str:
     system_prompt = CTA_ROUTED_QUANT_REPORT_PROMPT_V2.replace("{REPORT_DATE}", _current_report_date())
 
@@ -634,10 +826,12 @@ async def _generate_validated_report_markdown(
     md = _ensure_closing_section_content(md, cta)
     if cta == "DECISION_INTELLIGENCE":
         md = _ensure_di_methodology_content(md)
-    md = _synchronize_toc(md, cta, required_sections)
+        md = _ensure_di_assumptions_content(md)
+        md = _strip_di_limitations_section(md)
+    md = _synchronize_toc(md, cta, required_sections, toc_sections)
     missing_sections = _find_missing_sections(md, cta, required_sections)
     md, missing_sections = _append_supported_missing_sections(md, cta, missing_sections, required_sections)
-    md = _synchronize_toc(md, cta, required_sections)
+    md = _synchronize_toc(md, cta, required_sections, toc_sections)
     if not missing_sections:
         return md.rstrip() + "\n\n---\n\n**END OF REPORT**\n"
 
@@ -662,12 +856,14 @@ async def _generate_validated_report_markdown(
     repaired_md = _ensure_closing_section_content(repaired_md, cta)
     if cta == "DECISION_INTELLIGENCE":
         repaired_md = _ensure_di_methodology_content(repaired_md)
-    repaired_md = _synchronize_toc(repaired_md, cta, required_sections)
+        repaired_md = _ensure_di_assumptions_content(repaired_md)
+        repaired_md = _strip_di_limitations_section(repaired_md)
+    repaired_md = _synchronize_toc(repaired_md, cta, required_sections, toc_sections)
     repaired_missing_sections = _find_missing_sections(repaired_md, cta, required_sections)
     repaired_md, repaired_missing_sections = _append_supported_missing_sections(
         repaired_md, cta, repaired_missing_sections, required_sections
     )
-    repaired_md = _synchronize_toc(repaired_md, cta, required_sections)
+    repaired_md = _synchronize_toc(repaired_md, cta, required_sections, toc_sections)
     if repaired_missing_sections:
         raise ValueError(
             "Generated quant report is incomplete after retry. Missing required sections: "
@@ -1214,59 +1410,69 @@ def _split_audience_table_groups(
     return groups or None
 
 
-def _wrap_table_with_chart(heading: str, table_html: str, chart_data_uri: Optional[str] = None) -> str:
-    """Wrap a characteristic's subheading, its mini-table, and (if available) its
-    chart in ONE atomic table row — using a real HTML <table> for the side-by-side
-    layout, not CSS flex/grid, since xhtml2pdf (reportlab) has no flexbox support
-    but does support nested HTML tables as a layout mechanism.
-
-    The heading is placed INSIDE the table-column cell, above the mini-table,
-    rather than as its own preceding <tr> (colspan across a separate heading
-    row was tried and measured to still let xhtml2pdf split between the two
-    <tr>s at a page boundary — page-break-inside:avoid on the outer <table>
-    does not guarantee its child rows stay together) or as a sibling element
-    entirely (same problem, verified empirically). A single <tr> containing
-    both the chart <td> and the heading+table <td> is what's actually been
-    confirmed atomic: xhtml2pdf pushes that whole row to the next page as one
-    unsplittable unit instead of stranding the heading behind.
+def _wrap_table_with_chart(heading: str, chart_data_uri: Optional[str] = None) -> str:
+    """Render a characteristic's heading + chart ONLY — CEO decision: Audience
+    Characteristics shows charts in the final report, never the underlying data
+    table. The LLM's own markdown table for this section is still parsed upstream
+    (see _split_audience_table_groups) to recover each characteristic's label and
+    per-characteristic order, but the table markup itself is intentionally never
+    included in the rendered output here.
     """
     heading_html = f'<div class="quant-chart-heading-cell">{_escape_text(heading)}</div>'
     if chart_data_uri:
         return (
-            '<table class="quant-chart-table-layout"><tr>'
-            f'<td class="quant-chart-cell"><img src="{chart_data_uri}" class="quant-chart-image"/></td>'
-            f'<td class="quant-chart-table-cell">{heading_html}{table_html}</td>'
-            "</tr></table>"
+            '<div class="quant-audience-subblock">'
+            f'{heading_html}<img src="{chart_data_uri}" class="quant-chart-image"/>'
+            "</div>"
         )
-    return f'<div class="quant-audience-subblock">{heading_html}{table_html}</div>'
+    # No chart available for this characteristic (no source data) — heading only,
+    # never fall back to showing the raw table.
+    return f'<div class="quant-audience-subblock">{heading_html}</div>'
+
+
+def _render_audience_charts_grid(blocks: List[str]) -> str:
+    """Lay out Audience Characteristics chart blocks two-per-row, wrapping
+    naturally to a new row every 2 items.
+
+    Each pair is its own small <table> (not one big table with many <tr>s,
+    and not CSS grid/flex — xhtml2pdf's reportlab backend supports neither)
+    so page-break-inside:avoid keeps a PAIR together without forcing the
+    entire grid to stay on one page; natural page breaks can still fall
+    between pairs. Same atomic-unit pattern already proven for the old
+    chart+table side-by-side layout (one <table> per unsplittable unit).
+    An odd final item gets an empty sibling cell so its column width stays
+    consistent with every other row.
+    """
+    rows_html: List[str] = []
+    for i in range(0, len(blocks), 2):
+        pair = blocks[i:i + 2]
+        cells = "".join(f'<td class="quant-chart-grid-cell">{block}</td>' for block in pair)
+        if len(pair) == 1:
+            cells += '<td class="quant-chart-grid-cell"></td>'
+        rows_html.append(f'<table class="quant-chart-grid"><tr>{cells}</tr></table>')
+    return "".join(rows_html)
 
 
 def _render_audience_characteristics_table(
     headers: List[str], rows: List[List[str]], charts: List[Tuple[str, str]]
 ) -> str:
-    """Render a Sample Characteristics/Sample Profile table as one short
-    mini-table per characteristic, each paired side by side with its own
-    chart (matched by source order — see quant_report_charts.py).
-
-    Splitting into small per-characteristic blocks (rather than nesting the
-    whole, potentially page-spanning combined table inside a chart layout)
-    keeps each side-by-side unit short enough to safely paginate: xhtml2pdf
-    treats a table nested in a table cell as one atomic, unsplittable block,
-    so a single 10+ row table forced into a cell can strand a large blank
-    gap on the previous page (verified empirically) instead of flowing
-    naturally.
+    """Render a Sample Characteristics/Sample Profile table as a 2-column grid
+    of heading+chart blocks, one per characteristic (matched by source order —
+    see quant_report_charts.py). No table content is rendered (see
+    _wrap_table_with_chart); layout is handled by _render_audience_charts_grid.
     """
     groups = _split_audience_table_groups(headers, rows)
     if groups is None:
+        # Malformed/unexpected table shape from the LLM (rare) — fall back to the
+        # raw table rather than losing the data entirely; every well-formed table
+        # takes the charts-only grid path above.
         return _render_compact_table(headers, rows)
 
-    remaining_headers = headers[1:]
     blocks: List[str] = []
-    for index, (label, group_rows) in enumerate(groups):
-        mini_table = _render_compact_table(remaining_headers, group_rows)
+    for index, (label, _group_rows) in enumerate(groups):
         chart_uri = charts[index][1] if index < len(charts) else None
-        blocks.append(_wrap_table_with_chart(label, mini_table, chart_uri))
-    return "".join(blocks)
+        blocks.append(_wrap_table_with_chart(label, chart_uri))
+    return _render_audience_charts_grid(blocks)
 
 
 def _normalize_quant_tables(
@@ -1382,16 +1588,27 @@ async def generate_md_report(
     # duplicate persona-summary section in practice.
     audience_characteristics: Dict[str, Any] = {}
     audience_charts: Dict[str, List[Tuple[str, str]]] = {}
+    is_multi_country = False
+    ro_countries: List[str] = []
     if cta == "DECISION_INTELLIGENCE":
+        ro_text = str(research_objective or "")
+        ro_countries = extract_countries_from_ro(ro_text)
+        is_multi_country = len(ro_countries) > 1
+
         audience_characteristics = extract_audience_characteristics(
             questionnaire_sections, survey_results or {}, data.get("total_sample_size") or 0,
         )
-        # Rendered straight from the same dict as Table 1 above, never from LLM
-        # output, so a chart can never disagree with the table beside it.
+        # Multi-country studies show only the countries actually being compared,
+        # not a catch-all "Other" bucket (CEO decision) — filtered before charts
+        # are generated so the chart and the (now charts-only) section agree.
+        audience_characteristics = filter_demographics_by_ro_countries(audience_characteristics, ro_text)
+        # Rendered straight from the same dict, never from LLM output, so a chart
+        # can never disagree with the underlying data.
         audience_charts = render_audience_characteristics_charts(audience_characteristics)
 
     selected_modules: List[str] = []
     required_sections: Optional[List[Tuple[str, str]]] = None
+    toc_sections: Optional[List[Tuple[str, str]]] = None
     if cta == "DECISION_INTELLIGENCE":
         # select_adaptive_modules() (RO-keyword matching) and check_suppression_rules()
         # (data-availability check) are unchanged — same backend selection logic as
@@ -1402,6 +1619,10 @@ async def generate_md_report(
         suppressions = check_suppression_rules(ro_matched_modules, question_types)
         selected_modules = [m for m in ro_matched_modules if m not in suppressions]
         required_sections = _build_di_required_sections(selected_modules)
+        # "Assumptions" is a required subsection of Methodology and Calibration (still
+        # validated, still gets a fallback if missing) but is nested under it, not its
+        # own top-level heading — so it must NOT get its own Table of Contents line.
+        toc_sections = [entry for entry in required_sections if entry[0] != "Assumptions"]
 
     payload: Dict[str, Any] = {
         "research_objective": research_objective,
@@ -1418,9 +1639,11 @@ async def generate_md_report(
         "audience_characteristics": audience_characteristics,
         "selected_modules": selected_modules,
         "module_definitions": {mid: MODULE_DEFINITIONS[mid]["guidance"] for mid in selected_modules},
+        "is_multi_country": is_multi_country,
+        "ro_countries": ro_countries,
     }
 
-    md = await _generate_validated_report_markdown(payload, cta, exploration_id, required_sections)
+    md = await _generate_validated_report_markdown(payload, cta, exploration_id, required_sections, toc_sections)
 
     output_pdf_path = generate_pdf_path(prefix="quant_survey")
     css_path = (
