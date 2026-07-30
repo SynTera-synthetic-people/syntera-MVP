@@ -1250,12 +1250,21 @@ Do both steps internally in one pass:
 1. Simulate the persona answering each question
 2. Humanize each answer into natural interview speech
 
+**CRITICAL LENGTH REQUIREMENT — CHECK BEFORE OUTPUTTING EACH ANSWER**
+Every "revised_persona_answer" MUST be 150-250 words (6-12 sentences). This applies to
+EVERY answer in the batch, not just the first few — do not let later answers get shorter
+as the list goes on. Before writing "word_count", literally count the words in
+"revised_persona_answer". If it is under 150, go back and expand the Context and Key
+Message parts with more sensory detail, reasoning, or concrete examples — do not pad with
+filler. Do not output an answer with word_count below 150.
+
 **OUTPUT JSON - must have exactly {question_count} answers:**
 {{
   "answers": [
     {{
       "question": "...",
       "revised_persona_answer": "4-part structured response: Opening (1-2 sentences) → Context (2-3 sentences) → Key Message (2-4 sentences) → Conclusion (1-2 sentences). Total: 150-250 words.",
+      "word_count": 187,
       "response_structure": {{
         "opening": "Hook/context setter",
         "context": "Life situation, experience, backstory",
@@ -1300,9 +1309,16 @@ Do both steps internally in one pass:
 1. Simulate the persona's reply to the current question
 2. Humanize it into natural interview speech
 
+**CRITICAL LENGTH REQUIREMENT — CHECK BEFORE OUTPUTTING**
+"response" MUST be 150-250 words (6-12 sentences). Before writing "word_count", literally
+count the words in "response". If it is under 150, go back and expand the Context and Key
+Message parts with more sensory detail, reasoning, or concrete examples — do not pad with
+filler. Do not output a response with word_count below 150.
+
 **OUTPUT FORMAT JSON:**
 {{
   "response": "4-part structured response: Opening → Context → Key Message → Conclusion. Total 150-250 words. Use Conversational Texture markers and Voice Differentiation parameters assigned to this persona.",
+  "word_count": 187,
   "response_structure": {{
     "opening": "...",
     "context": "...",

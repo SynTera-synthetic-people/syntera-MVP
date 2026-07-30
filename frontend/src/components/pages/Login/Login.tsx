@@ -263,22 +263,22 @@ const Login: React.FC = () => {
                 </span>
               )}
             </button>
-
+{/* 
             <div className="divider">or</div>
 
             <button type="button" className="google-btn">
               <img src="/google.svg" alt="google" width="18" height="18" />
               Continue with Google
-            </button>
+            </button> */}
           </form>
 
           <div className="card-footer">
-            <p className="signin-text">
+            {/* <p className="signin-text">
               Don't have an account?{" "}
               <a href="https://synthetic-people.ai/#pricing" target="_blank" rel="noopener noreferrer">
                 Create Account
               </a>
-            </p>
+            </p> */}
 
             <p className="terms">
               By continuing, you're agreeing to our{" "}

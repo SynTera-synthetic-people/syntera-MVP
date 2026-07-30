@@ -17,6 +17,11 @@ import json
 from app.config import OPENAI_API_KEY
 from sqlalchemy import update
 from app.services import omi as omi_service
+from app.services.llm_usage_tracker import (
+    record_llm_usage,
+    extract_usage_openai_chat,
+    extract_usage_openai_responses,
+)
 
 
 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
@@ -73,6 +78,8 @@ async def generate_and_save_research_objective(
             final_objective,
             context_gathered,
             materials,
+            exploration_id=exploration_id,
+            created_by=created_by,
         )
 
     # -----------------------------------------
@@ -271,6 +278,9 @@ async def summarize_research_objective_from_conversation(
     final_objective: str,
     information_gathered: str,
     materials: Optional[List["ResearchObjectivesFile"]] = None,
+    *,
+    exploration_id: Optional[str] = None,
+    created_by: Optional[str] = None,
 ) -> str:
     materials_block = _build_materials_block(materials)
     materials_section = f"\n<UPLOADED_MATERIALS>\n{materials_block}\n</UPLOADED_MATERIALS>\n" if materials_block else ""
@@ -351,6 +361,18 @@ You are a research strategist. Your task is to create a detailed and clear resea
         model="gpt-4.1",
         temperature=0.5,
         input=f"{prompt}"
+    )
+    input_tokens, output_tokens, usage_raw = extract_usage_openai_responses(response)
+    await record_llm_usage(
+        exploration_id=exploration_id,
+        stage="research_objective_extraction",
+        operation="summarize_from_conversation",
+        provider="openai",
+        model="gpt-4.1",
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        usage_raw=usage_raw,
+        created_by=created_by,
     )
     raw_text = response.output[0].content[0].text
 
@@ -436,7 +458,17 @@ def _build_framer_structured_block(
         lines.append("Brand Context:\n" + "\n".join(brand_bits))
 
     for field, label in FRAMER_COMPONENT_LABELS.items():
-        value = (framer.get(field) or "").strip()
+        raw_value = framer.get(field)
+        # geography is a list[str] of discrete tags from the Audience &
+        # Segments picker (e.g. ["California", "Mumbai"]), not free text like
+        # every other Framer field here — join it the same way `competitors`
+        # is joined above, rather than calling .strip() on a list (which
+        # would raise AttributeError for any submission that used the
+        # geography picker).
+        if isinstance(raw_value, list):
+            value = ", ".join(str(v).strip() for v in raw_value if str(v or "").strip())
+        else:
+            value = (raw_value or "").strip()
         if value:
             lines.append(f"{label}:\n{value}")
             filled.append(label)
@@ -457,6 +489,10 @@ def _build_framer_structured_block(
 async def synthesize_research_objective_from_framer(
     framer: dict,
     materials: Optional[List["ResearchObjectivesFile"]] = None,
+    *,
+    exploration_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
+    created_by: Optional[str] = None,
 ) -> dict:
     """
     Turns the Research Objective Framer's structured fields (plus any uploaded
@@ -519,6 +555,19 @@ You are a research strategist. Your task is to create a detailed and clear resea
         temperature=0.5,
         input=prompt,
     )
+    input_tokens, output_tokens, usage_raw = extract_usage_openai_responses(response)
+    await record_llm_usage(
+        exploration_id=exploration_id,
+        stage="research_objective_extraction",
+        operation="synthesize_from_framer",
+        provider="openai",
+        model="gpt-4.1",
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        usage_raw=usage_raw,
+        workspace_id=workspace_id,
+        created_by=created_by,
+    )
     raw_text = response.output[0].content[0].text
 
     try:
@@ -555,6 +604,8 @@ def map_material_to_out(file: ResearchObjectivesFile) -> ResearchObjectiveMateri
         instruction=file.instruction,
         has_context=bool((file.extracted_context or "").strip()),
         uploaded_at=file.uploaded_at,
+        artifact_category=file.artifact_category,
+        comparison_mode=file.comparison_mode,
     )
 
 
@@ -570,6 +621,8 @@ async def create_framer_material(
     content_type: Optional[str] = None,
     size: Optional[int] = None,
     source_url: Optional[str] = None,
+    artifact_category: Optional[str] = None,
+    comparison_mode: Optional[str] = None,
 ) -> ResearchObjectivesFile:
     """Persists one uploaded/linked Framer material against exploration_id — no
     ResearchObjectives row exists yet at this point. research_objectives_id is
@@ -585,6 +638,8 @@ async def create_framer_material(
         source_url=source_url,
         instruction=instruction,
         extracted_context=extracted_context or None,
+        artifact_category=artifact_category,
+        comparison_mode=comparison_mode,
     )
     session.add(material)
     await session.commit()
@@ -598,37 +653,59 @@ async def replace_framer_materials_for_kind(
     exploration_id: str,
     material_kind: str,
     items: List[dict],
+    replace: bool = True,
 ) -> List[ResearchObjectivesFile]:
     """
-    Re-submitting a Framer "Add Material" section (Research Brief / Artifact)
-    replaces that section's previous materials for this exploration rather than
-    accumulating duplicates — there's only ever one current version per section,
-    matching the frontend's single submitted/not-submitted state per section.
-    Deletes only unlinked materials of this kind (never touches anything already
-    attached to a finalized objective) and creates fresh rows for `items`.
-    `items` may be empty — submitting an emptied-out section clears it.
-    """
-    existing = await session.execute(
-        select(ResearchObjectivesFile).where(
-            ResearchObjectivesFile.exploration_id == exploration_id,
-            ResearchObjectivesFile.material_kind == material_kind,
-            ResearchObjectivesFile.research_objectives_id.is_(None),
-        )
-    )
-    for row in existing.scalars().all():
-        await session.delete(row)
-    await session.commit()
+    Persists Framer "Add Material" section items (Research Brief / Artifact).
 
-    created = []
+    replace=True (default; used for "brief"): re-submitting replaces that
+    section's previous materials for this exploration rather than accumulating
+    duplicates — there's only ever one current version per section, matching
+    the frontend's single submitted/not-submitted state per section. `items`
+    may be empty — submitting an emptied-out section clears it.
+
+    replace=False (used for "artifact"): new items are appended to whatever
+    already exists for this exploration/kind instead of replacing it — an
+    artifact set can be built up across several submissions (e.g. uploading
+    2 files now, 2 more later) without losing what's already there. `items`
+    empty is a no-op.
+
+    Either way, only unlinked materials (research_objectives_id IS NULL) are
+    ever touched — nothing already attached to a finalized objective is
+    affected. Returns the full current set of unlinked materials for this
+    exploration/kind after the operation (for replace=True this is exactly
+    the newly created items, since the old ones were just deleted).
+    """
+    if replace:
+        existing = await session.execute(
+            select(ResearchObjectivesFile).where(
+                ResearchObjectivesFile.exploration_id == exploration_id,
+                ResearchObjectivesFile.material_kind == material_kind,
+                ResearchObjectivesFile.research_objectives_id.is_(None),
+            )
+        )
+        for row in existing.scalars().all():
+            await session.delete(row)
+        await session.commit()
+
     for item in items:
-        material = await create_framer_material(
+        await create_framer_material(
             session,
             exploration_id=exploration_id,
             material_kind=material_kind,
             **item,
         )
-        created.append(material)
-    return created
+
+    current = await session.execute(
+        select(ResearchObjectivesFile)
+        .where(
+            ResearchObjectivesFile.exploration_id == exploration_id,
+            ResearchObjectivesFile.material_kind == material_kind,
+            ResearchObjectivesFile.research_objectives_id.is_(None),
+        )
+        .order_by(ResearchObjectivesFile.uploaded_at)
+    )
+    return list(current.scalars().all())
 
 
 async def get_unlinked_materials(
@@ -766,7 +843,9 @@ async def save_research_objective_from_framer(
     framer: dict,
 ) -> ResearchObjectives:
     """Synthesizes and persists in one call — kept for callers that don't need the confidence score first."""
-    synthesis = await synthesize_research_objective_from_framer(framer)
+    synthesis = await synthesize_research_objective_from_framer(
+        framer, exploration_id=exploration_id, created_by=created_by,
+    )
     return await persist_framer_research_objective(
         session,
         exploration_id=exploration_id,
@@ -780,6 +859,10 @@ async def validate_description_with_llm(
     description: str,
     conversation: list[str] | None = None,
     materials: Optional[List["ResearchObjectivesFile"]] = None,
+    *,
+    exploration_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
+    created_by: Optional[str] = None,
 ) -> dict:
     """
     Validates:
@@ -821,6 +904,18 @@ Return STRICT JSON:
             {"role": "system", "content": "You evaluate feasibility using strict real-world logic. Do not hallucinate."},
             {"role": "user", "content": feasibility_prompt},
         ]
+    )
+    input_tokens, output_tokens, usage_raw = extract_usage_openai_chat(feas_res)
+    await record_llm_usage(
+        exploration_id=exploration_id,
+        stage="research_objective_feasibility_check",
+        provider="openai",
+        model="gpt-4o-mini",
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        usage_raw=usage_raw,
+        workspace_id=workspace_id,
+        created_by=created_by,
     )
     feas_raw = feas_res.choices[0].message.content
     try:
@@ -1377,6 +1472,18 @@ Output should be in JSON format:
             {"role": "system", "content": ""},
             {"role": "user", "content": structure_prompt},
         ]
+    )
+    input_tokens, output_tokens, usage_raw = extract_usage_openai_chat(struct_res)
+    await record_llm_usage(
+        exploration_id=exploration_id,
+        stage="research_objective_structured_extraction",
+        provider="openai",
+        model="gpt-4.1",
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        usage_raw=usage_raw,
+        workspace_id=workspace_id,
+        created_by=created_by,
     )
 
     struct_raw = struct_res.choices[0].message.content
