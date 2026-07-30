@@ -114,7 +114,7 @@ export const useDownloadDiscussionGuide = (
     mutationFn: () =>
       discussionGuideService.downloadGuide(workspaceId!, explorationId!),
     onSuccess: (blob) => {
-      triggerBlobDownload(blob, `discussion_guide_${explorationId}.docx`);
+      triggerBlobDownload(blob, `discussion_guide_${explorationId}.pdf`);
     },
   });
 };

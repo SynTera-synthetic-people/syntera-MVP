@@ -12,6 +12,8 @@ import hashlib
 import json
 import logging
 import pickle
+import re
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -19,6 +21,11 @@ from typing import Any
 import pandas as pd
 
 from app.utils.anthropic_client import get_anthropic_client
+from app.services.llm_usage_tracker import (
+    UsageCollector,
+    extract_usage_anthropic_message,
+    extract_usage_openai_responses,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -262,7 +269,13 @@ def _set_cache(key: str, response: str) -> None:
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _llm(prompt: str, system: str = "") -> str:
+def _llm(
+    prompt: str,
+    system: str = "",
+    *,
+    operation: str | None = None,
+    usage_collector: UsageCollector | None = None,
+) -> str:
     """Call Claude synchronously with disk caching. Returns text response."""
     key = _cache_key(prompt, system)
     cached = _get_cached(key)
@@ -275,6 +288,17 @@ def _llm(prompt: str, system: str = "") -> str:
     if system:
         kwargs["system"] = system
     response = client.messages.create(**kwargs)
+    if usage_collector is not None:
+        input_tokens, output_tokens, usage_raw = extract_usage_anthropic_message(response)
+        usage_collector.record(
+            stage="digital_brain_pipeline",
+            operation=operation,
+            provider="anthropic",
+            model=MODEL,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            usage_raw=usage_raw,
+        )
     text = response.content[0].text
     _set_cache(key, text)
     logger.info("Cache miss [%s] — stored", key)
@@ -317,6 +341,374 @@ def _detect_category_group(category: str) -> str:
 
 def _city_tier(city: str) -> str:
     return "Tier 1" if city.lower() in TIER1_CITIES else "Tier 2/3"
+
+
+# Ordered per-country metro pools — both the fallback pool used to fill out
+# persona geography when the RO doesn't name enough cities on its own, AND
+# (via _CITY_LOOKUP below) the set of cities recognized as explicit,
+# assignable persona locations when the RO names them by name. Order =
+# major-hub-first (see _is_major_hub), so keep each country's biggest/most
+# obvious cities first and secondary markets after.
+COUNTRY_CITY_POOLS: dict[str, list[str]] = {
+    "India": [
+        "Mumbai", "Bangalore", "Delhi", "Pune", "Hyderabad", "Chennai", "Kolkata", "Ahmedabad", "Surat",
+        "Jaipur", "Lucknow", "Kochi", "Chandigarh", "Coimbatore", "Nagpur", "Mysore", "Indore",
+        "Thiruvananthapuram", "Vadodara", "Ludhiana", "Kanpur", "Rajkot", "Gurugram", "Noida", "Madurai",
+    ],
+    "USA": [
+        "New York", "Los Angeles", "Chicago", "Houston", "San Francisco", "Seattle", "Boston", "Austin",
+        "Dallas", "Miami", "Philadelphia", "Phoenix", "San Diego", "San Antonio", "Atlanta", "Denver",
+        "Las Vegas", "Sacramento", "Stockton", "Oakland", "San Jose", "Fresno", "Orlando", "Tampa",
+        "Jacksonville", "Fort Worth", "El Paso", "Minneapolis",
+    ],
+    "UK": ["London", "Manchester", "Birmingham", "Leeds", "Glasgow", "Edinburgh", "Liverpool", "Bristol", "Cardiff", "Belfast"],
+    "Brazil": ["São Paulo", "Rio de Janeiro", "Brasília", "Belo Horizonte"],
+    "Germany": ["Berlin", "Munich", "Hamburg", "Frankfurt", "Cologne"],
+    "Australia": ["Sydney", "Melbourne", "Brisbane", "Perth", "Adelaide", "Canberra", "Hobart"],
+    "Canada": ["Toronto", "Vancouver", "Montreal", "Calgary", "Ottawa", "Winnipeg"],
+    "Singapore": ["Singapore"],
+    "UAE": ["Dubai", "Abu Dhabi", "Sharjah"],
+    "France": ["Paris", "Lyon", "Marseille", "Toulouse", "Nice"],
+    "Japan": ["Tokyo", "Osaka", "Yokohama", "Kyoto", "Hiroshima"],
+}
+
+# Country name/alias -> canonical country label. "US" is deliberately excluded
+# (too short, collides with ordinary words like "us"/"bonus"); use "USA" instead.
+COUNTRY_ALIASES: dict[str, str] = {
+    "india": "India", "indian": "India",
+    "usa": "USA", "united states": "USA", "america": "USA", "american": "USA",
+    "uk": "UK", "united kingdom": "UK", "britain": "UK", "british": "UK",
+    "brazil": "Brazil",
+    "germany": "Germany", "german": "Germany",
+    "australia": "Australia", "australian": "Australia",
+    "canada": "Canada", "canadian": "Canada",
+    "singapore": "Singapore",
+    "uae": "UAE", "united arab emirates": "UAE", "emirates": "UAE",
+    "france": "France", "french": "France",
+    "japan": "Japan", "japanese": "Japan",
+}
+
+# Country-detection ONLY (not an assignment pool). These are genuine
+# administrative regions (states/provinces/nations), not cities — actual
+# cities belong in COUNTRY_CITY_POOLS instead, so a named city (e.g.
+# "Sacramento") becomes a real assignable persona location, not just a
+# country-detection signal. This dict exists for the case where the RO names
+# a state/province/nation without naming a specific city (e.g. "USA market
+# research" or "consumers in Maharashtra") — those still need to resolve to a
+# country even though they're not cities themselves.
+_REGION_TO_COUNTRY_HINTS: dict[str, str] = {
+    # USA states
+    "california": "USA", "texas": "USA", "florida": "USA", "illinois": "USA",
+    "washington state": "USA", "massachusetts": "USA", "pennsylvania": "USA",
+    "georgia": "USA", "arizona": "USA", "nevada": "USA", "colorado": "USA",
+    "new york state": "USA",
+    # India states
+    "maharashtra": "India", "karnataka": "India", "west bengal": "India",
+    "tamil nadu": "India", "telangana": "India", "gujarat": "India",
+    "rajasthan": "India", "kerala": "India", "punjab": "India", "uttar pradesh": "India",
+    "delhi ncr": "India", "new delhi": "India", "navi mumbai": "India", "thane": "India",
+    # UK nations
+    "england": "UK", "scotland": "UK", "wales": "UK", "northern ireland": "UK",
+    # Canada provinces
+    "ontario": "Canada", "british columbia": "Canada", "quebec": "Canada",
+    # Australia states
+    "new south wales": "Australia", "victoria": "Australia", "queensland": "Australia",
+    "western australia": "Australia", "south australia": "Australia",
+}
+
+
+def _normalize_text(s: str) -> str:
+    """Lowercase + strip diacritics so 'Sao Paulo' matches 'São Paulo'."""
+    return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii").lower()
+
+
+# city (normalized, accent-stripped) -> (canonical display name, country)
+_CITY_LOOKUP: dict[str, tuple[str, str]] = {
+    _normalize_text(city): (city, country)
+    for country, cities in COUNTRY_CITY_POOLS.items()
+    for city in cities
+}
+# Alternate spellings for the same city, mapped to the canonical pool entry's
+# display name (not added as separate pool entries — "Bengaluru" in RO text
+# should assign a persona to the same city as "Bangalore", not a 25th slot).
+_CITY_LOOKUP[_normalize_text("Bengaluru")] = ("Bangalore", "India")
+
+
+def _resolve_geography_entry(entry: str) -> tuple[str | None, str | None]:
+    """Resolve ONE discrete geography entry (not free text — a single tag
+    value like "Sacramento", "California", or "USA") to (city_or_None,
+    country). City match takes priority over region/country, since it's the
+    most specific. Returns (None, None) if unrecognized — callers skip
+    unrecognized entries rather than guessing a country for them."""
+    normalized = _normalize_text(entry)
+    city_hit = _CITY_LOOKUP.get(normalized)
+    if city_hit:
+        return city_hit
+    if normalized in COUNTRY_ALIASES:
+        return None, COUNTRY_ALIASES[normalized]
+    if normalized in _REGION_TO_COUNTRY_HINTS:
+        return None, _REGION_TO_COUNTRY_HINTS[normalized]
+    return None, None
+
+
+def _extract_geography_meta(validated_ro: dict) -> dict:
+    """
+    Resolve geography with 3-tier priority:
+
+    1. validated_ro["explicit_geography"] — a structured list[str] of
+       discrete tags (e.g. ["Sacramento", "Stockton"]), sourced from the RO
+       Framing Guide's Audience & Segments tab when that field is filled in
+       (storage/wiring of this key upstream is out of scope here — this
+       function just consumes it if present). Skips free-text parsing
+       entirely. Cities resolved this way populate explicit_cities_by_country,
+       which _assign_cities_to_personas() already treats as STRICT (no pool
+       fallback, round-robin repeat if more personas are needed than cities
+       given) — no separate strict-mode plumbing needed here.
+    2. Free-text parsing of the RO's "geography" description field (the
+       original, pre-existing behavior) — used whenever (1) is absent/empty,
+       or every entry in it was unrecognized.
+    3. Default to ["India"] if neither source yields anything.
+
+    Returns:
+        {
+          "countries": list[str],  # deduped, ordered by first mention; defaults to ["India"]
+          "explicit_cities_by_country": dict[str, list[str]],
+          "explicit_regions": list[str],
+          "tier_signal": "tier1" | "tier2" | "unknown",
+        }
+    """
+    result: dict = {
+        "countries": [],
+        "explicit_cities_by_country": {},
+        "explicit_regions": [],
+        "tier_signal": "unknown",
+    }
+
+    # ---- Priority 1: structured geography from the RO Framing Guide ----
+    explicit_geography = validated_ro.get("explicit_geography")
+    if explicit_geography:
+        countries: list[str] = []
+        seen_countries: set[str] = set()
+        explicit_cities_by_country: dict[str, list[str]] = {}
+        seen_pairs: set[tuple[str, str]] = set()
+        for entry in explicit_geography:
+            if not entry:
+                continue
+            city, country = _resolve_geography_entry(str(entry))
+            if country is None:
+                logger.warning("Framing-guide geography entry %r not recognized; skipping", entry)
+                continue
+            if country not in seen_countries:
+                countries.append(country)
+                seen_countries.add(country)
+            if city and (city, country) not in seen_pairs:
+                seen_pairs.add((city, country))
+                explicit_cities_by_country.setdefault(country, []).append(city)
+        if countries:
+            result["countries"] = countries
+            result["explicit_cities_by_country"] = explicit_cities_by_country
+            return result
+        # every entry was unrecognized — fall through to Priority 2
+
+    # ---- Priority 2: free-text parsing of the RO's geography description ----
+    geography_text = str(validated_ro.get("geography", "") or "")
+    if not geography_text:
+        result["countries"] = ["India"]
+        return result
+
+    normalized = _normalize_text(geography_text)
+
+    if re.search(r"\btier[\s-]?1\b", normalized):
+        result["tier_signal"] = "tier1"
+    elif re.search(r"\btier[\s-]?2\b", normalized):
+        result["tier_signal"] = "tier2"
+
+    # (position, canonical_country) hits from explicit country mentions
+    hits: list[tuple[int, str]] = []
+    for alias, canonical in COUNTRY_ALIASES.items():
+        m = re.search(r"\b" + re.escape(alias) + r"\b", normalized)
+        if m:
+            hits.append((m.start(), canonical))
+
+    # Broader city/state/province hints for country detection only (does not
+    # feed explicit_cities_by_country — see _REGION_TO_COUNTRY_HINTS docstring).
+    for region, canonical in _REGION_TO_COUNTRY_HINTS.items():
+        m = re.search(r"\b" + re.escape(_normalize_text(region)) + r"\b", normalized)
+        if m and not any(c == canonical for _, c in hits):
+            hits.append((m.start(), canonical))
+
+    # (position, display_city, country) hits from known city names
+    city_hits: list[tuple[int, str, str]] = []
+    for norm_city, (display_city, country) in _CITY_LOOKUP.items():
+        m = re.search(r"\b" + re.escape(norm_city) + r"\b", normalized)
+        if m:
+            city_hits.append((m.start(), display_city, country))
+            if not any(c == country for _, c in hits):
+                hits.append((m.start(), country))
+
+    seen_countries: set[str] = set()
+    countries: list[str] = []
+    for _, country in sorted(hits, key=lambda h: h[0]):
+        if country not in seen_countries:
+            countries.append(country)
+            seen_countries.add(country)
+    if not countries:
+        countries = ["India"]
+
+    explicit_cities_by_country: dict[str, list[str]] = {}
+    seen_pairs: set[tuple[str, str]] = set()
+    for _, city, country in sorted(city_hits, key=lambda h: h[0]):
+        if (city, country) in seen_pairs:
+            continue
+        seen_pairs.add((city, country))
+        explicit_cities_by_country.setdefault(country, []).append(city)
+
+    result["countries"] = countries
+    result["explicit_cities_by_country"] = explicit_cities_by_country
+    return result
+
+
+def _assign_cities_to_personas(
+    validated_ro: dict,
+    num_personas: int,
+    exclude_city_country_pairs: set[tuple[str, str]] | None = None,
+) -> list[tuple[str | None, str]]:
+    """
+    Deterministically assign a distinct (city, country) pair to each of
+    num_personas slots so persona generation spreads across geography
+    instead of collapsing onto a single inferred city.
+
+    - 1 country detected: all personas in that country (existing single-country behavior).
+    - 2+ countries detected: personas are split round-robin across countries in
+      mention order, so counts come out as even as possible (remainder goes to
+      the first-mentioned countries).
+    - Within a country that has explicit RO-named cities: STRICT mode — those
+      cities are the only ones ever used for that country, no fallback to the
+      broader metro pool. If more personas are needed than cities were named,
+      the named cities are cycled (repeated) round-robin rather than padded
+      out with unmentioned cities — an RO that names 2 cities for a 4-persona
+      batch must never introduce a 3rd, un-requested city. exclude_city_country_pairs
+      is honored on a first pass (so an expansion batch prefers a named city
+      it hasn't used yet); once every named city has been used at least once,
+      further slots repeat them even if that means reusing an excluded pair —
+      there is nowhere else to go without violating "only mentioned cities".
+    - Within a country with NO explicit cities: falls back to the country's
+      metro pool (deduped, no repeats), honoring exclude_city_country_pairs.
+      If that pool is exhausted, remaining slot(s) get city=None (caller falls
+      back to a geography-agnostic prompt for that persona) — pools are large
+      enough (10+ cities) that this is only reachable at extreme persona counts.
+    Never returns a duplicate (city, country) pair, except when a country's
+    named-city list must legitimately repeat (see above).
+    """
+    if num_personas <= 0:
+        return []
+
+    exclude_pairs = exclude_city_country_pairs or set()
+    geo_meta = _extract_geography_meta(validated_ro)
+    countries = geo_meta["countries"]
+    explicit_cities_by_country = geo_meta["explicit_cities_by_country"]
+
+    # Only as many countries as we have personas for; round-robin the rest.
+    active_countries = countries[:num_personas] if num_personas < len(countries) else countries
+    personas_per_country: dict[str, int] = {c: 0 for c in active_countries}
+    for i in range(num_personas):
+        personas_per_country[active_countries[i % len(active_countries)]] += 1
+
+    logger.info("Multi-country setup: countries=%s, distribution=%s", active_countries, personas_per_country)
+
+    cities_by_country: dict[str, list[str]] = {}
+    for country in active_countries:
+        needed = personas_per_country[country]
+        explicit_list = explicit_cities_by_country.get(country, [])
+
+        if explicit_list:
+            # STRICT mode: never introduce a city the RO didn't name for this
+            # country. Pass 1 — each named city once, skipping ones already
+            # used by a prior batch (exclude_pairs) so expansion prefers an
+            # unused named city first.
+            assigned: list[str] = []
+            for city in explicit_list:
+                if len(assigned) >= needed:
+                    break
+                if (city, country) in exclude_pairs:
+                    continue
+                assigned.append(city)
+            # Pass 2 — every named city has now been offered once; cycle
+            # through them again (repeats expected/required) to fill any
+            # remaining slots, ignoring exclude_pairs since repeating a named
+            # city is preferable to fabricating an unmentioned one.
+            i = 0
+            while len(assigned) < needed:
+                assigned.append(explicit_list[i % len(explicit_list)])
+                i += 1
+        else:
+            candidates: list[str] = []
+            seen_candidates: set[str] = set()
+            for city in COUNTRY_CITY_POOLS.get(country, []):
+                if city.lower() not in seen_candidates:
+                    candidates.append(city)
+                    seen_candidates.add(city.lower())
+
+            assigned = []
+            for city in candidates:
+                if len(assigned) >= needed:
+                    break
+                if (city, country) in exclude_pairs:
+                    continue
+                assigned.append(city)
+            if len(assigned) < needed:
+                logger.warning(
+                    "Country %s pool exhausted; %d persona(s) may fall back to geography-agnostic prompt",
+                    country, needed - len(assigned),
+                )
+        cities_by_country[country] = assigned
+
+    result: list[tuple[str | None, str]] = []
+    cursors: dict[str, int] = {c: 0 for c in active_countries}
+    remaining = dict(personas_per_country)
+    i = 0
+    while len(result) < num_personas:
+        country = active_countries[i % len(active_countries)]
+        i += 1
+        if remaining[country] <= 0:
+            continue
+        cursor = cursors[country]
+        pool = cities_by_country.get(country, [])
+        city = pool[cursor] if cursor < len(pool) else None
+        cursors[country] += 1
+        remaining[country] -= 1
+        result.append((city, country))
+
+    logger.info("City-Country assignments: %s", result)
+    return result
+
+
+# Concrete income/occupation guidance for the India persona-generation prompt,
+# kept literal since it was tuned against real evidence signals. Other
+# countries fall back to a generic hub-vs-secondary-market heuristic below.
+_INDIA_DEMOGRAPHIC_GUIDANCE = """- Mumbai (Tier 1, premium markets): typical Professional, 8-15 LPA
+- Bangalore (Tier 1, tech hub): typical Software Engineer/Professional, 7-14 LPA
+- Pune (Tier 1): typical Professional, 6-12 LPA
+- Hyderabad (Tier 1): typical Professional, 6-12 LPA
+- Tier-2 cities: adjust downward, more diversity in occupations"""
+
+
+def _is_major_hub(city: str, country: str) -> bool:
+    pool = COUNTRY_CITY_POOLS.get(country, [])
+    if not pool:
+        return True
+    return city in pool[: max(1, len(pool) // 2)]
+
+
+def _country_demographic_guidance(city: str, country: str) -> str:
+    if country == "India":
+        return _INDIA_DEMOGRAPHIC_GUIDANCE
+    tier_label = "major hub" if _is_major_hub(city, country) else "secondary market"
+    return (
+        f"- {city} ({tier_label}, {country}): use realistic local salary norms for a "
+        f"{tier_label} in {country}; state income_range in the local annual-salary "
+        f"convention (e.g. USD/year, GBP/year, AUD/year) rather than LPA."
+    )
 
 
 def _decode_epoch(ts: Any) -> dict:
@@ -746,14 +1138,20 @@ _SIMULATION_SYSTEM_PROMPT = (
 )
 
 
-def _simulate_fallback_content(prompt: str, default: dict) -> dict:
+def _simulate_fallback_content(
+    prompt: str,
+    default: dict,
+    *,
+    operation: str | None = None,
+    usage_collector: UsageCollector | None = None,
+) -> dict:
     """
     Ask the LLM to simulate plausible, category-typical content for an
     estimated-fallback verdict. Returns `default` unchanged if the LLM call
     or JSON parsing fails, so a flaky model never breaks the pipeline.
     """
     try:
-        raw = _llm(prompt, system=_SIMULATION_SYSTEM_PROMPT)
+        raw = _llm(prompt, system=_SIMULATION_SYSTEM_PROMPT, operation=operation, usage_collector=usage_collector)
         parsed = _parse_json_from_llm(raw)
         if isinstance(parsed, dict):
             return {**default, **{k: v for k, v in parsed.items() if k in default}}
@@ -762,7 +1160,7 @@ def _simulate_fallback_content(prompt: str, default: dict) -> dict:
     return default
 
 
-def _estimate_action_data_verdict(category: str) -> dict:
+def _estimate_action_data_verdict(category: str, *, usage_collector: UsageCollector | None = None) -> dict:
     """Honest fallback when real action data for this category is sparse/absent."""
     import random
     lo, hi = _ESTIMATED_CONFIDENCE_RANGE
@@ -778,6 +1176,8 @@ def _estimate_action_data_verdict(category: str) -> dict:
             "pattern_detected": "Users in this category consistently demonstrate repeat purchase behaviour after initial adoption.",
             "behavioral_signal": "Inferred from general category norms, not measured from this persona's own transactions.",
         },
+        operation="stage3a_estimated_fallback",
+        usage_collector=usage_collector,
     )
     return {
         "verdict_id": f"DL_{random.randint(100,999)}",
@@ -793,7 +1193,7 @@ def _estimate_action_data_verdict(category: str) -> dict:
     }
 
 
-def _estimate_web_evidence_verdict(category: str) -> dict:
+def _estimate_web_evidence_verdict(category: str, *, usage_collector: UsageCollector | None = None) -> dict:
     """
     Honest fallback when real web citations are sparse/absent. Quote is
     synthesized, generic, category-typical phrasing — never attributed to a
@@ -813,6 +1213,8 @@ def _estimate_web_evidence_verdict(category: str) -> dict:
             "key_discussion_theme": f"Category-typical consumer sentiment for {category}",
             "representative_quote": "Parents consistently prioritize durability and comfort when selecting children's eyewear.",
         },
+        operation="stage3b_estimated_fallback",
+        usage_collector=usage_collector,
     )
     return {
         "verdict_id": f"EB_{random.randint(100,999)}",
@@ -828,7 +1230,7 @@ def _estimate_web_evidence_verdict(category: str) -> dict:
     }
 
 
-def _estimate_hq_verdict(category: str) -> dict:
+def _estimate_hq_verdict(category: str, *, usage_collector: UsageCollector | None = None) -> dict:
     """Honest fallback when real HQ source coverage is sparse/absent."""
     import random
     lo, hi = _ESTIMATED_CONFIDENCE_RANGE
@@ -844,6 +1246,8 @@ def _estimate_hq_verdict(category: str) -> dict:
             "finding_summary": f"No specific internal research document matched '{category}'; this is a generic category-level estimate, not a citation.",
             "dimension_insight": "Estimated, not drawn from a real source document.",
         },
+        operation="stage3c_estimated_fallback",
+        usage_collector=usage_collector,
     )
     return {
         "verdict_id": f"HQ_{random.randint(100,999)}",
@@ -862,6 +1266,8 @@ def scan_action_data(
     action_data_df: pd.DataFrame,
     activated_dimensions: list[int],
     validated_ro: dict,
+    *,
+    usage_collector: UsageCollector | None = None,
 ) -> list[dict]:
     """
     Analyse transaction data to produce Depth Layer verdicts.
@@ -872,7 +1278,7 @@ def scan_action_data(
 
     if action_data_df is None or action_data_df.empty:
         logger.warning("Stage 3A: No action data provided — using honest estimated fallback.")
-        return [_estimate_action_data_verdict(category_for_estimate)]
+        return [_estimate_action_data_verdict(category_for_estimate, usage_collector=usage_collector)]
 
     df = action_data_df.copy()
     category = validated_ro.get("category", "").lower()
@@ -1158,7 +1564,7 @@ def scan_action_data(
     # pattern (e.g. category genuinely has rows but none match any of the
     # rule-based checks above) — honest estimate rather than an empty stream.
     if not depth_layers:
-        depth_layers.append(_estimate_action_data_verdict(category_for_estimate))
+        depth_layers.append(_estimate_action_data_verdict(category_for_estimate, usage_collector=usage_collector))
 
     # Final LLM enrichment: generate a synthesised depth layer from patterns
     if depth_layers:
@@ -1189,7 +1595,12 @@ Return ONLY a JSON object with these fields:
 - confidence_score: float (0.7–0.9)
 """
         try:
-            raw = _llm(summary_prompt, system="You are a consumer psychologist. Return only valid JSON.")
+            raw = _llm(
+                summary_prompt,
+                system="You are a consumer psychologist. Return only valid JSON.",
+                operation="stage3a_synthesis",
+                usage_collector=usage_collector,
+            )
             synth = _parse_json_from_llm(raw)
             # query_reference is built in code from the real rows that informed
             # this synthesis — the LLM never sees real subject_keys, so it
@@ -1576,7 +1987,7 @@ def _clean_citation_quote(raw_quote: str, full_text: str, start: int) -> str:
     return fragment if len(fragment) >= _MIN_QUOTE_LEN else cleaned
 
 
-def _search_reddit_real(query: str) -> list[dict]:
+def _search_reddit_real(query: str, *, usage_collector: UsageCollector | None = None) -> list[dict]:
     """
     Real Reddit search via OpenAI's web_search tool (Responses API).
 
@@ -1599,7 +2010,30 @@ def _search_reddit_real(query: str) -> list[dict]:
         )
     except Exception as e:
         logger.warning("Stage 3B (real): OpenAI web_search failed for Reddit — %s", e)
+        if usage_collector is not None:
+            usage_collector.record(
+                stage="digital_brain_pipeline",
+                operation="stage3b_reddit_search",
+                provider="openai",
+                model=_OPENAI_SEARCH_MODEL,
+                input_tokens=0,
+                output_tokens=0,
+                status="error",
+                error_message=str(e),
+            )
         return []
+
+    if usage_collector is not None:
+        input_tokens, output_tokens, usage_raw = extract_usage_openai_responses(response)
+        usage_collector.record(
+            stage="digital_brain_pipeline",
+            operation="stage3b_reddit_search",
+            provider="openai",
+            model=_OPENAI_SEARCH_MODEL,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            usage_raw=usage_raw,
+        )
 
     snippets: list[dict] = []
     for item in getattr(response, "output", []) or []:
@@ -1625,7 +2059,12 @@ def _search_reddit_real(query: str) -> list[dict]:
     return snippets
 
 
-def search_evidence_based_web_real(validated_ro: dict, activated_dimensions: list[int]) -> list[dict]:
+def search_evidence_based_web_real(
+    validated_ro: dict,
+    activated_dimensions: list[int],
+    *,
+    usage_collector: UsageCollector | None = None,
+) -> list[dict]:
     """
     Real evidence-based web search across all 6 platforms — no LLM fabrication.
 
@@ -1650,7 +2089,7 @@ def search_evidence_based_web_real(validated_ro: dict, activated_dimensions: lis
     by_platform: dict[str, list[dict]] = {p: [] for p, _ in _EB_REAL_PLATFORMS}
 
     # Reddit — OpenAI search.
-    by_platform["Reddit"] = _search_reddit_real(query)
+    by_platform["Reddit"] = _search_reddit_real(query, usage_collector=usage_collector)
 
     # The other 5 — single Anthropic search call covering all domains at once.
     client = get_anthropic_client()
@@ -1666,6 +2105,17 @@ def search_evidence_based_web_real(validated_ro: dict, activated_dimensions: lis
             }],
             messages=[{"role": "user", "content": query}],
         )
+        if usage_collector is not None:
+            input_tokens, output_tokens, usage_raw = extract_usage_anthropic_message(response)
+            usage_collector.record(
+                stage="digital_brain_pipeline",
+                operation="stage3b_web_search_batched",
+                provider="anthropic",
+                model=MODEL,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                usage_raw=usage_raw,
+            )
         for block in response.content:
             if getattr(block, "type", None) == "text":
                 for c in (getattr(block, "citations", None) or []):
@@ -1716,6 +2166,8 @@ key_discussion_themes, sentiment_distribution, digital_brain_signal.
         raw = _llm(
             synth_prompt,
             system="Extract only from the provided real quotes, per platform. Never add outside information or mix platforms. Return only valid JSON.",
+            operation="stage3b_web_search_synthesis",
+            usage_collector=usage_collector,
         )
         synth_by_platform = _parse_json_from_llm(raw)
         if not isinstance(synth_by_platform, dict):
@@ -1773,6 +2225,8 @@ key_discussion_themes, sentiment_distribution, digital_brain_signal.
 def search_community_forums_real(
     validated_ro: dict,
     activated_dimensions: list[int],
+    *,
+    usage_collector: UsageCollector | None = None,
 ) -> list[dict]:
     """
     Tier 2: Real web search on community forums, review sites, and aggregators.
@@ -1809,6 +2263,17 @@ def search_community_forums_real(
             }],
             messages=[{"role": "user", "content": query}],
         )
+        if usage_collector is not None:
+            input_tokens, output_tokens, usage_raw = extract_usage_anthropic_message(response)
+            usage_collector.record(
+                stage="digital_brain_pipeline",
+                operation="stage3b_tier2_forum_search",
+                provider="anthropic",
+                model=MODEL,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                usage_raw=usage_raw,
+            )
         for block in response.content:
             if getattr(block, "type", None) == "text":
                 for c in (getattr(block, "citations", None) or []):
@@ -1844,6 +2309,8 @@ Return ONLY valid JSON.
         raw = _llm(
             synth_prompt,
             system="Extract only from the provided real quotes. Never add outside information. Return only valid JSON.",
+            operation="stage3b_tier2_synthesis",
+            usage_collector=usage_collector,
         )
         synth = _parse_json_from_llm(raw)
         if not isinstance(synth, dict):
@@ -1883,6 +2350,8 @@ def search_evidence_based_web_tiered(
     validated_ro: dict,
     activated_dimensions: list[int],
     citation_threshold: int = 10,
+    *,
+    usage_collector: UsageCollector | None = None,
 ) -> dict:
     """
     Three-tier web evidence search orchestrator used by both the auto-generated
@@ -1910,7 +2379,7 @@ def search_evidence_based_web_tiered(
     """
     # Tier 1: 6-platform real search (always run).
     logger.info("Stage 3B Tier 1: searching 6 main platforms…")
-    tier1_verdicts = search_evidence_based_web_real(validated_ro, activated_dimensions)
+    tier1_verdicts = search_evidence_based_web_real(validated_ro, activated_dimensions, usage_collector=usage_collector)
     tier1_citations = sum(
         len(v.get("all_citations") or [])
         for v in tier1_verdicts
@@ -1927,7 +2396,7 @@ def search_evidence_based_web_tiered(
             "Stage 3B Tier 1 returned %d citations (< %d threshold). Activating Tier 2 (community forums)…",
             tier1_citations, citation_threshold,
         )
-        tier2_verdicts = search_community_forums_real(validated_ro, activated_dimensions)
+        tier2_verdicts = search_community_forums_real(validated_ro, activated_dimensions, usage_collector=usage_collector)
         tier2_citations = sum(len(v.get("all_citations") or []) for v in tier2_verdicts)
         all_verdicts.extend(tier2_verdicts)
         # Always mark as activated — it was invoked regardless of yield.
@@ -1942,7 +2411,8 @@ def search_evidence_based_web_tiered(
             tier1_citations + tier2_citations, citation_threshold,
         )
         estimated = _estimate_web_evidence_verdict(
-            validated_ro.get("category") or "this category"
+            validated_ro.get("category") or "this category",
+            usage_collector=usage_collector,
         )
         all_verdicts.append(estimated)
         tiers_activated.append("llm-estimated")
@@ -2020,6 +2490,8 @@ def _hq_dimension_alignment(snippet: str, activated_dimensions: list[int]) -> in
 async def _search_hq_database_async(
     validated_ro: dict,
     activated_dimensions: list[int],
+    *,
+    usage_collector: UsageCollector | None = None,
 ) -> list[dict]:
     from sqlalchemy.ext.asyncio import AsyncSession
     from app.services.syncdb_source import search_source_chunks
@@ -2056,7 +2528,7 @@ async def _search_hq_database_async(
 
     if not raw_results:
         logger.info("Stage 3C: no HQ source coverage found for this RO — using honest estimated fallback (no fabrication).")
-        estimated = _estimate_hq_verdict(validated_ro.get("category", "") or "this category")
+        estimated = _estimate_hq_verdict(validated_ro.get("category", "") or "this category", usage_collector=usage_collector)
         estimated["dimension_alignment"] = activated_dimensions[0] if activated_dimensions else 3
         return [estimated]
 
@@ -2091,14 +2563,19 @@ async def _search_hq_database_async(
     return verdicts
 
 
-def search_hq_database(validated_ro: dict, activated_dimensions: list[int]) -> list[dict]:
+def search_hq_database(
+    validated_ro: dict,
+    activated_dimensions: list[int],
+    *,
+    usage_collector: UsageCollector | None = None,
+) -> list[dict]:
     """
     Query REAL internal source content (sync_source.content_chunk / document) via
     Postgres full-text search. No LLM fabrication — every verdict traces back to
     an actual stored document and chunk_id.
     """
     try:
-        return asyncio.run(_search_hq_database_async(validated_ro, activated_dimensions))
+        return asyncio.run(_search_hq_database_async(validated_ro, activated_dimensions, usage_collector=usage_collector))
     except Exception as e:
         logger.error("Stage 3C failed: %s", e, exc_info=True)
         return [{
@@ -2123,6 +2600,8 @@ def master_brain_synthesis(
     eb_verdicts: list[dict],
     hq_verdicts: list[dict],
     activated_dimensions: list[int],
+    *,
+    usage_collector: UsageCollector | None = None,
 ) -> dict:
     """
     Cross-reference all three evidence streams and produce a Brain Assignment Matrix.
@@ -2176,7 +2655,12 @@ No two slots can share the same primary brain unless secondary brains differ sub
 Return ONLY the JSON object.
 """
     try:
-        raw = _llm(prompt, system="You are a master consumer psychologist. Return only valid JSON.")
+        raw = _llm(
+            prompt,
+            system="You are a master consumer psychologist. Return only valid JSON.",
+            operation="stage4_master_brain_synthesis",
+            usage_collector=usage_collector,
+        )
         result = _parse_json_from_llm(raw)
         logger.info("Stage 4: %d persona slots assigned.", len(result.get("persona_slots", [])))
         return result
@@ -2215,6 +2699,10 @@ def generate_persona(
     activated_dimensions: list[int],
     all_verdicts: list[dict],
     persona_index: int,
+    assigned_city: str | None = None,
+    assigned_country: str | None = None,
+    *,
+    usage_collector: UsageCollector | None = None,
 ) -> dict:
     """
     Build a complete 10-layer synthetic persona from a brain assignment slot.
@@ -2237,6 +2725,22 @@ def generate_persona(
         for v in all_verdicts[:6]
     ]
 
+    if assigned_city:
+        country_label = assigned_country or "India"
+        tier_or_hub = (
+            _city_tier(assigned_city) if country_label == "India"
+            else ("major hub" if _is_major_hub(assigned_city, country_label) else "secondary market")
+        )
+        location_section = f"\nPERSONA LOCATION: {assigned_city}, {country_label} ({tier_or_hub})\n"
+        city_demographic_guidance = f"""
+This persona lives in {assigned_city}, {country_label}. Adjust occupation and income_range accordingly:
+{_country_demographic_guidance(assigned_city, country_label)}
+"""
+    else:
+        logger.warning("No assigned_city provided; inferring from behavioral data")
+        location_section = ""
+        city_demographic_guidance = ""
+
     prompt = f"""
 You are the Persona Generation engine for Synthetic People AI.
 
@@ -2256,7 +2760,7 @@ BRAIN ASSIGNMENT:
 - Primary Confidence: {slot.get('primary_confidence', 0.80)}
 - Key Insight: {slot.get('key_insight', '')}
 - Say-Do Gap: {slot.get('say_do_gap', 'None identified')}
-
+{location_section}
 EVIDENCE SIGNALS:
 {json.dumps(verdict_summary, indent=2)}
 
@@ -2287,7 +2791,7 @@ Inference guidance:
 - income_range: Derive from spend level/price tier signals in the evidence (e.g. "premium tier",
   "budget tier", average order value). Use buckets appropriate to {validated_ro.get('geography', 'India')}'s
   currency (e.g. LPA for India, USD/year for US). Default to the mid-range bucket if signals are weak.
-
+{city_demographic_guidance}
 Confidence calibration (be honest, do not inflate):
 - 0.90-1.00: multiple reinforcing signals point the same way
 - 0.75-0.89: one clear behavioral pattern supports this value
@@ -2328,7 +2832,12 @@ Use the brain's core contradiction to build Layer 6.
 Return ONLY the JSON object.
 """
     try:
-        raw = _llm(prompt, system="You are a consumer psychologist. Return only valid JSON.")
+        raw = _llm(
+            prompt,
+            system="You are a consumer psychologist. Return only valid JSON.",
+            operation="stage5_persona_generation",
+            usage_collector=usage_collector,
+        )
         persona = _parse_json_from_llm(raw)
 
         # Ensure OCEAN blended values are set correctly
@@ -2341,6 +2850,8 @@ Return ONLY the JSON object.
                 "neuroticism": ocean.get("N", 0.35),
             }
 
+        persona["assigned_city"] = assigned_city or "Unspecified"
+        persona["assigned_country"] = assigned_country or "Unspecified"
         persona = _flatten_demographics_inference(persona)
 
         logger.info("Stage 5: Persona %d generated — %s", persona_index, persona.get("persona_title", ""))
@@ -2357,6 +2868,8 @@ Return ONLY the JSON object.
                 "secondary_brain": secondary,
                 "secondary_confidence": slot.get("secondary_confidence"),
             },
+            "assigned_city": assigned_city or "Unspecified",
+            "assigned_country": assigned_country or "Unspecified",
             "error": str(e),
         }
         return _flatten_demographics_inference(fallback)
@@ -2425,6 +2938,8 @@ def generate_personas_batch(
     activated_dimensions: list[int],
     all_verdicts: list[dict],
     account_tier: str = "tier1",
+    *,
+    usage_collector: UsageCollector | None = None,
 ) -> list[dict]:
     """
     Generate the initial set of personas based on account tier.
@@ -2452,10 +2967,22 @@ def generate_personas_batch(
     logger.info("Tier '%s': generating %d initial persona(s) (max %d).",
                 account_tier, len(selected_slots), tier_config["max"])
 
+    city_country_assignments = _assign_cities_to_personas(validated_ro, len(selected_slots))
+    logger.info(
+        "Multi-country persona generation: %d personas across %d countries",
+        len(city_country_assignments), len({country for _, country in city_country_assignments}),
+    )
+    logger.info("Assignments: %s", city_country_assignments)
+
     personas_map: dict[int, dict] = {}
     with cf.ThreadPoolExecutor(max_workers=3) as executor:
         futures = {
-            executor.submit(generate_persona, slot, validated_ro, activated_dimensions, all_verdicts, i): i
+            executor.submit(
+                generate_persona, slot, validated_ro, activated_dimensions, all_verdicts, i,
+                assigned_city=city_country_assignments[i - 1][0],
+                assigned_country=city_country_assignments[i - 1][1],
+                usage_collector=usage_collector,
+            ): i
             for i, slot in enumerate(selected_slots, start=1)
         }
         for future in cf.as_completed(futures):
@@ -2464,15 +2991,16 @@ def generate_personas_batch(
                 persona = future.result()
                 persona["slot_number"] = idx
                 personas_map[idx] = persona
+                logger.info("Persona %d assigned to %s", idx, city_country_assignments[idx - 1])
             except Exception as e:
                 logger.error("Persona %d generation failed: %s", idx, e)
 
     personas = [personas_map[i] for i in sorted(personas_map.keys())]
-    personas = _ensure_unique_titles(personas)
+    personas = _ensure_unique_titles(personas, usage_collector=usage_collector)
     return personas
 
 
-def _ensure_unique_titles(personas: list[dict]) -> list[dict]:
+def _ensure_unique_titles(personas: list[dict], *, usage_collector: UsageCollector | None = None) -> list[dict]:
     """Ensure every persona has a distinct persona_title."""
     used_titles: set[str] = set()
     for p in personas:
@@ -2487,7 +3015,11 @@ def _ensure_unique_titles(personas: list[dict]) -> list[dict]:
                 f"Return ONLY the title string."
             )
             try:
-                title = _llm(prompt).strip().strip('"').strip("'")
+                title = _llm(
+                    prompt,
+                    operation="stage5_title_dedup",
+                    usage_collector=usage_collector,
+                ).strip().strip('"').strip("'")
             except Exception:
                 title = f"The {brain} Archetype {len(used_titles) + 1}"
             p["persona_title"] = title
@@ -2508,6 +3040,8 @@ def generate_additional_personas(
     all_verdicts: list[dict],
     account_tier: str,
     count_to_add: int = 2,
+    *,
+    usage_collector: UsageCollector | None = None,
 ) -> list[dict]:
     """
     Generate NEW personas that don't duplicate existing brain combinations.
@@ -2565,12 +3099,35 @@ def generate_additional_personas(
     logger.info("Generating %d additional persona(s) for tier '%s' (%d/%d used).",
                 can_add, account_tier, current_count, max_total)
 
+    existing_city_country_pairs: set[tuple[str, str]] = {
+        (p.get("assigned_city"), p.get("assigned_country"))
+        for p in existing_personas
+        if p.get("assigned_city") and p.get("assigned_city") != "Unspecified"
+        and p.get("assigned_country") and p.get("assigned_country") != "Unspecified"
+    }
+    new_city_country_assignments = _assign_cities_to_personas(
+        validated_ro, can_add, exclude_city_country_pairs=existing_city_country_pairs,
+    )
+    logger.info(
+        "Expansion: existing pairs=%s, new assignments=%s",
+        existing_city_country_pairs, new_city_country_assignments,
+    )
+
     new_personas_map: dict[int, dict] = {}
     with cf.ThreadPoolExecutor(max_workers=3) as executor:
         futures = {
             executor.submit(
                 generate_persona, slot, validated_ro, activated_dimensions,
-                all_verdicts, current_count + i
+                all_verdicts, current_count + i,
+                assigned_city=(
+                    new_city_country_assignments[i - 1][0]
+                    if i - 1 < len(new_city_country_assignments) else None
+                ),
+                assigned_country=(
+                    new_city_country_assignments[i - 1][1]
+                    if i - 1 < len(new_city_country_assignments) else None
+                ),
+                usage_collector=usage_collector,
             ): i
             for i, slot in enumerate(selected_slots, start=1)
         }
@@ -2584,7 +3141,7 @@ def generate_additional_personas(
                 logger.error("Additional persona %d generation failed: %s", idx, e)
 
     new_personas = [new_personas_map[i] for i in sorted(new_personas_map.keys())]
-    new_personas = _ensure_unique_titles(new_personas)
+    new_personas = _ensure_unique_titles(new_personas, usage_collector=usage_collector)
     return new_personas
 
 
@@ -2598,6 +3155,8 @@ def digital_brain_pipeline(
     account_tier: str = "tier1",  # "free" | "tier1" | "enterprise"
     exploration_id: str | None = None,
     action_dataset_id: str | None = None,
+    *,
+    usage_collector: UsageCollector | None = None,
 ) -> dict:
     """
     Full 5-stage pipeline: RO → Dimensions → [3A|3B|3C] → Synthesis → Personas.
@@ -2616,6 +3175,11 @@ def digital_brain_pipeline(
             (kept for signature/caller compatibility; see fetch_action_data_all).
         action_dataset_id: Currently unused for Stage 3A action-data resolution
             (kept for signature/caller compatibility; see fetch_action_data_all).
+        usage_collector: Optional UsageCollector, created and owned by the
+            caller (see app.services.llm_usage_tracker), passed into every
+            internal Anthropic/OpenAI call site so LLM token usage across
+            this pipeline run can be drained and persisted by the caller —
+            including on a mid-run failure. Never created internally here.
 
     Returns:
         Dict with pipeline metadata and list of personas for the given tier.
@@ -2646,11 +3210,19 @@ def digital_brain_pipeline(
     logger.info("Stages 3A/3B/3C: Running three evidence streams in parallel…")
 
     async def _run_parallel():
+        import functools
+
         loop = asyncio.get_event_loop()
 
-        fut_3a = loop.run_in_executor(None, scan_action_data, resolved_action_df, activated, validated_ro)
-        fut_3b = loop.run_in_executor(None, search_evidence_based_web_tiered, validated_ro, activated)
-        fut_3c = loop.run_in_executor(None, search_hq_database, validated_ro, activated)
+        fut_3a = loop.run_in_executor(
+            None, functools.partial(scan_action_data, resolved_action_df, activated, validated_ro, usage_collector=usage_collector)
+        )
+        fut_3b = loop.run_in_executor(
+            None, functools.partial(search_evidence_based_web_tiered, validated_ro, activated, usage_collector=usage_collector)
+        )
+        fut_3c = loop.run_in_executor(
+            None, functools.partial(search_hq_database, validated_ro, activated, usage_collector=usage_collector)
+        )
 
         depth_layers, result_3b, hq_verdicts = await asyncio.gather(fut_3a, fut_3b, fut_3c)
         return depth_layers, result_3b, hq_verdicts
@@ -2660,9 +3232,9 @@ def digital_brain_pipeline(
         if loop.is_running():
             import concurrent.futures as cf
             with cf.ThreadPoolExecutor(max_workers=3) as executor:
-                fut_3a = executor.submit(scan_action_data, resolved_action_df, activated, validated_ro)
-                fut_3b = executor.submit(search_evidence_based_web_tiered, validated_ro, activated)
-                fut_3c = executor.submit(search_hq_database, validated_ro, activated)
+                fut_3a = executor.submit(scan_action_data, resolved_action_df, activated, validated_ro, usage_collector=usage_collector)
+                fut_3b = executor.submit(search_evidence_based_web_tiered, validated_ro, activated, usage_collector=usage_collector)
+                fut_3c = executor.submit(search_hq_database, validated_ro, activated, usage_collector=usage_collector)
                 depth_layers = fut_3a.result()
                 result_3b = fut_3b.result()
                 hq_verdicts = fut_3c.result()
@@ -2671,9 +3243,9 @@ def digital_brain_pipeline(
     except RuntimeError:
         import concurrent.futures as cf
         with cf.ThreadPoolExecutor(max_workers=3) as executor:
-            fut_3a = executor.submit(scan_action_data, resolved_action_df, activated, validated_ro)
-            fut_3b = executor.submit(search_evidence_based_web_tiered, validated_ro, activated)
-            fut_3c = executor.submit(search_hq_database, validated_ro, activated)
+            fut_3a = executor.submit(scan_action_data, resolved_action_df, activated, validated_ro, usage_collector=usage_collector)
+            fut_3b = executor.submit(search_evidence_based_web_tiered, validated_ro, activated, usage_collector=usage_collector)
+            fut_3c = executor.submit(search_hq_database, validated_ro, activated, usage_collector=usage_collector)
             depth_layers = fut_3a.result()
             result_3b = fut_3b.result()
             hq_verdicts = fut_3c.result()
@@ -2686,12 +3258,12 @@ def digital_brain_pipeline(
 
     # --- Stage 4 ---
     logger.info("Stage 4: Master Brain synthesis…")
-    brain_matrix = master_brain_synthesis(depth_layers, eb_verdicts, hq_verdicts, activated)
+    brain_matrix = master_brain_synthesis(depth_layers, eb_verdicts, hq_verdicts, activated, usage_collector=usage_collector)
 
     # --- Stage 5 ---
     logger.info("Stage 5: Generating personas…")
     all_verdicts = depth_layers + eb_verdicts + hq_verdicts
-    personas = generate_personas_batch(brain_matrix, validated_ro, activated, all_verdicts, account_tier)
+    personas = generate_personas_batch(brain_matrix, validated_ro, activated, all_verdicts, account_tier, usage_collector=usage_collector)
 
     finished_at = datetime.now(tz=timezone.utc)
     duration_s = (finished_at - started_at).total_seconds()
