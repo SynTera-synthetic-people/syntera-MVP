@@ -1,4 +1,5 @@
-ame: Deploy Frontend & Backend to EKS (syntera-mvp)
+name: Deploy Frontend & Backend to EKS (syntera-mvp)
+
 
 on:
   push:
