@@ -144,6 +144,21 @@ export const uploadDataset = async ({
   return response.data.data;
 };
 
+/** Auto-imports the exploration's survey simulation results as the active
+ * dataset — no file picker. Idempotent: calling it again for the same
+ * simulation reuses the dataset already imported from it. */
+export const importDatasetFromSurveySimulation = async ({
+  workspaceId,
+  explorationId,
+  simulationId,
+}: ExplorationScope & { simulationId: string }): Promise<DatasetUpload> => {
+  const response = await axiosInstance.post(
+    `${base({ workspaceId, explorationId })}/datasets/from-survey-simulation`,
+    { simulation_id: simulationId }
+  );
+  return response.data.data;
+};
+
 export const listDatasets = async ({
   workspaceId,
   explorationId,

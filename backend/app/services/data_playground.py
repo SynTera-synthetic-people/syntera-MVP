@@ -26,7 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.data_playground import DataPlaygroundDataset, DataPlaygroundVariable
-from app.utils.file_utils import dataset_file_path
+from app.utils.file_utils import dataset_file_path, save_dataset_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -301,6 +301,143 @@ async def ingest_dataset(
     logger.info(
         "Data Playground dataset ingested | dataset_id=%s | rows=%d | cols=%d | file=%s",
         dataset.id, dataset.row_count, dataset.column_count, original_filename,
+    )
+    return dataset, variables
+
+
+async def ingest_dataset_from_survey_results(
+    db: AsyncSession,
+    *,
+    simulation_id: str,
+    workspace_id: str,
+    exploration_id: str,
+    user_id: str,
+) -> tuple[DataPlaygroundDataset, list[DataPlaygroundVariable]]:
+    """Auto-imports a dataset from an already-computed SurveySimulation's
+    results — the same per-respondent data the "Download Transcripts" ZIP's
+    survey_results.csv contains (built via the same
+    build_survey_results_csv_bytes helper), so Data Playground and that
+    download can never disagree.
+
+    Idempotent per (exploration_id, simulation_id): this runs automatically
+    every time the Data Playground modal opens, so a dataset already
+    imported from this simulation is reused rather than re-ingested.
+
+    survey_results.csv has an unusual 3-row header (columns, then full
+    question text, then data) that the standard single-header-row parser
+    doesn't understand. Rather than teach that shared parser a one-off
+    format, this normalizes once here: parse the raw CSV with the question
+    row treated as data, capture it as display names, drop it, and persist
+    a plain single-header CSV — every later read goes through the exact
+    same dataframe_for_dataset() path as an uploaded file, unmodified.
+    """
+    existing = next(
+        (
+            d for d in await list_datasets(db, workspace_id=workspace_id, exploration_id=exploration_id)
+            if (d.meta or {}).get("simulation_id") == simulation_id
+        ),
+        None,
+    )
+    if existing:
+        return existing, await list_variables(db, dataset_id=existing.id)
+
+    from app.services.persona import get_persona
+    from app.services.survey_simulation import (
+        get_survey_simulation_by_id,
+        get_survey_simulation_by_source_id,
+        parse_survey_results_field,
+    )
+    from app.utils.questionnaire_csv import build_survey_results_csv_bytes
+
+    sim = await get_survey_simulation_by_id(simulation_id)
+    if not (sim and sim.workspace_id == workspace_id and sim.exploration_id == exploration_id):
+        # Callers may pass the population simulation id instead.
+        sim = await get_survey_simulation_by_source_id(simulation_id)
+    if not (sim and sim.workspace_id == workspace_id and sim.exploration_id == exploration_id):
+        raise ValueError("Survey simulation not found")
+
+    results_data = parse_survey_results_field(sim.results) or {}
+    if not results_data:
+        raise ValueError("Survey simulation has no results yet")
+
+    persona_ids = sim.persona_id if isinstance(sim.persona_id, list) else ([sim.persona_id] if sim.persona_id else [])
+    persona_names_map: dict[str, str] = {}
+    for pid in persona_ids:
+        persona = await get_persona(pid)
+        if persona:
+            persona_names_map[pid] = persona.get("name") or persona.get("persona_name") or pid
+
+    raw_csv_bytes = build_survey_results_csv_bytes(
+        results=results_data,
+        persona_sample_sizes=sim.persona_sample_sizes or {},
+        persona_names_map=persona_names_map,
+        seed=sim.id,
+    )
+    if not raw_csv_bytes:
+        raise ValueError("Survey simulation has no respondent data to import")
+
+    # Parse the raw (3-row-header) CSV via a throwaway stored file, using
+    # the shared reader so header/column normalization stays consistent
+    # with every other ingestion path.
+    raw_stored_filename, _ = await save_dataset_bytes(raw_csv_bytes, ".csv")
+    try:
+        df, _parse_meta = _read_dataframe(raw_stored_filename, "csv", sheet_name=None, header_row=0)
+    finally:
+        dataset_file_path(raw_stored_filename).unlink(missing_ok=True)
+
+    if df.empty:
+        raise ValueError("Survey simulation produced no respondent rows")
+
+    question_titles = {column: _cell(df.iloc[0][column]) for column in df.columns}
+    df = df.iloc[1:].reset_index(drop=True)
+
+    # Open-ended questions have no discrete options for the per-respondent
+    # sampler to draw from, so their column is 100% blank here even though
+    # it looked non-empty a moment ago (the question-text row we just
+    # dropped kept it technically "non-empty"). Drop it now, matching the
+    # dropna(axis=1, how="all") the shared reader applies on every later
+    # read -- otherwise this column would survive into dp_variable only to
+    # silently vanish (KeyError) the next time anything re-reads the file.
+    df = df.dropna(axis=1, how="all")
+
+    stored_filename, _size = await save_dataset_bytes(df.to_csv(index=False).encode("utf-8"), ".csv")
+
+    try:
+        variable_specs = discover_variables(df)
+        for spec in variable_specs:
+            title = question_titles.get(spec["variable_name"])
+            if title:
+                spec["display_name"] = title
+
+        dataset = DataPlaygroundDataset(
+            workspace_id=workspace_id,
+            exploration_id=exploration_id,
+            name=f"Survey Results — {sim.id}",
+            original_filename="survey_results.csv",
+            stored_filename=stored_filename,
+            file_type="csv",
+            row_count=len(df),
+            column_count=len(df.columns),
+            status="ready",
+            meta={"source": "survey_results", "simulation_id": sim.id, "sheet_name": None, "header_row": 0},
+            created_by=user_id,
+        )
+        variables = [
+            DataPlaygroundVariable(dataset_id=dataset.id, **spec)
+            for spec in variable_specs
+        ]
+
+        db.add(dataset)
+        db.add_all(variables)
+        await db.commit()
+        await db.refresh(dataset)
+    except Exception:
+        dataset_file_path(stored_filename).unlink(missing_ok=True)
+        raise
+
+    logger.info(
+        "Data Playground dataset imported from survey results | dataset_id=%s | simulation_id=%s | rows=%d | cols=%d",
+        dataset.id, sim.id, dataset.row_count, dataset.column_count,
     )
     return dataset, variables
 

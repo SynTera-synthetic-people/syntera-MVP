@@ -494,6 +494,10 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
 
           // Playground card: when done, button shows "Open" instead of "Ready"
           const isPlayground = card.id === 'playground';
+          // Playground auto-loads the survey simulation's results as its
+          // dataset (no manual upload) -- so it stays disabled, with an
+          // explanatory tooltip, until a survey simulation actually exists.
+          const playgroundNeedsSurveyData = isPlayground && !surveySimulationId;
 
           const buttonLabel = (() => {
             if (card.comingSoon) return 'Coming Soon';
@@ -517,7 +521,8 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
           const isDisabled =
             isGenerating ||
             Boolean(card.comingSoon) ||
-            (isDone && !card.hasViewer && !isPlayground);
+            (isDone && !card.hasViewer && !isPlayground) ||
+            playgroundNeedsSurveyData;
 
           return (
             <motion.div key={card.id} className="ig-card" variants={cardVariants}>
@@ -535,6 +540,7 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
                 className={buttonClass}
                 onClick={() => !card.comingSoon && handleAction(card)}
                 disabled={isDisabled}
+                title={playgroundNeedsSurveyData ? 'Please generate survey data first' : undefined}
               >
                 {isGenerating ? (
                   <>
@@ -627,6 +633,7 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
         <DataPlayground
           workspaceId={workspaceId}
           explorationId={explorationId}
+          surveySimulationId={surveySimulationId}
           onClose={() => setShowDataPlayground(false)}
         />
       )}

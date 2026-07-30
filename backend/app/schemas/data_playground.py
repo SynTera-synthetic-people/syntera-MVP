@@ -32,6 +32,10 @@ class DatasetUploadOut(DatasetOut):
     variables: list[VariableOut] = []
 
 
+class DatasetFromSurveyRequest(BaseModel):
+    simulation_id: str
+
+
 class VariablesListOut(BaseModel):
     dataset_id: str
     variables: list[VariableOut]

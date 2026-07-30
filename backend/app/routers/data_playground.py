@@ -20,6 +20,7 @@ from app.schemas.data_playground import (
     ChartResponseOut,
     CrosstabRequest,
     CrosstabResponseOut,
+    DatasetFromSurveyRequest,
     DatasetOut,
     DatasetRowsPageOut,
     DatasetUploadOut,
@@ -122,6 +123,43 @@ async def upload_dataset(
     payload = _dataset_out(dataset, DatasetUploadOut)
     payload.variables = [VariableOut.model_validate(v) for v in variables]
     return SuccessResponse(message="Dataset uploaded", data=payload)
+
+
+@router.post("/datasets/from-survey-simulation", response_model=SuccessResponse, status_code=status.HTTP_201_CREATED)
+async def import_dataset_from_survey_simulation(
+    workspace_id: str,
+    exploration_id: str,
+    payload: DatasetFromSurveyRequest,
+    db: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Auto-imports the exploration's survey simulation results as a Data
+    Playground dataset — no file upload needed. Idempotent: repeat calls for
+    the same simulation reuse the dataset already imported from it (this is
+    called automatically every time the Data Playground modal opens)."""
+    await _require_workspace_member(workspace_id, current_user)
+    await _require_exploration(db, workspace_id, exploration_id)
+
+    try:
+        dataset, variables = await dp_service.ingest_dataset_from_survey_results(
+            db,
+            simulation_id=payload.simulation_id,
+            workspace_id=workspace_id,
+            exploration_id=exploration_id,
+            user_id=current_user.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except Exception:
+        logger.exception(
+            "Data Playground survey-results import failed | exploration_id=%s | simulation_id=%s",
+            exploration_id, payload.simulation_id,
+        )
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Failed to import survey results")
+
+    out = _dataset_out(dataset, DatasetUploadOut)
+    out.variables = [VariableOut.model_validate(v) for v in variables]
+    return SuccessResponse(message="Dataset imported from survey results", data=out)
 
 
 @router.get("/datasets", response_model=SuccessResponse)

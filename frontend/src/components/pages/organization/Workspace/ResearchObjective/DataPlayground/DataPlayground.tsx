@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'react-toastify';
 import './DataPlayground.css';
 import FrequencyTable from './tabs/FrequencyTable';
@@ -8,10 +8,9 @@ import InsightsSummary from './tabs/InsightsSummary';
 import CodedData from './tabs/CodedData';
 import LabelledData from './tabs/LabelledData';
 import DownloadModal from './DownloadModal';
+import EmptyState from './EmptyState';
 import {
-  useDatasetsList,
-  useDatasetVariables,
-  useUploadDataset,
+  useDatasetFromSurveySimulation,
   useRunFrequency,
   useRunCrosstab,
 } from '../../../../../../hooks/useDataPlaygroundQueries';
@@ -45,6 +44,11 @@ export interface DownloadOptions {
 interface DataPlaygroundProps {
   workspaceId?: string;
   explorationId?: string;
+  /** Survey simulation to auto-load as the active dataset — Data Playground
+   * has no manual upload step; the Insight Generation page only enables
+   * this card once a survey simulation exists, so this should always be
+   * present by the time the modal opens. */
+  surveySimulationId?: string;
   onClose?: () => void;
 }
 
@@ -60,18 +64,10 @@ const TABS: { id: TabId; label: string }[] = [
 // Tabs that use the "Run <X>" primary action in the footer.
 const RUN_TABS = new Set<TabId>(['frequency', 'crosstabs']);
 
-// Tabs that show the "Upload Data" button in the header — per Figma, this
-// only appears on the two raw-data-selection tabs (Frequency Table / Cross
-// Tabs). Chart/Visuals, Insights/Summary, Coded Data and Labelled Data all
-// hide it since they operate on data that's already been selected/loaded.
-const UPLOAD_TABS = new Set<TabId>(['frequency', 'crosstabs']);
-
 // Tabs whose footer always shows a download-style action, regardless of
 // whether a "Run" has produced hasResults (Coded/Labelled data render
 // immediately since they don't require variable selection).
 const ALWAYS_DOWNLOAD_TABS = new Set<TabId>(['coded', 'labelled']);
-
-const ACCEPTED_FILE_TYPES = '.csv,.xlsx';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -110,34 +106,30 @@ function reorderItem<T>(arr: T[], from: number, to: number): T[] {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-const DataPlayground: React.FC<DataPlaygroundProps> = ({ workspaceId, explorationId, onClose }) => {
+const DataPlayground: React.FC<DataPlaygroundProps> = ({
+  workspaceId, explorationId, surveySimulationId, onClose,
+}) => {
   const [activeTab, setActiveTab] = useState<TabId>('frequency');
   const [hasResults, setHasResults] = useState(false);
   const [showDownload, setShowDownload] = useState(false);
 
   // ── Dataset context ───────────────────────────────────────────────────────
-  // The Data Playground works against one active dataset per exploration:
-  // whatever was most recently uploaded. On open, we auto-select the latest
-  // existing dataset (if any) so returning users don't have to re-upload.
+  // No manual upload: Data Playground's dataset is always the current
+  // exploration's survey simulation results, auto-imported the moment this
+  // modal opens (the entry point on Insight Generation stays disabled until
+  // a survey simulation exists, so surveySimulationId should already be set).
 
-  const [datasetId, setDatasetId] = useState<string | null>(null);
-  const datasetsQuery = useDatasetsList(workspaceId, explorationId);
-  const variablesQuery = useDatasetVariables(workspaceId, explorationId, datasetId);
-  const uploadMutation = useUploadDataset(workspaceId, explorationId);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (datasetId || !datasetsQuery.data?.length) return;
-    setDatasetId(datasetsQuery.data[0]!.dataset_id);
-  }, [datasetsQuery.data, datasetId]);
+  const surveyImportQuery = useDatasetFromSurveySimulation(workspaceId, explorationId, surveySimulationId);
+  const dataset = surveyImportQuery.data;
+  const datasetId = dataset?.dataset_id ?? null;
 
   const allVariables: Variable[] = useMemo(
-    () => (variablesQuery.data ?? []).map((v) => ({
+    () => (dataset?.variables ?? []).map((v) => ({
       id: v.variable_name,
       label: v.display_name,
       dataType: v.data_type,
     })),
-    [variablesQuery.data]
+    [dataset]
   );
 
   // Frequency tab state
@@ -159,35 +151,22 @@ const DataPlayground: React.FC<DataPlaygroundProps> = ({ workspaceId, exploratio
     toc: true,
   });
 
-  // ── Upload ────────────────────────────────────────────────────────────────
+  // A newly-loaded dataset invalidates any variable selection / results
+  // picked against whatever was active before.
+  useEffect(() => {
+    setSelectedVars([]);
+    setBannerVars([]);
+    setMainVars([]);
+    setFrequencyResults(null);
+    setCrosstabTables(null);
+    setHasResults(false);
+  }, [datasetId]);
 
-  const handleUploadClick = useCallback(() => {
-    fileInputRef.current?.click();
-  }, []);
-
-  const handleFileSelected = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      e.target.value = ''; // allow re-selecting the same file later
-      if (!file) return;
-
-      try {
-        const dataset = await uploadMutation.mutateAsync(file);
-        setDatasetId(dataset.dataset_id);
-        // Previous selections referenced the old dataset's variables.
-        setSelectedVars([]);
-        setBannerVars([]);
-        setMainVars([]);
-        setFrequencyResults(null);
-        setCrosstabTables(null);
-        setHasResults(false);
-        toast.success(`"${file.name}" uploaded — ${dataset.rows} rows, ${dataset.columns} variables`);
-      } catch (err) {
-        toast.error(extractErrorMessage(err, 'Failed to upload dataset'));
-      }
-    },
-    [uploadMutation]
-  );
+  useEffect(() => {
+    if (surveyImportQuery.isError) {
+      toast.error(extractErrorMessage(surveyImportQuery.error, 'Failed to load survey results'));
+    }
+  }, [surveyImportQuery.isError, surveyImportQuery.error]);
 
   // ── Tab change ────────────────────────────────────────────────────────────
 
@@ -336,8 +315,6 @@ const DataPlayground: React.FC<DataPlaygroundProps> = ({ workspaceId, exploratio
   };
 
   const showRunBtn = RUN_TABS.has(activeTab);
-  const showUploadBtn = UPLOAD_TABS.has(activeTab);
-
   // Footer download button: label differs for the report vs raw-data tabs,
   // and Coded/Labelled Data show it unconditionally since there's no "Run"
   // step gating their content.
@@ -356,6 +333,30 @@ const DataPlayground: React.FC<DataPlaygroundProps> = ({ workspaceId, exploratio
   // ── Render tab content ────────────────────────────────────────────────────
 
   const renderTabContent = () => {
+    if (surveyImportQuery.isLoading) {
+      return (
+        <div className="dp-content-area">
+          <EmptyState title="Loading your survey results…" subtitle="This only takes a moment" />
+        </div>
+      );
+    }
+
+    if (surveyImportQuery.isError) {
+      return (
+        <div className="dp-content-area">
+          <EmptyState
+            title="Couldn't load survey results"
+            subtitle={extractErrorMessage(surveyImportQuery.error, 'Something went wrong — please try again')}
+          />
+          <div style={{ display: 'flex', justifyContent: 'center', marginTop: 12 }}>
+            <button className="dp-toolbar-btn" onClick={() => surveyImportQuery.refetch()}>
+              Retry
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     switch (activeTab) {
       case 'frequency':
         return (
@@ -450,25 +451,6 @@ const DataPlayground: React.FC<DataPlaygroundProps> = ({ workspaceId, exploratio
             </p>
           </div>
           <div className="dp-header-right">
-            {showUploadBtn && (
-              <>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept={ACCEPTED_FILE_TYPES}
-                  style={{ display: 'none' }}
-                  onChange={handleFileSelected}
-                />
-                <button
-                  className="dp-upload-btn"
-                  onClick={handleUploadClick}
-                  disabled={uploadMutation.isPending}
-                >
-                  <span className="dp-upload-icon">⤒</span>
-                  {uploadMutation.isPending ? 'Uploading...' : 'Upload Data'}
-                </button>
-              </>
-            )}
             <button className="dp-close-btn" onClick={onClose} aria-label="Close">
               ✕
             </button>

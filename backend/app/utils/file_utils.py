@@ -128,3 +128,18 @@ async def save_dataset_file(upload_file) -> Tuple[str, int, str, str]:
 
 def dataset_file_path(stored_name: str) -> Path:
     return DATASET_UPLOAD_DIR / stored_name
+
+
+async def save_dataset_bytes(content: bytes, ext: str) -> Tuple[str, int]:
+    """Persists server-generated dataset bytes (e.g. a survey-results CSV
+    built from SurveySimulation.results) the same way as an uploaded file —
+    counterpart to save_material_bytes for the materials flow. Skips the
+    extension allow-list / upload-file plumbing since the caller controls
+    the format. Returns (stored_name, size)."""
+    stored_name = f"{uuid4().hex}{ext}"
+    dest = DATASET_UPLOAD_DIR / stored_name
+
+    async with aiofiles.open(dest, "wb") as f:
+        await f.write(content)
+
+    return stored_name, len(content)

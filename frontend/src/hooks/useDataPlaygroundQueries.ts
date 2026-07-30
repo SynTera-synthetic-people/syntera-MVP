@@ -5,6 +5,7 @@ import {
   uploadDataset,
   listDatasets,
   getDatasetVariables,
+  importDatasetFromSurveySimulation,
   getDatasetRows,
   runFrequency,
   runCrosstab,
@@ -59,6 +60,35 @@ export const useDatasetVariables = (
       }),
     enabled: !!workspaceId && !!explorationId && !!datasetId,
     staleTime: 60_000,
+  });
+};
+
+const surveyImportQueryKey = (
+  workspaceId?: string, explorationId?: string, simulationId?: string | null,
+) => ['dataPlayground', 'surveyImport', workspaceId, explorationId, simulationId];
+
+/** Auto-loads the exploration's survey simulation results as the active
+ * dataset — Data Playground's primary (and only) data source now, no file
+ * picker. The backend call is idempotent, so modeling this as a query
+ * (fetch-on-mount, cached by simulationId) rather than a mutation is safe
+ * and matches useDatasetVariables' pattern above. staleTime: Infinity since
+ * a given simulation's imported dataset never changes once created. */
+export const useDatasetFromSurveySimulation = (
+  workspaceId: string | undefined,
+  explorationId: string | undefined,
+  simulationId: string | null | undefined,
+) => {
+  return useQuery({
+    queryKey: surveyImportQueryKey(workspaceId, explorationId, simulationId),
+    queryFn: () =>
+      importDatasetFromSurveySimulation({
+        workspaceId: workspaceId!,
+        explorationId: explorationId!,
+        simulationId: simulationId!,
+      }),
+    enabled: !!workspaceId && !!explorationId && !!simulationId,
+    staleTime: Infinity,
+    retry: false,
   });
 };
 
