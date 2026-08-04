@@ -3,7 +3,7 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import OmiKeyboard from '../../../../../assets/Omi Animations/OmiKeyboard.mp4';
 import axiosInstance from "../../../../../utils/axiosConfig";
 
-import SpIcon from '../../../../SPIcon';
+import SpIcon, { type SpIconName } from '../../../../SPIcon';
 
 import "./PersonaGenerationLoader.css";
 
@@ -49,20 +49,15 @@ const CALIBRATION_TIMEOUT_MS = 300_000;
 const RING_RADIUS = 54;
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 
-// ── Avatar frames array (index 0 = most blurry, index 8 = clear) ─────────────
-const AVATAR_FRAMES = [
-    new URL('../../../../../assets/Avatar/Avatar1.png', import.meta.url).href,
-    new URL('../../../../../assets/Avatar/Avatar2.png', import.meta.url).href,
-    new URL('../../../../../assets/Avatar/Avatar3.png', import.meta.url).href,
-    new URL('../../../../../assets/Avatar/Avatar4.png', import.meta.url).href,
-    new URL('../../../../../assets/Avatar/Avatar5.png', import.meta.url).href,
-    new URL('../../../../../assets/Avatar/Avatar6.png', import.meta.url).href,
-    new URL('../../../../../assets/Avatar/Avatar7.png', import.meta.url).href,
-    new URL('../../../../../assets/Avatar/Avatar8.png', import.meta.url).href,
-    new URL('../../../../../assets/Avatar/Avatar9.png', import.meta.url).href,
-];
-
-const TOTAL_AVATAR_FRAMES = AVATAR_FRAMES.length; // 9
+// ── Persona avatar reveal ────────────────────────────────────────────────────
+// The avatar is the design-system neutral (unisex) user glyph rather than a
+// photographic frame sequence, so the placeholder reads as a generic persona
+// instead of implying a specific gender/age. The blurry→clear progression is
+// unchanged: the frame index now drives blur and colour intensity instead of
+// selecting one of nine bitmaps.
+const AVATAR_ICON: SpIconName = "sp-User-User_03";
+const TOTAL_AVATAR_FRAMES = 9;
+const AVATAR_MAX_BLUR_PX = 7;
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -108,15 +103,21 @@ const ProgressiveAvatar: React.FC<ProgressiveAvatarProps> = ({ frameIndex }) => 
         return () => clearTimeout(t);
     }, []);
 
-    const frameSrc = AVATAR_FRAMES[displayedFrame] || AVATAR_FRAMES[0];
+    // 0 = first frame (most blurry), 1 = final frame (fully clear)
+    const clarity = displayedFrame / (TOTAL_AVATAR_FRAMES - 1);
 
     return (
         <div className="pgl-character pgl-character--avatar">
-            <img
+            <SpIcon
                 key={displayedFrame}
-                src={frameSrc}
-                alt={`Persona generating — frame ${displayedFrame + 1}`}
-                className={`pgl-avatar-img ${fadingIn ? 'pgl-avatar-img--visible' : ''}`}
+                name={AVATAR_ICON}
+                size={56}
+                label={`Persona generating — frame ${displayedFrame + 1}`}
+                className={`pgl-avatar-icon ${fadingIn ? 'pgl-avatar-icon--visible' : ''}`}
+                style={{
+                    filter: `blur(${((1 - clarity) * AVATAR_MAX_BLUR_PX).toFixed(2)}px)`,
+                    color: `rgba(229, 231, 235, ${(0.45 + clarity * 0.55).toFixed(2)})`,
+                }}
             />
             {displayedFrame < TOTAL_AVATAR_FRAMES - 1 && (
                 <div className="pgl-avatar-shimmer" />
@@ -534,10 +535,11 @@ const PersonaGenerationLoader: React.FC<Props> = ({
                 <div className="pgl-final">
                     {flow === "manual" && (
                         <div className="pgl-final-avatar">
-                            <img
-                                src={AVATAR_FRAMES[TOTAL_AVATAR_FRAMES - 1]}
-                                alt="Persona ready"
-                                className="pgl-final-avatar-img"
+                            <SpIcon
+                                name={AVATAR_ICON}
+                                size={44}
+                                label="Persona ready"
+                                className="pgl-final-avatar-icon"
                             />
                         </div>
                     )}
