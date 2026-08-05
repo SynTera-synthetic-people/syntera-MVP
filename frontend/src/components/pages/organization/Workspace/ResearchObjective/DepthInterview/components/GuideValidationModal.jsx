@@ -2,11 +2,19 @@ import React from 'react';
 import { motion, AnimatePresence } from "framer-motion";
 import { TbAlertCircle, TbCheck, TbEdit } from "react-icons/tb";
 
+// `onContinue` is optional. Omit it for outcomes the user cannot override —
+// e.g. a Discussion Guide size limit — and the "Keep Anyway" button is not
+// rendered at all, so there is no way to click past the rule. Callers that
+// pass it keep the original two-button advisory behaviour unchanged.
 const GuideValidationModal = ({
   show,
   reason,
   onContinue,
-  onClose
+  onClose,
+  title = "Thematic Alignment Issue",
+  subtitle = "The proposed change may not align with your research objective.",
+  feedbackLabel = "Validation Feedback:",
+  closeLabel = "Go Back & Edit",
 }) => {
   if (!show) return null;
 
@@ -25,10 +33,10 @@ const GuideValidationModal = ({
             </div>
             <div>
               <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-                Thematic Alignment Issue
+                {title}
               </h2>
               <p className="text-gray-600 dark:text-gray-400">
-                The proposed change may not align with your research objective.
+                {subtitle}
               </p>
             </div>
           </div>
@@ -36,7 +44,7 @@ const GuideValidationModal = ({
           <div className="p-4 bg-yellow-50 dark:bg-yellow-500/5 border border-yellow-200 dark:border-yellow-500/20 rounded-xl mb-8">
             <h4 className="font-semibold text-yellow-800 dark:text-yellow-300 mb-2 flex items-center gap-2">
               <TbEdit className="w-4 h-4" />
-              Validation Feedback:
+              {feedbackLabel}
             </h4>
             <p className="text-yellow-700 dark:text-yellow-400 leading-relaxed">
               {reason || "The content does not significantly contribute to the research theme."}
@@ -49,15 +57,17 @@ const GuideValidationModal = ({
               className="flex items-center justify-center gap-2 px-6 py-3 bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 rounded-xl font-medium hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
             >
               <TbEdit className="w-4 h-4" />
-              Go Back & Edit
+              {closeLabel}
             </button>
-            <button
-              onClick={onContinue}
-              className="flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 hover:scale-[1.02] transition-all active:scale-95"
-            >
-              <TbCheck className="w-4 h-4" />
-              Keep Anyway
-            </button>
+            {onContinue && (
+              <button
+                onClick={onContinue}
+                className="flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 hover:scale-[1.02] transition-all active:scale-95"
+              >
+                <TbCheck className="w-4 h-4" />
+                Keep Anyway
+              </button>
+            )}
           </div>
         </motion.div>
       </div>

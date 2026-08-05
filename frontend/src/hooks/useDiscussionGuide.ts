@@ -14,6 +14,16 @@ type GuideResponse = {
   };
 };
 
+export type GuideLimits = {
+  default_questions_per_section: number;
+  max_extra_questions_per_section: number;
+  max_questions_per_section: number;
+  max_sections_per_guide: number;
+  max_questions_per_guide: number;
+};
+
+type GuideLimitsResponse = { data?: GuideLimits };
+
 type CreateSectionPayload = {
   title: string;
   is_force_insert?: boolean;
@@ -76,6 +86,8 @@ export const discussionGuideKeys = {
     [...discussionGuideKeys.details(), { workspaceId, explorationId, sectionId }] as const,
   generated: (workspaceId: string, explorationId: string) =>
     [...discussionGuideKeys.all, 'generated', { workspaceId, explorationId }] as const,
+  limits: (workspaceId: string, explorationId: string) =>
+    [...discussionGuideKeys.all, 'limits', { workspaceId, explorationId }] as const,
 };
 
 /* ── Queries ────────────────────────────────────────────────────────── */
@@ -91,6 +103,26 @@ export const useDiscussionGuide = (
       discussionGuideService.getAllSections(workspaceId!, explorationId!),
     enabled: !!(workspaceId && explorationId),
     ...options,
+  });
+};
+
+/**
+ * Discussion Guide size limits, served from backend settings.
+ *
+ * Fetched rather than hardcoded so the caps stay defined in exactly one place
+ * (`Settings.DG_*`). Falls back to undefined while loading; callers should
+ * treat "limits not yet known" as "do not block", since the backend enforces
+ * the cap regardless of what the UI shows.
+ */
+export const useDiscussionGuideLimits = (
+  workspaceId?: string,
+  explorationId?: string
+) => {
+  return useQuery<GuideLimitsResponse>({
+    queryKey: discussionGuideKeys.limits(workspaceId!, explorationId!),
+    queryFn: () => discussionGuideService.getLimits(workspaceId!, explorationId!),
+    enabled: !!(workspaceId && explorationId),
+    staleTime: Infinity, // configuration, not per-request state
   });
 };
 

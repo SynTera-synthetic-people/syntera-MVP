@@ -50,6 +50,19 @@ class Settings(BaseSettings):
     TIER1_EXPLORATION_LIMIT: int = 3
     ENTERPRISE_EXPLORATION_LIMIT: int = 10
 
+    # ── Discussion Guide size limits (overridable via environment) ────────────
+    # Guide size drives interview cost directly: every persona answers every
+    # question, and generation batches at INTERVIEW_BATCH_SIZE, so cost scales
+    # with ceil(questions / batch_size) PER PERSONA. An unbounded guide made
+    # cost, latency and prompt size unbounded with it.
+    #
+    # Ceiling = DG_MAX_SECTIONS_PER_GUIDE * DG_MAX_QUESTIONS_PER_SECTION.
+    # These are the only place these numbers are defined; the API surfaces them
+    # to the UI so the frontend never hardcodes its own copy.
+    DG_DEFAULT_QUESTIONS_PER_SECTION: int = 4
+    DG_MAX_EXTRA_QUESTIONS_PER_SECTION: int = 2
+    DG_MAX_SECTIONS_PER_GUIDE: int = 8
+
     # ============================================================
     # RAG SETTINGS (ADD THESE)
     # ============================================================
@@ -126,5 +139,15 @@ class Settings(BaseSettings):
         env_file = ".env"
         case_sensitive = True
         extra = "ignore"
+
+    @property
+    def DG_MAX_QUESTIONS_PER_SECTION(self) -> int:
+        """Hard cap per section: the generated defaults plus what a user may add."""
+        return self.DG_DEFAULT_QUESTIONS_PER_SECTION + self.DG_MAX_EXTRA_QUESTIONS_PER_SECTION
+
+    @property
+    def DG_MAX_QUESTIONS_PER_GUIDE(self) -> int:
+        """Absolute ceiling on guide size, derived from the two caps above."""
+        return self.DG_MAX_SECTIONS_PER_GUIDE * self.DG_MAX_QUESTIONS_PER_SECTION
 
 settings = Settings()

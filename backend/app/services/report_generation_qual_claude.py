@@ -1076,14 +1076,24 @@ def extract_interview_qa(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]
         # 🔹 CASE 2: Plain interview logs
         elif msg_meta.get("question"):
             answer_text = msg.get("text", "").strip()
+
+            # An empty answer means the model skipped that question, NOT that the
+            # question was never asked. Dropping the row here used to delete the
+            # question from every downstream view — transcript, DOCX, HTML/PDF and
+            # CSV all build from this list — so a 63-question guide silently
+            # rendered as 58-62 questions with no indication anything was missing.
+            # Keep the row and let renderers show the question with a blank answer;
+            # `metadata["unanswered"]` marks it for anyone who needs to tell the
+            # difference between "no response" and a genuinely short answer.
+            metadata = dict(msg_meta)
             if not answer_text:
-                continue
+                metadata["unanswered"] = True
 
             results.append(
                 {
                     "question": msg_meta["question"],
                     "answer": answer_text,
-                    "metadata": dict(msg_meta),
+                    "metadata": metadata,
                 }
             )
 

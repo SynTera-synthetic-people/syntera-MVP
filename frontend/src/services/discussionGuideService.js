@@ -26,6 +26,15 @@ export const discussionGuideService = {
     return response.data;
   },
 
+  // Guide size limits live in backend settings; fetch them rather than
+  // duplicating the numbers here, so changing the config changes the UI too.
+  getLimits: async (workspaceId, explorationId) => {
+    const response = await axiosInstance.get(
+      `/workspaces/${workspaceId}/explorations/${explorationId}/in-depth/guides/limits`
+    );
+    return response.data;
+  },
+
   downloadGuide: async (workspaceId, explorationId) => {
     const response = await axiosInstance.get(
       `/workspaces/${workspaceId}/explorations/${explorationId}/in-depth/guides/download`,

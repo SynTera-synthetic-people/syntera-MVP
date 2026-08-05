@@ -9,6 +9,7 @@ import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import GuideValidationModal from './components/GuideValidationModal';
 import {
   useDiscussionGuideWithAutoGenerate,
+  useDiscussionGuideLimits,
   useCreateSection,
   useUpdateSection,
   useDeleteSection,
@@ -406,6 +407,12 @@ const DepthInterview: React.FC = () => {
     refetch: refetchGuide, generateGuide, isGenerating, generationError, shouldAutoGenerate,
   } = useDiscussionGuideWithAutoGenerate(workspaceId, objectiveId);
 
+  // Guide size caps come from backend settings — never hardcoded here, so the
+  // limit is defined in exactly one place. While they are loading the Add
+  // controls stay enabled; the backend rejects over-limit writes either way.
+  const { data: limitsResponse } = useDiscussionGuideLimits(workspaceId, objectiveId);
+  const limits = limitsResponse?.data;
+
   const createSectionMutation = useCreateSection(workspaceId!, objectiveId!);
   const updateSectionMutation = useUpdateSection(workspaceId!, objectiveId!);
   const deleteSectionMutation = useDeleteSection(workspaceId!, objectiveId!);
@@ -474,6 +481,8 @@ const DepthInterview: React.FC = () => {
   const [showValidationModal, setShowValidationModal] = useState(false);
   const [validationReason, setValidationReason] = useState('');
   const [pendingValidationData, setPendingValidationData] = useState<PendingValidationType | null>(null);
+  // Separate from validationReason: a size limit has no "Keep Anyway" path.
+  const [limitReason, setLimitReason] = useState('');
 
   // ── Effects ───────────────────────────────────────────────────────────────
 
@@ -598,6 +607,10 @@ const DepthInterview: React.FC = () => {
 
   const addSection = async (title: string, isForce = false) => {
     const result = await createSectionMutation.mutateAsync({ title, is_force_insert: isForce });
+    if ((result as any)?.data?.validation_status === 'limit_reached') {
+      setLimitReason((result as any).data.reason);
+      return;
+    }
     if ((result as any)?.data?.validation_status === 'failed' && !isForce) {
       setValidationReason((result as any).data.reason);
       setPendingValidationData({ type: 'createSection', title });
@@ -635,6 +648,12 @@ const DepthInterview: React.FC = () => {
 
   const addQuestion = async (sectionId: string, text: string, isForce = false) => {
     const result = await createQuestionMutation.mutateAsync({ sectionId, text, is_force_insert: isForce });
+    // A size limit is not advisory — unlike theme validation there is no
+    // "add anyway", so surface the reason and stop regardless of isForce.
+    if ((result as any)?.data?.validation_status === 'limit_reached') {
+      setLimitReason((result as any).data.reason);
+      return;
+    }
     if ((result as any)?.data?.validation_status === 'failed' && !isForce) {
       setValidationReason((result as any).data.reason);
       setPendingValidationData({ type: 'createQuestion', sectionId, text });
@@ -1049,26 +1068,60 @@ const DepthInterview: React.FC = () => {
                   ))}
                 </div>
 
-                {/* Add Question button — hidden in view-only mode */}
-                {!isViewOnly && (
-                  <button
-                    className="di-add-question-btn"
-                    onClick={() => setModal({ type: 'addQuestion', sectionId: section.section_id })}
-                  >
-                    <TbPlus size={15} /> Add Question
-                  </button>
-                )}
+                {/* Add Question button — hidden in view-only mode, disabled at
+                    the per-section cap. The backend enforces the same limit, so
+                    this is a UX affordance rather than the control itself. */}
+                {!isViewOnly && (() => {
+                  const questionCount = section.questions?.length ?? 0;
+                  const atLimit =
+                    !!limits && questionCount >= limits.max_questions_per_section;
+                  return (
+                    <button
+                      className="di-add-question-btn"
+                      disabled={atLimit}
+                      title={
+                        atLimit
+                          ? `Limit reached — ${limits!.max_questions_per_section} questions per section `
+                            + `(${limits!.default_questions_per_section} generated + `
+                            + `${limits!.max_extra_questions_per_section} you can add)`
+                          : undefined
+                      }
+                      onClick={() => setModal({ type: 'addQuestion', sectionId: section.section_id })}
+                    >
+                      <TbPlus size={15} />
+                      {atLimit
+                        ? `Question limit reached (${questionCount}/${limits!.max_questions_per_section})`
+                        : 'Add Question'}
+                    </button>
+                  );
+                })()}
               </motion.div>
             ))}
 
             {/* Add New Section footer — hidden in view-only mode */}
-            {!isViewOnly && (
-              <div className="di-guide-footer">
-                <button className="di-footer-add-section-btn" onClick={() => setModal({ type: 'addSection' })}>
-                  <TbPlus size={18} /> Add New Section
-                </button>
-              </div>
-            )}
+            {!isViewOnly && (() => {
+              const atSectionLimit =
+                !!limits && guide.length >= limits.max_sections_per_guide;
+              return (
+                <div className="di-guide-footer">
+                  <button
+                    className="di-footer-add-section-btn"
+                    disabled={atSectionLimit}
+                    title={
+                      atSectionLimit
+                        ? `Limit reached — ${limits!.max_sections_per_guide} sections per guide`
+                        : undefined
+                    }
+                    onClick={() => setModal({ type: 'addSection' })}
+                  >
+                    <TbPlus size={18} />
+                    {atSectionLimit
+                      ? `Section limit reached (${guide.length}/${limits!.max_sections_per_guide})`
+                      : 'Add New Section'}
+                  </button>
+                </div>
+              );
+            })()}
           </div>
 
           <div className="di-start-interview-bar">
@@ -1134,6 +1187,17 @@ const DepthInterview: React.FC = () => {
           setValidationReason('');
           setPendingValidationData(null);
         }}
+      />
+
+      {/* Size limit — no onContinue, so no "Keep Anyway" button is rendered. */}
+      <GuideValidationModal
+        show={!!limitReason}
+        reason={limitReason}
+        title="Discussion Guide Limit Reached"
+        subtitle="Guide size is capped to keep interview generation fast and affordable."
+        feedbackLabel="What you can do:"
+        closeLabel="Got it"
+        onClose={() => setLimitReason('')}
       />
     </div>
   );
