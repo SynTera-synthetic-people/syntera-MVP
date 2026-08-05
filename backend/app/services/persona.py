@@ -828,7 +828,17 @@ def persona_to_dict(p: Persona, creator_full_name: Optional[str] = None) -> dict
         "evidence_metadata": persona_details.get("evidence_metadata"),
         "brain_assignment": persona_details.get("brain_assignment"),
         "say_do_gap": persona_details.get("say_do_gap"),
-        
+
+        # Computed and persisted by save_predominant_patterns_and_master_confidence()
+        # (predominant_patterns) and ke_sourcebank_enrichment.py (ke_source_type_breakdown,
+        # ke_confidence) — previously only reachable via the nested persona_details blob
+        # below, not at top level, so PersonaCardRenderer's backend-first read of these
+        # exact field names (persona.predominant_patterns / persona.ke_source_type_breakdown
+        # / persona.ke_confidence) always fell through to its frontend fallback.
+        "predominant_patterns": persona_details.get("predominant_patterns"),
+        "ke_source_type_breakdown": persona_details.get("ke_source_type_breakdown"),
+        "ke_confidence": persona_details.get("ke_confidence"),
+
         # Flattened evidence fields for easy frontend access
         "sources_breakdown": (
             evidence_snapshot.get("sources", [])
