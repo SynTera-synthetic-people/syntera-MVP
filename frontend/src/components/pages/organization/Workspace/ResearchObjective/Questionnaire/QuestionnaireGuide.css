@@ -63,6 +63,50 @@
     gap: 8px;
 }
 
+/* ── Save error banner ────────────────────────────────────────────────────── */
+
+.qdg-save-error {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 12px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: rgba(229, 72, 77, 0.12);
+    border: 1px solid rgba(229, 72, 77, 0.32);
+    flex-shrink: 0;
+}
+
+.qdg-save-error__icon {
+    color: #F2555A;
+    flex-shrink: 0;
+    margin-top: 1px;
+}
+
+.qdg-save-error__text {
+    flex: 1;
+    font-size: 0.8125rem;
+    line-height: 1.45;
+    color: #F5B5B7;
+    word-break: break-word;
+}
+
+.qdg-save-error__close {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    color: rgba(245, 181, 183, 0.7);
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    transition: color 0.15s ease;
+}
+
+.qdg-save-error__close:hover {
+    color: #F5B5B7;
+}
+
 /* ── Section ──────────────────────────────────────────────────────────────── */
 
 .qdg-section {

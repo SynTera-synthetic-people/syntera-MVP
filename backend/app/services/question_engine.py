@@ -769,6 +769,36 @@ def _default_config(
 # Main payload builder
 # ---------------------------------------------------------------------------
 
+def resolve_question_type(
+    raw: Optional[str],
+    labels: List[str],
+    cfg: Dict[str, Any],
+    *,
+    strict: bool = False,
+) -> str:
+    """Normalize a raw type and hold it to the catalog.
+
+    ``normalize_question_type`` accepts any string, so an unrecognised type used
+    to be persisted verbatim. Nothing downstream understands such a type:
+    ``analysis_options_for_question`` returns no options for it, and the survey
+    simulation then has nothing for a respondent to choose between.
+
+    ``strict=True`` (the client-facing create/update endpoints) reports the
+    problem so the caller can correct it. ``strict=False`` (LLM generation and
+    file upload, where there is no one to correct it) degrades to the closest
+    sane type rather than storing something unusable.
+    """
+    qtype = normalize_question_type(raw, labels, cfg)
+    if qtype in QUESTION_TYPE_CATALOG:
+        return qtype
+    if strict:
+        raise ValueError(
+            f"Unsupported question type '{raw}'. "
+            f"Expected one of: {', '.join(sorted(QUESTION_TYPE_CATALOG))}"
+        )
+    return "single_select" if labels else "text"
+
+
 def build_question_payload(
     *,
     text: str,
@@ -777,11 +807,12 @@ def build_question_payload(
     config: Optional[Dict[str, Any]] = None,
     question_key: Optional[str] = None,
     order_index: Optional[int] = None,
+    strict: bool = False,
 ) -> Dict[str, Any]:
     cfg = deepcopy(config or {})
     raw_options = options if options is not None else cfg.get("options", [])
     labels, option_schema = normalize_option_schema(raw_options)
-    qtype = normalize_question_type(question_type, labels, cfg)
+    qtype = resolve_question_type(question_type, labels, cfg, strict=strict)
 
     merged = _default_config(qtype, labels, option_schema)
     merged.update(cfg)

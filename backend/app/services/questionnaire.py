@@ -2181,6 +2181,7 @@ async def create_question(
             config=config or {},
             question_key=question_key,
             order_index=order_index,
+            strict=True,
         )
 
         q = QuestionnaireQuestion(
@@ -2234,6 +2235,10 @@ async def update_question(
             config=config if config is not None else (q.config or {}),
             question_key=question_key or q.question_key,
             order_index=order_index if order_index is not None else q.order_index,
+            # Validate what the caller sent, not what is already stored. Rows
+            # written before the type catalog was enforced would otherwise be
+            # uneditable — the user could never correct them through the UI.
+            strict=bool(question_type),
         )
 
         q.question_key = q_payload["question_key"]
@@ -2275,6 +2280,8 @@ async def delete_question(qid: str, workspace_id: str, exploration_id: str):
 
 
 async def validate_question_payload(payload: dict):
+    # Mirrors create_question/update_question so a dry run and the real write
+    # agree on what is acceptable.
     q_payload = build_question_payload(
         text=payload.get("text", ""),
         options=payload.get("options", []),
@@ -2282,6 +2289,7 @@ async def validate_question_payload(payload: dict):
         config=payload.get("config") or {},
         question_key=payload.get("question_key"),
         order_index=payload.get("order_index"),
+        strict=True,
     )
     return {"valid": True, "question": q_payload, "question_types": get_question_type_catalog()}
 

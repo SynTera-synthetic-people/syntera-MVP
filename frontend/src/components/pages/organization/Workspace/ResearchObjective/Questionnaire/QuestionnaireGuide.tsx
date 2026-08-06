@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {TbX} from 'react-icons/tb';
 import SpIcon from '../../../../../SPIcon';
-import QuestionModal, { defaultQuestion, TYPE_META } from './QuestionModal';
+import QuestionModal, { TYPE_META } from './QuestionModal';
 import type { Question } from './QuestionModal';
 import {
     useCreateQuestionnaireQuestion,
@@ -13,181 +13,38 @@ import {
     useUpdateQuestionnaireSection,
 } from '../../../../../../hooks/useQuantitativeQueries';
 import { downloadExplorationQuestionnaireCsv } from '../../../../../../services/quantitativeServices';
+import { toApiPayload, makeId, type Section } from './questionCodec';
 import './QuestionnaireGuide.css';
 
 // ── Question Types ─────────────────────────────────────────────────────────────
 
 export type { Question };
 export type { QuestionType } from './QuestionModal';
-
-// ── Data types ────────────────────────────────────────────────────────────────
-
-interface Section {
-    id: string;
-    title: string;
-    questions: Question[];
-}
-
-// ── Default demo data ─────────────────────────────────────────────────────────
-
-const makeId = () => Math.random().toString(36).slice(2, 8);
-
-const MODAL_TO_BACKEND_TYPE: Partial<Record<Question['type'], string>> = {
-    single_select_grid: 'grid_single_select',
-    rank_sort: 'ranking',
-    video_player_embed: 'video_player_url',
-};
-
-const buildQuestionApiPayload = (q: Question) => {
-    const question_type = MODAL_TO_BACKEND_TYPE[q.type] || q.type;
-
-    let options: string[] = [];
-    switch (q.type) {
-        case 'single_select':
-        case 'multi_select':
-        case 'dropdown':
-            options = (q.options || []).filter(Boolean);
-            break;
-        case 'button_rating':
-            options = (q.buttonRatingRows || []).filter(Boolean);
-            break;
-        case 'single_select_grid':
-            options = (q.rows || []).filter(Boolean);
-            break;
-        case 'this_or_that':
-            options = [...(q.leftOptions || []), ...(q.rightOptions || [])].filter(Boolean);
-            break;
-        case 'star_rating':
-            options = (q.starTooltips || []).filter(Boolean);
-            break;
-        case 'rating_scale':
-            options = (q.scaleRows || []).filter(Boolean);
-            break;
-        case 'card_rating':
-            options = (q.cardRatingCards || []).filter(Boolean);
-            break;
-        case 'slider_rating':
-        case 'slider':
-            options = (q.sliders || []).filter(Boolean);
-            break;
-        case 'rank_sort':
-            options = (q.rankItems || []).filter(Boolean);
-            break;
-        case 'card_sort':
-            options = (q.cards || []).filter(Boolean);
-            break;
-        case 'maxdiff':
-            options = (q.attributes || []).filter(Boolean);
-            break;
-        default:
-            options = [];
-    }
-
-    const config: Record<string, unknown> = {};
-    if (q.instruction) config.instruction = q.instruction;
-
-    switch (q.type) {
-        case 'single_select':
-            config.min_select = 1;
-            config.max_select = 1;
-            break;
-        case 'multi_select':
-            config.min_select = 1;
-            config.max_select = options.length || 1;
-            break;
-        case 'dropdown':
-            config.min_select = 1;
-            config.max_select = 1;
-            config.searchable = false;
-            break;
-        case 'this_or_that':
-            config.left_options = (q.leftOptions || []).filter(Boolean);
-            config.right_options = (q.rightOptions || []).filter(Boolean);
-            config.columns = (q.columns || []).filter(Boolean);
-            break;
-        case 'single_select_grid':
-            config.rows = (q.rows || []).filter(Boolean).map((row) => ({ text: row }));
-            config.columns = (q.columns || []).filter(Boolean).map((column) => ({ text: column }));
-            break;
-        case 'button_rating':
-            config.rows = (q.buttonRatingRows || []).filter(Boolean);
-            break;
-        case 'star_rating':
-            config.max_stars = (q.starTooltips || []).length || 5;
-            config.star_tooltip = q.starTooltips?.[0] || '';
-            config.rows = (q.starRows || []).filter(Boolean);
-            break;
-        case 'rating_scale':
-            config.rows = (q.scaleRows || []).filter(Boolean);
-            config.columns = (q.scaleColumns || []).filter(Boolean);
-            config.scale = { min: 1, max: (q.scaleColumns || []).length || 5, step: 1 };
-            break;
-        case 'card_rating':
-            config.cards = (q.cardRatingCards || []).filter(Boolean);
-            config.buttons = (q.cardRatingButtons || []).filter(Boolean);
-            break;
-        case 'slider_rating':
-            config.sliders = (q.sliders || []).filter(Boolean);
-            config.points = (q.sliderPoints || []).filter(Boolean);
-            config.scale = { min: 0, max: 100, step: 1 };
-            break;
-        case 'slider':
-            config.sliders = (q.sliders || []).filter(Boolean);
-            config.scale = { min: 0, max: 100, step: 1 };
-            break;
-        case 'rank_sort':
-            config.rank_labels = (q.rankLabels || []).filter(Boolean);
-            config.rankable_items = (q.rankItems || []).filter(Boolean);
-            break;
-        case 'card_sort':
-            config.cards = (q.cards || []).filter(Boolean);
-            config.buckets = (q.buckets || []).filter(Boolean);
-            break;
-        case 'maxdiff':
-            config.attributes = (q.attributes || []).filter(Boolean);
-            config.columns = (q.maxdiffColumns || []).filter(Boolean);
-            break;
-        case 'auto_suggest':
-            config.source_file_name = q.autoSuggestSourceFileName || '';
-            break;
-        case 'image_map':
-            config.markers = (q.imageMapMarkers || []).filter(Boolean);
-            config.images = (q.imageMapFiles || []).map((file) => ({ name: file.name }));
-            break;
-        case 'page_turner':
-            config.pages = (q.pageTurnerPages || []).map((file) => ({ name: file.name }));
-            break;
-        case 'video_player':
-            config.video_filename = q.videoFileName || '';
-            break;
-        case 'video_player_embed':
-            config.name = q.videoEmbedName || '';
-            config.url = q.videoEmbedUrl || '';
-            break;
-        case 'image_upload':
-            config.images = (q.imageUploadFiles || []).map((file) => ({ name: file.name }));
-            break;
-        case 'section':
-            config.section_name = q.sectionName || '';
-            break;
-        case 'note':
-            config.note_text = q.noteText || '';
-            break;
-        case 'exec':
-            config.exec_instruction = q.execInstruction || '';
-            break;
-        case 'autosum':
-            config.rows = (q.rows || []).filter(Boolean);
-            config.columns = (q.columns || []).filter(Boolean);
-            break;
-        default:
-            break;
-    }
-
-    return { text: q.text, options, question_type, config };
-};
+export type { Section };
 
 const unwrapMutationData = (response: any) => response?.data ?? response;
+
+/**
+ * Turn an axios/API rejection into a sentence worth showing a researcher.
+ *
+ * The questionnaire endpoints answer an invalid question with
+ * `422 {detail: "single_select requires at least one option"}`, which is
+ * already user-readable. FastAPI's own schema failures use the list form.
+ */
+const extractApiError = (err: any, fallback: string): string => {
+    const detail = err?.response?.data?.detail;
+    if (typeof detail === 'string' && detail.trim()) return detail;
+    if (Array.isArray(detail)) {
+        const messages = detail
+            .map((d: any) => (typeof d === 'string' ? d : d?.msg))
+            .filter(Boolean);
+        if (messages.length) return messages.join('; ');
+    }
+    const message = err?.response?.data?.message;
+    if (typeof message === 'string' && message.trim()) return message;
+    if (err instanceof Error && err.message) return err.message;
+    return fallback;
+};
 
 // ── Question preview renderers ─────────────────────────────────────────────────
 
@@ -387,8 +244,12 @@ const QuestionPreview: React.FC<{ q: Question }> = ({ q }) => {
         case 'single_select_grid':
         case 'multi_select_grid':
         case 'mixed_format_grid':
-        case 'side_by_side_grid':
             return <GridPreview rows={q.rows ?? []} columns={q.columns ?? []} />;
+
+        // Side-by-side authors its rows and columns in dedicated fields, not
+        // the shared rows/columns pair the other grids use.
+        case 'side_by_side_grid':
+            return <GridPreview rows={q.sxsAttributes ?? []} columns={q.sxsScalePoints ?? []} />;
 
         case 'bipolar_grid': {
             const items = [...(q.leftOptions ?? []), ...(q.rightOptions ?? [])].filter(Boolean);
@@ -659,6 +520,7 @@ const QuestionnaireGuide: React.FC<QuestionnaireGuideProps> = ({
     const [savingQuestionId, setSavingQuestionId] = useState<string | null>(null);
     const [deletingSectionId, setDeletingSectionId] = useState<string | null>(null);
     const [deletingQuestionId, setDeletingQuestionId] = useState<string | null>(null);
+    const [saveError, setSaveError] = useState<string | null>(null);
     const pendingSectionSaveIds = useRef<Set<string>>(new Set());
     const pendingQuestionSave = useRef(false);
     const cancelRenameRef = useRef(false);
@@ -680,12 +542,42 @@ const QuestionnaireGuide: React.FC<QuestionnaireGuideProps> = ({
         [initialSections]
     );
 
+    /**
+     * Ids this session has just created on the server.
+     *
+     * `persistedSectionIds` is derived from the `initialSections` prop, which
+     * only catches up after the parent re-renders. Adding a question to a
+     * section created moments earlier would otherwise be judged
+     * "not persisted" and skipped. These refs close that window.
+     */
+    const confirmedSectionIds = useRef<Set<string>>(new Set());
+    const confirmedQuestionIds = useRef<Set<string>>(new Set());
+
+    const isPersistedSection = (id: string) =>
+        persistedSectionIds.has(id) || confirmedSectionIds.current.has(id);
+    const isPersistedQuestion = (id: string) =>
+        persistedQuestionIds.has(id) || confirmedQuestionIds.current.has(id);
+
+    /**
+     * Always holds the newest section list.
+     *
+     * Every mutation helper below awaits a network round-trip before writing
+     * state, and each mutation invalidates the questionnaire cache — so a
+     * refetch can land mid-await. Reading `sections` from the render closure
+     * at that point would write a stale snapshot back and silently discard the
+     * refetched data (a question added moments earlier would vanish).
+     */
+    const sectionsRef = useRef<Section[]>(sections);
+
     useEffect(() => {
-        setSections(initialSections ?? []);
+        const next = initialSections ?? [];
+        sectionsRef.current = next;
+        setSections(next);
     }, [initialSections]);
 
     const updateSections = (updater: (prev: Section[]) => Section[]) => {
-        const next = updater(sections);
+        const next = updater(sectionsRef.current);
+        sectionsRef.current = next;
         setSections(next);
         onSectionsChange?.(next);
     };
@@ -695,21 +587,32 @@ const QuestionnaireGuide: React.FC<QuestionnaireGuideProps> = ({
     const addSection = async () => {
         if (creatingSection) return;
         setCreatingSection(true);
+        setSaveError(null);
         try {
             const savedSection = workspaceId && explorationId
                 ? unwrapMutationData(await createSectionMutation.mutateAsync({ title: 'New Section' }))
                 : null;
+
+            // A section that only exists locally cannot hold questions — the
+            // question endpoints are keyed by a server section id. Surface the
+            // failure instead of adding a section that silently swallows work.
+            if (workspaceId && explorationId && !savedSection?.id) {
+                throw new Error('Could not create the section. Please try again.');
+            }
+
             const newSection: Section = {
                 id: savedSection?.id || makeId(),
                 title: savedSection?.title || 'New Section',
                 questions: [],
             };
+            if (savedSection?.id) confirmedSectionIds.current.add(savedSection.id);
             updateSections((prev) => [...prev, newSection]);
             cancelRenameRef.current = false;
             setRenamingSection(newSection.id);
             setRenameValue(newSection.title);
         } catch (err) {
             console.error('Failed to create questionnaire section:', err);
+            setSaveError(extractApiError(err, 'Could not create the section. Please try again.'));
         } finally {
             setCreatingSection(false);
         }
@@ -718,13 +621,15 @@ const QuestionnaireGuide: React.FC<QuestionnaireGuideProps> = ({
     const deleteSection = async (sectionId: string) => {
         if (deletingSectionId) return;
         setDeletingSectionId(sectionId);
+        setSaveError(null);
         try {
-            if (workspaceId && explorationId && persistedSectionIds.has(sectionId)) {
+            if (workspaceId && explorationId && isPersistedSection(sectionId)) {
                 await deleteSectionMutation.mutateAsync({ sectionId });
             }
             updateSections((prev) => prev.filter((s) => s.id !== sectionId));
         } catch (err) {
             console.error('Failed to delete questionnaire section:', err);
+            setSaveError(extractApiError(err, 'Could not delete the section. Please try again.'));
         } finally {
             setDeletingSectionId(null);
         }
@@ -743,7 +648,7 @@ const QuestionnaireGuide: React.FC<QuestionnaireGuideProps> = ({
         setSavingSectionId(sectionId);
 
         try {
-            if (workspaceId && explorationId && persistedSectionIds.has(sectionId)) {
+            if (workspaceId && explorationId && isPersistedSection(sectionId)) {
                 await updateSectionMutation.mutateAsync({ sectionId, title });
             }
             updateSections((prev) => prev.map((s) =>
@@ -752,6 +657,7 @@ const QuestionnaireGuide: React.FC<QuestionnaireGuideProps> = ({
             setRenamingSection(null);
         } catch (err) {
             console.error('Failed to rename questionnaire section:', err);
+            setSaveError(extractApiError(err, 'Could not rename the section. Please try again.'));
         } finally {
             pendingSectionSaveIds.current.delete(sectionId);
             setSavingSectionId(null);
@@ -761,11 +667,13 @@ const QuestionnaireGuide: React.FC<QuestionnaireGuideProps> = ({
     // ── Question helpers ──────────────────────────────────────────────────────
 
     const openAddModal = (sectionId: string) => {
+        setSaveError(null);
         setEditTarget({ sectionId, question: null });
         setModalOpen(true);
     };
 
     const openEditModal = (sectionId: string, question: Question) => {
+        setSaveError(null);
         setEditTarget({ sectionId, question });
         setModalOpen(true);
     };
@@ -773,46 +681,63 @@ const QuestionnaireGuide: React.FC<QuestionnaireGuideProps> = ({
     const closeModal = () => {
         setModalOpen(false);
         setEditTarget(null);
+        setSaveError(null);
     };
 
     const saveQuestion = async (q: Question) => {
         if (!editTarget || pendingQuestionSave.current) return;
 
         const target = editTarget;
-        const payload = buildQuestionApiPayload(q);
         const existingQuestionId = target.question?.id;
         pendingQuestionSave.current = true;
+        setSaveError(null);
         setSavingQuestionId(existingQuestionId || q.id);
 
         try {
-            const savedQuestion = workspaceId && explorationId && existingQuestionId && persistedQuestionIds.has(existingQuestionId)
-                ? unwrapMutationData(await updateQuestionMutation.mutateAsync({ questionId: existingQuestionId, ...payload }))
-                : workspaceId && explorationId && persistedSectionIds.has(target.sectionId)
-                    ? unwrapMutationData(await createQuestionMutation.mutateAsync({ sectionId: target.sectionId, ...payload }))
-                    : null;
+            const payload = toApiPayload(q);
 
+            const isEdit = Boolean(existingQuestionId && isPersistedQuestion(existingQuestionId));
+            const canPersist = Boolean(workspaceId && explorationId
+                && (isEdit || isPersistedSection(target.sectionId)));
+
+            // Never accept a question we cannot store. The previous behaviour
+            // added it to local state anyway, so it looked saved and then
+            // disappeared on the next reload.
+            if (!canPersist) {
+                throw new Error(
+                    'This section has not finished saving yet. Please wait a moment and try again.'
+                );
+            }
+
+            const savedQuestion = isEdit
+                ? unwrapMutationData(await updateQuestionMutation.mutateAsync({ questionId: existingQuestionId!, ...payload }))
+                : unwrapMutationData(await createQuestionMutation.mutateAsync({ sectionId: target.sectionId, ...payload }));
+
+            // Keep the authored shape and take only identity from the server —
+            // the canonical response carries `options[]` but not the modal's
+            // type-specific fields, which the preview renders from.
             const nextQuestion: Question = {
                 ...q,
                 id: savedQuestion?.id || existingQuestionId || q.id,
                 text: savedQuestion?.text ?? q.text,
-                options: Array.isArray(savedQuestion?.options) ? savedQuestion.options.filter(Boolean) : q.options,
             };
+            if (savedQuestion?.id) confirmedQuestionIds.current.add(savedQuestion.id);
 
             updateSections((prev) => prev.map((s) => {
                 if (s.id !== target.sectionId) return s;
-                const exists = existingQuestionId
-                    ? s.questions.some((eq) => eq.id === existingQuestionId)
-                    : s.questions.some((eq) => eq.id === nextQuestion.id);
+                const targetId = existingQuestionId || nextQuestion.id;
+                const exists = s.questions.some((eq) => eq.id === targetId);
                 return {
                     ...s,
                     questions: exists
-                        ? s.questions.map((eq) => eq.id === (existingQuestionId || nextQuestion.id) ? nextQuestion : eq)
+                        ? s.questions.map((eq) => (eq.id === targetId ? nextQuestion : eq))
                         : [...s.questions, nextQuestion],
                 };
             }));
             closeModal();
         } catch (err) {
             console.error('Failed to save questionnaire question:', err);
+            setSaveError(extractApiError(err, 'Could not save this question. Please try again.'));
         } finally {
             pendingQuestionSave.current = false;
             setSavingQuestionId(null);
@@ -822,8 +747,9 @@ const QuestionnaireGuide: React.FC<QuestionnaireGuideProps> = ({
     const deleteQuestion = async (sectionId: string, questionId: string) => {
         if (deletingQuestionId) return;
         setDeletingQuestionId(questionId);
+        setSaveError(null);
         try {
-            if (workspaceId && explorationId && persistedQuestionIds.has(questionId)) {
+            if (workspaceId && explorationId && isPersistedQuestion(questionId)) {
                 await deleteQuestionMutation.mutateAsync({ questionId });
             }
             updateSections((prev) => prev.map((s) =>
@@ -833,6 +759,7 @@ const QuestionnaireGuide: React.FC<QuestionnaireGuideProps> = ({
             ));
         } catch (err) {
             console.error('Failed to delete questionnaire question:', err);
+            setSaveError(extractApiError(err, 'Could not delete the question. Please try again.'));
         } finally {
             setDeletingQuestionId(null);
         }
@@ -876,6 +803,30 @@ const QuestionnaireGuide: React.FC<QuestionnaireGuideProps> = ({
                     </AnimatePresence>
                 </div>
             </div>
+
+            {/* ── Save error ── */}
+            <AnimatePresence>
+                {saveError && (
+                    <motion.div
+                        className="qdg-save-error"
+                        role="alert"
+                        initial={{ opacity: 0, y: -8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        transition={{ duration: 0.2 }}
+                    >
+                        <SpIcon name="sp-Warning-Circle_Warning" size={16} className="qdg-save-error__icon" />
+                        <span className="qdg-save-error__text">{saveError}</span>
+                        <button
+                            className="qdg-save-error__close"
+                            onClick={() => setSaveError(null)}
+                            aria-label="Dismiss error"
+                        >
+                            <TbX size={14} />
+                        </button>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             {/* ── Guide card ── */}
             <div className="qdg-guide-card">
@@ -1031,6 +982,8 @@ const QuestionnaireGuide: React.FC<QuestionnaireGuideProps> = ({
                         sectionTitle={activeSectionTitle}
                         onSave={saveQuestion}
                         onClose={closeModal}
+                        saveError={saveError}
+                        isSaving={!!savingQuestionId}
                     />
                 )}
             </AnimatePresence>

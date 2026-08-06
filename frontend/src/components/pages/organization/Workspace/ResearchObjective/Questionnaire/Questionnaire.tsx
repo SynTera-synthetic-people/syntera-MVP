@@ -5,8 +5,7 @@ import { TbLoader, TbX, TbAlertCircle } from 'react-icons/tb';
 import SpIcon from '../../../../../SPIcon';
 import QuestionnaireLoader from './QuestionnaireLoader';
 import QuestionnaireGuide from './QuestionnaireGuide';
-import type { Question } from './QuestionModal';
-import type { QuestionType } from './QuestionModal';
+import { mapApiToSections, type Section } from './questionCodec';
 import {
   useAllQuestionnairesForExploration,
   usePersonas,
@@ -19,14 +18,6 @@ import {
 } from '../../../../../../services/quantitativeServices';
 import './Questionnaire.css';
 import { useLoaderActive } from '../../../../../../context/LoaderActiveContext';
-
-// ── Types ────────────────────────────────────────────────────────────────────
-
-interface Section {
-  id: string;
-  title: string;
-  questions: Question[];
-}
 
 // ── File validation constants ─────────────────────────────────────────────────
 
@@ -70,23 +61,6 @@ const getUploadErrorMessage = (errorType: UploadError): { title: string; subtitl
   }
   return { title: '', subtitle: '' };
 };
-
-// ── Helper — map backend section/question shape to QuestionnaireGuide Section ─
-
-const makeId = () => Math.random().toString(36).slice(2, 8);
-
-const mapApiToSections = (apiSections: any[]): Section[] =>
-  (apiSections ?? []).map((sec: any) => ({
-    id: sec.id || makeId(),
-    title: sec.title || 'Section',
-    questions: (sec.questions ?? []).map((q: any) => ({
-      id: q.id || makeId(),
-      type: ((q.question_type || q.type || 'single_select') as QuestionType),
-      text: q.text || '',
-      required: q.required ?? false,
-      options: Array.isArray(q.options) ? q.options : [],
-    })),
-  }));
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
