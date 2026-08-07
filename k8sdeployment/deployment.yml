@@ -18,22 +18,14 @@ spec:
     spec:
       serviceAccountName: ssm-reader
 
-      # Run migrations before app starts (idempotent)
-      initContainers:
-        - name: migrate
-          image: 175337843263.dkr.ecr.ap-south-1.amazonaws.com/synth-backend
-          command:
-            - sh
-            - -c
-            - |
-              echo "Running migrations if needed..."
-              alembic upgrade head || echo "Migrations already applied, skipping."
-          env:
-            - name: AWS_REGION
-              value: ap-south-1
-            - name: SSM_PATH
-              value: "/app/staging/"
-          # DATABASE_URL is fetched inside the container from AWS SSM using these env vars
+      # Migrations are NOT run here. They run once per deploy in a dedicated
+      # Job (k8sdeployment/migrate-job.yaml) that CI creates and waits on
+      # before this Deployment's image is updated. The previous initContainer
+      # ran per pod (4x per deploy plus every restart) and its `|| echo`
+      # fallback made it exit 0 even when the migration failed.
+      #
+      # DATABASE_URL is resolved inside the container from AWS SSM using
+      # SSM_PATH below — see app/parameters.py.
 
       containers:
         - name: backend

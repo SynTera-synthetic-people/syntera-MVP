@@ -1,0 +1,78 @@
+# Database migration Job.
+#
+# Replaces the initContainer that previously lived in deployment.yml. Three
+# reasons that container was the wrong execution unit:
+#
+#   * It ran once PER POD. With replicas: 4 that is four migration attempts per
+#     deploy, plus another on every unrelated pod restart, all contending on
+#     the same advisory lock. A schema change should execute exactly once.
+#
+#   * It ran AFTER the Deployment had already been updated, so it could not
+#     gate a rollout. By the time it failed, the rollout was in progress.
+#
+#   * Its command ended in `|| echo "Migrations already applied, skipping."`,
+#     which made the container exit 0 unconditionally. Every migration failure
+#     was reported as success. (`alembic upgrade head` on an up-to-date
+#     database is already a no-op that exits 0, so that fallback never
+#     protected against anything.)
+#
+# CI creates this Job and waits for it. Only on success does it update the
+# Deployment image. See .github/workflows/staging.yml.
+#
+# The image tag is substituted by CI; keep the placeholder in git.
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: synth-migrate-
+  namespace: syntera-mvp
+  labels:
+    app: synth-backend
+    component: migration
+spec:
+  # Never blind-retry a migration. A failure means a human reads the log before
+  # the next attempt; automatic retries against a partially-applied schema turn
+  # one problem into two.
+  backoffLimit: 0
+  # Keep logs available for a day after completion, then self-clean.
+  ttlSecondsAfterFinished: 86400
+  # Hard ceiling. Migrations here take seconds; anything approaching this is a
+  # lock wait, and the Job should die rather than hold the deploy open.
+  activeDeadlineSeconds: 900
+  template:
+    metadata:
+      labels:
+        app: synth-backend
+        component: migration
+    spec:
+      restartPolicy: Never
+      # Same ServiceAccount as the app, so SSM parameters — and therefore
+      # DATABASE_URL — resolve through the identical code path. The migration
+      # can never touch a different database than the one the app will use.
+      serviceAccountName: ssm-reader
+      containers:
+        - name: migrate
+          image: MIGRATION_IMAGE_PLACEHOLDER
+          # No `||` fallback. The exit code is the deployment gate.
+          command: ["alembic", "upgrade", "head"]
+          env:
+            - name: AWS_REGION
+              value: ap-south-1
+            # Selects the parameter tree. A production overlay MUST change this
+            # to /app/production/ — app/parameters.py now reads it, so this
+            # value determines which database is migrated.
+            - name: SSM_PATH
+              value: "/app/staging/"
+            # Fail fast instead of queueing behind an application query while
+            # holding ACCESS EXCLUSIVE locks and stalling the fleet.
+            - name: MIGRATION_LOCK_TIMEOUT
+              value: "10s"
+            - name: MIGRATION_STATEMENT_TIMEOUT
+              value: "600s"
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 2Gi

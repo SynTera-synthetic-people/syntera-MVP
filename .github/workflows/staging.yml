@@ -12,6 +12,16 @@ on:
       
   workflow_dispatch:
 
+# Two deploys running at once would race on the migration Job: both could read
+# the same alembic_version and one would fail on an already-applied change.
+# The advisory lock in alembic/env.py serialises them at the database level;
+# this serialises them at the pipeline level so the second never starts.
+# cancel-in-progress is deliberately false — cancelling mid-migration is worse
+# than queueing.
+concurrency:
+  group: staging-deploy
+  cancel-in-progress: false
+
 env:
   AWS_REGION: ap-south-1
   EKS_CLUSTER: eks-staging
@@ -61,11 +71,47 @@ jobs:
       - name: Update kubeconfig
         run: aws eks update-kubeconfig --region $AWS_REGION --name $EKS_CLUSTER
 
+      # Apply database migrations BEFORE any pod runs the new image.
+      # This step is the deployment gate: if it fails, the rollout never
+      # starts and the previous version keeps serving.
+      - name: Run database migrations
+        run: |
+          set -euo pipefail
+
+          sed "s|MIGRATION_IMAGE_PLACEHOLDER|${{ steps.build-backend.outputs.backend_image }}|" \
+            k8sdeployment/migrate-job.yaml > /tmp/migrate-job.yaml
+
+          JOB=$(kubectl create -f /tmp/migrate-job.yaml -n $NAMESPACE -o name)
+          echo "Created $JOB"
+
+          # `kubectl wait --for=condition=complete` blocks for the full timeout
+          # when a Job fails, so race both conditions and take whichever
+          # resolves first. Without this a failed migration costs 15 minutes of
+          # pipeline time before reporting.
+          kubectl wait --for=condition=complete --timeout=900s "$JOB" -n $NAMESPACE &
+          COMPLETE_PID=$!
+          kubectl wait --for=condition=failed --timeout=900s "$JOB" -n $NAMESPACE \
+            && echo "MIGRATION FAILED" && exit 1 &
+          FAILED_PID=$!
+          wait -n $COMPLETE_PID $FAILED_PID || true
+
+          echo "----- migration log -----"
+          kubectl logs "$JOB" -n $NAMESPACE --tail=-1 || true
+          echo "-------------------------"
+
+          # Authoritative check: the Job must report exactly one success.
+          SUCCEEDED=$(kubectl get "$JOB" -n $NAMESPACE -o jsonpath='{.status.succeeded}')
+          if [ "$SUCCEEDED" != "1" ]; then
+            echo "Migration did not succeed (succeeded=${SUCCEEDED:-0}). Aborting deploy."
+            exit 1
+          fi
+          echo "Migrations applied successfully."
+
       # Deploy to EKS
       - name: Deploy to EKS
         run: |
           set -e
-          
+
           # Frontend rollout
           kubectl set image -f k8sdeployment/front-end-deployment.yml frontend=${{ steps.build-frontend.outputs.frontend_image }} -n $NAMESPACE
           kubectl apply -f k8sdeployment/front-end-service.yml -n $NAMESPACE

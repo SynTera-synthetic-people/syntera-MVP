@@ -112,7 +112,16 @@ async def _start_ingest_worker() -> None:
 
 @app.on_event("startup")
 async def startup():
-    await run_startup_migrations()
+    # Schema is owned by Alembic and applied by the migration Job before any
+    # pod starts (k8sdeployment/migrate-job.yaml). The legacy startup path
+    # stays behind a flag, defaulting off, purely as a cutover fallback.
+    if settings.RUN_STARTUP_MIGRATIONS:
+        logging.getLogger(__name__).warning(
+            "RUN_STARTUP_MIGRATIONS is enabled — legacy startup migrations are "
+            "running and Alembic is not the sole schema authority in this "
+            "environment. This must never be true in production."
+        )
+        await run_startup_migrations()
     asyncio.create_task(_start_ingest_worker())
     await ensure_superadmin_exists()
     # Seed plan catalog after billing tables and indexes are guaranteed.
