@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {TbX} from 'react-icons/tb';
 import SpIcon from '../../../../../SPIcon';
@@ -109,33 +109,108 @@ const DatePickerPreview: React.FC<{ label?: string }> = ({ label = 'Calendar' })
     </div>
 );
 
-/** Grid-style types — two-column table preview */
+/**
+ * Horizontally scrollable viewport with edge affordances.
+ *
+ * A bare `overflow-x: auto` is invisible on this dark surface until the user
+ * happens to drag over it, so the fact that content continues past the right
+ * edge goes unnoticed. This wraps the content in a scroller that shows a fade
+ * on whichever side still has content off-screen, and exposes a visible
+ * scrollbar. Both edges are re-measured on scroll and on resize, so the hints
+ * stay honest as columns are added or the card is resized.
+ */
+const HScrollArea: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+    const viewportRef = useRef<HTMLDivElement>(null);
+    const [edges, setEdges] = useState({ left: false, right: false });
+
+    const syncEdges = useCallback(() => {
+        const el = viewportRef.current;
+        if (!el) return;
+        const maxScroll = el.scrollWidth - el.clientWidth;
+        // 1px slack absorbs sub-pixel layout rounding, which would otherwise
+        // leave the fade stuck on at either end of the track.
+        setEdges({
+            left: el.scrollLeft > 1,
+            right: maxScroll - el.scrollLeft > 1,
+        });
+    }, []);
+
+    useEffect(() => {
+        const el = viewportRef.current;
+        if (!el) return;
+        syncEdges();
+        if (typeof ResizeObserver === 'undefined') return;
+        const observer = new ResizeObserver(syncEdges);
+        observer.observe(el);
+        // The table itself grows when a column is added — the viewport's own
+        // box may not change, so observe the content too. React keeps the same
+        // node across re-renders, so observing once here is enough; `children`
+        // is deliberately not a dep, since a fresh element identity every
+        // render would tear the observer down and rebuild it every render.
+        if (el.firstElementChild) observer.observe(el.firstElementChild);
+        return () => observer.disconnect();
+    }, [syncEdges]);
+
+    return (
+        <div
+            className={[
+                'qdg-hscroll',
+                edges.left ? 'qdg-hscroll--fade-left' : '',
+                edges.right ? 'qdg-hscroll--fade-right' : '',
+            ].filter(Boolean).join(' ')}
+        >
+            <div className="qdg-hscroll__viewport" ref={viewportRef} onScroll={syncEdges}>
+                {children}
+            </div>
+        </div>
+    );
+};
+
+/** Placeholder content shown while a grid is still being authored. */
+const GRID_PLACEHOLDER_COLUMNS = ['Core Attributes', 'Core Attributes'];
+const GRID_PLACEHOLDER_ROWS = [
+    'Value for money', 'Performance speed', 'Level of security',
+    'Level of security', 'Level of security', 'Level of security',
+    'Level of security', 'ease of use',
+];
+
+/**
+ * Grid-style types — renders every column the question defines.
+ *
+ * Grids routinely carry six to ten entities/scale points, which is far more
+ * than the card width fits. Each column holds a readable min-width and the
+ * table scrolls horizontally rather than being truncated to the first two.
+ */
 const GridPreview: React.FC<{ rows: string[]; columns: string[] }> = ({ rows, columns }) => {
-    const colA = columns[0] || 'Core Attributes';
-    const colB = columns[1] || 'Core Attributes';
-    const displayRows = rows.length ? rows : [
-        'Value for money', 'Performance speed', 'Level of security',
-        'Level of security', 'Level of security', 'Level of security',
-        'Level of security', 'ease of use',
-    ];
+    const filledColumns = columns.filter(Boolean);
+    const filledRows = rows.filter(Boolean);
+    const displayColumns = filledColumns.length ? filledColumns : GRID_PLACEHOLDER_COLUMNS;
+    const displayRows = filledRows.length ? filledRows : GRID_PLACEHOLDER_ROWS;
+
     return (
         <div className="qdg-preview qdg-preview--grid">
-            <table className="qdg-grid-table">
-                <thead>
-                    <tr>
-                        <th>{colA}</th>
-                        <th>{colB}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {displayRows.map((row, i) => (
-                        <tr key={i}>
-                            <td>{row}</td>
-                            <td>{row}</td>
+            <HScrollArea>
+                <table className="qdg-grid-table">
+                    <thead>
+                        <tr>
+                            {displayColumns.map((col, i) => (
+                                // Columns are a fixed width, so long labels
+                                // ellipsize — `title` keeps them recoverable.
+                                <th key={i} title={col}>{col}</th>
+                            ))}
                         </tr>
-                    ))}
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                        {displayRows.map((row, i) => (
+                            <tr key={i}>
+                                {displayColumns.map((_, j) => (
+                                    <td key={j} title={row}>{row}</td>
+                                ))}
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </HScrollArea>
         </div>
     );
 };

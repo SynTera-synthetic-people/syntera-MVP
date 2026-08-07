@@ -546,6 +546,159 @@ QUESTION_TYPE_CATALOG: Dict[str, Dict[str, Any]] = {
 
 
 # ---------------------------------------------------------------------------
+# Presentation labels
+# ---------------------------------------------------------------------------
+
+# Several modal editors persist as the same canonical type — likert_scale,
+# importance_scale, satisfaction_scale and frequency_scale are all
+# `rating_scale` — so the catalog label alone loses what the researcher
+# actually authored. `config.ui_type` (written by the frontend codec) keeps
+# that distinction, and this table gives it a human label.
+#
+# Mirrors TYPE_META in
+# frontend/src/components/.../Questionnaire/QuestionModal.tsx. Only entries
+# whose label differs from the canonical type's label need to appear here;
+# anything missing falls back to QUESTION_TYPE_CATALOG.
+UI_TYPE_LABELS: Dict[str, str] = {
+    "button_single_select": "Button Single Select",
+    "image_single_select": "Image Single Select",
+    "binary_yes_no": "Binary Yes / No",
+    "button_multi_select": "Button Multi-Select",
+    "image_multi_select": "Image Multi-Select",
+    "top_n_select": "Top-N Selection",
+    "constant_n_select": "Constant-N Selection",
+    "single_select_grid": "Single Select Grid",
+    "multi_select_grid": "Multi-Select Grid",
+    "mixed_format_grid": "Mixed-Format Grid",
+    "bipolar_grid": "Bipolar Grid / Semantic Differential",
+    "side_by_side_grid": "Side-By-Side Comparison Grid",
+    "likert_scale": "Likert Agreement Scale",
+    "importance_scale": "Importance Scale",
+    "satisfaction_scale": "Satisfaction / Performance Scale",
+    "frequency_scale": "Frequency Scale",
+    "emoji_scale": "Emoji / Smiley Scale",
+    "slider_continuous": "Slider (Continuous)",
+    "vas_scale": "Visual Analog Scale (VAS)",
+    "nps": "Net Promoter Score (NPS)",
+    "button_rating": "Numeric Single-Row Rating",
+    "rating_scale": "Rating Scale (Grid)",
+    "chip_allocation": "Chip / Token Allocation",
+    "sum_locked_sliders": "Sum-Locked Sliders",
+    "rank_sort": "Full Rank Sort",
+    "top_n_ranking": "Top-N Ranking",
+    "forced_distribution_ranking": "Forced Distribution Ranking",
+    "pairwise_comparison": "Pairwise Comparison",
+    "pairwise_modeled": "Pairwise Comparison (Modeled)",
+    "maxdiff": "MaxDiff / Best-Worst Scaling",
+    "slider": "Slider (Discrete)",
+    "ai_probed_open": "AI-Probed Open End",
+    "validated_input": "Validated Input",
+    "chatbot_dialog": "Chatbot Dialog",
+    "number_decimal": "Number (Decimal)",
+    "calculator_input": "Calculator Input",
+    "card_sort_open": "Open Card Sort",
+    "drag_classify": "Drag to Classify",
+    "q_sort": "Q-Sort",
+    "cbc_conjoint": "Choice-Based Conjoint (CBC)",
+    "acbc_conjoint": "Adaptive CBC (ACBC)",
+    "menu_conjoint": "Menu-Based Conjoint",
+    "heatmap": "Heatmap",
+    "video_player_embed": "Video Player (Embed)",
+    "video_capture": "Video Capture",
+    "stimulus_display": "Stimulus Display",
+}
+
+
+def question_type_label(question: Dict[str, Any]) -> str:
+    """Human-readable name for a question's response format.
+
+    Prefers the modal type the researcher actually chose (`config.ui_type`)
+    over the canonical type it collapses to, so a Likert scale doesn't read
+    as a generic "Rating Scale".
+    """
+    config = question.get("config") or {}
+    ui_type = str(config.get("ui_type") or "").strip()
+    if ui_type:
+        label = UI_TYPE_LABELS.get(ui_type)
+        if label:
+            return label
+
+    canonical = normalize_question_type(question.get("question_type"), question.get("options"), config)
+    entry = QUESTION_TYPE_CATALOG.get(canonical)
+    if entry and entry.get("label"):
+        return str(entry["label"])
+
+    # Unknown/legacy slug — a title-cased slug still beats showing nothing.
+    source = ui_type or canonical
+    return source.replace("_", " ").title() if source else ""
+
+
+# Config keys that hold the *other* axis of a question — the response scale
+# a respondent picks from, as opposed to the rows/items being asked about.
+# `options` on a grid or rating scale holds the rows (statements, attributes),
+# so without these the export shows what was asked but not the answer range.
+#
+# Ordered: the first key with content wins, so `columns` (the canonical grid
+# axis) takes precedence over the anchor-pair fallbacks.
+_SCALE_AXIS_KEYS: Tuple[Tuple[str, str], ...] = (
+    ("columns", "Scale"),
+    ("star_tooltips", "Scale"),
+    ("buttons", "Scale"),
+    ("points", "Scale"),
+    ("rank_labels", "Rank labels"),
+)
+
+# `columns` is a scale on most grids ("columns are scale points"), but on a
+# multi-select grid each column is an entity being asked about, so calling
+# that list a scale would misdescribe it.
+_COLUMN_AXIS_HEADINGS: Dict[str, str] = {
+    "multi_select_grid": "Entities (columns)",
+    "mixed_format_grid": "Columns",
+    "this_or_that": "Columns",
+    "autosum": "Columns",
+}
+
+# Two-ended scales store their extremes as a pair of scalars rather than a list.
+_SCALE_ANCHOR_PAIRS: Tuple[Tuple[str, str, str], ...] = (
+    ("low_label", "high_label", "Scale"),
+    ("left_anchor", "right_anchor", "Scale"),
+    ("left_legend", "right_legend", "Poles"),
+)
+
+
+def question_scale_labels(question: Dict[str, Any]) -> Tuple[str, List[str]]:
+    """Return (heading, labels) describing a question's response scale.
+
+    Returns ("", []) for questions with no scale axis — plain single/multi
+    select, open ends and so on, where `options` already tells the whole story.
+    """
+    config = question.get("config") or {}
+    ui_type = str(config.get("ui_type") or "").strip()
+
+    for key, heading in _SCALE_AXIS_KEYS:
+        labels, _ = normalize_option_schema(config.get(key) or [])
+        if labels:
+            if key == "columns":
+                heading = _COLUMN_AXIS_HEADINGS.get(ui_type, heading)
+            return heading, labels
+
+    # rating_scale's default config carries its points under scale.labels.
+    scale = config.get("scale")
+    if isinstance(scale, dict):
+        labels, _ = normalize_option_schema(scale.get("labels") or [])
+        if labels:
+            return "Scale", labels
+
+    for low_key, high_key, heading in _SCALE_ANCHOR_PAIRS:
+        low = str(config.get(low_key) or "").strip()
+        high = str(config.get(high_key) or "").strip()
+        if low and high:
+            return heading, [low, high]
+
+    return "", []
+
+
+# ---------------------------------------------------------------------------
 # Type normalizer
 # ---------------------------------------------------------------------------
 

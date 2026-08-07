@@ -1172,17 +1172,100 @@
     font-family: Inter;
 }
 
+/* ── Horizontal scroll area (shared) ─────────────────────────────────────── */
+/* Wraps any preview that can outgrow the card width. The fade modifiers are
+   toggled from JS so an edge only dims while content actually continues past
+   it — a permanent gradient would read as a visual style, not an affordance. */
+.qdg-hscroll {
+    position: relative;
+    width: 100%;
+    min-width: 0;
+}
+
+.qdg-hscroll__viewport {
+    overflow-x: auto;
+    overflow-y: hidden;
+    /* Keeps a dragged scroll from also panning the page behind the card. */
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+    padding-bottom: 4px;
+}
+
+.qdg-hscroll__viewport::-webkit-scrollbar { height: 6px; }
+.qdg-hscroll__viewport::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 4px;
+}
+.qdg-hscroll__viewport::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.18);
+    border-radius: 4px;
+}
+.qdg-hscroll__viewport::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.32);
+}
+
+/* Edge fades. Sized to clear the scrollbar so the track stays fully visible. */
+.qdg-hscroll::before,
+.qdg-hscroll::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 10px;
+    width: 34px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    z-index: 1;
+}
+
+.qdg-hscroll::before {
+    left: 0;
+    background: linear-gradient(to right, var(--T-Base-B2, #121317), transparent);
+}
+
+.qdg-hscroll::after {
+    right: 0;
+    background: linear-gradient(to left, var(--T-Base-B2, #121317), transparent);
+}
+
+.qdg-hscroll--fade-left::before,
+.qdg-hscroll--fade-right::after {
+    opacity: 1;
+}
+
 /* ── Grid element preview ────────────────────────────────────────────────── */
 .qdg-preview--grid {
-    width: 100%;
-    overflow-x: auto;
+    width: calc(100% - 28px);  /* subtract the .qdg-preview margin-left */
+    max-width: calc(100% - 28px);
+    min-width: 0;
 }
 
 .qdg-grid-table {
-    width: 100%;
+    /* Deliberately not `width: 100%` — that pins the table to the viewport and
+       stops it growing past it, which is what hid the extra columns. Under
+       `table-layout: fixed`, `max-content` resolves to the sum of the column
+       widths, so 8 columns make a 1200px table that scrolls; `min-width` then
+       stretches a 2-column grid back out to fill the card. */
+    width: max-content;
+    min-width: 100%;
     border-collapse: collapse;
     font-size: 0.75rem;
     font-family: Inter;
+    /* Fixed layout keeps every column at the same width regardless of label
+       length, so a long entity name can't starve its neighbours. */
+    table-layout: fixed;
+}
+
+.qdg-grid-table th,
+.qdg-grid-table td {
+    /* Below ~150px the choice labels wrap to three lines and the grid stops
+       being scannable, so columns hold this width and the area scrolls. */
+    min-width: 150px;
+    width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .qdg-grid-table th {
