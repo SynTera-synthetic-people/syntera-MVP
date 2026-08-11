@@ -405,8 +405,10 @@
 }
 
 .ig-omi-bar__avatar {
-  width: 36px;
-  height: 36px;
+  /* Sized up from 36px: at the smaller size the crop only fit Omi's head, so
+     the keyboard he is typing on fell outside the circle entirely. */
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
   overflow: hidden;
   flex-shrink: 0;
@@ -420,7 +422,9 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: center top;
+  /* Framed below centre so the hands and keyboard stay in shot — anchoring to
+     the top pushed the typing action out of the visible circle. */
+  object-position: center 68%;
   display: block;
 }
 

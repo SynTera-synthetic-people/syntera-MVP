@@ -343,18 +343,6 @@
     line-height: 1.4;
 }
 
-.qdg-options-overflow {
-    display: inline-flex;
-    align-items: center;
-    padding: 2px 8px;
-    background: var(--T-GreyScale-Grey-800, #393C45);
-    border-radius: 20px;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    color: white;
-    margin: 2px 3px;
-}
-
 /* ── Context menu ─────────────────────────────────────────────────────────── */
 
 .qdg-q-menu {
@@ -1087,10 +1075,39 @@
     display: flex;
     flex-direction: column;
     gap: 0;
+    /* Long option lists scroll in place instead of being truncated, so every
+       option stays reachable without stretching the question card. ~7 rows
+       tall, which is where the old "+N" cut-off used to sit. */
+    max-height: 210px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
 }
 
-/* .qdg-option-row and .qdg-option-pill and .qdg-options-overflow
-   are already defined above — they apply here too */
+/* Slim scrollbar so the preview box keeps its compact look */
+.qdg-preview--pills::-webkit-scrollbar {
+    width: 6px;
+}
+
+.qdg-preview--pills::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.qdg-preview--pills::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.18);
+    border-radius: 3px;
+}
+
+.qdg-preview--pills::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.28);
+}
+
+.qdg-preview--pills {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+/* .qdg-option-row and .qdg-option-pill are already defined above —
+   they apply here too */
 
 /* ── Number preview ───────────────────────────────────────────────────────── */
 .qdg-preview--number {

@@ -367,11 +367,46 @@ async def ingest_dataset_from_survey_results(
         if persona:
             persona_names_map[pid] = persona.get("name") or persona.get("persona_name") or pid
 
+    # Grid/scale questions expand into one column per item, and multi-select
+    # questions need their type to assign several options per respondent —
+    # both require the questionnaire schema, not just the aggregate results.
+    question_types: dict[str, str] = {}
+    item_results: dict = {}
+    stored_canonical = sim.normalized_results if isinstance(sim.normalized_results, dict) else {}
+    if isinstance(stored_canonical.get("item_results"), dict):
+        item_results = stored_canonical["item_results"]
+
+    if sim.simulation_source_id:
+        from app.services.questionnaire import get_questionnaire_by_simulation
+
+        questionnaires = await get_questionnaire_by_simulation(
+            workspace_id, exploration_id, sim.simulation_source_id
+        )
+        flat_questions = [q for sec in (questionnaires or []) for q in (sec.get("questions") or [])]
+        for q in flat_questions:
+            qtext = (q.get("text") or "").strip()
+            if qtext:
+                question_types[qtext] = q.get("question_type") or "single_select"
+        if not item_results and flat_questions:
+            from app.utils.survey_results_normalize import build_item_level_results
+
+            item_results = build_item_level_results(
+                [
+                    {"text": (q.get("text") or "").strip(),
+                     "options": results_data.get((q.get("text") or "").strip()) or []}
+                    for q in flat_questions
+                ],
+                flat_questions,
+                int(sim.total_sample_size or 0),
+            )
+
     raw_csv_bytes = build_survey_results_csv_bytes(
         results=results_data,
         persona_sample_sizes=sim.persona_sample_sizes or {},
         persona_names_map=persona_names_map,
         seed=sim.id,
+        question_types=question_types,
+        item_results=item_results,
     )
     if not raw_csv_bytes:
         raise ValueError("Survey simulation has no respondent data to import")
@@ -391,13 +426,14 @@ async def ingest_dataset_from_survey_results(
     question_titles = {column: _cell(df.iloc[0][column]) for column in df.columns}
     df = df.iloc[1:].reset_index(drop=True)
 
-    # Open-ended questions have no discrete options for the per-respondent
-    # sampler to draw from, so their column is 100% blank here even though
-    # it looked non-empty a moment ago (the question-text row we just
-    # dropped kept it technically "non-empty"). Drop it now, matching the
-    # dropna(axis=1, how="all") the shared reader applies on every later
-    # read -- otherwise this column would survive into dp_variable only to
+    # Drop any column that is entirely blank, matching the
+    # dropna(axis=1, how="all") the shared reader applies on every later read
+    # -- otherwise such a column would survive into dp_variable only to
     # silently vanish (KeyError) the next time anything re-reads the file.
+    # Open-ended questions used to land here always-blank (no discrete options
+    # for the per-respondent sampler to draw from); they now carry their
+    # simulated verbatims, so this is a genuine safety net rather than the
+    # routine fate of every free-text question.
     df = df.dropna(axis=1, how="all")
 
     stored_filename, _size = await save_dataset_bytes(df.to_csv(index=False).encode("utf-8"), ".csv")

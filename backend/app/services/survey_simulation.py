@@ -6,13 +6,22 @@ from datetime import datetime
 from math import isfinite
 from app.models.survey_simulation import SurveySimulation
 from app.utils.id_generator import generate_id
-from app.utils.survey_results_normalize import build_canonical_survey_results, build_normalized_survey_results
+from app.utils.survey_results_normalize import (
+    build_canonical_survey_results,
+    build_item_level_results,
+    build_normalized_survey_results,
+)
 from app.db import async_engine
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 from app.config import OPENAI_API_KEY
 from openai import AsyncOpenAI
-from app.services.question_engine import analysis_options_for_question, is_verbatim_question_type
+from app.services.question_engine import (
+    analysis_options_for_question,
+    grid_item_allows_multiple,
+    is_verbatim_question_type,
+    question_grid_items,
+)
 from app.services.anti_sycophancy_rules import ANTI_SYCOPHANCY_RULES
 
 logger = logging.getLogger(__name__)
@@ -81,22 +90,58 @@ def _build_simulation_prompt(research_desc: str, persona: dict, sample_size: int
     """
     qs_text = []
     verbatim_question_ids = []
+    grid_question_ids = []
     for i, q in enumerate(questions, start=1):
         opts = q.get("options") or []
         q_id = q.get("question_key") or q.get("id") or f"Q{i}"
         is_verbatim = is_verbatim_question_type(q.get("question_type"))
+        grid_items, grid_scale = question_grid_items(q)
+        is_grid = bool(grid_items and grid_scale)
+
+        if is_grid:
+            response_shape = "items"
+        elif is_verbatim:
+            response_shape = "verbatims"
+        else:
+            response_shape = "options"
+
         q_meta = {
             "question_id": q_id,
             "type": q.get("question_type") or "single_select",
             "config": q.get("config") or {},
-            "options": q.get("option_schema") or opts,
-            "response_shape": "verbatims" if is_verbatim else "options",
+            "response_shape": response_shape,
         }
-        if is_verbatim:
+        if is_grid:
+            # The item list and the response scale are different axes; sending
+            # only a flat "options" list collapses them and the model answers
+            # the grid as if it were one question.
+            q_meta["items"] = grid_items
+            q_meta["response_scale"] = grid_scale
+            q_meta["multi_response_per_item"] = grid_item_allows_multiple(q)
+            grid_question_ids.append(q_id)
+        elif is_verbatim:
             verbatim_question_ids.append(q_id)
+        else:
+            q_meta["options"] = q.get("option_schema") or opts
+
         qs_text.append(f"{i}. QUESTION: {q.get('text')}\nSCHEMA: {json.dumps(q_meta, default=str)}")
 
     qs_joined = "\n\n".join(qs_text)
+
+    grid_instructions = ""
+    if grid_question_ids:
+        grid_instructions = f"""
+GRID / SCALE-MATRIX QUESTIONS ({", ".join(grid_question_ids)}):
+These ask the SAME response scale about several separate items, so one
+distribution cannot represent them. Do NOT return "options". Return "items":
+one entry per item in the schema's "items" list, each with its own
+distribution over the schema's "response_scale".
+
+Every item must appear, and each must get its OWN distribution — items differ
+from one another, so never repeat a single distribution across them. An item's
+answer may only be a label from "response_scale"; the item text itself is never
+an answer.
+"""
 
     verbatim_instructions = ""
     if verbatim_question_ids:
@@ -136,7 +181,7 @@ QUESTIONS:
 {ANTI_SYCOPHANCY_RULES}
 
 {DISTRIBUTION_REALISM_RULES}
-{verbatim_instructions}
+{verbatim_instructions}{grid_instructions}
 REQUIREMENTS (STRICT):
 1) Return ONLY valid JSON, and nothing else.
 2) JSON must have these top-level keys:
@@ -158,6 +203,21 @@ REQUIREMENTS (STRICT):
        "verbatims": ["<quote 1>", "<quote 2>", ...],
        "total": <int>
      }}
+     Shape "items" (grid / scale-matrix questions only):
+     {{
+       "text": "<question text>",
+       "items": [
+         {{
+           "item": "<exact item text from the schema's items list>",
+           "options": [
+             {{ "option": "<exact label from response_scale>", "count": <int>, "pct": <float> }},
+             ...
+           ]
+         }},
+         ...
+       ],
+       "total": <int>
+     }}
    - summary: a short human-readable summary (2-3 bullets or sentences)
    - llm_source_explanation: one object describing where you used evidence from to derive the percentages.
        It must contain keys:
@@ -172,6 +232,9 @@ REQUIREMENTS (STRICT):
    - Follow the DISTRIBUTION REALISM RULES above — do not default to flat/uniform splits.
 4) Be realistic and conservative: bias answers only according to the persona text above.
 5) For "verbatims"-shape questions, follow the OPEN-ENDED instructions above instead of rule 3.
+5b) For "items"-shape questions, follow the GRID instructions above instead of rule 3: each item's
+   counts must sum to sample_size (unless multi_response_per_item is true, where each option's
+   count is an independent frequency).
 6) Do NOT invent external documents or cite external sources. The llm_source_explanation should reference only persona, research objective, and sample/population signals.
 7) Output JSON only (no explanatory text).
 
@@ -234,6 +297,34 @@ def _fallback_simulation(sample_size: int, questions: List[Dict]) -> Dict:
                 "text": q.get("text", ""),
                 "verbatims": list(_FALLBACK_VERBATIMS),
                 "total": sample_size
+            })
+            continue
+
+        grid_items, grid_scale = question_grid_items(q)
+        if grid_items and grid_scale:
+            # Grid questions need one distribution per item; a flat option
+            # list here would leave every item column empty downstream.
+            n_scale = max(1, len(grid_scale))
+            base = sample_size // n_scale
+            rem = sample_size - (base * n_scale)
+            counts = [base + (1 if i < rem else 0) for i in range(n_scale)]
+            q_results.append({
+                "text": q.get("text", ""),
+                "items": [
+                    {
+                        "item": item,
+                        "options": [
+                            {
+                                "option": label,
+                                "count": cnt,
+                                "pct": round(100.0 * cnt / sample_size, 1) if sample_size > 0 else 0.0,
+                            }
+                            for label, cnt in zip(grid_scale, counts)
+                        ],
+                    }
+                    for item in grid_items
+                ],
+                "total": sample_size,
             })
             continue
 
@@ -352,7 +443,17 @@ async def simulate_and_store(
     for sec in questions_sections:
         for q in sec.get("questions", []):
             text = q.get("text") or ""
-            opts = q.get("options") or analysis_options_for_question(q)
+            # analysis_options_for_question() invents reporting buckets
+            # ("Response provided" / "No response") for free-text questions.
+            # Handing those to the simulation as if they were real options
+            # makes the model answer in option shape, and the verbatim pool
+            # then comes back empty — the question's column ends up blank for
+            # every respondent. Free-text questions must reach the prompt with
+            # no options at all.
+            if is_verbatim_question_type(q.get("question_type")):
+                opts = []
+            else:
+                opts = q.get("options") or analysis_options_for_question(q)
             flat_questions.append({
                 "id": q.get("id"),
                 "question_key": q.get("question_key") or q.get("id"),
@@ -411,10 +512,16 @@ async def simulate_and_store(
         flat_questions,
         sample_size,
     )
+    item_results = build_item_level_results(
+        data.get("question_results", []),
+        flat_questions,
+        sample_size,
+    )
     canonical_results = build_canonical_survey_results(
         normalized_results,
         flat_questions,
         sample_size,
+        item_results=item_results,
     )
 
     grouped_output = _group_results_by_section(questions_sections, normalized_results)

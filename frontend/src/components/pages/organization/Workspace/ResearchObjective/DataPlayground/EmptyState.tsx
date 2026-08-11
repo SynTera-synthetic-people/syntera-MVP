@@ -8,13 +8,15 @@ interface EmptyStateProps {
 
 const EmptyState: React.FC<EmptyStateProps> = ({
   title = 'Data will appear here',
-  subtitle = 'Content goes here',
+  subtitle,
 }) => {
   return (
     <div className="dp-empty-state">
       <div className="dp-empty-icon">🗄</div>
       <h3 className="dp-empty-title">{title}</h3>
-      <p className="dp-empty-subtitle">{subtitle}</p>
+      {/* No placeholder default: an empty state with nothing useful to add
+          should show the title alone rather than filler copy. */}
+      {subtitle && <p className="dp-empty-subtitle">{subtitle}</p>}
     </div>
   );
 };

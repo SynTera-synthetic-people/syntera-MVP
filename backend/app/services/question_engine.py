@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from copy import deepcopy
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -696,6 +697,114 @@ def question_scale_labels(question: Dict[str, Any]) -> Tuple[str, List[str]]:
             return heading, [low, high]
 
     return "", []
+
+
+# ---------------------------------------------------------------------------
+# Grid / scale axis resolution
+# ---------------------------------------------------------------------------
+
+# A grid or scale-matrix question asks the SAME response scale about several
+# items, so a single answer per respondent cannot represent it: each item needs
+# its own answer. These types carry two axes — the items being asked about and
+# the scale the respondent picks from — and which config key holds which axis
+# differs per type.
+#
+# canonical question_type -> (items_key, scale_key)
+#
+# grid_multi_select inverts the usual arrangement: its rows are attributes the
+# respondent ticks and its columns are the entities being asked about (see
+# _COLUMN_AXIS_HEADINGS and the modal's "Attributes (Rows)" / "Entities
+# (Columns)" editors), so the entity axis is the item axis.
+_GRID_AXES: Dict[str, Tuple[str, str]] = {
+    "grid_single_select": ("rows", "columns"),
+    "grid_multi_select": ("columns", "rows"),
+    "matrix_rating": ("rows", "columns"),
+    "rating_scale": ("rows", "columns"),
+    "star_rating": ("rows", "star_tooltips"),
+    "autosum": ("rows", "columns"),
+}
+
+# Item axes whose responses are independent tick-boxes rather than one pick
+# from a scale.
+_MULTI_RESPONSE_GRID_TYPES = {"grid_multi_select"}
+
+
+def _labels_from_config(config: Dict[str, Any], key: str) -> List[str]:
+    labels, _ = normalize_option_schema(config.get(key) or [])
+    return labels
+
+
+def question_grid_items(question: Dict[str, Any]) -> Tuple[List[str], List[str]]:
+    """Return (item_labels, scale_labels) for a grid/scale-matrix question.
+
+    Returns ([], []) for every flat question — plain selects, open ends,
+    rankings and so on — so callers can keep their existing single-column
+    behaviour for anything that is not a grid.
+
+    The split is derived from the question's stored schema (``config.rows`` /
+    ``config.columns`` and friends) via _GRID_AXES, never from question
+    numbering or wording, so it holds for any questionnaire.
+    """
+    config = question.get("config") or {}
+    if not isinstance(config, dict):
+        return [], []
+
+    canonical = normalize_question_type(
+        question.get("question_type"), question.get("options"), config
+    )
+    axes = _GRID_AXES.get(canonical)
+    if not axes:
+        return [], []
+
+    items_key, scale_key = axes
+
+    items = _labels_from_config(config, items_key)
+    if not items:
+        # Questions authored through the modal store the item axis under both
+        # `rows` and `options` (the codec's `optionsFrom`), but LLM-generated
+        # and uploaded questionnaires often only fill `options`.
+        items, _ = normalize_option_schema(question.get("options") or [])
+
+    scale = _labels_from_config(config, scale_key)
+    if not scale and canonical in {"rating_scale", "matrix_rating"}:
+        scale_cfg = config.get("scale")
+        if isinstance(scale_cfg, dict):
+            scale = [str(x).strip() for x in (scale_cfg.get("labels") or []) if str(x).strip()]
+    if not scale and canonical == "star_rating":
+        try:
+            max_stars = int(config.get("max_stars") or 5)
+        except (TypeError, ValueError):
+            max_stars = 5
+        scale = [f"{i} star{'s' if i != 1 else ''}" for i in range(1, max_stars + 1)]
+
+    if not items or not scale:
+        return [], []
+
+    # A degenerate config (the item axis copied into the scale axis by
+    # _default_config when the author never supplied a real scale) would make
+    # every respondent's "answer" one of the statements — the exact bug this
+    # split exists to prevent. Fall back to flat handling instead.
+    if [_norm_axis(x) for x in items] == [_norm_axis(x) for x in scale]:
+        return [], []
+
+    return items, scale
+
+
+def _norm_axis(s: str) -> str:
+    return re.sub(r"\s+", " ", str(s or "").strip().lower())
+
+
+def is_grid_question(question: Dict[str, Any]) -> bool:
+    items, scale = question_grid_items(question)
+    return bool(items and scale)
+
+
+def grid_item_allows_multiple(question: Dict[str, Any]) -> bool:
+    """True when one grid item can carry several responses at once."""
+    canonical = normalize_question_type(
+        question.get("question_type"), question.get("options"), question.get("config") or {}
+    )
+    return canonical in _MULTI_RESPONSE_GRID_TYPES
 
 
 # ---------------------------------------------------------------------------
