@@ -207,17 +207,25 @@ def questionnaire_sections_to_csv_bytes(
     sections: List[Dict[str, Any]],
     counts_map: Optional[Dict[str, Any]] = None,
     include_count: bool = False,
+    item_results: Optional[Dict[str, List[Dict[str, Any]]]] = None,
 ) -> bytes:
     """
     One row per question-option.
 
     Default output is the questionnaire design export:
-    Q No., Question Description, Options.
+    Q No., Question Description, Sub-Question, Options.
 
     Raw Data Shell can opt in to response counts:
-    Q No., Question Description, Options, Count.
+    Q No., Question Description, Sub-Question, Options, Count.
 
     counts_map: optional { question_text: [ {option, count}, ... ] } from SurveySimulation.results
+
+    item_results: optional { question_text: [ {item, results:[{option,count}]}, ... ] } for grid /
+      scale-matrix questions. A Likert battery or grid is really N sub-questions sharing one
+      response scale, so `counts_map` alone cannot describe it — its single block is keyed by the
+      item axis, which makes a statement look like the chosen answer. When present, each item is
+      emitted as its own sub-question (O1_, O2_, …) with a full row per scale option, and
+      `Sub-Question` stays blank for every other question type.
     """
     if not sections:
         return b""
@@ -230,8 +238,9 @@ def questionnaire_sections_to_csv_bytes(
             flat.append((q_text, opts))
 
     aligned = _align_blocks_to_questions(counts_map, flat)
+    item_results = item_results or {}
 
-    header = ["Q No.", "Question Description", "Options"]
+    header = ["Q No.", "Question Description", "Sub-Question", "Options"]
     if include_count:
         header.append("Count")
     buffer = io.StringIO()
@@ -239,10 +248,31 @@ def questionnaire_sections_to_csv_bytes(
     writer.writerow(header)
 
     for q_no, ((q_text, opts), block) in enumerate(zip(flat, aligned), start=1):
+        item_blocks = _grid_item_blocks(item_results.get(q_text))
+        if item_blocks:
+            # Grid / scale-matrix question: analyse each statement, attribute or
+            # entity on its own, against the scale the respondent actually
+            # answered on. Multi-response grids keep independent per-option
+            # frequencies \u2014 their counts are not rescaled to the sample size.
+            for item_no, item_block in enumerate(item_blocks, start=1):
+                sub_question = f"O{item_no}_{item_block.get('item', '')}"
+                for result in item_block.get("results") or []:
+                    if not isinstance(result, dict):
+                        continue
+                    try:
+                        count = int(result.get("count", 0) or 0)
+                    except (TypeError, ValueError):
+                        count = 0
+                    row = [q_no, q_text, sub_question, str(result.get("option", ""))]
+                    if include_count:
+                        row.append(count)
+                    writer.writerow(row)
+            continue
+
         if opts:
             counts = _counts_for_options(block, opts)
             for opt, count in zip(opts, counts):
-                row = [q_no, q_text, opt if opt is not None else ""]
+                row = [q_no, q_text, "", opt if opt is not None else ""]
                 if include_count:
                     row.append(count)
                 writer.writerow(row)
@@ -251,7 +281,7 @@ def questionnaire_sections_to_csv_bytes(
                 if isinstance(item, dict):
                     if "verbatim" in item:
                         # Open-ended question: no option/count semantics, just the quote.
-                        row = [q_no, q_text, str(item.get("verbatim", ""))]
+                        row = [q_no, q_text, "", str(item.get("verbatim", ""))]
                         if include_count:
                             row.append("")
                         writer.writerow(row)
@@ -260,12 +290,12 @@ def questionnaire_sections_to_csv_bytes(
                         count = int(item.get("count", 0) or 0)
                     except (TypeError, ValueError):
                         count = 0
-                    row = [q_no, q_text, str(item.get("option", ""))]
+                    row = [q_no, q_text, "", str(item.get("option", ""))]
                     if include_count:
                         row.append(count)
                     writer.writerow(row)
         else:
-            row = [q_no, q_text, ""]
+            row = [q_no, q_text, "", ""]
             if include_count:
                 row.append(0)
             writer.writerow(row)
