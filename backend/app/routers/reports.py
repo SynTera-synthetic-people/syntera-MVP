@@ -47,6 +47,7 @@ from app.utils.questionnaire_csv import (
     build_survey_results_csv_bytes,
     build_quant_transcripts_zip,
 )
+from app.utils.survey_results_normalize import build_item_level_results
 from app.services.persona import get_persona
 from app.utils.email_utils import send_share_report_email
 
@@ -67,7 +68,14 @@ QUAL_BA_LEGACY_CACHE_KEYS = (
     "IN_DEPTH_ALL_INTERVIEWS_BA_V1",
 )
 QUAL_ALL_CACHE_KEY = "ALL_COMBINED_V4"
-QUANT_TRANSCRIPTS_CACHE_KEY = "TRANSCRIPTS_V2"
+# Bump whenever either CSV's layout changes: the cache stores the whole ZIP
+# (base64 in report_cache.content_md), so a stale entry keeps being served
+# indefinitely no matter what the code does.
+#   V3: survey_results.csv gained one column per grid/scale item (Q<n>_01, …).
+#   V4: questionnaire_overview.csv gained the Sub-Question column and analyses
+#       each grid/scale item separately. V3 entries written between the two
+#       changes hold a new survey_results.csv beside an old overview.
+QUANT_TRANSCRIPTS_CACHE_KEY = "TRANSCRIPTS_V4"
 QUANT_DI_CACHE_KEY = "DECISION_INTELLIGENCE_V2"
 QUANT_BA_CACHE_KEY = "BEHAVIORAL_ARCHAEOLOGY_V2"
 QUAL_PREPARE_CONFIG = {
@@ -761,6 +769,44 @@ async def qual_all_combined(
 
 # ─── QUANT REPORTS ────────────────────────────────────────────────────────────
 
+def _flatten_questionnaire(questionnaires: list) -> list[dict]:
+    return [
+        q
+        for sec in (questionnaires or [])
+        for q in (sec.get("questions") or [])
+    ]
+
+
+def _resolve_item_results(survey_sim, questionnaires: list, results_data: dict) -> dict:
+    """Per-item distributions for grid / scale-matrix questions.
+
+    Prefers what the simulation actually stored. Simulations run before item
+    detail was recorded have none, so rather than falling back to a single
+    collapsed column per grid (whose "answer" would be a statement), the item
+    columns are rebuilt from the questionnaire schema and whatever aggregate
+    the run did store.
+    """
+    stored = getattr(survey_sim, "normalized_results", None)
+    if isinstance(stored, dict):
+        item_results = stored.get("item_results")
+        if isinstance(item_results, dict) and item_results:
+            return item_results
+
+    flat_questions = _flatten_questionnaire(questionnaires)
+    if not flat_questions:
+        return {}
+
+    llm_rows = [
+        {"text": (q.get("text") or "").strip(), "options": results_data.get((q.get("text") or "").strip()) or []}
+        for q in flat_questions
+    ]
+    return build_item_level_results(
+        llm_rows,
+        flat_questions,
+        int(getattr(survey_sim, "total_sample_size", 0) or 0),
+    )
+
+
 @router.get("/quant/{simulation_id}/transcripts")
 async def quant_transcripts(
     workspace_id: str,
@@ -788,16 +834,22 @@ async def quant_transcripts(
         if not population_sim_id:
             raise HTTPException(422, "Survey simulation has no linked population simulation")
 
-        # ── CSV 1: Questionnaire overview (Q No., Question, Options, Count) ──
+        # ── CSV 1: Questionnaire overview (Q No., Question, Sub-Question, Options, Count) ──
         questionnaires = await get_questionnaire_by_simulation(workspace_id, exploration_id, population_sim_id)
         if not questionnaires:
             raise HTTPException(404, "No questionnaire found for this simulation")
 
-        counts_map = parse_survey_results_field(survey_sim.results)
+        results_data = parse_survey_results_field(survey_sim.results) or {}
+        # Shared by both CSVs: grid/scale questions are analysed per item in the
+        # overview and expanded into per-item columns in the respondent file, so
+        # the two always describe the same sub-questions.
+        item_results = _resolve_item_results(survey_sim, questionnaires, results_data)
+
         questionnaire_csv = questionnaire_sections_to_csv_bytes(
             questionnaires,
-            counts_map,
+            parse_survey_results_field(survey_sim.results),
             include_count=True,
+            item_results=item_results,
         )
 
         # ── CSV 2: Survey results (one row per respondent, wide format) ──
@@ -819,13 +871,13 @@ async def quant_transcripts(
                 if qtext:
                     question_types[qtext] = q.get("question_type") or "single_select"
 
-        results_data = parse_survey_results_field(survey_sim.results) or {}
         survey_results_csv = build_survey_results_csv_bytes(
             results=results_data,
             persona_sample_sizes=persona_sample_sizes,
             persona_names_map=persona_names_map,
             seed=resolved_simulation_id,
             question_types=question_types,
+            item_results=item_results,
         )
 
         # ── Combine into ZIP ──

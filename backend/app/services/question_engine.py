@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from copy import deepcopy
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -543,6 +544,267 @@ QUESTION_TYPE_CATALOG: Dict[str, Dict[str, Any]] = {
         "config_fields": ["data_file_url"],
     },
 }
+
+
+# ---------------------------------------------------------------------------
+# Presentation labels
+# ---------------------------------------------------------------------------
+
+# Several modal editors persist as the same canonical type — likert_scale,
+# importance_scale, satisfaction_scale and frequency_scale are all
+# `rating_scale` — so the catalog label alone loses what the researcher
+# actually authored. `config.ui_type` (written by the frontend codec) keeps
+# that distinction, and this table gives it a human label.
+#
+# Mirrors TYPE_META in
+# frontend/src/components/.../Questionnaire/QuestionModal.tsx. Only entries
+# whose label differs from the canonical type's label need to appear here;
+# anything missing falls back to QUESTION_TYPE_CATALOG.
+UI_TYPE_LABELS: Dict[str, str] = {
+    "button_single_select": "Button Single Select",
+    "image_single_select": "Image Single Select",
+    "binary_yes_no": "Binary Yes / No",
+    "button_multi_select": "Button Multi-Select",
+    "image_multi_select": "Image Multi-Select",
+    "top_n_select": "Top-N Selection",
+    "constant_n_select": "Constant-N Selection",
+    "single_select_grid": "Single Select Grid",
+    "multi_select_grid": "Multi-Select Grid",
+    "mixed_format_grid": "Mixed-Format Grid",
+    "bipolar_grid": "Bipolar Grid / Semantic Differential",
+    "side_by_side_grid": "Side-By-Side Comparison Grid",
+    "likert_scale": "Likert Agreement Scale",
+    "importance_scale": "Importance Scale",
+    "satisfaction_scale": "Satisfaction / Performance Scale",
+    "frequency_scale": "Frequency Scale",
+    "emoji_scale": "Emoji / Smiley Scale",
+    "slider_continuous": "Slider (Continuous)",
+    "vas_scale": "Visual Analog Scale (VAS)",
+    "nps": "Net Promoter Score (NPS)",
+    "button_rating": "Numeric Single-Row Rating",
+    "rating_scale": "Rating Scale (Grid)",
+    "chip_allocation": "Chip / Token Allocation",
+    "sum_locked_sliders": "Sum-Locked Sliders",
+    "rank_sort": "Full Rank Sort",
+    "top_n_ranking": "Top-N Ranking",
+    "forced_distribution_ranking": "Forced Distribution Ranking",
+    "pairwise_comparison": "Pairwise Comparison",
+    "pairwise_modeled": "Pairwise Comparison (Modeled)",
+    "maxdiff": "MaxDiff / Best-Worst Scaling",
+    "slider": "Slider (Discrete)",
+    "ai_probed_open": "AI-Probed Open End",
+    "validated_input": "Validated Input",
+    "chatbot_dialog": "Chatbot Dialog",
+    "number_decimal": "Number (Decimal)",
+    "calculator_input": "Calculator Input",
+    "card_sort_open": "Open Card Sort",
+    "drag_classify": "Drag to Classify",
+    "q_sort": "Q-Sort",
+    "cbc_conjoint": "Choice-Based Conjoint (CBC)",
+    "acbc_conjoint": "Adaptive CBC (ACBC)",
+    "menu_conjoint": "Menu-Based Conjoint",
+    "heatmap": "Heatmap",
+    "video_player_embed": "Video Player (Embed)",
+    "video_capture": "Video Capture",
+    "stimulus_display": "Stimulus Display",
+}
+
+
+def question_type_label(question: Dict[str, Any]) -> str:
+    """Human-readable name for a question's response format.
+
+    Prefers the modal type the researcher actually chose (`config.ui_type`)
+    over the canonical type it collapses to, so a Likert scale doesn't read
+    as a generic "Rating Scale".
+    """
+    config = question.get("config") or {}
+    ui_type = str(config.get("ui_type") or "").strip()
+    if ui_type:
+        label = UI_TYPE_LABELS.get(ui_type)
+        if label:
+            return label
+
+    canonical = normalize_question_type(question.get("question_type"), question.get("options"), config)
+    entry = QUESTION_TYPE_CATALOG.get(canonical)
+    if entry and entry.get("label"):
+        return str(entry["label"])
+
+    # Unknown/legacy slug — a title-cased slug still beats showing nothing.
+    source = ui_type or canonical
+    return source.replace("_", " ").title() if source else ""
+
+
+# Config keys that hold the *other* axis of a question — the response scale
+# a respondent picks from, as opposed to the rows/items being asked about.
+# `options` on a grid or rating scale holds the rows (statements, attributes),
+# so without these the export shows what was asked but not the answer range.
+#
+# Ordered: the first key with content wins, so `columns` (the canonical grid
+# axis) takes precedence over the anchor-pair fallbacks.
+_SCALE_AXIS_KEYS: Tuple[Tuple[str, str], ...] = (
+    ("columns", "Scale"),
+    ("star_tooltips", "Scale"),
+    ("buttons", "Scale"),
+    ("points", "Scale"),
+    ("rank_labels", "Rank labels"),
+)
+
+# `columns` is a scale on most grids ("columns are scale points"), but on a
+# multi-select grid each column is an entity being asked about, so calling
+# that list a scale would misdescribe it.
+_COLUMN_AXIS_HEADINGS: Dict[str, str] = {
+    "multi_select_grid": "Entities (columns)",
+    "mixed_format_grid": "Columns",
+    "this_or_that": "Columns",
+    "autosum": "Columns",
+}
+
+# Two-ended scales store their extremes as a pair of scalars rather than a list.
+_SCALE_ANCHOR_PAIRS: Tuple[Tuple[str, str, str], ...] = (
+    ("low_label", "high_label", "Scale"),
+    ("left_anchor", "right_anchor", "Scale"),
+    ("left_legend", "right_legend", "Poles"),
+)
+
+
+def question_scale_labels(question: Dict[str, Any]) -> Tuple[str, List[str]]:
+    """Return (heading, labels) describing a question's response scale.
+
+    Returns ("", []) for questions with no scale axis — plain single/multi
+    select, open ends and so on, where `options` already tells the whole story.
+    """
+    config = question.get("config") or {}
+    ui_type = str(config.get("ui_type") or "").strip()
+
+    for key, heading in _SCALE_AXIS_KEYS:
+        labels, _ = normalize_option_schema(config.get(key) or [])
+        if labels:
+            if key == "columns":
+                heading = _COLUMN_AXIS_HEADINGS.get(ui_type, heading)
+            return heading, labels
+
+    # rating_scale's default config carries its points under scale.labels.
+    scale = config.get("scale")
+    if isinstance(scale, dict):
+        labels, _ = normalize_option_schema(scale.get("labels") or [])
+        if labels:
+            return "Scale", labels
+
+    for low_key, high_key, heading in _SCALE_ANCHOR_PAIRS:
+        low = str(config.get(low_key) or "").strip()
+        high = str(config.get(high_key) or "").strip()
+        if low and high:
+            return heading, [low, high]
+
+    return "", []
+
+
+# ---------------------------------------------------------------------------
+# Grid / scale axis resolution
+# ---------------------------------------------------------------------------
+
+# A grid or scale-matrix question asks the SAME response scale about several
+# items, so a single answer per respondent cannot represent it: each item needs
+# its own answer. These types carry two axes — the items being asked about and
+# the scale the respondent picks from — and which config key holds which axis
+# differs per type.
+#
+# canonical question_type -> (items_key, scale_key)
+#
+# grid_multi_select inverts the usual arrangement: its rows are attributes the
+# respondent ticks and its columns are the entities being asked about (see
+# _COLUMN_AXIS_HEADINGS and the modal's "Attributes (Rows)" / "Entities
+# (Columns)" editors), so the entity axis is the item axis.
+_GRID_AXES: Dict[str, Tuple[str, str]] = {
+    "grid_single_select": ("rows", "columns"),
+    "grid_multi_select": ("columns", "rows"),
+    "matrix_rating": ("rows", "columns"),
+    "rating_scale": ("rows", "columns"),
+    "star_rating": ("rows", "star_tooltips"),
+    "autosum": ("rows", "columns"),
+}
+
+# Item axes whose responses are independent tick-boxes rather than one pick
+# from a scale.
+_MULTI_RESPONSE_GRID_TYPES = {"grid_multi_select"}
+
+
+def _labels_from_config(config: Dict[str, Any], key: str) -> List[str]:
+    labels, _ = normalize_option_schema(config.get(key) or [])
+    return labels
+
+
+def question_grid_items(question: Dict[str, Any]) -> Tuple[List[str], List[str]]:
+    """Return (item_labels, scale_labels) for a grid/scale-matrix question.
+
+    Returns ([], []) for every flat question — plain selects, open ends,
+    rankings and so on — so callers can keep their existing single-column
+    behaviour for anything that is not a grid.
+
+    The split is derived from the question's stored schema (``config.rows`` /
+    ``config.columns`` and friends) via _GRID_AXES, never from question
+    numbering or wording, so it holds for any questionnaire.
+    """
+    config = question.get("config") or {}
+    if not isinstance(config, dict):
+        return [], []
+
+    canonical = normalize_question_type(
+        question.get("question_type"), question.get("options"), config
+    )
+    axes = _GRID_AXES.get(canonical)
+    if not axes:
+        return [], []
+
+    items_key, scale_key = axes
+
+    items = _labels_from_config(config, items_key)
+    if not items:
+        # Questions authored through the modal store the item axis under both
+        # `rows` and `options` (the codec's `optionsFrom`), but LLM-generated
+        # and uploaded questionnaires often only fill `options`.
+        items, _ = normalize_option_schema(question.get("options") or [])
+
+    scale = _labels_from_config(config, scale_key)
+    if not scale and canonical in {"rating_scale", "matrix_rating"}:
+        scale_cfg = config.get("scale")
+        if isinstance(scale_cfg, dict):
+            scale = [str(x).strip() for x in (scale_cfg.get("labels") or []) if str(x).strip()]
+    if not scale and canonical == "star_rating":
+        try:
+            max_stars = int(config.get("max_stars") or 5)
+        except (TypeError, ValueError):
+            max_stars = 5
+        scale = [f"{i} star{'s' if i != 1 else ''}" for i in range(1, max_stars + 1)]
+
+    if not items or not scale:
+        return [], []
+
+    # A degenerate config (the item axis copied into the scale axis by
+    # _default_config when the author never supplied a real scale) would make
+    # every respondent's "answer" one of the statements — the exact bug this
+    # split exists to prevent. Fall back to flat handling instead.
+    if [_norm_axis(x) for x in items] == [_norm_axis(x) for x in scale]:
+        return [], []
+
+    return items, scale
+
+
+def _norm_axis(s: str) -> str:
+    return re.sub(r"\s+", " ", str(s or "").strip().lower())
+
+
+def is_grid_question(question: Dict[str, Any]) -> bool:
+    items, scale = question_grid_items(question)
+    return bool(items and scale)
+
+
+def grid_item_allows_multiple(question: Dict[str, Any]) -> bool:
+    """True when one grid item can carry several responses at once."""
+    canonical = normalize_question_type(
+        question.get("question_type"), question.get("options"), question.get("config") or {}
+    )
+    return canonical in _MULTI_RESPONSE_GRID_TYPES
 
 
 # ---------------------------------------------------------------------------
