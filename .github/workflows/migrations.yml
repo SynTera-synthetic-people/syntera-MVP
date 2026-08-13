@@ -73,10 +73,17 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: backend/requirements.txt
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
 
+      # requirements-dev.txt starts with `-r requirements.txt`, so this
+      # installs the runtime dependencies as well as pytest. requirements.txt
+      # alone has no test tooling — that is what produced `pytest: command not
+      # found` (exit 127) — and pytest is kept out of it so it never ships
+      # inside the production image the Dockerfile builds.
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r requirements-dev.txt
 
       # The gate that matters most: this is the production creation procedure.
       - name: Migration test suite
