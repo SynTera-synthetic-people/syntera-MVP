@@ -42,11 +42,17 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import pathlib
 import re
+import sys
 from typing import Any
 
 import psycopg2
 import psycopg2.extras
+
+# See the equivalent note in schema_inventory.py.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 DEFAULT_SCHEMAS = ("public", "sync_action", "sync_survey", "sync_source")
 SKIP_TABLES = {"alembic_version"}
@@ -205,6 +211,112 @@ def build(url: str, schemas: tuple[str, ...]) -> dict[str, Any]:
             continue
         indexes.append(r["definition"])
 
+    # ---- sequences -------------------------------------------------------
+    # Must be created BEFORE the tables that reference them: a serial column
+    # carries DEFAULT nextval('seq'::regclass), and PostgreSQL resolves that
+    # regclass cast at CREATE TABLE time. Without this, creating public.studies
+    # fails with 'relation "studies_id_seq" does not exist'.
+    seq_rows = fetch(
+        cur,
+        """
+        SELECT n.nspname AS schema, c.relname AS name,
+               format_type(s.seqtypid, NULL) AS data_type,
+               s.seqstart, s.seqincrement, s.seqmin, s.seqmax,
+               s.seqcache, s.seqcycle
+        FROM pg_sequence s
+        JOIN pg_class c     ON c.oid = s.seqrelid
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = ANY(%s)
+        ORDER BY 1, 2
+        """,
+        (schema_list,),
+    )
+    sequences: list[str] = []
+    for r in seq_rows:
+        sequences.append(
+            f"CREATE SEQUENCE {qualified(r['schema'], r['name'])} "
+            f"AS {r['data_type']} "
+            f"START WITH {r['seqstart']} "
+            f"INCREMENT BY {r['seqincrement']} "
+            f"MINVALUE {r['seqmin']} "
+            f"MAXVALUE {r['seqmax']} "
+            f"CACHE {r['seqcache']} "
+            f"{'CYCLE' if r['seqcycle'] else 'NO CYCLE'}"
+        )
+
+    # Serial columns own their sequence (pg_depend deptype 'a'), which is what
+    # makes DROP TABLE drop the sequence too. Reproduce that link after the
+    # tables exist so the ownership semantics match the source database.
+    owner_rows = fetch(
+        cur,
+        """
+        SELECT sn.nspname AS seq_schema, sc.relname AS seq_name,
+               tn.nspname AS tbl_schema, tc.relname AS tbl_name, a.attname AS col
+        FROM pg_class sc
+        JOIN pg_namespace sn ON sn.oid = sc.relnamespace
+        JOIN pg_depend d     ON d.objid = sc.oid
+                            AND d.classid = 'pg_class'::regclass
+                            AND d.deptype = 'a'
+        JOIN pg_class tc     ON tc.oid = d.refobjid
+        JOIN pg_namespace tn ON tn.oid = tc.relnamespace
+        JOIN pg_attribute a  ON a.attrelid = tc.oid AND a.attnum = d.refobjsubid
+        WHERE sc.relkind = 'S' AND sn.nspname = ANY(%s)
+        ORDER BY 1, 2
+        """,
+        (schema_list,),
+    )
+    sequence_owners = [
+        f"ALTER SEQUENCE {qualified(r['seq_schema'], r['seq_name'])} "
+        f"OWNED BY {qualified(r['tbl_schema'], r['tbl_name'])}.{q(r['col'])}"
+        for r in owner_rows
+    ]
+
+    # ---- functions -------------------------------------------------------
+    # pg_get_functiondef emits a complete CREATE OR REPLACE FUNCTION statement,
+    # including the language, volatility and dollar-quoted body. Functions
+    # owned by an extension are excluded — the extension owns their lifecycle.
+    func_rows = fetch(
+        cur,
+        """
+        SELECT n.nspname AS schema, p.proname AS name,
+               pg_get_functiondef(p.oid) AS definition
+        FROM pg_proc p
+        JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = ANY(%s)
+          AND p.prokind IN ('f', 'p')
+          AND NOT EXISTS (
+              SELECT 1 FROM pg_depend d
+              WHERE d.objid = p.oid AND d.deptype = 'e'
+          )
+        ORDER BY 1, 2
+        """,
+        (schema_list,),
+    )
+    functions = [r["definition"] for r in func_rows]
+    function_names = [
+        f"{r['schema']}.{r['name']}" for r in func_rows
+    ]
+
+    # ---- triggers --------------------------------------------------------
+    # tgisinternal excludes the triggers PostgreSQL creates to enforce foreign
+    # keys — there are 86 of those here and none of them belong in a baseline.
+    # Triggers are emitted last: they depend on both their table and their
+    # function existing.
+    trig_rows = fetch(
+        cur,
+        """
+        SELECT n.nspname AS schema, c.relname AS table, t.tgname AS name,
+               pg_get_triggerdef(t.oid) AS definition
+        FROM pg_trigger t
+        JOIN pg_class c     ON c.oid = t.tgrelid
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE NOT t.tgisinternal AND n.nspname = ANY(%s)
+        ORDER BY 1, 2, 3
+        """,
+        (schema_list,),
+    )
+    triggers = [r["definition"] for r in trig_rows if r["table"] not in SKIP_TABLES]
+
     conn.close()
 
     return {
@@ -216,17 +328,36 @@ def build(url: str, schemas: tuple[str, ...]) -> dict[str, Any]:
         "foreign_keys": foreign_keys,
         "indexes": indexes,
         "skipped_backing_indexes": skipped_backing,
+        "sequences": sequences,
+        "sequence_owners": sequence_owners,
+        "functions": functions,
+        "function_names": function_names,
+        "triggers": triggers,
     }
 
 
 def render(data: dict[str, Any], revision: str, down_revision: str | None) -> str:
     def lit(statements: list[str]) -> str:
+        """Render SQL as Python string literals.
+
+        Function bodies arrive from pg_get_functiondef() containing dollar
+        quoting ($function$), backslashes and embedded quotes, so a naive
+        triple-quote wrapper can produce a file that will not parse. Use the
+        readable triple-quoted form only when the text is provably safe for it,
+        and fall back to repr(), which escapes everything correctly.
+        """
         if not statements:
             return "()"
         out = ["("]
         for s in statements:
             body = s.strip()
-            if "\n" in body:
+            safe_for_triple_quote = (
+                "\n" in body
+                and '"""' not in body
+                and "\\" not in body
+                and not body.endswith('"')
+            )
+            if safe_for_triple_quote:
                 out.append('    """' + body + '""",')
             else:
                 out.append(f"    {body!r},")
@@ -265,7 +396,8 @@ Verify with:
 Contents: {len(data["tables"])} tables, {len(data["keys"])} keys/checks,
 {len(data["foreign_keys"])} foreign keys, {len(data["indexes"])} explicit indexes
 ({data["skipped_backing_indexes"]} constraint-backing indexes omitted — they are
-created implicitly by their constraint).
+created implicitly by their constraint), {len(data["sequences"])} sequences,
+{len(data["functions"])} functions, {len(data["triggers"])} triggers.
 
 Revision ID: {revision}
 Revises: {down_revision or ""}
@@ -283,7 +415,16 @@ depends_on: str | None = None
 
 SCHEMAS: tuple[str, ...] = {tuple(schemas)!r}
 
+# Sequences come FIRST. A serial column's default is
+# nextval('seq'::regclass), and PostgreSQL resolves that regclass cast when the
+# table is created — so the sequence must already exist or CREATE TABLE fails.
+SEQUENCES: tuple[str, ...] = {lit(data["sequences"])}
+
 CREATE_TABLES: tuple[str, ...] = {lit(data["create_tables"])}
+
+# Re-establishes the serial ownership link (pg_depend deptype 'a') that makes
+# DROP TABLE also drop the sequence. Applied after the tables exist.
+SEQUENCE_OWNERS: tuple[str, ...] = {lit(data["sequence_owners"])}
 
 # Primary keys, unique constraints and check constraints. Applied before
 # foreign keys so that every referenced key exists by the time FKs are added.
@@ -298,20 +439,37 @@ FOREIGN_KEYS: tuple[str, ...] = {lit(data["foreign_keys"])}
 # created by the constraint itself and are not repeated.
 INDEXES: tuple[str, ...] = {lit(data["indexes"])}
 
+# Complete CREATE OR REPLACE FUNCTION statements from pg_get_functiondef().
+# Emitted before triggers, which reference them.
+FUNCTIONS: tuple[str, ...] = {lit(data["functions"])}
+
+# Trigger definitions from pg_get_triggerdef(). Foreign-key enforcement
+# triggers are excluded — those are created implicitly with their constraint.
+TRIGGERS: tuple[str, ...] = {lit(data["triggers"])}
+
 # Drop order for downgrade(). CASCADE handles inter-table dependencies.
 TABLES: tuple[str, ...] = {tuple(drop_order)!r}
+FUNCTION_NAMES: tuple[str, ...] = {tuple(data["function_names"])!r}
 
 
 def upgrade() -> None:
     for schema in SCHEMAS:
         op.execute(f'CREATE SCHEMA IF NOT EXISTS "{{schema}}"')
+    for statement in SEQUENCES:
+        op.execute(statement)
     for statement in CREATE_TABLES:
+        op.execute(statement)
+    for statement in SEQUENCE_OWNERS:
         op.execute(statement)
     for statement in KEYS_AND_CHECKS:
         op.execute(statement)
     for statement in FOREIGN_KEYS:
         op.execute(statement)
     for statement in INDEXES:
+        op.execute(statement)
+    for statement in FUNCTIONS:
+        op.execute(statement)
+    for statement in TRIGGERS:
         op.execute(statement)
 
 
@@ -322,9 +480,18 @@ def downgrade() -> None:
     database would find nothing to drop and is not expected to downgrade past
     the baseline. CASCADE is required because foreign keys span tables.
     """
+    # Tables first: CASCADE takes their triggers and any sequence they own.
     for qualified_name in reversed(TABLES):
         schema, table = qualified_name.split(".", 1)
         op.execute(f'DROP TABLE IF EXISTS "{{schema}}"."{{table}}" CASCADE')
+    # Functions are not owned by any table, so they must be dropped explicitly.
+    for function_name in FUNCTION_NAMES:
+        schema, name = function_name.split(".", 1)
+        op.execute(f'DROP FUNCTION IF EXISTS "{{schema}}"."{{name}}"() CASCADE')
+    # Any sequence not owned by a dropped column still exists at this point.
+    for statement in SEQUENCES:
+        name = statement.split()[2]
+        op.execute(f"DROP SEQUENCE IF EXISTS {{name}} CASCADE")
     for schema in SCHEMAS:
         op.execute(f'DROP SCHEMA IF EXISTS "{{schema}}" CASCADE')
 '''
@@ -332,27 +499,41 @@ def downgrade() -> None:
 
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    p.add_argument("--url", required=True)
+    p.add_argument("--url", help="defaults to app.config.settings.DATABASE_URL")
     p.add_argument("--out", required=True)
     p.add_argument("--revision", default="0001_baseline")
     p.add_argument("--down-revision", default=None)
     p.add_argument("--schemas", nargs="*", default=list(DEFAULT_SCHEMAS))
     args = p.parse_args()
 
-    data = build(args.url, tuple(args.schemas))
+    # Same resolution the migration Job uses, so the baseline is generated from
+    # the database the app actually talks to.
+    from schema_inventory import resolve_url
+
+    data = build(resolve_url(args.url), tuple(args.schemas))
     text = render(data, args.revision, args.down_revision)
 
-    with open(args.out, "w", encoding="utf-8") as fh:
-        fh.write(text)
+    # `--out -` writes the revision to stdout so it can be captured across a
+    # `kubectl exec` boundary; the summary goes to stderr so it does not end up
+    # inside the generated file.
+    stream = sys.stderr if args.out == "-" else sys.stdout
+    if args.out == "-":
+        sys.stdout.write(text)
+    else:
+        with open(args.out, "w", encoding="utf-8") as fh:
+            fh.write(text)
 
-    print(f"baseline -> {args.out}")
-    print(f"  server            : {data['server_version']}")
-    print(f"  schemas           : {', '.join(data['schemas'])}")
-    print(f"  tables            : {len(data['tables'])}")
-    print(f"  keys/checks       : {len(data['keys'])}")
-    print(f"  foreign keys      : {len(data['foreign_keys'])}")
-    print(f"  explicit indexes  : {len(data['indexes'])}")
-    print(f"  backing indexes   : {data['skipped_backing_indexes']} (implicit, omitted)")
+    print(f"baseline -> {args.out}", file=stream)
+    print(f"  server            : {data['server_version']}", file=stream)
+    print(f"  schemas           : {', '.join(data['schemas'])}", file=stream)
+    print(f"  tables            : {len(data['tables'])}", file=stream)
+    print(f"  keys/checks       : {len(data['keys'])}", file=stream)
+    print(f"  foreign keys      : {len(data['foreign_keys'])}", file=stream)
+    print(f"  explicit indexes  : {len(data['indexes'])}", file=stream)
+    print(
+        f"  backing indexes   : {data['skipped_backing_indexes']} (implicit, omitted)",
+        file=stream,
+    )
     return 0
 
 

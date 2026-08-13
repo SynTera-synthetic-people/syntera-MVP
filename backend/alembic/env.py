@@ -78,7 +78,32 @@ UNMANAGED_SCHEMAS: frozenset[str] = frozenset(
 
 # Tables in the default schema that exist in the database but have no model.
 # Listed explicitly so that adding a model later is a deliberate act.
-UNMANAGED_TABLES: frozenset[str] = frozenset({"audit_log", "alembic_version"})
+#
+# These are the legacy/other-feature tables verified present on staging with no
+# SQLModel model and no DDL in app/migrations/startup.py. They hold real data,
+# so autogenerate must never propose dropping them. The generic guard in
+# include_object() below already covers any reflected table absent from
+# metadata; this list makes the known set explicit and reviewable.
+#
+# audit_log is deliberately NOT listed: it exists only in the older local
+# schema, not on staging, and is therefore not part of the baseline.
+UNMANAGED_TABLES: frozenset[str] = frozenset(
+    {
+        "alembic_version",
+        "embedded_actions",
+        "embedded_chunks",
+        "market_research_extractions",
+        "studies",
+        "test_lab_leads",
+        "test_lab_profiles",
+        "test_lab_reports",
+        "test_lab_survey_manual",
+        "test_lab_surveys",
+        "test_lab_validation_runs",
+        "test_lab_verdict",
+        "users",
+    }
+)
 
 
 def include_name(name: str | None, type_: str, parent_names: dict) -> bool:

@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import pathlib
 import re
 import sys
 from typing import Any
@@ -45,11 +46,38 @@ from typing import Any
 import psycopg2
 import psycopg2.extras
 
+# Running this as a script puts scripts/ on sys.path, not the backend root, so
+# `from app.config import ...` would fail. Add the backend root explicitly.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+
 DEFAULT_SCHEMAS = ("public", "sync_action", "sync_survey", "sync_source")
 
 # Objects whose presence is expected to differ between a stamped database and a
 # freshly built one, and which carry no schema meaning.
 IGNORED_TABLES = {"alembic_version"}
+
+
+def resolve_url(url: str | None) -> str:
+    """Fall back to the application's own configuration when --url is omitted.
+
+    Inside a Kubernetes pod this resolves DATABASE_URL through app.config,
+    which imports app.parameters and loads it from AWS SSM — the same path the
+    application and the migration Job use. That removes any chance of
+    inspecting one database while the app talks to another.
+    """
+    if url:
+        return url
+    from app.config import settings  # imported lazily: needs app deps present
+
+    # These tools talk to psycopg2 directly, which rejects SQLAlchemy's
+    # "+driver" suffix, so normalise to a plain libpq DSN.
+    resolved = re.sub(r"\+\w+://", "://", settings.DATABASE_URL)
+    resolved = re.sub(r"([?&])ssl=require\b", r"\1sslmode=require", resolved)
+    print(
+        f"# resolved DATABASE_URL from app.config -> {resolved.split('@')[-1]}",
+        file=sys.stderr,
+    )
+    return resolved
 
 
 # ---------------------------------------------------------------------------
@@ -229,15 +257,121 @@ def snapshot(url: str, schemas: tuple[str, ...], with_rows: bool = False) -> dic
         indexes[key] = definition
 
     # ---- sequences -------------------------------------------------------
+    # Parameters, not just names: a sequence with the wrong increment or start
+    # value is a real difference, and a serial column silently losing its
+    # ownership link changes what DROP TABLE does.
     cur.execute(
         """
-        SELECT sequence_schema || '.' || sequence_name AS name
-        FROM information_schema.sequences
-        WHERE sequence_schema = ANY(%s) ORDER BY 1
+        SELECT n.nspname || '.' || c.relname AS name,
+               format_type(s.seqtypid, NULL) AS data_type,
+               s.seqstart, s.seqincrement, s.seqmin, s.seqmax, s.seqcycle
+        FROM pg_sequence s
+        JOIN pg_class c     ON c.oid = s.seqrelid
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = ANY(%s)
+        ORDER BY 1
         """,
         (schema_list,),
     )
-    sequences = [r["name"] for r in cur.fetchall()]
+    sequences = {
+        r["name"]: {
+            "type": r["data_type"],
+            "start": int(r["seqstart"]),
+            "increment": int(r["seqincrement"]),
+            "min": int(r["seqmin"]),
+            "max": int(r["seqmax"]),
+            "cycle": bool(r["seqcycle"]),
+        }
+        for r in cur.fetchall()
+    }
+
+    cur.execute(
+        """
+        SELECT sn.nspname || '.' || sc.relname AS seq,
+               tn.nspname || '.' || tc.relname || '.' || a.attname AS owner
+        FROM pg_class sc
+        JOIN pg_namespace sn ON sn.oid = sc.relnamespace
+        JOIN pg_depend d     ON d.objid = sc.oid
+                            AND d.classid = 'pg_class'::regclass
+                            AND d.deptype = 'a'
+        JOIN pg_class tc     ON tc.oid = d.refobjid
+        JOIN pg_namespace tn ON tn.oid = tc.relnamespace
+        JOIN pg_attribute a  ON a.attrelid = tc.oid AND a.attnum = d.refobjsubid
+        WHERE sc.relkind = 'S' AND sn.nspname = ANY(%s)
+        """,
+        (schema_list,),
+    )
+    for r in cur.fetchall():
+        if r["seq"] in sequences:
+            sequences[r["seq"]]["owned_by"] = r["owner"]
+
+    # ---- functions -------------------------------------------------------
+    # Extension-owned functions are excluded: the extension owns their
+    # lifecycle, and they are not part of this schema's definition.
+    cur.execute(
+        """
+        SELECT n.nspname || '.' || p.proname AS name,
+               pg_get_functiondef(p.oid) AS definition
+        FROM pg_proc p
+        JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = ANY(%s)
+          AND p.prokind IN ('f', 'p')
+          AND NOT EXISTS (
+              SELECT 1 FROM pg_depend d WHERE d.objid = p.oid AND d.deptype = 'e'
+          )
+        ORDER BY 1
+        """,
+        (schema_list,),
+    )
+    functions = {r["name"]: _norm(r["definition"]) for r in cur.fetchall()}
+
+    # ---- triggers --------------------------------------------------------
+    # tgisinternal excludes foreign-key enforcement triggers, which are created
+    # implicitly by their constraint and already compared as constraints.
+    cur.execute(
+        """
+        SELECT n.nspname || '.' || c.relname || '.' || t.tgname AS name,
+               pg_get_triggerdef(t.oid) AS definition
+        FROM pg_trigger t
+        JOIN pg_class c     ON c.oid = t.tgrelid
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE NOT t.tgisinternal AND n.nspname = ANY(%s)
+        ORDER BY 1
+        """,
+        (schema_list,),
+    )
+    triggers = {r["name"]: _norm(r["definition"]) for r in cur.fetchall()}
+
+    # ---- extensions ------------------------------------------------------
+    # An index or default that depends on a missing extension fails at CREATE
+    # time, so a difference here is worth surfacing even though the baseline
+    # does not currently install extensions.
+    cur.execute(
+        "SELECT extname FROM pg_extension WHERE extname <> 'plpgsql' ORDER BY 1"
+    )
+    extensions = [r["extname"] for r in cur.fetchall()]
+
+    # ---- views -----------------------------------------------------------
+    cur.execute(
+        """
+        SELECT table_schema || '.' || table_name AS name, view_definition AS definition
+        FROM information_schema.views
+        WHERE table_schema = ANY(%s)
+        ORDER BY 1
+        """,
+        (schema_list,),
+    )
+    views = {r["name"]: _norm(r["definition"]) for r in cur.fetchall()}
+
+    cur.execute(
+        """
+        SELECT schemaname || '.' || matviewname AS name, definition
+        FROM pg_matviews WHERE schemaname = ANY(%s) ORDER BY 1
+        """,
+        (schema_list,),
+    )
+    for r in cur.fetchall():
+        views[r["name"]] = _norm(r["definition"])
 
     # ---- enums -----------------------------------------------------------
     cur.execute(
@@ -273,6 +407,10 @@ def snapshot(url: str, schemas: tuple[str, ...], with_rows: bool = False) -> dic
         "indexes": indexes,
         "sequences": sequences,
         "enums": enums,
+        "functions": functions,
+        "triggers": triggers,
+        "views": views,
+        "extensions": extensions,
         "row_counts": row_counts,
     }
 
@@ -329,8 +467,42 @@ def compare(
     _compare_maps(diff, "COLUMN", base["columns"], cand["columns"])
     _compare_maps(diff, "CONSTRAINT", base["constraints"], cand["constraints"])
     _compare_maps(diff, "INDEX", base["indexes"], cand["indexes"])
-    _compare_sets(diff, "SEQUENCE", set(base["sequences"]), set(cand["sequences"]))
     _compare_maps(diff, "ENUM", base["enums"], cand["enums"])
+
+    # Sequences were once recorded as a bare list of names. Compare richly when
+    # both sides carry the newer dict form, and fall back to a name-only
+    # comparison so snapshots taken before this change still work — with a
+    # warning, because a name-only match is weaker evidence.
+    b_seq, c_seq = base["sequences"], cand["sequences"]
+    if isinstance(b_seq, dict) and isinstance(c_seq, dict):
+        _compare_maps(diff, "SEQUENCE", b_seq, c_seq)
+    else:
+        print(
+            "NOTE: one snapshot predates sequence-parameter capture; comparing "
+            "sequence NAMES only. Re-take the snapshot for full coverage."
+        )
+        _compare_sets(diff, "SEQUENCE", set(b_seq), set(c_seq))
+
+    # Object classes added after the first snapshots were taken. A snapshot
+    # that lacks the key is reported as unverified rather than silently passing
+    # — absence of data is not evidence of absence of the object.
+    for key, label in (
+        ("functions", "FUNCTION"),
+        ("triggers", "TRIGGER"),
+        ("views", "VIEW"),
+    ):
+        if key not in base or key not in cand:
+            print(
+                f"NOTE: {label} comparison skipped — one snapshot predates "
+                f"{key} capture. Re-take it to verify this object class."
+            )
+            continue
+        _compare_maps(diff, label, base[key], cand[key])
+
+    if "extensions" in base and "extensions" in cand:
+        _compare_sets(
+            diff, "EXTENSION", set(base["extensions"]), set(cand["extensions"])
+        )
 
     if rows_must_not_shrink and base.get("row_counts"):
         for table, before in sorted(base["row_counts"].items()):
@@ -392,7 +564,11 @@ def report(diff: Diff, strict_additions: bool) -> int:
 # ---------------------------------------------------------------------------
 def _load(path: str | None, url: str | None, schemas, with_rows: bool) -> dict:
     if path:
-        with open(path, encoding="utf-8") as fh:
+        # utf-8-sig tolerates the BOM that PowerShell's Out-File writes; it is
+        # a no-op on normal UTF-8.
+        if path == "-":
+            return json.loads(sys.stdin.buffer.read().decode("utf-8-sig"))
+        with open(path, encoding="utf-8-sig") as fh:
             return json.load(fh)
     if url:
         return snapshot(url, schemas, with_rows)
@@ -406,8 +582,8 @@ def main() -> int:
     common = dict(nargs="*", default=list(DEFAULT_SCHEMAS))
 
     s = sub.add_parser("snapshot", help="write a structural snapshot to JSON")
-    s.add_argument("--url", required=True)
-    s.add_argument("--out", required=True)
+    s.add_argument("--url", help="defaults to app.config.settings.DATABASE_URL")
+    s.add_argument("--out", required=True, help="file path, or - for stdout")
     s.add_argument("--schemas", **common)
     s.add_argument("--rows", action="store_true", help="include exact row counts")
 
@@ -428,7 +604,20 @@ def main() -> int:
     args = p.parse_args()
 
     if args.cmd == "snapshot":
-        data = snapshot(args.url, tuple(args.schemas), args.rows)
+        data = snapshot(resolve_url(args.url), tuple(args.schemas), args.rows)
+
+        if args.out == "-":
+            # Machine-readable on stdout so it can be piped or captured from
+            # `kubectl logs`; the human summary goes to stderr.
+            json.dump(data, sys.stdout, indent=2, sort_keys=True)
+            sys.stdout.write("\n")
+            print(
+                f"# tables={len(data['tables'])} columns={len(data['columns'])} "
+                f"indexes={len(data['indexes'])} constraints={len(data['constraints'])}",
+                file=sys.stderr,
+            )
+            return 0
+
         with open(args.out, "w", encoding="utf-8") as fh:
             json.dump(data, fh, indent=2, sort_keys=True)
         print(
@@ -437,7 +626,12 @@ def main() -> int:
             f"  tables   : {len(data['tables'])}\n"
             f"  columns  : {len(data['columns'])}\n"
             f"  indexes  : {len(data['indexes'])}\n"
-            f"  constrts : {len(data['constraints'])}"
+            f"  constrts : {len(data['constraints'])}\n"
+            f"  sequences: {len(data['sequences'])}\n"
+            f"  functions: {len(data['functions'])}\n"
+            f"  triggers : {len(data['triggers'])}\n"
+            f"  views    : {len(data['views'])}\n"
+            f"  extensns : {len(data['extensions'])}"
         )
         if args.rows:
             print(f"  rows     : {sum(data['row_counts'].values())} across all tables")
@@ -446,6 +640,13 @@ def main() -> int:
     schemas = tuple(args.schemas)
     base = _load(args.baseline, args.baseline_url, schemas, args.rows)
     cand = _load(args.candidate, args.candidate_url, schemas, args.rows)
+    if base.get("server_version") != cand.get("server_version"):
+        print(
+            f"NOTE: PostgreSQL versions differ "
+            f"(baseline {base.get('server_version')} vs candidate "
+            f"{cand.get('server_version')}). Rendering differences are more "
+            f"likely; genuine losses and changes are still reported normally."
+        )
     diff = compare(base, cand, args.rows_must_not_shrink)
     return report(diff, args.strict)
 

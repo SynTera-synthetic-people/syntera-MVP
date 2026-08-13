@@ -3,7 +3,7 @@
 app/migrations/startup.py:ensure_foreign_key() adds every constraint with
 NOT VALID (startup.py:267) to avoid the full-table scan that validation
 requires. That is a sound lock-avoidance technique, but nothing in the codebase
-ever ran VALIDATE CONSTRAINT afterwards, so 12 foreign keys have been sitting
+ever ran VALIDATE CONSTRAINT afterwards, so 15 foreign keys have been sitting
 unvalidated indefinitely.
 
 An unvalidated constraint still enforces on new rows, but PostgreSQL has never
@@ -55,9 +55,12 @@ NOT_VALID_FOREIGN_KEYS: tuple[tuple[str, str, str], ...] = (
     ("public", "dp_dataset", "fk_dpd_exploration_id"),
     ("public", "dp_dataset", "fk_dpd_workspace_id"),
     ("public", "dp_variable", "fk_dpv_dataset_id"),
+    ("public", "explorations", "fk_explorations_deleted_by"),
+    ("public", "explorations", "fk_explorations_updated_by"),
     ("public", "interview", "interview_persona_id_fkey"),
     ("public", "persona_artifact_response", "persona_artifact_response_persona_id_fkey"),
     ("public", "research_objectives_file", "fk_research_objectives_file_exploration_id"),
+    ("public", "user", "fk_user_deleted_by"),
 )
 
 

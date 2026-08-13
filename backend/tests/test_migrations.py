@@ -23,13 +23,36 @@ BACKEND = pathlib.Path(__file__).resolve().parent.parent
 
 # Objects the current schema is known to contain. These numbers are the point:
 # a change to any of them must be a deliberate, reviewed act, not a surprise.
+#
+# Sourced from the verified staging snapshot (PostgreSQL 16.14): 62 tables,
+# 732 columns, 207 indexes, 151 constraints, 86 foreign keys, 1 sequence,
+# 1 function, 1 trigger. Staging — not local — is the reference, because
+# production is built from the staging-derived baseline.
 EXPECTED_SCHEMAS = {"public", "sync_action", "sync_survey", "sync_source"}
-EXPECTED_TABLE_COUNT = 51
+EXPECTED_TABLE_COUNT = 62
 
 # Tables present in the database with no SQLModel model. They are easy to lose
 # to an unreviewed autogenerate, so they are asserted by name.
+#
+# public.audit_log is deliberately absent: it exists only in the older local
+# schema and is not present on staging, so it is not part of the baseline.
 UNMODELLED_TABLES = {
-    "public.audit_log",
+    # Legacy/other-feature tables that exist on staging with no model and no
+    # DDL anywhere in app/migrations/startup.py. They hold real staging data
+    # (296 rows at time of verification), so the baseline must preserve them.
+    "public.embedded_actions",
+    "public.embedded_chunks",
+    "public.market_research_extractions",
+    "public.studies",
+    "public.test_lab_leads",
+    "public.test_lab_profiles",
+    "public.test_lab_reports",
+    "public.test_lab_survey_manual",
+    "public.test_lab_surveys",
+    "public.test_lab_validation_runs",
+    "public.test_lab_verdict",
+    "public.users",
+    # syncdb evidence/sourcebank layer — raw SQL only, no SQLModel models.
     "sync_action.dataset",
     "sync_action.record",
     "sync_source.content_chunk",
