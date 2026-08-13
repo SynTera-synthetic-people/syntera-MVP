@@ -1,0 +1,108 @@
+# Production database migration Job.
+#
+# A committed overlay rather than a `sed` pipeline, because the two values that
+# distinguish production from staging — SSM_PATH and namespace — are exactly the
+# two you must not get wrong under time pressure.
+#
+# WHAT MAKES THIS PRODUCTION:
+#   SSM_PATH   /app/platform/                (staging uses /app/staging/)
+#   namespace  syntera-prod                  (staging uses syntera-mvp)
+#   ECR repo   syntera-platfrom-backend      (staging uses synth-backend)
+#
+# The production ECR repository name really is spelled "platfrom". That is the
+# actual repository; correcting the spelling here would break the image pull.
+#
+# THE FAILURE THIS PREVENTS:
+# If a Job runs against production infrastructure while still pointing at
+# SSM_PATH=/app/staging/, it resolves STAGING's DATABASE_URL, finds staging
+# already at head, does nothing, and exits 0. A green Job, an empty production
+# database, and app pods starting against a schema that was never created.
+# Nothing downstream catches that. This file exists so that path is never typed
+# by hand.
+#
+# The placeholders are deliberately UPPERCASE: they are invalid RFC-1123
+# namespace names and invalid image references, so an unsubstituted placeholder
+# is rejected by kubectl outright rather than silently targeting something real.
+#
+# PREREQUISITE — this Job cannot work until the branch that builds the image
+# actually contains Alembic. As of this writing the `production` branch has no
+# alembic/ directory and no alembic.ini, and app/main.py calls
+# run_startup_migrations() unconditionally. Building this image from that
+# branch produces a container where `alembic upgrade head` does not run at all.
+#
+# USAGE — substitute the image, then verify before applying:
+#
+#   IMG=175337843263.dkr.ecr.ap-south-1.amazonaws.com/syntera-platfrom-backend:<git-sha>
+#
+#   sed "s|MIGRATION_IMAGE_PLACEHOLDER|$IMG|" \
+#       k8sdeployment/migrate-job.production.yaml > /tmp/prod-migrate-job.yaml
+#
+#   grep -E 'namespace:|SSM_PATH|image:' -A1 /tmp/prod-migrate-job.yaml
+#   kubectl config current-context          # confirm the production cluster
+#
+#   JOB=$(kubectl create -f /tmp/prod-migrate-job.yaml -n syntera-prod -o name)
+#   kubectl logs -f "$JOB" -n syntera-prod
+#
+# Use an immutable tag (git sha), never :latest. With :latest you cannot tell
+# which code produced a schema, and `kubectl rollout undo` re-pulls the same
+# moving tag — so rollback silently does nothing.
+#
+# In the log, the FIRST line is the gate:
+#   migrations: target=<host>:5432/<db>
+# Confirm that host is production RDS before anything else. If it is staging,
+# the Job has already connected to the wrong database — stop and fix SSM_PATH.
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: synth-migrate-prod-
+  namespace: syntera-prod
+  labels:
+    app: synth-backend
+    component: migration
+    environment: production
+spec:
+  # Never blind-retry a migration against production. A failure means a human
+  # reads the log before the second attempt.
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  # Generous ceiling: on an empty database the baseline completes in well under
+  # a second. Anything approaching this is a lock wait, not real work.
+  activeDeadlineSeconds: 900
+  template:
+    metadata:
+      labels:
+        app: synth-backend
+        component: migration
+        environment: production
+    spec:
+      restartPolicy: Never
+      # Must exist IN THE PRODUCTION NAMESPACE, with IRSA granting
+      # ssm:GetParametersByPath on /app/platform/* — a staging-scoped IAM
+      # policy will not cover this path.
+      serviceAccountName: ssm-reader
+      containers:
+        - name: migrate
+          image: MIGRATION_IMAGE_PLACEHOLDER
+          # No `||` fallback. The exit code is the deployment gate.
+          # Runs 0001_baseline (creates the full schema) then 0002_validate_fks.
+          command: ["alembic", "upgrade", "head"]
+          env:
+            - name: AWS_REGION
+              value: ap-south-1
+            # ---- THE PRODUCTION DIFFERENCE ----
+            - name: SSM_PATH
+              value: "/app/platform/"
+            # Fail fast rather than queue behind another session while holding
+            # ACCESS EXCLUSIVE locks.
+            - name: MIGRATION_LOCK_TIMEOUT
+              value: "10s"
+            - name: MIGRATION_STATEMENT_TIMEOUT
+              value: "600s"
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 2Gi

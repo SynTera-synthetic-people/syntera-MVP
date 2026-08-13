@@ -11,6 +11,12 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+asyncpg://synth_user:synth_pass@localhost:5432/synthdb"
+    # Legacy startup migrations (app/migrations/startup.py). Alembic is the
+    # source of schema truth; this exists only as an emergency fallback during
+    # the cutover and is removed once app/migrations/startup.py is deleted.
+    # Never enable it in production — production's schema must come entirely
+    # from the Alembic revision chain.
+    RUN_STARTUP_MIGRATIONS: bool = False
     # Set SQLALCHEMY_ECHO=true in .env only when debugging SQL (echo=True is very slow)
     SQLALCHEMY_ECHO: bool = False
     JWT_SECRET: str
