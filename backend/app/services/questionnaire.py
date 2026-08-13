@@ -28,6 +28,7 @@ from pathlib import Path
 from uuid import uuid4
 import aiofiles
 import mimetypes
+from app.services.llm_usage_tracker import record_llm_usage, extract_usage_openai_chat
 
 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 logger = logging.getLogger(__name__)
@@ -183,7 +184,7 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
     • Minimum: 4 questions per section (mandatory) 
     • Target: 4-6 questions per section (recommended) 
     • Maximum: 8 questions per section (avoid survey fatigue) 
-    • No exceptions — all sections including S1 Population Characteristics must have minimum 4 questions
+    • No exceptions — all sections including S1 Sample Characteristics must have minimum 4 questions
     TOTAL QUESTIONS BY COMPLEXITY: 
     • Simple objectives (3-5 sections): 12-30 questions total 
     • Moderate objectives (5-8 sections): 20-48 questions total 
@@ -1105,7 +1106,7 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
 
     Apply this gold-standard funnel (sections may be reordered based on flow logic, but generally follow safe-to-vulnerable, concrete-to-abstract progression):
 
-    S1: Population Characteristics
+    S1: Sample Characteristics
         Qualify respondents. Confirm eligibility.
         Primarily S questions. Tagged for demographic and behavioral qualification.
 
@@ -1267,8 +1268,11 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
     • Complex objectives (6-8 themes) → 7-10 sections
 
     MANDATORY SECTIONS (always include):
-    • S1: Population Characteristics (Theme: Contextual Framing)
-    • S_DEMO: Demographics &amp; Classification (final section)
+    • S1: Sample Characteristics (Theme: Contextual Framing)
+    • S_DEMO: final section, Theme: Contextual Framing. Its "title" MUST be the exact
+      literal string "Sample Profile" — do not rename, paraphrase, or invent an
+      alternative (e.g. "My Profile", "About You", "Demographics & Classification").
+      This is the one section exempt from the "make titles objective-specific" rule below.
 
     THEMATIC SECTIONS (create one section per relevant theme from Step 3):
     • If Behavioral Patterns is relevant → create dedicated Behavioral Patterns section 
@@ -1288,7 +1292,7 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
     • Target 4-6 questions per section for optimal coverage
 
     MANDATORY QUESTION ALLOCATION: 
-    • S1 Population Characteristics: 4-6 questions (qualification + context setting)
+    • S1 Sample Characteristics: 4-6 questions (qualification + context setting)
     • S_DEMO
 
     Demographics: 4-6 questions (standard demographics) 
@@ -1379,10 +1383,10 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
         - Complex objectives (6-8 themes): 7-10 sections generated
     □ Each relevant theme from Step 3 has a dedicated section
     □ No more than 2 sections share the same section_theme value
-    □ Minimum section count: at least 3 sections (Population Characteristics, Core, Demographics)
+    □ Minimum section count: at least 3 sections (Sample Characteristics, Core, Demographics)
     
     QUESTION COUNT PER SECTION (MANDATORY)
-    □ Every section has MINIMUM 4 questions — NO exceptions, including S1 Population Characteristics
+    □ Every section has MINIMUM 4 questions — NO exceptions, including S1 Sample Characteristics
     □ Every thematic section has at least 3 S/M questions 
         - Ensures statistical validity - Prevents OE-only sections
     □ No section exceeds 8 questions - Prevents respondent overload in single theme
@@ -1475,6 +1479,8 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
     research objective stated at the top of this prompt:
     "$res_desc"
     Generate section names that are SPECIFIC to that research objective — not generic labels.
+    EXCEPTION: the final S_DEMO section's title is NOT objective-specific — it MUST always be
+    the exact literal string "Sample Profile", verbatim, regardless of research objective.
 
     NOTE: This template shows the REQUIRED question density. ALL sections including S1 must have 4-6 questions.
     Replicate the S2 pattern for every section — no section may have fewer than 4 questions.
@@ -1484,7 +1490,7 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
     {
       "section_id": "S1",
       "section_theme": "Contextual Framing",
-      "title": "Population Characteristics",
+      "title": "Sample Characteristics",
       "questions": [
         {
           "question_id": "Q1",
@@ -1613,9 +1619,9 @@ async def build_questionnaire_prompt(objective, personas_list, population, explo
       "questions": [ "*** GENERATE 4-6 QUESTIONS FOLLOWING THE S2 PATTERN ABOVE ***" ]
     },
     {
-      "section_id": "S7",
+      "section_id": "S_DEMO",
       "section_theme": "Contextual Framing",
-      "title": "Demographics & Classification",
+      "title": "Sample Profile",
       "questions": [ "*** GENERATE 4-6 QUESTIONS FOLLOWING THE S2 PATTERN ABOVE ***" ]
     }
   ]
@@ -1656,14 +1662,34 @@ async def generate_questionnaire(objective, personas_list, population, explorati
             ]
         )
     except Exception as e:
+        await record_llm_usage(
+            exploration_id=exploration_id,
+            stage="questionnaire_generation",
+            provider="openai",
+            model="gpt-4o",
+            input_tokens=0,
+            output_tokens=0,
+            status="error",
+            error_message=str(e),
+        )
         return None, f"LLM Error: {str(e)}"
 
     raw = res.choices[0].message.content
 
-    # DEBUG: log token usage and question counts per section
-    usage = res.usage
+    input_tokens, output_tokens, usage_raw = extract_usage_openai_chat(res)
+    await record_llm_usage(
+        exploration_id=exploration_id,
+        stage="questionnaire_generation",
+        provider="openai",
+        model="gpt-4o",
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        usage_raw=usage_raw,
+    )
+
+    # DEBUG: log question counts per section (token usage now persisted via record_llm_usage above)
     finish_reason = res.choices[0].finish_reason
-    print(f"[DEBUG] finish_reason={finish_reason} | prompt_tokens={usage.prompt_tokens} | completion_tokens={usage.completion_tokens} | total_tokens={usage.total_tokens}")
+    print(f"[DEBUG] finish_reason={finish_reason}")
     try:
         _debug_data = json.loads(raw)
         for _sec in _debug_data.get("sections", []):
@@ -1675,7 +1701,7 @@ async def generate_questionnaire(objective, personas_list, population, explorati
         data = json.loads(raw)
         sections = data.get("sections", [])
         if sections:
-            sections[0]["title"] = "Population Characteristics"
+            sections[0]["title"] = "Sample Characteristics"
         return data, None
     except:
         return None, "Invalid JSON from LLM"
@@ -2155,6 +2181,7 @@ async def create_question(
             config=config or {},
             question_key=question_key,
             order_index=order_index,
+            strict=True,
         )
 
         q = QuestionnaireQuestion(
@@ -2208,6 +2235,10 @@ async def update_question(
             config=config if config is not None else (q.config or {}),
             question_key=question_key or q.question_key,
             order_index=order_index if order_index is not None else q.order_index,
+            # Validate what the caller sent, not what is already stored. Rows
+            # written before the type catalog was enforced would otherwise be
+            # uneditable — the user could never correct them through the UI.
+            strict=bool(question_type),
         )
 
         q.question_key = q_payload["question_key"]
@@ -2249,6 +2280,8 @@ async def delete_question(qid: str, workspace_id: str, exploration_id: str):
 
 
 async def validate_question_payload(payload: dict):
+    # Mirrors create_question/update_question so a dry run and the real write
+    # agree on what is acceptable.
     q_payload = build_question_payload(
         text=payload.get("text", ""),
         options=payload.get("options", []),
@@ -2256,6 +2289,7 @@ async def validate_question_payload(payload: dict):
         config=payload.get("config") or {},
         question_key=payload.get("question_key"),
         order_index=payload.get("order_index"),
+        strict=True,
     )
     return {"valid": True, "question": q_payload, "question_types": get_question_type_catalog()}
 

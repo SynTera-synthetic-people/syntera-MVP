@@ -1,0 +1,108 @@
+# Migration validation.
+#
+# Deliberately a SEPARATE workflow from staging.yml so that a problem here can
+# never break a deploy pipeline, and so it can run on pull requests before
+# anything is merged.
+#
+# NOTE ON RUNNERS: this uses a GitHub-hosted runner because `services:`
+# requires Docker. The other workflows in this repo use self-hosted runners; if
+# GitHub-hosted runners are not available to this org, change `runs-on` to your
+# self-hosted label and make sure Docker is installed there, or point
+# MIGRATION_TEST_ADMIN_URL at a reachable throwaway PostgreSQL server instead.
+#
+# Match the PostgreSQL major version to what staging and production actually
+# run. Local development is on 18.1; docker-compose.yml pins 15. Verify the
+# deployed version with `SELECT version()` and set it here — testing migrations
+# against a different major version than production is a real source of
+# surprises.
+
+name: Validate database migrations
+
+on:
+  pull_request:
+    paths:
+      - "backend/alembic/**"
+      - "backend/app/models/**"
+      - "backend/app/db.py"
+      - "backend/scripts/schema_inventory.py"
+      - "backend/scripts/generate_baseline.py"
+      - "backend/tests/**"
+      - ".github/workflows/migrations.yml"
+  workflow_dispatch:
+
+jobs:
+  migrations:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: synth_user
+          POSTGRES_PASSWORD: synth_pass
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    defaults:
+      run:
+        working-directory: backend
+
+    env:
+      MIGRATION_TEST_ADMIN_URL: postgresql://synth_user:synth_pass@localhost:5432/postgres
+      # alembic/env.py imports app.config, which requires these. Values are
+      # irrelevant to migrations.
+      JWT_SECRET: ci-only
+      MAIL_USERNAME: ci
+      MAIL_PASSWORD: ci
+      MAIL_FROM: ci@example.com
+      MAIL_SERVER: localhost
+      SUPERADMIN_NAME: ci
+      SUPERADMIN_EMAIL: ci@example.com
+      SUPERADMIN_PASSWORD: ci
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+
+      # requirements-dev.txt starts with `-r requirements.txt`, so this
+      # installs the runtime dependencies as well as pytest. requirements.txt
+      # alone has no test tooling — that is what produced `pytest: command not
+      # found` (exit 127) — and pytest is kept out of it so it never ships
+      # inside the production image the Dockerfile builds.
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      # The gate that matters most: this is the production creation procedure.
+      - name: Migration test suite
+        run: pytest tests/test_migrations.py -v
+
+      # Renders the DDL a release would execute, so a reviewer can read the SQL
+      # rather than the Python that generates it.
+      - name: Render offline SQL for review
+        run: |
+          python -m alembic \
+            -x db_url=postgresql://synth_user:synth_pass@localhost:5432/postgres \
+            upgrade head --sql > /tmp/migration.sql
+          echo "### Migration SQL" >> $GITHUB_STEP_SUMMARY
+          echo '```sql' >> $GITHUB_STEP_SUMMARY
+          head -c 60000 /tmp/migration.sql >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload rendered SQL
+        uses: actions/upload-artifact@v4
+        with:
+          name: migration-sql
+          path: /tmp/migration.sql

@@ -1,10 +1,13 @@
+import asyncio
+import json
 import logging
 import time
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status, Query
 from fastapi.responses import JSONResponse
-from typing import List
+from starlette.concurrency import run_in_threadpool
+from typing import List, Optional
 from app.schemas.persona import (
     PersonaCreate, PersonaOut, PersonaUpdate, PersonaPreview,
     PersonaBackstoryIn, PersonaReplicateRequest, PersonaBulkDownloadRequest,
@@ -15,10 +18,12 @@ from app.services import persona as persona_service
 from app.services import auto_generated_persona
 # manual_generated_persona import removed — the old one-shot GPT-5 + web-search flow
 # (manual_generated_persona.manual_persona) has been replaced by a two-phase system:
-#   Phase 1 → POST /personas/manual     → persona_service.create_manual_persona_draft()
-#   Phase 2 → POST /personas/{id}/calibrate → persona_service.calibrate_manual_persona()
-# The new calibration uses MANUAL_PERSONA_BUILDER_PROMPT (no web search, RO-alignment
-# confidence scoring, auto-fill report) defined in app/services/persona.py.
+#   Phase 1 → POST /personas/manual     → create_manual_persona_draft_with_brains()
+#   Phase 2 → POST /personas/{id}/calibrate → calibrate_manual_persona_with_brains()
+# Both now live in app/services/manual_digital_brain_persona.py — GPT-4o enrichment
+# plus a Digital Brain (primary/secondary archetype) assignment step, with
+# per-tier persona limits (free=2, tier1=8, enterprise=8) enforced inside
+# create_manual_persona_draft_with_brains() itself.
 from app.services import persona_loader_context
 from app.services import interview as interview_service
 from app.services import report_orchestrator as report_cache
@@ -51,6 +56,16 @@ from app.models.omi import WorkflowStage
 from app.services import omi as omi_service
 from app.services.exploration import get_exploration
 from app.services.persona_plausibility import evaluate_from_schema
+from app.core.rate_limit import limiter
+from app.models.persona import Persona
+from app.services.digital_brain_pipeline import digital_brain_pipeline
+from app.services.ro_extractor import extract_ro_components_for_pipeline
+from app.services.manual_digital_brain_persona import (
+    create_manual_persona_draft as create_manual_persona_draft_with_brains,
+    run_manual_calibration_background,
+)
+from app.services.ke_sourcebank_enrichment import enrich_persona_ke_sources
+from app.services.llm_usage_tracker import UsageCollector, flush_usage_events
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/explorations/{exploration_id}/personas",
@@ -98,6 +113,54 @@ def _preview_confidence_from_stored_score(persona: dict) -> dict | None:
             "stored_calibration_score": score,
         },
     }
+
+def _preview_confidence_from_evidence_snapshot(persona: dict) -> dict | None:
+    """
+    Omi/legacy personas store their per-dimension confidence breakdown under
+    evidence_snapshot.confidence_calculation_detail.components (volume_score,
+    recency_score, ro_alignment_score, signal_clarity_score, source_diversity_score)
+    rather than under confidence_scoring (the Manual Build Mode field). Without this,
+    the preview's confidence check only looks for confidence_scoring, finds nothing,
+    and falls through to _preview_confidence_from_stored_score — which synthesizes a
+    single generic "stored_calibration_score" component and discards the real
+    breakdown that's sitting right there in persona_details.
+    """
+    evidence = persona.get("evidence_snapshot") or {}
+    if isinstance(evidence, str):
+        try:
+            evidence = json.loads(evidence)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            evidence = {}
+    if not isinstance(evidence, dict):
+        return None
+
+    detail = evidence.get("confidence_calculation_detail") or {}
+    if not isinstance(detail, dict):
+        return None
+    components = detail.get("components")
+    if not isinstance(components, dict) or not components:
+        return None
+
+    weighted_score = detail.get("value") or detail.get("weighted_total")
+    try:
+        weighted_score = float(weighted_score) if weighted_score is not None else None
+    except (TypeError, ValueError):
+        weighted_score = None
+
+    score_pct = round(weighted_score * 100) if weighted_score is not None else None
+    confidence_level = detail.get("level") or (
+        "High" if (score_pct or 0) >= 80 else "Medium" if (score_pct or 0) >= 60 else "Low"
+    )
+
+    return {
+        "score": f"{score_pct}%" if score_pct is not None else None,
+        "weighted_score": weighted_score,
+        "confidence_level": confidence_level,
+        "mode": "evidence_based_confidence",
+        "note": detail.get("method") or "",
+        "components": components,
+    }
+
 
 def _to_dict(maybe_obj):
     if maybe_obj is None:
@@ -246,7 +309,9 @@ async def get_persona_loader_context(
 
 
 @router.get("/auto-generate", response_model=SuccessResponse)
+@limiter.limit("10/hour")
 async def auto_generate_personas(
+    request: Request,
     workspace_id: str,
     exploration_id: str,
     current_user: User = Depends(get_current_active_user),
@@ -323,6 +388,430 @@ async def auto_generate_personas(
                 "type": e.__class__.__name__
             }
         )
+
+
+def _digital_brain_evidence_snapshot(pipeline_result: dict, overall_confidence: Any = None) -> dict:
+    depth_layers = pipeline_result.get("stage_3a_depth_layers") or []
+    eb_verdicts = pipeline_result.get("stage_3b_eb_verdicts") or []
+    hq_verdicts = pipeline_result.get("stage_3c_hq_verdicts") or []
+
+    action_real_count = sum(1 for v in depth_layers if v.get("query_reference"))
+    web_real_count = sum(
+        len(v.get("all_citations") or [])
+        for v in eb_verdicts
+        if v.get("source_note") == "real_citation_backed"
+    )
+    hq_real_count = sum(
+        1 for v in hq_verdicts
+        if (v.get("provenance_detail") or {}).get("type") == "real_hq_source"
+    )
+    real_stream_count = sum(1 for count in (action_real_count, web_real_count, hq_real_count) if count > 0)
+    real_ratio = real_stream_count / 3
+
+    try:
+        raw_confidence = float(overall_confidence)
+    except (TypeError, ValueError):
+        raw_confidence = 0.0
+    confidence_value = raw_confidence * (0.6 + 0.4 * real_ratio)
+    confidence_value = round(max(0.0, min(confidence_value, 1.0)), 2)
+
+    return {
+        "evidence_source": "digital_brain_pipeline",
+        "total_conversations": action_real_count + web_real_count + hq_real_count,
+        "sources": [
+            {
+                "platform": "Action Data",
+                "threads_or_posts": action_real_count,
+                "source_type": "Real" if action_real_count else "Estimated",
+            },
+            {
+                "platform": "Web Evidence",
+                "threads_or_posts": web_real_count,
+                "source_type": "Real" if web_real_count else "Estimated",
+            },
+            {
+                "platform": "HQ Research",
+                "threads_or_posts": hq_real_count,
+                "source_type": "Real" if hq_real_count else "Estimated",
+            },
+        ],
+        "confidence_calculation_detail": {
+            "level": "High" if confidence_value >= 0.75 else "Medium" if confidence_value >= 0.55 else "Low",
+            "value": confidence_value,
+            "weighted_total": confidence_value,
+        },
+        "timeframe": {
+            "months_analyzed": None,
+            "recent_activity": {"months": None, "percentage": None},
+        },
+        "verdict_counts": {
+            "action_data": len(depth_layers),
+            "web_evidence": len(eb_verdicts),
+            "hq_research": len(hq_verdicts),
+        },
+        "real_stream_count": real_stream_count,
+    }
+
+
+def _digital_brain_reference_sites(pipeline_result: dict) -> list[dict]:
+    refs: list[dict] = []
+    seen: set[str] = set()
+    for verdict in pipeline_result.get("stage_3b_eb_verdicts") or []:
+        platform = verdict.get("source_platform") or "Web Evidence"
+        for url in verdict.get("source_urls") or []:
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            refs.append({
+                "site": platform,
+                "url": url,
+                "usage_context": "Evidence-based web citation used by the Digital Brain pipeline.",
+            })
+    for verdict in pipeline_result.get("stage_3c_hq_verdicts") or []:
+        provenance = verdict.get("provenance_detail") or {}
+        url = provenance.get("source_url")
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        refs.append({
+            "site": verdict.get("study_reference") or "HQ Research",
+            "url": url,
+            "usage_context": "HQ source used by the Digital Brain pipeline.",
+        })
+    return refs
+
+
+def _build_web_evidence_by_platform(pipeline_result: dict) -> list[dict]:
+    """Build a grouped evidence structure for the UI's 'All Sources Used' view.
+
+    Groups web scrape citations by platform (with quote previews) and appends
+    HQ research sources as a dedicated group.  Stored in persona_details so
+    the frontend can render per-article accordion rows without re-parsing the
+    raw stage_3b/3c verdict arrays.
+
+    Each platform group shape:
+        {
+          "platform": str,
+          "total_posts": int,
+          "themes": [str, ...],
+          "sentiment": {"positive": float, "neutral": float, "negative": float},
+          "source_note": str,        # "real_citation_backed" | "estimated"
+          "is_hq": false,
+          "citations": [
+            {"url": str, "quote": str, "confidence": float},
+            ...                      # capped at 15 per platform
+          ]
+        }
+
+    HQ research group shape:
+        {
+          "platform": "HQ Research Sources",
+          "total_posts": int,        # real HQ verdicts count
+          "is_hq": true,
+          "citations": [
+            {
+              "url": str,
+              "title": str,          # study_reference text
+              "quote": str,          # finding_summary excerpt
+              "confidence": float,
+              "authority_tier": str,
+              "domain": str
+            },
+            ...
+          ]
+        }
+    """
+    _MAX_CITATIONS_PER_PLATFORM = 15
+
+    groups: list[dict] = []
+
+    for verdict in pipeline_result.get("stage_3b_eb_verdicts") or []:
+        platform = verdict.get("source_platform") or "Web Evidence"
+        raw_citations = verdict.get("all_citations") or []
+        deduplicated: list[dict] = []
+        seen_urls: set[str] = set()
+        for c in raw_citations:
+            url = c.get("url") or ""
+            if url and url not in seen_urls:
+                seen_urls.add(url)
+                deduplicated.append({
+                    "url": url,
+                    "quote": (c.get("quote") or "")[:300],
+                    "confidence": round(float(c.get("confidence") or 0), 3),
+                })
+        groups.append({
+            "platform": platform,
+            "total_posts": verdict.get("threads_analyzed") or len(deduplicated),
+            "themes": verdict.get("key_discussion_themes") or [],
+            "sentiment": verdict.get("sentiment_distribution") or {},
+            "source_note": verdict.get("source_note") or "estimated",
+            "is_hq": False,
+            "citations": deduplicated[:_MAX_CITATIONS_PER_PLATFORM],
+        })
+
+    hq_citations: list[dict] = []
+    for verdict in pipeline_result.get("stage_3c_hq_verdicts") or []:
+        provenance = verdict.get("provenance_detail") or {}
+        if provenance.get("type") not in ("real_hq_source",):
+            continue
+        hq_citations.append({
+            "url": provenance.get("source_url") or "",
+            "title": verdict.get("study_reference") or "Research Source",
+            "quote": (verdict.get("finding_summary") or "")[:300],
+            "confidence": round(float(verdict.get("confidence_score") or 0), 3),
+            "authority_tier": provenance.get("authority_tier") or "",
+            "domain": provenance.get("domain") or "",
+        })
+
+    if hq_citations:
+        groups.append({
+            "platform": "HQ Research Sources",
+            "total_posts": len(hq_citations),
+            "themes": [],
+            "sentiment": {},
+            "source_note": "real_citation_backed",
+            "is_hq": True,
+            "citations": hq_citations,
+        })
+
+    return groups
+
+
+def _persona_kwargs_from_digital_brain(
+    persona: dict,
+    workspace_id: str,
+    exploration_id: str,
+    created_by: str,
+    geography: str | None = None,
+    pipeline_result: dict | None = None,
+    validated_ro: dict | None = None,
+) -> dict:
+    """Map one stage_5_personas entry onto Persona's required columns.
+    age_range/gender/education_level/occupation/income_range are inferred
+    from action data by generate_persona() (digital_brain_pipeline.py's
+    _flatten_demographics_inference) and always non-null; "Not specified"
+    is only a defensive fallback if a field is somehow missing."""
+    layer1 = persona.get("layer_1_framework") or {}
+    layer2 = persona.get("layer_2_behavioral_dna") or {}
+    evidence = persona.get("evidence_traceability") or {}
+
+    overall_confidence = evidence.get("overall_confidence")
+    evidence_snapshot = (
+        _digital_brain_evidence_snapshot(pipeline_result, overall_confidence)
+        if pipeline_result else None
+    )
+    snapshot_confidence = (
+        evidence_snapshot.get("confidence_calculation_detail", {}).get("value")
+        if isinstance(evidence_snapshot, dict)
+        else None
+    )
+    calibration_confidence = (
+        int(round(snapshot_confidence * 100))
+        if isinstance(snapshot_confidence, (int, float))
+        else int(round(overall_confidence * 100))
+        if isinstance(overall_confidence, (int, float))
+        else None
+    )
+
+    name = persona.get("persona_title") or persona.get("persona_archetype") or "Untitled Persona"
+    contradiction = persona.get("layer_6_contradiction") or {}
+    backstory = contradiction.get("example")
+
+    # Frontend reads consumer_personas[i].name / .backstory / .geography directly
+    # from persona_details (not the saved DB columns), so mirror them in here too.
+    persona_details = {
+        **persona,
+        "name": name,
+        "backstory": backstory,
+        "geography": geography,
+    }
+    if pipeline_result and evidence_snapshot:
+        persona_details["evidence_snapshot"] = evidence_snapshot
+        persona_details["reference_sites_with_usage"] = _digital_brain_reference_sites(pipeline_result)
+        persona_details["web_evidence_by_platform"] = _build_web_evidence_by_platform(pipeline_result)
+    if validated_ro:
+        # The structured 12-component RO from Stage 1, persisted so interview.py
+        # can ground qualitative responses in the full RO, not just the
+        # free-text description.
+        persona_details["research_objective"] = validated_ro
+    if pipeline_result:
+        # Stage 3A/B/C verdicts are gathered once and shared across the whole
+        # batch of personas (unlike the manual-persona flow, where evidence is
+        # collected per persona) — interview.py reads this same "evidence" key
+        # regardless of flow, so attach the shared pool here too.
+        persona_details["evidence"] = {
+            "action_data": pipeline_result.get("stage_3a_depth_layers") or [],
+            "web_evidence": pipeline_result.get("stage_3b_eb_verdicts") or [],
+            "hq_research": pipeline_result.get("stage_3c_hq_verdicts") or [],
+        }
+    if contradiction:
+        # Normalized to the same "say_do_gap" shape used by the manual-persona
+        # flow so interview.py reads one consistent key regardless of which flow
+        # generated the persona. layer_6_contradiction uses says/does/why/example
+        # rather than the canonical names. Field aliases (stated_value,
+        # actual_behavior, hidden_driver) are included so the simulation engine
+        # can reference either naming convention without branching.
+        _says = contradiction.get("says")
+        _does = contradiction.get("does")
+        _why = contradiction.get("why")
+        persona_details["say_do_gap"] = {
+            "claim": _says,
+            "stated_value": _says,
+            "evidence_based_observation": _does,
+            "actual_behavior": _does,
+            "reasoning": _why,
+            "hidden_driver": _why,
+        }
+
+    return dict(
+        exploration_id=exploration_id,
+        workspace_id=workspace_id,
+        name=name,
+        age_range=persona.get("age_range") or "Not specified",
+        gender=persona.get("gender") or "Not specified",
+        location_country="Not specified",
+        education_level=persona.get("education_level") or "Not specified",
+        occupation=persona.get("occupation") or "Not specified",
+        income_range=persona.get("income_range") or "Not specified",
+        geography=geography,
+        personality=layer2.get("decision_making_style"),
+        values=(persona.get("layer_7_aspiration_fear") or {}).get("identity_driver"),
+        motivations=(persona.get("layer_7_aspiration_fear") or {}).get("hoped_for_self"),
+        brand_sensitivity=layer2.get("brand_relationship"),
+        price_sensitivity=layer2.get("risk_tolerance"),
+        backstory=backstory,
+        ocean_profile=layer1.get("ocean"),
+        persona_details=persona_details,
+        created_by=created_by,
+        auto_generated_persona=True,
+        calibration_confidence=calibration_confidence,
+        calibration_status="calibrated",
+    )
+
+
+@router.post("/generate/digital-brain", response_model=SuccessResponse)
+@limiter.limit("10/hour")
+async def generate_personas_digital_brain(
+    request: Request,
+    workspace_id: str,
+    exploration_id: str,
+    current_user: User = Depends(get_current_active_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Run the 5-stage Digital Brain Pipeline for this exploration's research
+    objective and persist the resulting personas."""
+    exp = await exploration_service.get_exploration(session, exploration_id)
+    if not exp:
+        raise HTTPException(status_code=404, detail="Exploration not found")
+
+    members = await ws_service.list_workspace_members(workspace_id)
+    if not any(m["user_id"] == current_user.id for m in members):
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    ro_result = await session.execute(
+        select(ResearchObjectives).where(ResearchObjectives.exploration_id == exploration_id)
+    )
+    ro = ro_result.scalars().first()
+    if not ro:
+        raise HTTPException(
+            status_code=400,
+            detail=ErrorResponse(status="error", message="Research objective not found for this exploration").dict(),
+        )
+
+    account_tier = _normalised_account_tier(current_user)
+
+    try:
+        ro_dict = await extract_ro_components_for_pipeline(
+            ro.description, ro.ai_interpretation or {},
+            exploration_id=exploration_id, workspace_id=workspace_id, created_by=current_user.id,
+        )
+    except Exception as e:
+        logger.error("Digital Brain RO extraction failed for exploration=%s: %s", exploration_id, e)
+        raise HTTPException(
+            status_code=502,
+            detail=ErrorResponse(status="error", message=f"Failed to interpret research objective: {e}").dict(),
+        )
+
+    # action_data_df left as None on purpose — digital_brain_pipeline() now
+    # fetches it internally via fetch_action_data_all() (real payload-flattened
+    # rows from the whole sync_action.record table). The old get_action_data_df()
+    # path here never unwrapped the JSONB envelope's "payload" key, so
+    # scan_action_data() silently found nothing; passing a DataFrame here would
+    # also short-circuit fetch_action_data_all() entirely (it only runs when
+    # action_data_df is None).
+    usage_collector = UsageCollector()
+    request_id = uuid.uuid4().hex
+    try:
+        result = await run_in_threadpool(
+            digital_brain_pipeline, ro_dict, None, account_tier,
+            exploration_id=exploration_id, usage_collector=usage_collector,
+        )
+    except Exception as e:
+        logger.error("Digital Brain Pipeline failed for exploration=%s: %s", exploration_id, e)
+        raise HTTPException(
+            status_code=500,
+            detail=ErrorResponse(status="error", message=f"Digital Brain Pipeline failed: {e}").dict(),
+        )
+    finally:
+        # Flush whatever LLM usage was recorded before returning/raising, so a
+        # pipeline run that fails partway through still has its token spend
+        # captured (see docs/llm_usage_tracking_plan.md, amendment 3).
+        events = usage_collector.drain()
+        await flush_usage_events(
+            events,
+            exploration_id=exploration_id,
+            workspace_id=workspace_id,
+            created_by=current_user.id,
+            request_id=request_id,
+        )
+
+    stage_5_personas = result.get("stage_5_personas", [])
+    saved_personas = []
+    for persona_data in stage_5_personas:
+        kwargs = _persona_kwargs_from_digital_brain(
+            persona_data, workspace_id, exploration_id, current_user.id,
+            geography=ro_dict.get("geography"),
+            pipeline_result=result,
+            validated_ro=ro_dict,
+        )
+        saved_personas.append(Persona(**kwargs))
+
+    for p in saved_personas:
+        session.add(p)
+    await session.commit()
+    for p in saved_personas:
+        await session.refresh(p)
+
+    # Enrich KE sources in background — runs after response is sent.
+    # ro.description is still passed as the raw-text fallback (used only if
+    # structured query generation degrades — see build_ke_search_queries() in
+    # ro_extractor.py), but ro_dict (already extracted above for the pipeline
+    # itself) is now also passed so KE queries are built from the structured
+    # category/geography/business_objective fields instead of raw RO text —
+    # this is what keeps a query anchored to e.g. "California USA" instead of
+    # silently losing that signal to truncation.
+    for p in saved_personas:
+        asyncio.create_task(
+            enrich_persona_ke_sources(
+                persona_id=p.id,
+                research_objective=ro.description or "",
+                persona_name=p.name or "",
+                exploration_id=exploration_id,
+                ro_components=ro_dict,
+            )
+        )
+
+    return SuccessResponse(
+        message="Digital Brain personas generated",
+        data={
+            "persona_ids": [p.id for p in saved_personas],
+            "personas": [
+                {"id": p.id, "name": p.name, "persona_details": p.persona_details}
+                for p in saved_personas
+            ],
+            "pipeline_metadata": result.get("pipeline_metadata"),
+        },
+    )
 
 # added dymmy
 # @router.get("/templates", response_model=SuccessResponse)
@@ -643,18 +1132,20 @@ async def create_manual_persona_draft(
     # Run plausibility checks before saving — zero DB cost, never blocks
     warnings = evaluate_from_schema(payload)
 
-    if not _is_enterprise_user(current_user):
-        raise _manual_personas_not_allowed_response()
-
-    persona_limit = _persona_limit_for(current_user, exp)
-    total_count, _ = await _count_primary_personas(session, workspace_id, exploration_id)
-    if total_count >= persona_limit:
-        raise _persona_limit_response(persona_limit)
-
-    draft = await persona_service.create_manual_persona_draft(
-        exploration_id, workspace_id, current_user.id, payload,
-        validation_warnings=warnings or None,
+    # Manual persona creation is now open to every tier — the Digital Brain
+    # service enforces tier-specific limits itself (free=2, tier1=8, enterprise=8).
+    result = await create_manual_persona_draft_with_brains(
+        exploration_id, workspace_id, current_user.id,
+        account_tier=current_user.account_tier or "free",
+        payload=payload,
     )
+    if result.get("status") == "error":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=ErrorResponse(status="error", message=result.get("error_message", "Failed to create persona draft")).dict(),
+        )
+    draft = result["persona"]
+
     # Draft traits are persona inputs; clear downstream generated qualitative data.
     await interview_service.clear_qualitative_outputs(workspace_id, exploration_id)
     await report_cache.invalidate_cache(exploration_id)
@@ -667,6 +1158,72 @@ async def create_manual_persona_draft(
             "validation_warnings": warnings,
             "has_plausibility_warnings": bool(warnings),
         },
+    )
+
+
+@router.get("/export-json")
+async def export_personas_json(
+    workspace_id: str,
+    exploration_id: str,
+    persona_ids: Optional[List[str]] = Query(default=None),
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Export personas in this exploration as a downloadable JSON file, keyed by
+    research_objective_id. Personas are already fully persisted
+    (persona.persona_details) by the generation flows, so this only reads and
+    reshapes existing data — nothing is regenerated.
+
+    Pass ?persona_ids=id1&persona_ids=id2 to export only selected personas;
+    omit it to export every persona in the exploration (bulk export)."""
+    members = await ws_service.list_workspace_members(workspace_id)
+    if not any(m["user_id"] == current_user.id for m in members):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=ErrorResponse(status="error", message="Not a member of this workspace").dict()
+        )
+
+    ro_result = await session.execute(
+        select(ResearchObjectives).where(ResearchObjectives.exploration_id == exploration_id)
+    )
+    ro = ro_result.scalars().first()
+    if not ro:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=ErrorResponse(status="error", message="Research objective not found for this exploration").dict()
+        )
+
+    personas = await persona_service.list_personas(workspace_id, exploration_id)
+
+    if persona_ids:
+        wanted = set(persona_ids)
+        personas = [p for p in personas if p["id"] in wanted]
+        if not personas:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=ErrorResponse(status="error", message="No matching personas found").dict()
+            )
+
+    import json as _json
+    from datetime import datetime as _dt
+
+    def _serialise(obj):
+        if isinstance(obj, _dt):
+            return obj.isoformat()
+        raise TypeError(f"Not serialisable: {type(obj)}")
+
+    payload = {
+        "research_objective_id": ro.id,
+        "personas": personas,
+    }
+    content = _json.dumps(payload, default=_serialise, ensure_ascii=False, indent=2)
+
+    suffix = "selected" if persona_ids else "all"
+    filename = f"research_objective_{ro.id[:8]}_personas_{suffix}.json"
+
+    return JSONResponse(
+        content=_json.loads(content),
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
@@ -950,8 +1507,24 @@ async def calibrate_persona(
 ):
     """
     Phase 2 of manual persona flow: enrich draft with AI behavioral depth.
-    Uses stored raw_traits from the draft; updates the persona in-place.
-    Idempotent — calling on an already-calibrated persona returns it unchanged.
+
+    Runs asynchronously: this endpoint returns immediately once calibration has
+    been queued (calibration_status="calibrating") — the actual multi-LLM-call
+    enrichment (RO extraction, trait auto-fill, evidence collection, brain
+    assignment; often 30-180s+) happens in the background via
+    run_manual_calibration_background(), exactly like enrich_persona_ke_sources.
+    A synchronous version of this request could exceed a reverse-proxy/gateway
+    timeout before the backend responded, which surfaces to the browser as a
+    misleading CORS error rather than the actual 502.
+
+    Poll GET /{persona_id} and read calibration_status: "calibrating" -> keep
+    polling, "calibrated" -> done, "draft" with persona_details
+    .last_calibration_error set -> failed (safe to retry by calling this
+    endpoint again).
+
+    Idempotent — calling on an already-calibrated persona returns it unchanged
+    immediately; calling while already calibrating returns the in-progress
+    state without starting a second job.
     """
     if not await ws_service.is_workspace_admin(workspace_id, current_user.id):
         raise HTTPException(
@@ -966,25 +1539,28 @@ async def calibrate_persona(
             detail=ErrorResponse(status="error", message="Persona not found").dict()
         )
 
-    try:
-        calibrated = await persona_service.calibrate_manual_persona(persona_id, exploration_id)
-    except ValueError as e:
+    existing_status = existing.get("calibration_status")
+    if existing_status == "calibrated":
+        return SuccessResponse(message="Persona already calibrated", data=existing)
+    if existing_status == "calibrating":
+        return SuccessResponse(message="Persona calibration already in progress", data=existing)
+
+    calibrating_view = await persona_service.mark_persona_calibrating(persona_id)
+    if not calibrating_view:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=ErrorResponse(status="error", message=str(e)).dict()
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail={"status": "error", "message": str(e), "type": e.__class__.__name__}
+            detail=ErrorResponse(status="error", message="Persona not found").dict()
         )
 
-    if existing.get("calibration_status") != "calibrated":
-        # Calibration changes persona content; generated qualitative outputs must be rebuilt.
-        await interview_service.clear_qualitative_outputs(workspace_id, exploration_id)
-        await report_cache.invalidate_cache(exploration_id)
+    asyncio.create_task(
+        run_manual_calibration_background(
+            persona_id=persona_id,
+            exploration_id=exploration_id,
+            workspace_id=workspace_id,
+        )
+    )
 
-    return SuccessResponse(message="Persona calibrated successfully", data=calibrated)
+    return SuccessResponse(message="Persona calibration started", data=calibrating_view)
 
 
 @router.get("/{persona_id}/preview", response_model=SuccessResponse)
@@ -1038,13 +1614,20 @@ async def preview_persona(
     persona_details = p.get("persona_details") or {}
     flat_fields = {
         k: v for k, v in p.items()
-        if k not in ("persona_details", "calibration_breakdown")
+        if k != "persona_details"
         and v is not None and v != "" and v != [] and v != {}
     }
+    # calibration_breakdown is always freshly computed by persona_to_dict (never
+    # persisted on persona_details), so it must come from flat_fields; persona_details
+    # still wins if it ever does carry its own copy, via normal dict-merge precedence.
     full_persona_info = {**flat_fields, **persona_details}
 
     confidence = full_persona_info.get("confidence_scoring", "") or p.get("confidence_scoring", "")
     confidence_source = "embedded" if confidence else ""
+    if not confidence:
+        confidence = _preview_confidence_from_evidence_snapshot(full_persona_info)
+        if confidence:
+            confidence_source = "evidence_snapshot"
     if not confidence:
         confidence = _preview_confidence_from_stored_score(p)
         if confidence:
@@ -1053,7 +1636,13 @@ async def preview_persona(
     if not confidence:
         confidence_started_at = time.perf_counter()
         logger.info("preview_persona:confidence_llm_start persona=%s", persona_id)
-        confidence = await persona_service.generate_persona_confidence(p)
+        confidence = await persona_service.generate_persona_confidence(
+            p,
+            exploration_id=p.get("exploration_id"),
+            workspace_id=p.get("workspace_id"),
+            persona_id=persona_id,
+            created_by=p.get("created_by"),
+        )
         confidence_source = "llm"
         logger.info(
             "preview_persona:confidence_llm_done persona=%s elapsed_ms=%d",
@@ -1101,7 +1690,11 @@ async def preview_persona(
                 ocean_profile = await call_omi(
                     system_prompt=system_prompt,
                     user_prompt=user_prompt,
-                    response_format="json"
+                    response_format="json",
+                    exploration_id=persona_obj.exploration_id,
+                    workspace_id=persona_obj.workspace_id,
+                    persona_id=persona_obj.id,
+                    created_by=persona_obj.created_by,
                 )
 
                 # Save OCEAN profile to database
@@ -1126,6 +1719,69 @@ async def preview_persona(
             ocean_profile = None
 
     preview = persona_service.persona_preview_from_dict(p, full_persona_info, confidence=confidence)
+
+    cached_patterns = full_persona_info.get("predominant_patterns")
+    patterns_freshly_generated = False
+    if cached_patterns and cached_patterns.get("patterns"):
+        preview["predominant_patterns"] = cached_patterns
+        logger.info(
+            "preview_persona:patterns_cached persona=%s score=%d count=%d",
+            persona_id,
+            cached_patterns.get("score", 0),
+            len(cached_patterns.get("patterns", [])),
+        )
+    else:
+        try:
+            patterns_started_at = time.perf_counter()
+            patterns_result = await persona_service.generate_predominant_patterns(
+                full_persona_info,
+                exploration_id=full_persona_info.get("exploration_id"),
+                workspace_id=full_persona_info.get("workspace_id"),
+                persona_id=persona_id,
+                created_by=full_persona_info.get("created_by"),
+            )
+            preview["predominant_patterns"] = patterns_result
+            cached_patterns = patterns_result
+            patterns_freshly_generated = True
+            logger.info(
+                "preview_persona:patterns_done persona=%s score=%d count=%d elapsed_ms=%d",
+                persona_id,
+                patterns_result.get("score", 0),
+                len(patterns_result.get("patterns", [])),
+                int((time.perf_counter() - patterns_started_at) * 1000),
+            )
+        except Exception:
+            logger.exception("preview_persona:patterns_failed persona=%s", persona_id)
+            preview["predominant_patterns"] = {"metric": "RO Alignment", "score": 0, "patterns": []}
+            # cached_patterns may still hold a stale value from an earlier persisted
+            # attempt (e.g. one with a real score but an empty patterns list, which is
+            # why we're regenerating at all) — reset it so the master-confidence
+            # computation below doesn't use a score that disagrees with what the
+            # response just showed the user for predominant_patterns.
+            cached_patterns = None
+
+    # Persist master_calibration_confidence (and, when freshly generated, the
+    # predominant_patterns that fed it — previously computed live here and
+    # discarded on every call, which is why the grid and preview could disagree).
+    # If it's already stored and nothing new was generated this request, reuse it
+    # untouched — no recompute, no extra write, no LLM call.
+    stored_master_score = p.get("master_calibration_confidence")
+    if patterns_freshly_generated or stored_master_score is None:
+        full_persona_info["predominant_patterns"] = cached_patterns
+        master_score = persona_service.compute_master_calibration_confidence(
+            full_persona_info, confidence, cached_patterns
+        )
+        if patterns_freshly_generated or master_score != stored_master_score:
+            await persona_service.save_predominant_patterns_and_master_confidence(
+                persona_id,
+                predominant_patterns=cached_patterns if patterns_freshly_generated else None,
+                master_calibration_confidence=master_score,
+            )
+        preview["master_calibration_confidence"] = (
+            master_score if master_score is not None else stored_master_score
+        )
+    else:
+        preview["master_calibration_confidence"] = stored_master_score
 
     logger.info(
         "preview_persona:success persona=%s total_elapsed_ms=%d",
@@ -1164,7 +1820,8 @@ async def validate_persona_traits(
     validation = await validate_persona_traits_with_omi(
         research_objective=research_objective.description,
         trait_group=payload.trait_group,
-        traits=payload.traits
+        traits=payload.traits,
+        exploration_id=payload.exploration_id,
     )
 
     return validation
@@ -1281,7 +1938,11 @@ async def generate_ocean(
     ocean_profile = await call_omi(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
-        response_format="json"
+        response_format="json",
+        exploration_id=persona.exploration_id,
+        workspace_id=persona.workspace_id,
+        persona_id=persona.id,
+        created_by=persona.created_by,
     )
 
     persona.ocean_profile = ocean_profile

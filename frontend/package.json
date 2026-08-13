@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
+    "test:questionnaire": "node src/components/pages/organization/Workspace/ResearchObjective/Questionnaire/questionCodec.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

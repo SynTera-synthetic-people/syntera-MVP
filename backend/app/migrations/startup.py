@@ -269,6 +269,56 @@ async def ensure_foreign_key(
     )
 
 
+async def _fk_delete_rule(conn: AsyncConnection, schema: str, constraint_name: str) -> str | None:
+    result = await _exec(
+        conn,
+        """
+        SELECT rc.delete_rule
+        FROM information_schema.referential_constraints rc
+        WHERE rc.constraint_schema = :schema AND rc.constraint_name = :constraint_name
+        """,
+        {"schema": schema, "constraint_name": constraint_name},
+    )
+    row = result.scalar_one_or_none()
+    return row.upper() if row else None
+
+
+async def ensure_fk_on_delete(
+    conn: AsyncConnection,
+    *,
+    table_sql: str,
+    schema: str,
+    column: str,
+    referenced_table: str,
+    referenced_column: str = "id",
+    constraint_name: str,
+    on_delete: str,
+) -> None:
+    """
+    Fixes an ALREADY-EXISTING foreign key's ON DELETE behavior — unlike
+    ensure_foreign_key() (which only adds a constraint when none exists at
+    all and never inspects delete_rule), this checks the current delete_rule
+    of `constraint_name` and only drops+recreates it if it doesn't already
+    match, so repeated startups are true no-ops once fixed.
+    """
+    current_rule = await _fk_delete_rule(conn, schema, constraint_name)
+    if current_rule == on_delete.upper():
+        return
+    referenced_table_sql = f'"{referenced_table}"' if referenced_table == "user" else referenced_table
+    await _exec(conn, f"ALTER TABLE {table_sql} DROP CONSTRAINT IF EXISTS {constraint_name}")
+    await _exec(
+        conn,
+        f"""
+        ALTER TABLE {table_sql}
+        ADD CONSTRAINT {constraint_name}
+        FOREIGN KEY ({column})
+        REFERENCES {schema}.{referenced_table_sql}({referenced_column})
+        ON DELETE {on_delete}
+        NOT VALID
+        """,
+    )
+
+
 async def ensure_unique_index_after_dedupe(
     conn: AsyncConnection,
     *,
@@ -429,6 +479,12 @@ async def _repair_core_public_schema(conn: AsyncConnection) -> None:
     await ensure_column(conn, "interviewsection", "description TEXT NOT NULL DEFAULT ''")
     await ensure_column(conn, "interviewsection", "is_download BOOLEAN NOT NULL DEFAULT FALSE")
 
+    await ensure_column(conn, "interview", "session_group_id VARCHAR")
+    await ensure_index(
+        conn,
+        "CREATE INDEX IF NOT EXISTS ix_interview_session_group_id ON interview (session_group_id)",
+    )
+
     for column in (
         "persona_sample_sizes JSONB",
         "total_sample_size INTEGER NOT NULL DEFAULT 0",
@@ -455,6 +511,7 @@ async def _repair_core_public_schema(conn: AsyncConnection) -> None:
     await _repair_questionnaire_schema(conn)
     await _repair_persona_schema(conn)
     await _repair_research_objectives_schema(conn)
+    await _repair_research_objectives_file_schema(conn)
     await _repair_omi_schema(conn)
     await _repair_rebuttal_schema(conn)
     await _repair_traceability_schema(conn)
@@ -521,6 +578,7 @@ async def _repair_persona_schema(conn: AsyncConnection) -> None:
         "persona_details JSONB NOT NULL DEFAULT '{}'::jsonb",
         "auto_generated_persona BOOLEAN NOT NULL DEFAULT FALSE",
         "calibration_confidence INTEGER",
+        "master_calibration_confidence INTEGER",
         "parent_persona_id VARCHAR",
         "calibration_status VARCHAR",
         "subject_key VARCHAR",
@@ -574,6 +632,33 @@ async def _repair_persona_schema(conn: AsyncConnection) -> None:
             """,
         )
 
+    # Both FKs were created by SQLModel's create_all() with the default
+    # NO ACTION/RESTRICT delete rule, which blocks persona deletion with an
+    # IntegrityError the moment a child row exists (persona_artifact_response
+    # is NOT NULL, so this fires on every artifact-pipeline persona delete).
+    # persona_artifact_response rows are meaningless without their persona,
+    # so CASCADE is correct; interview.persona_id is nullable and an
+    # interview transcript has value independent of the persona, so SET NULL
+    # preserves the row instead of deleting it.
+    await ensure_fk_on_delete(
+        conn,
+        table_sql="persona_artifact_response",
+        schema="public",
+        column="persona_id",
+        referenced_table="persona",
+        constraint_name="persona_artifact_response_persona_id_fkey",
+        on_delete="CASCADE",
+    )
+    await ensure_fk_on_delete(
+        conn,
+        table_sql="interview",
+        schema="public",
+        column="persona_id",
+        referenced_table="persona",
+        constraint_name="interview_persona_id_fkey",
+        on_delete="SET NULL",
+    )
+
 
 async def _repair_research_objectives_schema(conn: AsyncConnection) -> None:
     for column in (
@@ -582,6 +667,46 @@ async def _repair_research_objectives_schema(conn: AsyncConnection) -> None:
         "confidence_level INTEGER NOT NULL DEFAULT 0",
     ):
         await ensure_column(conn, "research_objectives", column)
+
+
+async def _repair_research_objectives_file_schema(conn: AsyncConnection) -> None:
+    # Idempotent no-op if already nullable. Required so Framer materials
+    # (file uploads or pasted links) can be persisted before a
+    # ResearchObjectives row exists.
+    await _exec(
+        conn,
+        "ALTER TABLE research_objectives_file ALTER COLUMN research_objectives_id DROP NOT NULL",
+    )
+    await _exec(
+        conn,
+        "ALTER TABLE research_objectives_file ALTER COLUMN filename DROP NOT NULL",
+    )
+    for column in (
+        "exploration_id VARCHAR",
+        "instruction TEXT",
+        "extracted_context TEXT",
+        "source_url VARCHAR",
+        "material_kind VARCHAR",
+        "relevance_status VARCHAR NOT NULL DEFAULT 'pending'",
+        "artifact_category VARCHAR",
+        "comparison_mode VARCHAR",
+    ):
+        await ensure_column(conn, "research_objectives_file", column)
+    await ensure_index(
+        conn,
+        "CREATE INDEX IF NOT EXISTS ix_research_objectives_file_exploration_id "
+        "ON research_objectives_file (exploration_id)",
+    )
+    await ensure_foreign_key(
+        conn,
+        table_sql="research_objectives_file",
+        schema="public",
+        table="research_objectives_file",
+        column="exploration_id",
+        referenced_table="explorations",
+        constraint_name="fk_research_objectives_file_exploration_id",
+        on_delete="CASCADE",
+    )
 
 
 async def _repair_omi_schema(conn: AsyncConnection) -> None:
@@ -916,6 +1041,19 @@ async def _repair_sync_source_schema(conn: AsyncConnection) -> None:
     await ensure_table(
         conn,
         """
+        CREATE TABLE IF NOT EXISTS sync_source.ke_web_source_cache (
+            id VARCHAR PRIMARY KEY,
+            exploration_id VARCHAR,
+            query_hash VARCHAR NOT NULL,
+            sources JSONB NOT NULL DEFAULT '[]'::jsonb,
+            created_at TIMESTAMP NOT NULL DEFAULT now(),
+            expires_at TIMESTAMP NOT NULL
+        )
+        """,
+    )
+    await ensure_table(
+        conn,
+        """
         CREATE TABLE IF NOT EXISTS sync_source.scrape_url (
             id VARCHAR PRIMARY KEY,
             source_document_id VARCHAR REFERENCES sync_source.document(id) ON DELETE CASCADE,
@@ -1045,6 +1183,8 @@ async def _repair_sync_source_schema(conn: AsyncConnection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_sync_source_scrape_url_status ON sync_source.scrape_url (status)",
         "CREATE INDEX IF NOT EXISTS idx_sync_source_scrape_url_domain ON sync_source.scrape_url (domain)",
         "CREATE INDEX IF NOT EXISTS idx_sync_source_scrape_attempt_url ON sync_source.scrape_url_attempt (scrape_url_id)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_ke_web_source_cache_lookup ON sync_source.ke_web_source_cache (exploration_id, query_hash)",
+        "CREATE INDEX IF NOT EXISTS idx_ke_web_source_cache_expires ON sync_source.ke_web_source_cache (expires_at)",
     ):
         await ensure_index(conn, index_sql)
 
@@ -1487,6 +1627,173 @@ async def _repair_decision_room_schema(conn: AsyncConnection) -> None:
     )
 
 
+async def _repair_llm_usage_schema(conn: AsyncConnection) -> None:
+    # Append-only LLM token/cost usage log, one row per provider API call.
+    # No FK constraints by design: this is an audit table and usage history
+    # should outlive the persona/exploration/session rows it references.
+    await ensure_table(
+        conn,
+        """
+        CREATE TABLE IF NOT EXISTS llm_usage_event (
+            id              VARCHAR PRIMARY KEY,
+            exploration_id  VARCHAR NOT NULL,
+            workspace_id    VARCHAR,
+            stage           VARCHAR NOT NULL,
+            operation       VARCHAR,
+            provider        VARCHAR NOT NULL,
+            model           VARCHAR NOT NULL,
+            input_tokens    INTEGER NOT NULL DEFAULT 0,
+            output_tokens   INTEGER NOT NULL DEFAULT 0,
+            cost_usd        DOUBLE PRECISION,
+            latency_ms      INTEGER,
+            usage_raw       JSONB,
+            status          VARCHAR NOT NULL DEFAULT 'success',
+            error_message   TEXT,
+            persona_id      VARCHAR,
+            session_id      VARCHAR,
+            request_id      VARCHAR,
+            created_by      VARCHAR,
+            created_at      TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
+        )
+        """,
+    )
+    for index_sql in (
+        "CREATE INDEX IF NOT EXISTS ix_lue_exploration_id ON llm_usage_event (exploration_id)",
+        "CREATE INDEX IF NOT EXISTS ix_lue_workspace_id ON llm_usage_event (workspace_id)",
+        "CREATE INDEX IF NOT EXISTS ix_lue_stage ON llm_usage_event (stage)",
+        "CREATE INDEX IF NOT EXISTS ix_lue_provider ON llm_usage_event (provider)",
+        "CREATE INDEX IF NOT EXISTS ix_lue_model ON llm_usage_event (model)",
+        "CREATE INDEX IF NOT EXISTS ix_lue_persona_id ON llm_usage_event (persona_id)",
+        "CREATE INDEX IF NOT EXISTS ix_lue_session_id ON llm_usage_event (session_id)",
+        "CREATE INDEX IF NOT EXISTS ix_lue_request_id ON llm_usage_event (request_id)",
+        "CREATE INDEX IF NOT EXISTS ix_lue_created_at ON llm_usage_event (created_at)",
+    ):
+        await ensure_index(conn, index_sql)
+
+
+async def _repair_artifact_pipeline_schema(conn: AsyncConnection) -> None:
+    # run_type added after artifact_pipeline_run's initial release — additive
+    # column so every pre-existing run (all qual, before this feature shipped)
+    # gets a safe default instead of requiring a backfill.
+    await ensure_column(conn, "artifact_pipeline_run", "run_type VARCHAR NOT NULL DEFAULT 'qual'")
+
+
+async def _repair_data_playground_schema(conn: AsyncConnection) -> None:
+    await ensure_table(
+        conn,
+        """
+        CREATE TABLE IF NOT EXISTS dp_dataset (
+            id                 VARCHAR PRIMARY KEY,
+            workspace_id       VARCHAR NOT NULL,
+            exploration_id     VARCHAR NOT NULL,
+            name               VARCHAR NOT NULL,
+            original_filename  VARCHAR NOT NULL,
+            stored_filename    VARCHAR NOT NULL,
+            file_type          VARCHAR NOT NULL,
+            row_count          INTEGER NOT NULL DEFAULT 0,
+            column_count       INTEGER NOT NULL DEFAULT 0,
+            status             VARCHAR NOT NULL DEFAULT 'ready',
+            meta               JSONB NOT NULL DEFAULT '{}',
+            created_by         VARCHAR,
+            created_at         TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
+            updated_at         TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
+        )
+        """,
+    )
+    await ensure_table(
+        conn,
+        """
+        CREATE TABLE IF NOT EXISTS dp_variable (
+            id                  VARCHAR PRIMARY KEY,
+            dataset_id          VARCHAR NOT NULL,
+            variable_name       VARCHAR NOT NULL,
+            display_name        VARCHAR NOT NULL,
+            data_type           VARCHAR NOT NULL,
+            position            INTEGER NOT NULL DEFAULT 0,
+            unique_values_count INTEGER NOT NULL DEFAULT 0,
+            missing_count       INTEGER NOT NULL DEFAULT 0,
+            value_labels        JSONB,
+            meta                JSONB NOT NULL DEFAULT '{}',
+            created_at          TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
+        )
+        """,
+    )
+    await ensure_table(
+        conn,
+        """
+        CREATE TABLE IF NOT EXISTS dp_analysis (
+            id            VARCHAR PRIMARY KEY,
+            dataset_id    VARCHAR NOT NULL,
+            analysis_type VARCHAR NOT NULL,
+            parameters    JSONB NOT NULL DEFAULT '{}',
+            result        JSONB NOT NULL DEFAULT '{}',
+            created_by    VARCHAR,
+            created_at    TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
+        )
+        """,
+    )
+    # Single-column index names intentionally match the ones SQLModel emits for
+    # Field(index=True) so a fresh create_all + this repair never duplicates them.
+    for index_sql in (
+        "CREATE INDEX IF NOT EXISTS ix_dp_dataset_workspace_id ON dp_dataset (workspace_id)",
+        "CREATE INDEX IF NOT EXISTS ix_dp_dataset_exploration_id ON dp_dataset (exploration_id)",
+        "CREATE INDEX IF NOT EXISTS ix_dp_dataset_created_by ON dp_dataset (created_by)",
+        "CREATE INDEX IF NOT EXISTS ix_dp_dataset_status ON dp_dataset (status)",
+        "CREATE INDEX IF NOT EXISTS ix_dpv_dataset_position ON dp_variable (dataset_id, position)",
+        "CREATE INDEX IF NOT EXISTS ix_dpa_dataset_type ON dp_analysis (dataset_id, analysis_type)",
+    ):
+        await ensure_index(conn, index_sql)
+    await ensure_foreign_key(
+        conn,
+        table_sql="dp_dataset",
+        schema="public",
+        table="dp_dataset",
+        column="workspace_id",
+        referenced_table="workspace",
+        constraint_name="fk_dpd_workspace_id",
+    )
+    await ensure_foreign_key(
+        conn,
+        table_sql="dp_dataset",
+        schema="public",
+        table="dp_dataset",
+        column="exploration_id",
+        referenced_table="explorations",
+        constraint_name="fk_dpd_exploration_id",
+    )
+    await ensure_foreign_key(
+        conn,
+        table_sql="dp_dataset",
+        schema="public",
+        table="dp_dataset",
+        column="created_by",
+        referenced_table="user",
+        constraint_name="fk_dpd_created_by",
+        on_delete="SET NULL",
+    )
+    await ensure_foreign_key(
+        conn,
+        table_sql="dp_variable",
+        schema="public",
+        table="dp_variable",
+        column="dataset_id",
+        referenced_table="dp_dataset",
+        constraint_name="fk_dpv_dataset_id",
+        on_delete="CASCADE",
+    )
+    await ensure_foreign_key(
+        conn,
+        table_sql="dp_analysis",
+        schema="public",
+        table="dp_analysis",
+        column="dataset_id",
+        referenced_table="dp_dataset",
+        constraint_name="fk_dpa_dataset_id",
+        on_delete="CASCADE",
+    )
+
+
+
 _MIGRATION_STEPS: tuple[tuple[str, str, MigrationStep], ...] = (
     ("base", "create_sqlmodel_tables", _create_sqlmodel_tables),
     ("public", "repair_core_public_schema", _repair_core_public_schema),
@@ -1497,4 +1804,7 @@ _MIGRATION_STEPS: tuple[tuple[str, str, MigrationStep], ...] = (
     ("billing", "repair_billing_schema", _repair_billing_schema),
     ("settings", "repair_settings_schema", _repair_settings_schema),
     ("decision_room", "repair_decision_room_schema", _repair_decision_room_schema),
+    ("llm_usage", "repair_llm_usage_schema", _repair_llm_usage_schema),
+    ("artifact_pipeline", "repair_artifact_pipeline_schema", _repair_artifact_pipeline_schema),
+    ("data_playground", "repair_data_playground_schema", _repair_data_playground_schema),
 )

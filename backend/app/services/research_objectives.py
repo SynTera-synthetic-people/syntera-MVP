@@ -7,7 +7,8 @@ from app.models.research_objectives import ResearchObjectives, ResearchObjective
 from app.routers.exploration import update
 # from app.schemas.research_objectives import ExplorationCreate, ExplorationUpdate, ExplorationOut, ExplorationFileOut
 from app.schemas.research_objectives import (ResearchObjectivesCreate, ResearchObjectivesUpdate,
-                                             ResearchObjectivesOut, ResearchObjectivesFileOut)
+                                             ResearchObjectivesOut, ResearchObjectivesFileOut,
+                                             ResearchObjectiveMaterialOut)
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 from datetime import datetime
@@ -16,6 +17,11 @@ import json
 from app.config import OPENAI_API_KEY
 from sqlalchemy import update
 from app.services import omi as omi_service
+from app.services.llm_usage_tracker import (
+    record_llm_usage,
+    extract_usage_openai_chat,
+    extract_usage_openai_responses,
+)
 
 
 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
@@ -66,10 +72,14 @@ async def generate_and_save_research_objective(
     conversation_text = build_conversation_text(messages)
     summary = final_objective
     if not summary:
+        materials = await get_unlinked_materials(db, exploration_id)
         summary = await summarize_research_objective_from_conversation(
             conversation_text,
             final_objective,
-            context_gathered
+            context_gathered,
+            materials,
+            exploration_id=exploration_id,
+            created_by=created_by,
         )
 
     # -----------------------------------------
@@ -102,6 +112,15 @@ async def generate_and_save_research_objective(
     db.add(research_objective)
     await db.commit()
     await db.refresh(research_objective)
+
+    # Covers the case where a low-confidence Framer submission handed off to
+    # Omi's chat follow-up loop (see routers/research_objectives.py) and the
+    # objective only gets finalized here, several messages later — any
+    # materials uploaded/linked during that original Framer session are still
+    # waiting to be linked.
+    await link_materials_to_research_objective(
+        db, exploration_id=exploration_id, research_objective_id=research_objective.id
+    )
 
     return summary
 
@@ -257,8 +276,14 @@ def build_conversation_text(messages: list[OmiMessage]) -> str:
 async def summarize_research_objective_from_conversation(
     conversation_text: str,
     final_objective: str,
-    information_gathered: str
+    information_gathered: str,
+    materials: Optional[List["ResearchObjectivesFile"]] = None,
+    *,
+    exploration_id: Optional[str] = None,
+    created_by: Optional[str] = None,
 ) -> str:
+    materials_block = _build_materials_block(materials)
+    materials_section = f"\n<UPLOADED_MATERIALS>\n{materials_block}\n</UPLOADED_MATERIALS>\n" if materials_block else ""
     prompt = f"""
  
 <ROLE>
@@ -303,11 +328,12 @@ You are a research strategist. Your task is to create a detailed and clear resea
 - Do NOT ask questions.
 - Do NOT add assumptions.
 - Do NOT mention the conversation.
+- If UPLOADED_MATERIALS are present but look unrelated to the topic discussed in the conversation, do NOT force them into the objective — only use materials that are actually relevant to the subject being researched.
 - Return ONLY the final research objective as plain text, 7 to 10 sentences.
 - In the output, mention which research components are present in the objective and which are not.
- 
+
 </INSTRUCTIONS>
- 
+
 <CONVERSATION>
 {conversation_text}
 </CONVERSATION>
@@ -319,7 +345,7 @@ You are a research strategist. Your task is to create a detailed and clear resea
 <RESEARCH_OBJECTIVE_SUMMARY>
 {final_objective}
 </RESEARCH_OBJECTIVE_SUMMARY>
- 
+{materials_section}
 <OUTPUT STRUCTURE>
 {{
   "final_objective": "Present the final research objective clearly in detail, like a human, in one single paragraph.",
@@ -327,7 +353,7 @@ You are a research strategist. Your task is to create a detailed and clear resea
   "missing_research_components": "list of research components missing in the final objective"
 }}
 </OUTPUT STRUCTURE>
- 
+
 """
 
 
@@ -335,6 +361,18 @@ You are a research strategist. Your task is to create a detailed and clear resea
         model="gpt-4.1",
         temperature=0.5,
         input=f"{prompt}"
+    )
+    input_tokens, output_tokens, usage_raw = extract_usage_openai_responses(response)
+    await record_llm_usage(
+        exploration_id=exploration_id,
+        stage="research_objective_extraction",
+        operation="summarize_from_conversation",
+        provider="openai",
+        model="gpt-4.1",
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        usage_raw=usage_raw,
+        created_by=created_by,
     )
     raw_text = response.output[0].content[0].text
 
@@ -346,7 +384,486 @@ You are a research strategist. Your task is to create a detailed and clear resea
 
 
 
-async def validate_description_with_llm(description: str, conversation: list[str] | None = None) -> dict:
+FRAMER_COMPONENT_LABELS = {
+    "business_context": "Business Context",
+    "decision_problem": "Decision Problem",
+    "information_gap": "Information Gap",
+    "primary_hypothesis": "Primary Hypothesis",
+    "secondary_hypotheses": "Secondary Hypotheses",
+    "target_audience": "Target Audience",
+    "segmentation_logic": "Segmentation Logic",
+    "competitive_frame": "Category & Competitive Frame",
+    "behaviors_attitudes": "Behaviors & Attitudes to Explore",
+    "geography": "Geography / Markets",
+}
+
+
+def _build_materials_block(materials: Optional[List["ResearchObjectivesFile"]]) -> str:
+    """
+    Renders uploaded/linked materials (the "Add Material" sections — Research
+    Brief, Artifact) into the same labeled text block regardless of which
+    caller is building a prompt: Framer synthesis, the live chat probing
+    prompt, or the conversation-based summarizer. Each material was already
+    extracted/fetched and LLM-summarized at submit time — this injects that
+    summary, not the raw file/page, keeping prompts sized independent of
+    source size or count.
+    """
+    brief_bits = []
+    artifact_bits = []
+    for m in materials or []:
+        if not (m.extracted_context or "").strip():
+            continue
+        label = m.original_name or m.source_url or "artifact"
+        # material_id is included so the LLM can cite it back in
+        # materials_flagged_mismatch — that's what makes mismatch flagging
+        # deterministic (a real DB status flip) instead of relying on the
+        # LLM remembering prose from earlier turns.
+        header = f"[material_id: {m.id}] ({label})"
+        if (m.instruction or "").strip():
+            header += f" — user said: {m.instruction.strip()}"
+        entry = f"{header}:\n{m.extracted_context.strip()}"
+        if m.material_kind == "artifact":
+            artifact_bits.append(entry)
+        else:
+            brief_bits.append(entry)
+
+    lines = []
+    if brief_bits:
+        lines.append("Research Brief Materials:\n" + "\n\n".join(brief_bits))
+    if artifact_bits:
+        lines.append("Artifact Materials (to be tested with personas):\n" + "\n\n".join(artifact_bits))
+    return "\n\n".join(lines)
+
+
+def _build_framer_structured_block(
+    framer: dict,
+    materials: Optional[List["ResearchObjectivesFile"]] = None,
+) -> tuple[str, list[str]]:
+    """Builds the labeled structured-input text block and returns (text, filled_component_labels)."""
+    lines = []
+    filled = []
+
+    brand_bits = []
+    if framer.get("brand_name"):
+        brand_bits.append(f"Brand: {framer['brand_name']}")
+    if framer.get("industry"):
+        brand_bits.append(f"Industry: {framer['industry']}")
+    if framer.get("website"):
+        brand_bits.append(f"Website: {framer['website']}")
+    if framer.get("competitors"):
+        brand_bits.append(f"Competitors: {', '.join(framer['competitors'])}")
+    if framer.get("extra_context"):
+        brand_bits.append(f"Extra Context: {framer['extra_context']}")
+    if brand_bits:
+        lines.append("Brand Context:\n" + "\n".join(brand_bits))
+
+    for field, label in FRAMER_COMPONENT_LABELS.items():
+        raw_value = framer.get(field)
+        # geography is a list[str] of discrete tags from the Audience &
+        # Segments picker (e.g. ["California", "Mumbai"]), not free text like
+        # every other Framer field here — join it the same way `competitors`
+        # is joined above, rather than calling .strip() on a list (which
+        # would raise AttributeError for any submission that used the
+        # geography picker).
+        if isinstance(raw_value, list):
+            value = ", ".join(str(v).strip() for v in raw_value if str(v or "").strip())
+        else:
+            value = (raw_value or "").strip()
+        if value:
+            lines.append(f"{label}:\n{value}")
+            filled.append(label)
+
+    # Free-text catch-all from the Framer's "Other Information" step. Not one
+    # of the 10 tracked components — just extra context for the LLM to weave in.
+    notes = (framer.get("additional_notes") or "").strip()
+    if notes:
+        lines.append(f"Additional Notes:\n{notes}")
+
+    materials_block = _build_materials_block(materials)
+    if materials_block:
+        lines.append(materials_block)
+
+    return "\n\n".join(lines), filled
+
+
+async def synthesize_research_objective_from_framer(
+    framer: dict,
+    materials: Optional[List["ResearchObjectivesFile"]] = None,
+    *,
+    exploration_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
+    created_by: Optional[str] = None,
+) -> dict:
+    """
+    Turns the Research Objective Framer's structured fields (plus any uploaded
+    or linked materials' extracted context) into one finalized research
+    objective paragraph, reusing the same component framework and output
+    contract as the conversation-based summarizer so downstream consumers
+    (persona/questionnaire/interview/report) see no difference in shape.
+    """
+    structured_block, filled_components = _build_framer_structured_block(framer, materials)
+
+    if not structured_block:
+        return {
+            "final_objective": "",
+            "available_research_components": [],
+            "missing_research_components": list(FRAMER_COMPONENT_LABELS.values()),
+        }
+
+    prompt = f"""
+<ROLE>
+You are a research strategist. Your task is to create a detailed and clear research objective based on structured inputs a user filled in via a guided form.
+</ROLE>
+
+<RESEARCH COMPONENTS>
+1. Business Context — explains why the research is needed: what problem or situation triggered it and what the business is currently facing.
+2. Decision Problem — defines the exact choice the research will help decide, always framed as a question such as "Should we do X?"
+3. Information Gap — explains what we don't know right now that is stopping us from making the decision.
+4. Primary Hypothesis — states what we believe will happen and needs to be tested before deciding.
+5. Secondary Hypotheses — other possible reasons or factors that might affect the outcome of the decision.
+6. Target Audience — defines exactly who the research is about: their basic details, behavior, and mindset.
+7. Segmentation Logic — explains how the audience is divided into smaller groups for separate analysis.
+8. Category & Competitive Frame — describes the market we are operating in and who the main competitors are.
+9. Behaviors & Attitudes to Explore — defines what people do and what they think about the product or category.
+10. Geography / Markets — defines where the research will be conducted, at city or region level.
+</RESEARCH COMPONENTS>
+
+<INSTRUCTIONS>
+- NEVER skip or paraphrase away specifics the user provided (brand names, competitor names, cities, numbers).
+- Write ONE clear, concise research objective in a single paragraph based on the structured input below.
+- If Additional Notes, Research Brief Materials, or Artifact Materials are present, weave any relevant constraints, claims, or signals into the objective — they are not separate components, just extra context. Artifact Materials are things the user wants tested with personas later, not necessarily facts about the business.
+- Do NOT ask questions. Do NOT invent facts the input doesn't support. Do NOT mention that this came from a form.
+- Return ONLY the final research objective as plain text, 7 to 10 sentences.
+- List which of the 10 research components above are present in the final objective and which are missing.
+</INSTRUCTIONS>
+
+<STRUCTURED_INPUT>
+{structured_block}
+</STRUCTURED_INPUT>
+
+<OUTPUT STRUCTURE>
+{{
+  "final_objective": "The final research objective in one single paragraph.",
+  "available_research_components": "list of research component names present in the final objective",
+  "missing_research_components": "list of research component names missing from the final objective"
+}}
+</OUTPUT STRUCTURE>
+"""
+
+    response = await client.responses.create(
+        model="gpt-4.1",
+        temperature=0.5,
+        input=prompt,
+    )
+    input_tokens, output_tokens, usage_raw = extract_usage_openai_responses(response)
+    await record_llm_usage(
+        exploration_id=exploration_id,
+        stage="research_objective_extraction",
+        operation="synthesize_from_framer",
+        provider="openai",
+        model="gpt-4.1",
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        usage_raw=usage_raw,
+        workspace_id=workspace_id,
+        created_by=created_by,
+    )
+    raw_text = response.output[0].content[0].text
+
+    try:
+        data = json.loads(raw_text)
+    except Exception as e:
+        print(f"Error in synthesize_research_objective_from_framer: {e}")
+        data = {
+            "final_objective": structured_block,
+            "available_research_components": filled_components,
+            "missing_research_components": [],
+        }
+
+    return {
+        "final_objective": data.get("final_objective", ""),
+        "available_research_components": data.get("available_research_components", filled_components),
+        "missing_research_components": data.get("missing_research_components", []),
+    }
+
+
+def framer_confidence(synthesis: dict) -> int:
+    """Fraction of the 10 tracked components present in the synthesized objective."""
+    filled_count = len(synthesis.get("available_research_components", []))
+    return min(100, int((filled_count / len(FRAMER_COMPONENT_LABELS)) * 100))
+
+
+def map_material_to_out(file: ResearchObjectivesFile) -> ResearchObjectiveMaterialOut:
+    return ResearchObjectiveMaterialOut(
+        id=file.id,
+        material_kind=file.material_kind,
+        original_name=file.original_name,
+        source_url=file.source_url,
+        content_type=file.content_type,
+        size=file.size,
+        instruction=file.instruction,
+        has_context=bool((file.extracted_context or "").strip()),
+        uploaded_at=file.uploaded_at,
+        artifact_category=file.artifact_category,
+        comparison_mode=file.comparison_mode,
+    )
+
+
+async def create_framer_material(
+    session: AsyncSession,
+    *,
+    exploration_id: str,
+    material_kind: str,
+    original_name: str,
+    instruction: Optional[str],
+    extracted_context: str,
+    stored_name: Optional[str] = None,
+    content_type: Optional[str] = None,
+    size: Optional[int] = None,
+    source_url: Optional[str] = None,
+    artifact_category: Optional[str] = None,
+    comparison_mode: Optional[str] = None,
+) -> ResearchObjectivesFile:
+    """Persists one uploaded/linked Framer material against exploration_id — no
+    ResearchObjectives row exists yet at this point. research_objectives_id is
+    backfilled later, at finalize (see link_materials_to_research_objective)."""
+    material = ResearchObjectivesFile(
+        exploration_id=exploration_id,
+        research_objectives_id=None,
+        material_kind=material_kind,
+        filename=stored_name,
+        original_name=original_name,
+        content_type=content_type,
+        size=size,
+        source_url=source_url,
+        instruction=instruction,
+        extracted_context=extracted_context or None,
+        artifact_category=artifact_category,
+        comparison_mode=comparison_mode,
+    )
+    session.add(material)
+    await session.commit()
+    await session.refresh(material)
+    return material
+
+
+async def replace_framer_materials_for_kind(
+    session: AsyncSession,
+    *,
+    exploration_id: str,
+    material_kind: str,
+    items: List[dict],
+    replace: bool = True,
+) -> List[ResearchObjectivesFile]:
+    """
+    Persists Framer "Add Material" section items (Research Brief / Artifact).
+
+    replace=True (default; used for "brief"): re-submitting replaces that
+    section's previous materials for this exploration rather than accumulating
+    duplicates — there's only ever one current version per section, matching
+    the frontend's single submitted/not-submitted state per section. `items`
+    may be empty — submitting an emptied-out section clears it.
+
+    replace=False (used for "artifact"): new items are appended to whatever
+    already exists for this exploration/kind instead of replacing it — an
+    artifact set can be built up across several submissions (e.g. uploading
+    2 files now, 2 more later) without losing what's already there. `items`
+    empty is a no-op.
+
+    Either way, only unlinked materials (research_objectives_id IS NULL) are
+    ever touched — nothing already attached to a finalized objective is
+    affected. Returns the full current set of unlinked materials for this
+    exploration/kind after the operation (for replace=True this is exactly
+    the newly created items, since the old ones were just deleted).
+    """
+    if replace:
+        existing = await session.execute(
+            select(ResearchObjectivesFile).where(
+                ResearchObjectivesFile.exploration_id == exploration_id,
+                ResearchObjectivesFile.material_kind == material_kind,
+                ResearchObjectivesFile.research_objectives_id.is_(None),
+            )
+        )
+        for row in existing.scalars().all():
+            await session.delete(row)
+        await session.commit()
+
+    for item in items:
+        await create_framer_material(
+            session,
+            exploration_id=exploration_id,
+            material_kind=material_kind,
+            **item,
+        )
+
+    current = await session.execute(
+        select(ResearchObjectivesFile)
+        .where(
+            ResearchObjectivesFile.exploration_id == exploration_id,
+            ResearchObjectivesFile.material_kind == material_kind,
+            ResearchObjectivesFile.research_objectives_id.is_(None),
+        )
+        .order_by(ResearchObjectivesFile.uploaded_at)
+    )
+    return list(current.scalars().all())
+
+
+async def get_unlinked_materials(
+    session: AsyncSession, exploration_id: str
+) -> List[ResearchObjectivesFile]:
+    """
+    Materials uploaded/linked during the current Framer session for this
+    exploration that haven't yet been associated with a finalized research
+    objective, AND haven't been flagged as a topic mismatch. Ordered by upload
+    time so synthesis sees them in submission order.
+
+    Excluding flagged materials here — not just instructing the LLM to ignore
+    them — is what makes "the user proceeded past a mismatch warning" durable:
+    once flagged, a material can never re-enter a prompt again regardless of
+    how many more chat turns happen, with no dependency on the LLM correctly
+    re-inferring "I already asked about this" from conversation prose.
+    """
+    result = await session.execute(
+        select(ResearchObjectivesFile)
+        .where(
+            ResearchObjectivesFile.exploration_id == exploration_id,
+            ResearchObjectivesFile.research_objectives_id.is_(None),
+            ResearchObjectivesFile.relevance_status != "flagged",
+        )
+        .order_by(ResearchObjectivesFile.uploaded_at)
+    )
+    return list(result.scalars().all())
+
+
+async def mark_materials_flagged(session: AsyncSession, material_ids: List[str]) -> None:
+    """Deterministically excludes these materials from all future prompts (see
+    get_unlinked_materials). Called once, right after an LLM call's structured
+    output names which material_ids it raised a topic-mismatch question about."""
+    if not material_ids:
+        return
+    await session.execute(
+        update(ResearchObjectivesFile)
+        .where(ResearchObjectivesFile.id.in_(material_ids))
+        .values(relevance_status="flagged")
+    )
+    await session.commit()
+
+
+async def link_materials_to_research_objective(
+    session: AsyncSession, *, exploration_id: str, research_objective_id: str
+) -> None:
+    """Backfills research_objectives_id on every still-unlinked material for this
+    exploration once an objective has actually been finalized — called from both
+    finalize paths (direct Framer submit, and the chat follow-up loop)."""
+    await session.execute(
+        update(ResearchObjectivesFile)
+        .where(
+            ResearchObjectivesFile.exploration_id == exploration_id,
+            ResearchObjectivesFile.research_objectives_id.is_(None),
+        )
+        .values(research_objectives_id=research_objective_id)
+    )
+    await session.commit()
+
+
+async def persist_framer_research_objective(
+    session: AsyncSession,
+    *,
+    exploration_id: str,
+    created_by: str,
+    framer: dict,
+    synthesis: dict,
+) -> ResearchObjectives:
+    """
+    Persists an already-synthesized Framer objective onto the existing
+    ResearchObjectives row (creating one if absent). Raw structured fields are
+    kept in ai_interpretation["framer_input"] for traceability/re-editing — no
+    separate table or migration required. Takes precomputed `synthesis` so
+    callers that need the confidence score before deciding whether to finalize
+    (see the router's low-confidence follow-up branch) don't pay for a second
+    LLM call.
+    """
+    final_objective = synthesis["final_objective"]
+
+    if not final_objective:
+        raise ValueError("Could not synthesize a research objective from the provided Framer fields")
+
+    confidence = framer_confidence(synthesis)
+    validation_status = "validated" if confidence >= 70 else "needs_review"
+
+    ai_interpretation = {
+        "source": "research_objective_framer",
+        "framer_input": framer,
+        "available_research_components": synthesis["available_research_components"],
+        "missing_research_components": synthesis["missing_research_components"],
+    }
+
+    result = await session.execute(
+        select(ResearchObjectives).where(
+            ResearchObjectives.exploration_id == exploration_id
+        )
+    )
+    existing = result.scalars().first()
+
+    if existing:
+        existing.description = final_objective
+        existing.validation_status = validation_status
+        existing.ai_interpretation = ai_interpretation
+        existing.confidence_level = confidence
+        session.add(existing)
+        await session.commit()
+        await session.refresh(existing)
+        await link_materials_to_research_objective(
+            session, exploration_id=exploration_id, research_objective_id=existing.id
+        )
+        return existing
+
+    research_objective = ResearchObjectives(
+        exploration_id=exploration_id,
+        description=final_objective,
+        created_by=created_by,
+        validation_status=validation_status,
+        ai_interpretation=ai_interpretation,
+        confidence_level=confidence,
+    )
+    session.add(research_objective)
+    await session.commit()
+    await session.refresh(research_objective)
+    await link_materials_to_research_objective(
+        session, exploration_id=exploration_id, research_objective_id=research_objective.id
+    )
+    return research_objective
+
+
+async def save_research_objective_from_framer(
+    session: AsyncSession,
+    *,
+    exploration_id: str,
+    created_by: str,
+    framer: dict,
+) -> ResearchObjectives:
+    """Synthesizes and persists in one call — kept for callers that don't need the confidence score first."""
+    synthesis = await synthesize_research_objective_from_framer(
+        framer, exploration_id=exploration_id, created_by=created_by,
+    )
+    return await persist_framer_research_objective(
+        session,
+        exploration_id=exploration_id,
+        created_by=created_by,
+        framer=framer,
+        synthesis=synthesis,
+    )
+
+
+async def validate_description_with_llm(
+    description: str,
+    conversation: list[str] | None = None,
+    materials: Optional[List["ResearchObjectivesFile"]] = None,
+    *,
+    exploration_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
+    created_by: Optional[str] = None,
+) -> dict:
     """
     Validates:
     1. Feasibility (scientific, physical, economic) — no hallucination.
@@ -388,6 +905,18 @@ Return STRICT JSON:
             {"role": "user", "content": feasibility_prompt},
         ]
     )
+    input_tokens, output_tokens, usage_raw = extract_usage_openai_chat(feas_res)
+    await record_llm_usage(
+        exploration_id=exploration_id,
+        stage="research_objective_feasibility_check",
+        provider="openai",
+        model="gpt-4o-mini",
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        usage_raw=usage_raw,
+        workspace_id=workspace_id,
+        created_by=created_by,
+    )
     feas_raw = feas_res.choices[0].message.content
     try:
         feas_data = json.loads(feas_raw)
@@ -403,9 +932,33 @@ Return STRICT JSON:
 
     # detailed_input = await create_detailed_version(description)
 
+    materials_block = _build_materials_block(materials)
+    materials_section = (
+        f"\n<UPLOADED_MATERIALS>\n"
+        f"The user has shared the following supporting materials (already extracted/summarized). "
+        f"Each is labeled with its [material_id]. Treat these as additional context, not one of the "
+        f"12 components.\n\n"
+        f"RELEVANCE CHECK (every material here is being shown to you for the FIRST time — materials "
+        f"that were already flagged as mismatched in an earlier turn are automatically removed before "
+        f"you ever see them again, so you will never see the same material twice):\n"
+        f"- If a material is clearly about the same topic/category as what's in <USER INPUT> / "
+        f"<CONVERSATION HISTORY>, weave relevant signals into the objective normally.\n"
+        f"- If a material looks unrelated to what the user is actually researching (e.g. user says "
+        f"they're researching electric vehicles but the artifact is a cooking video), do TWO things: "
+        f"(1) set `materials_flagged_mismatch` to a list containing that material's [material_id], and "
+        f"(2) make your ENTIRE `questions` output for this turn a single warm, direct check-in about "
+        f"exactly this — in Omi's voice, e.g. \"Quick check — you mentioned researching [topic], but "
+        f"the material you shared looks like it's about something else. Want to share something more "
+        f"relevant, or should I go ahead with what we've got?\" Do NOT also ask about missing "
+        f"components in the same turn; this mismatch check takes priority. Do not use this material's "
+        f"content in the objective this turn — you're asking about it, not using it yet.\n\n"
+        f"{materials_block}\n"
+        f"</UPLOADED_MATERIALS>\n"
+    ) if materials_block else ""
+
     structure_prompt = f"""
- 
- 
+
+
 <IDENTITY>
 You are Omi, the research companion for the Synthetic People platform. You're warm, sharp, and have actual personality. Your mission: turn messy user inputs into rock-solid research objectives through a conversation that feels like talking to a smart friend who happens to be a great researcher, not filling out a form.
 </IDENTITY>
@@ -894,7 +1447,8 @@ Output should be in JSON format:
   "content_gathered_reason": "For each component gathered, one sentence explaining what was captured and from where.",
   "missing_components": "List of research components missing from the input.",
   "questions": "A single conversational question to ask the user next. Must be a plain string — NOT a list or array. One question only, written as natural flowing text.",
-  "final_objective": "Full objective based on the conversation, built per Phase 4 logic, in one single paragraph."
+  "final_objective": "Full objective based on the conversation, built per Phase 4 logic, in one single paragraph.",
+  "materials_flagged_mismatch": "List of [material_id] strings (see UPLOADED_MATERIALS) that you are flagging as topic-mismatched this turn. Empty list if none."
 }}
  
 </OUTPUT REQUIRED>
@@ -902,11 +1456,11 @@ Output should be in JSON format:
 <USER INPUT>
 {description}
 </USER INPUT>
- 
+
 <CONVERSATION HISTORY>
 {conversation}
 </CONVERSATION HISTORY>
- 
+{materials_section}
 """
 
 
@@ -918,6 +1472,18 @@ Output should be in JSON format:
             {"role": "system", "content": ""},
             {"role": "user", "content": structure_prompt},
         ]
+    )
+    input_tokens, output_tokens, usage_raw = extract_usage_openai_chat(struct_res)
+    await record_llm_usage(
+        exploration_id=exploration_id,
+        stage="research_objective_structured_extraction",
+        provider="openai",
+        model="gpt-4.1",
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        usage_raw=usage_raw,
+        workspace_id=workspace_id,
+        created_by=created_by,
     )
 
     struct_raw = struct_res.choices[0].message.content
@@ -941,6 +1507,7 @@ Output should be in JSON format:
         "conversation": conversation,
         "final_objective": struct_data.get("final_objective", ""),
         "information_gathered": struct_data.get("content_gathered_reason", ""),
+        "materials_flagged_mismatch": struct_data.get("materials_flagged_mismatch", []) or [],
     }
 
 async def get_objective_by_id(objective_id):

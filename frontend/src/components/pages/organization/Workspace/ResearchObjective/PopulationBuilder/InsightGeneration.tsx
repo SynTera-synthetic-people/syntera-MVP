@@ -9,15 +9,21 @@ import {
   useEnsureSurveySimulation,
   useDownloadQuantTranscripts,
   useDownloadQuantDecisionIntelligence,
-  useDownloadQuantBehaviorArchaeology,
+  // Behaviour Archaeology not required for now — commented out
+  // useDownloadQuantBehaviorArchaeology,
 } from '../../../../../../hooks/useQuantitativeQueries';
 import { getSurveySimulationBySource } from '../../../../../../services/quantitativeServices';
 import { getAxiosErrorMessage } from '../../../../../../utils/axiosBlobError';
 import ImpactHighFiveModal from '../DepthInterview/components/ImpactHighFiveModal';
 import ConversationStudioModal from '../DepthInterview/components/ConversationStudioModal';
 import InsightViewerModalQuant, { type ViewableCardId } from './InsightViewerModalQuant';
-import './InsightGeneration.css';
 
+// ── DataPlayground modal ─────────────────────────────────────────────────────
+// Imported from the DataPlayground module sitting alongside this file.
+// Adjust the path to match your project structure.
+import DataPlayground from '../DataPlayground/DataPlayground';
+
+import './InsightGeneration.css';
 import OmiKeyboard from '../../../../../../assets/Omi Animations/OmiKeyboard.mp4';
 
 // ── Props ─────────────────────────────────────────────────────────────────────
@@ -37,7 +43,8 @@ type CardState = 'idle' | 'generating' | 'done';
 interface InsightCard {
   id: string;
   icon: React.ReactNode;
-  timeLabel: string;
+  /** Omitted on cards that have no meaningful duration to advertise. */
+  timeLabel?: string;
   title: string;
   description: string;
   actionLabel: 'Generate' | 'Start';
@@ -78,24 +85,28 @@ const INSIGHT_CARDS: InsightCard[] = [
     actionLabel: 'Generate',
     hasViewer: true,
   },
-  {
-    id: 'behaviour',
-    icon: <SpIcon name="sp-Edit-Undo" size={48} />,
-    timeLabel: '2 to 3 mins',
-    title: 'Behaviour Archaeology',
-    description: 'Uncover the behavioural patterns, motivations, and hidden drivers behind responses',
-    actionLabel: 'Generate',
-    hasViewer: true,
-  },
+  // ── Behaviour Archaeology: not required for now, card disabled ──────────
+  // {
+  //   id: 'behaviour',
+  //   icon: <SpIcon name="sp-Edit-Undo" size={48} />,
+  //   timeLabel: '2 to 3 mins',
+  //   title: 'Behaviour Archaeology',
+  //   description: 'Uncover the behavioural patterns, motivations, and hidden drivers behind responses',
+  //   actionLabel: 'Generate',
+  //   hasViewer: true,
+  // },
   {
     id: 'playground',
-    icon: <SpIcon name="sp-Environment-Puzzle" size={48} />,
-    timeLabel: '2 to 3 mins',
+    // No time badge: the Playground opens straight into an interactive
+    // session rather than running a generation of a predictable length.
     title: 'Data Playground',
+    icon: <SpIcon name="sp-Environment-Puzzle" size={48} />,
     description: 'Slice, filter, and explore your data dynamically to test hypotheses and uncover patterns',
+    // ↑ actionLabel is 'Start' — clicking this opens the DataPlayground modal directly.
+    // It does NOT go through the generate/download flow.
     actionLabel: 'Start',
     hasViewer: false,
-    comingSoon: true,
+    comingSoon: false,
   },
 ];
 
@@ -114,19 +125,21 @@ const LOADER_MESSAGES: Record<'decision' | 'behaviour', string[]> = {
     'Structuring recommendations and actions...',
     'Finalizing your report',
   ],
-  behaviour: [
-    'Exploring consumer response patterns...',
-    'Looking beneath the surface of the numbers...',
-    'Identifying behavioral clusters...',
-    'Detecting hidden motivations and tensions...',
-    'Mapping decision-making pathways...',
-    'Finding recurring habits and rituals...',
-    'Uncovering trade-offs and triggers...',
-    'Connecting attitudes with likely behaviors...',
-    'Building behavioral archetypes...',
-    'Constructing the behavioral story...',
-    'Unearthing the final insights',
-  ],
+  // ── Behaviour Archaeology: not required for now ──────────────────────────
+  // behaviour: [
+  //   'Exploring consumer response patterns...',
+  //   'Looking beneath the surface of the numbers...',
+  //   'Identifying behavioral clusters...',
+  //   'Detecting hidden motivations and tensions...',
+  //   'Mapping decision-making pathways...',
+  //   'Finding recurring habits and rituals...',
+  //   'Uncovering trade-offs and triggers...',
+  //   'Connecting attitudes with likely behaviors...',
+  //   'Building behavioral archetypes...',
+  //   'Constructing the behavioral story...',
+  //   'Unearthing the final insights',
+  // ],
+  behaviour: [],
 };
 
 // ── OmiLoaderBar ──────────────────────────────────────────────────────────────
@@ -139,19 +152,13 @@ const OmiLoaderBar: React.FC<OmiLoaderBarProps> = ({ cardId }) => {
   const messages = LOADER_MESSAGES[cardId];
   const [msgIdx, setMsgIdx] = useState(0);
 
-  // Reset when card switches
   useEffect(() => {
     setMsgIdx(0);
   }, [cardId]);
 
   useEffect(() => {
-    // Stay on the last message — don't loop
     if (msgIdx >= messages.length - 1) return;
-
-    const id = setTimeout(() => {
-      setMsgIdx(prev => prev + 1);
-    }, 8_500);
-
+    const id = setTimeout(() => setMsgIdx((prev) => prev + 1), 8_500);
     return () => clearTimeout(id);
   }, [msgIdx, messages.length]);
 
@@ -217,12 +224,11 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
   const ensureSurveySimulationMutation = useEnsureSurveySimulation();
   const downloadTranscriptsMutation = useDownloadQuantTranscripts();
   const downloadDecisionMutation = useDownloadQuantDecisionIntelligence();
-  const downloadBehaviourMutation = useDownloadQuantBehaviorArchaeology();
+  // Behaviour Archaeology not required for now — commented out
+  // const downloadBehaviourMutation = useDownloadQuantBehaviorArchaeology();
 
   // ── Card states ───────────────────────────────────────────────────────────
-  // localStorage is used only to RESTORE "done" state from a prior session so
-  // the "View" button reappears on reload — it does NOT skip the Generate flow
-  // when the user explicitly clicks Generate on an idle card.
+
   const [cardStates, setCardStates] = useState<Record<string, CardState>>(() => {
     if (!explorationId) return {};
     return INSIGHT_CARDS.reduce<Record<string, CardState>>((acc, card) => {
@@ -234,7 +240,14 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
   const [viewingCard, setViewingCard] = useState<ViewableCardId | null>(null);
   const [showImpactModal, setShowImpactModal] = useState(false);
   const [showConversationStudio, setShowConversationStudio] = useState(false);
-  const [surveySimulationId, setSurveySimulationId] = useState(initialSurveySimulationId ?? '');
+
+  // ── DataPlayground modal state ────────────────────────────────────────────
+  // Opened when user clicks "Start" on the Data Playground card.
+  const [showDataPlayground, setShowDataPlayground] = useState(false);
+
+  const [surveySimulationId, setSurveySimulationId] = useState(
+    initialSurveySimulationId ?? ''
+  );
   const ensureSurveyPromiseRef = useRef<Promise<string> | null>(null);
 
   // ── Side-effects ──────────────────────────────────────────────────────────
@@ -286,13 +299,13 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
 
   const hasAnyInsightReady = Object.values(cardStates).some((s) => s === 'done');
 
-  // Derive which loader card (if any) is currently generating
   const activeLoaderCard: 'decision' | 'behaviour' | null =
     cardStates['decision'] === 'generating'
       ? 'decision'
-      : cardStates['behaviour'] === 'generating'
-        ? 'behaviour'
-        : null;
+      // Behaviour Archaeology not required for now — commented out
+      // : cardStates['behaviour'] === 'generating'
+      // ? 'behaviour'
+      : null;
 
   // ── Survey simulation ID resolution ──────────────────────────────────────
 
@@ -343,48 +356,42 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
   const handleAction = async (card: InsightCard) => {
     const state = cardStates[card.id] ?? 'idle';
 
-    // ── "View" click: card already generated, open the modal ─────────────
-    // Only enter this branch when state is 'done' AND the user clicks the
-    // "View" button (button label changes to "View" when done + hasViewer).
-    // The "Generate" button is only rendered when state === 'idle', so there
-    // is no risk of accidentally entering this branch on a Generate click.
+    // ── "View" click: modal for already-generated cards ───────────────────
     if (state === 'done' && card.hasViewer) {
       setViewingCard(card.id as ViewableCardId);
       return;
     }
 
-    // Already generating — ignore double-clicks
+    // Already generating — ignore
     if (state === 'generating') return;
 
-    // ── Playground — no API, mark done instantly ──────────────────────────
+    // ── Playground: open the DataPlayground modal immediately ─────────────
+    // No API call, no loading state — just open the modal.
     if (card.id === 'playground') {
-      setCardStates((prev) => ({ ...prev, [card.id]: 'generating' }));
-      setTimeout(() => {
-        setCardStates((prev) => ({ ...prev, [card.id]: 'done' }));
-        markLsReady(card.id, explorationId);
-      }, 800);
+      setShowDataPlayground(true);
+      // Mark done so the card reflects it was visited (optional UX behaviour)
+      setCardStates((prev) => ({ ...prev, [card.id]: 'done' }));
+      markLsReady(card.id, explorationId);
       return;
     }
 
     // ── Generate flow for raw / decision / behaviour ──────────────────────
-    // Set generating immediately so the loader bar appears right away
     setCardStates((prev) => ({ ...prev, [card.id]: 'generating' }));
 
     try {
-      // Step 1: make sure the survey simulation exists
       const simulationId = await ensureSurveySimulationId();
       const payload = { workspaceId, explorationId, simulationId };
 
-      // Step 2: call the card-specific generation/download mutation
       if (card.id === 'raw') {
         await downloadTranscriptsMutation.mutateAsync(payload);
       } else if (card.id === 'decision') {
         await downloadDecisionMutation.mutateAsync(payload);
-      } else if (card.id === 'behaviour') {
-        await downloadBehaviourMutation.mutateAsync(payload);
       }
+      // Behaviour Archaeology not required for now — commented out
+      // else if (card.id === 'behaviour') {
+      //   await downloadBehaviourMutation.mutateAsync(payload);
+      // }
 
-      // Step 3: mark done
       setCardStates((prev) => ({ ...prev, [card.id]: 'done' }));
       markLsReady(card.id, explorationId);
     } catch (err) {
@@ -396,8 +403,6 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
   };
 
   // ── Modal download ────────────────────────────────────────────────────────
-  // The modal download re-downloads an already-generated report.
-  // It does NOT re-run generation — just fetches the existing artifact again.
 
   const handleModalDownload = async () => {
     if (!viewingCard) return;
@@ -408,9 +413,11 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
         await downloadTranscriptsMutation.mutateAsync(payload);
       } else if (viewingCard === 'decision') {
         await downloadDecisionMutation.mutateAsync(payload);
-      } else if (viewingCard === 'behaviour') {
-        await downloadBehaviourMutation.mutateAsync(payload);
       }
+      // Behaviour Archaeology not required for now — commented out
+      // else if (viewingCard === 'behaviour') {
+      //   await downloadBehaviourMutation.mutateAsync(payload);
+      // }
     } catch (err) {
       console.error(`Failed to download ${viewingCard}:`, err);
       const detail = await getAxiosErrorMessage(err, 'Could not download this report.');
@@ -455,8 +462,9 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
 
   const isModalDownloading =
     downloadTranscriptsMutation.isPending ||
-    downloadDecisionMutation.isPending ||
-    downloadBehaviourMutation.isPending;
+    downloadDecisionMutation.isPending;
+    // Behaviour Archaeology not required for now — commented out
+    // || downloadBehaviourMutation.isPending;
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -486,44 +494,65 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
           const isGenerating = state === 'generating';
           const isDone = state === 'done';
 
+          // Playground card: when done, button shows "Open" instead of "Ready"
+          const isPlayground = card.id === 'playground';
+          // Playground auto-loads the survey simulation's results as its
+          // dataset (no manual upload) -- so it stays disabled, with an
+          // explanatory tooltip, until a survey simulation actually exists.
+          const playgroundNeedsSurveyData = isPlayground && !surveySimulationId;
+
+          const buttonLabel = (() => {
+            if (card.comingSoon) return 'Coming Soon';
+            if (isGenerating) return null; // spinner rendered below
+            if (isDone && card.hasViewer) return 'View';
+            if (isDone && isPlayground) return 'Open';
+            if (isDone) return 'Ready';
+            return card.actionLabel;
+          })();
+
+          const buttonClass = [
+            'ig-card__btn',
+            card.comingSoon ? 'ig-card__btn--coming-soon' : '',
+            isDone && card.hasViewer ? 'ig-card__btn--view' : '',
+            isDone && !card.hasViewer && !isPlayground ? 'ig-card__btn--done' : '',
+            isDone && isPlayground ? 'ig-card__btn--open' : '',
+          ]
+            .filter(Boolean)
+            .join(' ');
+
+          const isDisabled =
+            isGenerating ||
+            Boolean(card.comingSoon) ||
+            (isDone && !card.hasViewer && !isPlayground) ||
+            playgroundNeedsSurveyData;
+
           return (
             <motion.div key={card.id} className="ig-card" variants={cardVariants}>
               <div className="ig-card__icon-wrap">{card.icon}</div>
 
-              <div className="ig-card__badge">
-                <SpIcon name="sp-Calendar-Alarm" size={16} />
-                {card.timeLabel}
-              </div>
+              {card.timeLabel && (
+                <div className="ig-card__badge">
+                  <SpIcon name="sp-Calendar-Alarm" size={16} />
+                  {card.timeLabel}
+                </div>
+              )}
 
               <h3 className="ig-card__title">{card.title}</h3>
               <p className="ig-card__desc">{card.description}</p>
 
               <button
-                className={`ig-card__btn ${card.comingSoon
-                    ? 'ig-card__btn--coming-soon'
-                    : isDone && card.hasViewer
-                      ? 'ig-card__btn--view'
-                      : isDone
-                        ? 'ig-card__btn--done'
-                        : ''
-                  }`}
+                className={buttonClass}
                 onClick={() => !card.comingSoon && handleAction(card)}
-                disabled={
-                  isGenerating ||
-                  card.comingSoon ||
-                  (isDone && !card.hasViewer && card.id !== 'playground')
-                }
+                disabled={isDisabled}
+                title={playgroundNeedsSurveyData ? 'Please generate survey data first' : undefined}
               >
-                {card.comingSoon ? (
-                  'Coming Soon'
-                ) : isGenerating ? (
-                  <><TbLoader className="ig-card__btn-spinner" size={14} />Generating…</>
-                ) : isDone && card.hasViewer ? (
-                  'View'
-                ) : isDone ? (
-                  'Ready'
+                {isGenerating ? (
+                  <>
+                    <TbLoader className="ig-card__btn-spinner" size={14} />
+                    Generating…
+                  </>
                 ) : (
-                  card.actionLabel
+                  buttonLabel
                 )}
               </button>
             </motion.div>
@@ -531,7 +560,7 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
         })}
       </motion.div>
 
-      {/* ── Omi loader bar — shown while Decision Intelligence or Behaviour Archaeology is generating ── */}
+      {/* ── Omi loader bar ── */}
       <AnimatePresence>
         {activeLoaderCard !== null && (
           <OmiLoaderBar cardId={activeLoaderCard} />
@@ -554,7 +583,9 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
         {isViewOnly ? (
           <button
             className="ig-footer__btn ig-footer__btn--end"
-            onClick={() => navigate(`/main/organization/workspace/explorations/${workspaceId}`)}
+            onClick={() =>
+              navigate(`/main/organization/workspace/explorations/${workspaceId}`)
+            }
           >
             End Journey
           </button>
@@ -574,6 +605,9 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
         {viewingCard !== null && (
           <InsightViewerModalQuant
             cardId={viewingCard}
+            workspaceId={workspaceId}
+            explorationId={explorationId}
+            getSimulationId={ensureSurveySimulationId}
             onClose={() => setViewingCard(null)}
             onDownload={handleModalDownload}
             isDownloading={isModalDownloading}
@@ -596,6 +630,20 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
           />
         )}
       </AnimatePresence>
+
+      {/* ── DataPlayground modal ────────────────────────────────────────────
+           Rendered outside AnimatePresence because DataPlayground manages
+           its own overlay and positioning. Opened when user clicks "Start"
+           (or "Open" when revisiting) on the Data Playground insight card.
+      ─────────────────────────────────────────────────────────────────────── */}
+      {showDataPlayground && (
+        <DataPlayground
+          workspaceId={workspaceId}
+          explorationId={explorationId}
+          surveySimulationId={surveySimulationId}
+          onClose={() => setShowDataPlayground(false)}
+        />
+      )}
     </motion.div>
   );
 };

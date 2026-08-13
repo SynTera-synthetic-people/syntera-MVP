@@ -1,6 +1,7 @@
 import json
 import asyncio
 import io
+import logging
 import re
 from typing import List, Optional, Dict, Any
 from datetime import datetime
@@ -11,7 +12,7 @@ from app.db import async_engine
 from app.models.interview import Interview, InterviewFile, InterviewSection, InterviewQuestion
 from app.schemas.interview import InterviewOut
 from app.utils.id_generator import generate_id
-from app.config import OPENAI_API_KEY
+from app.config import OPENAI_API_KEY, settings
 from openai import AsyncOpenAI
 from app.services.persona import get_persona, list_personas
 from app.services.exploration import get_exploration
@@ -27,9 +28,61 @@ from app.services.interview_prompts import (
 
 
 from app.services.auto_generated_persona import get_description
+from app.services.llm_usage_tracker import (
+    record_llm_usage,
+    extract_usage_openai_chat,
+    extract_usage_anthropic_message,
+)
+from app.services.report_generation_qual_claude import generate_pdf_path, html_to_pdf, sanitize_report_text
+from app.services.llm_json import (
+    OPENAI_MAX_OUTPUT_TOKENS,
+    LLMRequestTooLargeError,
+    LLMResponseError,
+    LLMTruncatedResponseError,
+    call_json_object,
+)
+from html import escape as _html_escape
 
+
+logger = logging.getLogger(__name__)
 
 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+
+
+class InterviewGenerationError(Exception):
+    """Raised when persona answer generation fails in a way we cannot recover from.
+
+    Carries `.message` so the router can map it onto `ErrorResponse`, matching
+    how `WorkflowError` is already handled in routers/interview.py.
+    """
+
+    def __init__(self, message: str):
+        self.message = message
+        super().__init__(message)
+
+
+# Questions per LLM call. BATCH_INTERVIEW_PROMPT mandates a 150-250 word
+# `revised_persona_answer` plus a `response_structure` restating it, two score
+# fields, `implications`, `stance_indicators`, `behavioral_signals` and
+# `ebpb_anchors_used` for EVERY question — roughly 700 output tokens each.
+# Against the model's 16,384-token output ceiling that allows ~23 answers, so
+# sending a whole discussion guide in one call (the guide prompt asks for "at
+# least 4 questions" per theme and caps neither themes nor questions) overflows
+# the window on larger guides: the API returns HTTP 200 with
+# finish_reason="length" and a truncated, unparseable payload.
+#
+# 8 keeps a batch near ~5,600 output tokens — ~2.9x headroom — so overflow
+# cannot occur regardless of how large the guide grows.
+INTERVIEW_BATCH_SIZE = 8
+
+# Batches are independent LLM calls; run a few at once so splitting the work
+# does not multiply wall-clock latency. Bounded to stay clear of rate limits.
+_MAX_CONCURRENT_BATCHES = 3
+
+# If a batch truncates anyway (an unusually verbose persona), halve it and
+# retry the halves. Bounded so a pathological persona cannot fan out endlessly:
+# depth 2 takes a batch of 8 down to 2.
+_MAX_BATCH_SPLIT_DEPTH = 2
 
 
 def _map_interview_row_to_out(i: Interview) -> InterviewOut:
@@ -38,6 +91,7 @@ def _map_interview_row_to_out(i: Interview) -> InterviewOut:
         workspace_id=str(i.workspace_id),
         exploration_id=str(i.exploration_id),
         persona_id=str(i.persona_id) if i.persona_id else None,
+        session_group_id=i.session_group_id,
         messages=i.messages or [],
         generated_answers=i.generated_answers or {},
         created_by=str(i.created_by),
@@ -50,6 +104,39 @@ def _safe_json(obj: Any) -> str:
             return o.isoformat()
         return str(o)
     return json.dumps(obj, indent=2, default=_default)
+
+
+async def _build_persona_json_with_digital_brain(persona_obj: dict, exploration_id: str) -> str:
+    """
+    Merge a persona's Digital Brain data (research_objective, brain_assignment,
+    evidence, say_do_gap) as top-level keys into the persona JSON sent to the
+    interview LLM, in addition to the existing EBPB fields already on
+    persona_obj. brain_assignment/evidence/say_do_gap live inside the
+    persona's persona_details JSONB blob (see manual_digital_brain_persona.py /
+    digital_brain_pipeline.py) — older personas calibrated before Digital Brain
+    existed simply won't have them, so every lookup defaults to {}/None rather
+    than raising.
+    """
+    persona_data = dict(persona_obj or {})
+    persona_details = persona_data.get("persona_details") or {}
+
+    # Prefer the structured 12-component RO persisted at calibration/generation
+    # time (digital_brain_pipeline.py / manual_digital_brain_persona.py). Fall
+    # back to the free-text description for personas calibrated before that
+    # was persisted.
+    research_objective = persona_details.get("research_objective")
+    if not research_objective:
+        try:
+            research_objective = await get_description(exploration_id) or ""
+        except Exception:
+            research_objective = ""
+
+    persona_data["research_objective"] = research_objective
+    persona_data["brain_assignment"] = persona_details.get("brain_assignment") or {}
+    persona_data["evidence"] = persona_details.get("evidence") or {}
+    persona_data["say_do_gap"] = persona_details.get("say_do_gap")
+
+    return _safe_json(persona_data)
 
 
 def _coerce_score(value: Any) -> Optional[float]:
@@ -203,64 +290,51 @@ async def get_full_interview_guide(workspace_id: str, exploration_id: str) -> Li
     return result
 
 
-def _build_discussion_guide_docx(
+def _build_discussion_guide_html(
     *,
     research_objective: str,
     sections: List[Dict],
-) -> bytes:
-    """Build a discussion guide DOCX in memory."""
-    from docx import Document
-    from docx.shared import Pt, RGBColor
-
-    document = Document()
-    title = document.add_paragraph()
-    title_run = title.add_run("Discussion Guide")
-    title_run.bold = True
-    title_run.font.size = Pt(18)
-    title_run.font.color.rgb = RGBColor(0x11, 0x11, 0x11)
+) -> str:
+    """Build the discussion guide body HTML — styled via app/css/report_generation.css
+    (the same house style used by every other qual/quant PDF report) so this
+    matches the rest of the Report Log instead of carrying its own look."""
+    parts: List[str] = ['<h1>Discussion Guide</h1>']
 
     if research_objective:
-        objective_heading = document.add_paragraph()
-        objective_heading.add_run("Research Exploration").bold = True
-        objective = document.add_paragraph(str(research_objective).strip())
-        objective.paragraph_format.space_after = Pt(12)
+        parts.append('<h3>Research Exploration</h3>')
+        objective = _html_escape(sanitize_report_text(str(research_objective).strip()))
+        parts.append(f'<p class="body-text">{objective}</p>')
 
     for section_index, section in enumerate(sections, start=1):
-        heading = document.add_paragraph()
-        heading.paragraph_format.space_before = Pt(10)
-        heading_run = heading.add_run(f"{section_index}. {section.get('title') or 'Untitled Section'}")
-        heading_run.bold = True
-        heading_run.font.size = Pt(13)
+        title = _html_escape(sanitize_report_text(str(section.get("title") or "Untitled Section")))
+        parts.append(f'<h2>{section_index}. {title}</h2>')
 
         questions = section.get("questions") or []
         if not questions:
-            empty = document.add_paragraph("No questions in this section.")
-            empty.paragraph_format.left_indent = Pt(16)
+            parts.append('<p class="body-text">No questions in this section.</p>')
             continue
 
         for question_index, question in enumerate(questions, start=1):
-            paragraph = document.add_paragraph()
-            paragraph.paragraph_format.left_indent = Pt(16)
-            label = paragraph.add_run(f"Q{question_index}. ")
-            label.bold = True
-            paragraph.add_run(str(question.get("text") or "").strip())
+            text = _html_escape(sanitize_report_text(str(question.get("text") or "").strip()))
+            parts.append(f'<p class="body-text"><strong>Q{question_index}.</strong> {text}</p>')
 
-    buffer = io.BytesIO()
-    document.save(buffer)
-    return buffer.getvalue()
+    return "\n".join(parts)
 
 
-async def generate_discussion_guide_docx_bytes(workspace_id: str, exploration_id: str) -> bytes:
-    """Export the current discussion guide as a DOCX without relying on local disk."""
+async def generate_discussion_guide_pdf(workspace_id: str, exploration_id: str) -> str:
+    """Export the current discussion guide as a branded PDF. Returns the output file path."""
     sections = await get_full_interview_guide(workspace_id, exploration_id)
     if not sections:
         raise ValueError("No discussion guide found. Generate or upload a guide first.")
 
     research_objective = await get_description(exploration_id) or ""
-    return await asyncio.to_thread(
-        _build_discussion_guide_docx,
+    html_body = _build_discussion_guide_html(
         research_objective=research_objective,
         sections=sections,
+    )
+    out_path = generate_pdf_path(prefix="discussion_guide")
+    return await asyncio.to_thread(
+        html_to_pdf, html_body, out_path, "app/css/report_generation.css",
     )
 
 
@@ -291,42 +365,125 @@ async def clear_qualitative_outputs(workspace_id: str, exploration_id: str) -> N
 
         await session.commit()
 
+async def _strip_questions_from_existing_interviews(
+    workspace_id: str, exploration_id: str, question_texts: List[str]
+) -> None:
+    """
+    Remove Q&A entries for now-deleted discussion-guide question(s) from every
+    already-generated Interview snapshot for this exploration.
+
+    Interview.messages/generated_answers are frozen at generation time and keyed
+    by question TEXT (no question_id is stored on the message), so deleting the
+    InterviewQuestion row alone leaves stale Q&A behind in any interview that
+    already ran — this is what previously let deleted questions resurface in
+    transcript exports. Called from delete_interview_question/_section so the
+    scrub happens atomically with the guide edit.
+    """
+    if not question_texts:
+        return
+
+    from sqlalchemy.orm.attributes import flag_modified
+
+    texts = set(question_texts)
+    async with AsyncSession(async_engine) as session:
+        result = await session.execute(
+            select(Interview).where(
+                Interview.workspace_id == workspace_id,
+                Interview.exploration_id == exploration_id,
+            )
+        )
+        interviews = result.scalars().all()
+
+        for iv in interviews:
+            changed = False
+
+            if iv.generated_answers:
+                for t in texts:
+                    if t in iv.generated_answers:
+                        del iv.generated_answers[t]
+                        changed = True
+                if changed:
+                    flag_modified(iv, "generated_answers")
+
+            if iv.messages:
+                kept = [
+                    msg for msg in iv.messages
+                    if not (
+                        (msg.get("role") == "user" and msg.get("text") in texts)
+                        or (msg.get("role") == "persona" and (msg.get("meta") or {}).get("question") in texts)
+                    )
+                ]
+                if len(kept) != len(iv.messages):
+                    iv.messages = kept
+                    flag_modified(iv, "messages")
+                    changed = True
+
+            if changed:
+                session.add(iv)
+
+        await session.commit()
+
+
 async def delete_interview_section(section_id: str) -> bool:
-    """Delete an interview section and all its questions"""
+    """Delete an interview section and all its questions, scrubbing their Q&A from existing interview transcripts"""
     async with AsyncSession(async_engine) as session:
         questions_query = select(InterviewQuestion).where(
             InterviewQuestion.section_id == section_id
         )
         questions_result = await session.execute(questions_query)
         questions = questions_result.scalars().all()
-        
+        question_texts = [q.text for q in questions]
+
         for question in questions:
             await session.delete(question)
-        
+
         section_query = select(InterviewSection).where(InterviewSection.id == section_id)
         section_result = await session.execute(section_query)
         section = section_result.scalars().first()
-        
+
         if not section:
             return False
-        
+
+        workspace_id = section.workspace_id
+        exploration_id = section.exploration_id
+
         await session.delete(section)
         await session.commit()
-        return True
+
+    await _strip_questions_from_existing_interviews(workspace_id, exploration_id, question_texts)
+
+    from app.services import report_orchestrator as report_cache
+    await report_cache.invalidate_cache(exploration_id)
+
+    return True
 
 async def delete_interview_question(question_id: str) -> bool:
-    """Delete a specific interview question"""
+    """Delete a specific interview question, scrubbing its Q&A from existing interview transcripts"""
     async with AsyncSession(async_engine) as session:
         query = select(InterviewQuestion).where(InterviewQuestion.id == question_id)
         result = await session.execute(query)
         question = result.scalars().first()
-        
+
         if not question:
             return False
-        
+
+        section_query = select(InterviewSection).where(InterviewSection.id == question.section_id)
+        section = (await session.execute(section_query)).scalars().first()
+
+        question_text = question.text
+        workspace_id = section.workspace_id if section else None
+        exploration_id = section.exploration_id if section else None
+
         await session.delete(question)
         await session.commit()
-        return True
+
+    if workspace_id and exploration_id:
+        await _strip_questions_from_existing_interviews(workspace_id, exploration_id, [question_text])
+
+        from app.services import report_orchestrator as report_cache
+        await report_cache.invalidate_cache(exploration_id)
+
+    return True
 
 async def update_interview_section(section_id: str, title: str) -> Optional[Dict]:
     """Update an interview section title"""
@@ -397,8 +554,10 @@ async def generate_discussion_guide_with_llm(workspace_id: str, exploration_id: 
 # Return strict JSON with 3-6 sections and at least 3 questions per section.
 # """
     prompt = DISCUSSION_GUIDE_PROMPT.format(
-        research_objective=research_objective
-    )    
+        research_objective=research_objective,
+        questions_per_section=settings.DG_DEFAULT_QUESTIONS_PER_SECTION,
+        max_sections=settings.DG_MAX_SECTIONS_PER_GUIDE,
+    )
 
     res = await client.chat.completions.create(
         model="gpt-4o-mini",
@@ -408,10 +567,36 @@ async def generate_discussion_guide_with_llm(workspace_id: str, exploration_id: 
             {"role":"user","content":prompt}
         ]
     )
+    input_tokens, output_tokens, usage_raw = extract_usage_openai_chat(res)
+    await record_llm_usage(
+        exploration_id=exploration_id,
+        stage="interview_guide",
+        provider="openai",
+        model="gpt-4o-mini",
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        usage_raw=usage_raw,
+        workspace_id=workspace_id,
+        created_by=user_id,
+    )
     raw = res.choices[0].message.content
 
     data = raw if isinstance(raw, (dict, list)) else json.loads(raw)
     sections_data = data.get("sections", [])
+
+    # The prompt asks for a fixed shape, but the model is not a contract — trim
+    # to the configured limits here so guide size (and therefore interview cost,
+    # which scales with ceil(questions / INTERVIEW_BATCH_SIZE) per persona) is
+    # bounded no matter what comes back. Trimming is deliberate: a section that
+    # arrives with 7 questions keeps its first 4, leaving room for the 2 a user
+    # may add without ever exceeding DG_MAX_QUESTIONS_PER_SECTION.
+    if len(sections_data) > settings.DG_MAX_SECTIONS_PER_GUIDE:
+        logger.info(
+            "Discussion guide generation returned %d sections; trimming to %d "
+            "[exploration_id=%s]",
+            len(sections_data), settings.DG_MAX_SECTIONS_PER_GUIDE, exploration_id,
+        )
+        sections_data = sections_data[: settings.DG_MAX_SECTIONS_PER_GUIDE]
 
     created_sections = []
     for section_data in sections_data:
@@ -422,9 +607,19 @@ async def generate_discussion_guide_with_llm(workspace_id: str, exploration_id: 
             user_id=user_id,
             description=section_data.get("theme_description", "")
         )
-        
+
+        question_texts = list(section_data.get("questions", []) or [])
+        if len(question_texts) > settings.DG_DEFAULT_QUESTIONS_PER_SECTION:
+            logger.info(
+                "Discussion guide section returned %d questions; trimming to %d "
+                "[exploration_id=%s section=%r]",
+                len(question_texts), settings.DG_DEFAULT_QUESTIONS_PER_SECTION,
+                exploration_id, section_data.get("title"),
+            )
+            question_texts = question_texts[: settings.DG_DEFAULT_QUESTIONS_PER_SECTION]
+
         created_questions = []
-        for question_text in section_data.get("questions", []):
+        for question_text in question_texts:
             question = await create_interview_question(
                 section_id=section["id"],
                 text=question_text,
@@ -445,11 +640,15 @@ async def create_conversation_session(
     exploration_id: str,
     persona_id: Optional[str],
     user_id: str,
+    session_group_id: Optional[str] = None,
 ) -> InterviewOut:
     """
     Create a lightweight interview record for Conversation Studio.
     No LLM batch generation — the session is empty and ready for
     free-form user messages handled by add_user_message_and_get_persona_reply.
+
+    session_group_id ties several per-persona interviews (one per persona)
+    into a single "All Personas" session for history grouping.
     """
     async with AsyncSession(async_engine) as session:
         iv = Interview(
@@ -457,6 +656,7 @@ async def create_conversation_session(
             workspace_id=workspace_id,
             exploration_id=exploration_id,
             persona_id=persona_id,
+            session_group_id=session_group_id,
             messages=[{"role": "system", "text": "Conversation Studio session", "ts": datetime.utcnow().isoformat()}],
             generated_answers={},
             created_by=user_id,
@@ -465,6 +665,308 @@ async def create_conversation_session(
         await session.commit()
         await session.refresh(iv)
         return _map_interview_row_to_out(iv)
+
+
+_QUESTION_KEY_RE = re.compile(r"[^a-z0-9]+")
+
+
+def _normalize_question(text: Any) -> str:
+    """Collapse a question to a comparison key.
+
+    The model routinely echoes a question back reworded or repunctuated (see the
+    "Model reworded N/63 questions" log line), so answers are matched on a
+    case- and punctuation-insensitive key rather than on exact equality.
+    """
+    return _QUESTION_KEY_RE.sub(" ", str(text or "").lower()).strip()
+
+
+def _has_answer(entry: Any) -> bool:
+    """True only when the model actually produced answer text for this entry.
+
+    An answer object present but carrying an empty `revised_persona_answer` is
+    treated as missing — that is precisely the case recovery exists to fix.
+    """
+    return bool(
+        isinstance(entry, dict)
+        and str(entry.get("revised_persona_answer") or "").strip()
+    )
+
+
+def _align_answers(
+    questions: List[Dict],
+    answers: List[Any],
+) -> tuple[List[Optional[dict]], List[int]]:
+    """Map returned answers onto the questions that were actually asked.
+
+    Returns `(aligned, missing_indices)` — `aligned` has exactly one slot per
+    question holding the matching answer or None.
+
+    Two deterministic passes:
+      1. Match on the normalized question the model echoed back. This survives
+         answers arriving out of order, and gives each occurrence of a
+         duplicated question text its own slot.
+      2. Assign whatever is left over to the still-empty slots, in order. This
+         catches answers whose echoed question was reworded past recognition.
+
+    An answer whose question matches a slot that is already filled is DISCARDED,
+    not reused elsewhere: attaching one question's answer to a different
+    question is a worse outcome than leaving a blank.
+    """
+    aligned: List[Optional[dict]] = [None] * len(questions)
+
+    slots_by_key: Dict[str, List[int]] = {}
+    for idx, q in enumerate(questions):
+        slots_by_key.setdefault(_normalize_question(q.get("question")), []).append(idx)
+
+    unmatched: List[dict] = []
+    for entry in answers:
+        if not _has_answer(entry):
+            continue
+        key = _normalize_question(entry.get("question"))
+        if key in slots_by_key:
+            slots = slots_by_key[key]
+            if slots:
+                aligned[slots.pop(0)] = entry
+            # else: the model answered this same question more than once and
+            # every slot for it is taken. Discard the surplus — letting it fall
+            # through to the positional pass would staple one question's answer
+            # onto a different, unrelated question.
+            continue
+        # Echoed a question we don't recognise — reworded past matching. Hold it
+        # for the positional pass rather than dropping a real answer.
+        unmatched.append(entry)
+
+    free_slots = [i for i, v in enumerate(aligned) if v is None]
+    for slot, entry in zip(free_slots, unmatched):
+        aligned[slot] = entry
+
+    return aligned, [i for i, v in enumerate(aligned) if v is None]
+
+
+async def _request_answers(
+    questions: List[Dict],
+    persona_json: str,
+    *,
+    workspace_id: str,
+    exploration_id: str,
+    persona_id: Optional[str],
+    user_id: str,
+    operation: str,
+    max_attempts: int = 2,
+) -> List[Any]:
+    """Issue one generation request and return its raw `answers` array.
+
+    Shared by the primary batch request and the recovery follow-up so both are
+    guaranteed to carry byte-identical persona and interview context — the
+    recovery differs only in which questions it asks.
+    """
+    prompt = BATCH_INTERVIEW_PROMPT.format(
+        persona_json=persona_json,
+        flat_questions=json.dumps(questions, indent=2),
+        question_count=len(questions),
+    )
+
+    data = await call_json_object(
+        client,
+        model="gpt-4o-mini",
+        stage="interview_run",
+        operation=operation,
+        max_tokens=OPENAI_MAX_OUTPUT_TOKENS,
+        max_attempts=max_attempts,
+        messages=[
+            {
+                "role": "system",
+                "content": "You are a qualitative research simulation engine.",
+            },
+            {"role": "user", "content": prompt},
+        ],
+        usage={
+            "exploration_id": exploration_id,
+            "workspace_id": workspace_id,
+            "persona_id": persona_id,
+            "created_by": user_id,
+        },
+    )
+
+    answers = data.get("answers")
+    if not isinstance(answers, list):
+        logger.error(
+            "Interview batch response missing 'answers' array [exploration_id=%s "
+            "persona_id=%s operation=%s keys=%s]",
+            exploration_id, persona_id, operation, sorted(data.keys())[:10],
+        )
+        raise InterviewGenerationError(
+            "The AI service returned an unexpected response format while generating "
+            "interview answers. Please try again."
+        )
+    return answers
+
+
+async def _recover_missing_answers(
+    batch: List[Dict],
+    aligned: List[Optional[dict]],
+    missing: List[int],
+    persona_json: str,
+    *,
+    workspace_id: str,
+    exploration_id: str,
+    persona_id: Optional[str],
+    user_id: str,
+) -> int:
+    """Re-ask ONLY the unanswered questions, once. Returns how many were filled.
+
+    Bounded by construction: exactly one request, `max_attempts=1` so the helper
+    cannot retry underneath us either, and no recursion. Any failure is
+    swallowed — recovery is best-effort, and a failed follow-up must never cost
+    the caller the answers it already has.
+
+    `aligned` is mutated in place at the missing slots only; questions that
+    already have answers are never regenerated.
+    """
+    retry_questions = [batch[i] for i in missing]
+
+    try:
+        raw = await _request_answers(
+            retry_questions,
+            persona_json,
+            workspace_id=workspace_id,
+            exploration_id=exploration_id,
+            persona_id=persona_id,
+            user_id=user_id,
+            operation="interview_batch_recovery",
+            max_attempts=1,
+        )
+    except (InterviewGenerationError, LLMResponseError) as exc:
+        logger.warning(
+            "Interview answer recovery request failed; leaving %d question(s) blank "
+            "[exploration_id=%s persona_id=%s error=%s]",
+            len(missing), exploration_id, persona_id, type(exc).__name__,
+        )
+        return 0
+
+    recovered_aligned, _ = _align_answers(retry_questions, raw)
+    recovered = 0
+    for slot, entry in zip(missing, recovered_aligned):
+        if entry is not None:
+            aligned[slot] = entry
+            recovered += 1
+    return recovered
+
+
+async def _generate_answer_batch(
+    batch: List[Dict],
+    persona_json: str,
+    *,
+    workspace_id: str,
+    exploration_id: str,
+    persona_id: Optional[str],
+    user_id: str,
+    depth: int = 0,
+) -> List[Dict]:
+    """Generate persona answers for one batch of questions.
+
+    Returns exactly `len(batch)` entries, positionally aligned with `batch`, so
+    callers can concatenate batches and keep global question order.
+
+    Answers are matched back to their questions by content (see
+    `_align_answers`). Any question the model skipped gets exactly ONE follow-up
+    request asking for those questions alone; whatever is still missing after
+    that stays blank and the interview continues.
+
+    On truncation the batch is halved and the halves retried (bounded by
+    `_MAX_BATCH_SPLIT_DEPTH`); any other unusable response raises
+    `InterviewGenerationError`.
+    """
+    try:
+        answers = await _request_answers(
+            batch,
+            persona_json,
+            workspace_id=workspace_id,
+            exploration_id=exploration_id,
+            persona_id=persona_id,
+            user_id=user_id,
+            operation="interview_batch",
+        )
+    except LLMTruncatedResponseError:
+        # The persona wrote far longer answers than the batch size budgeted for.
+        # Splitting is the only recovery that changes the outcome — retrying the
+        # same request would overflow the output window identically.
+        if len(batch) > 1 and depth < _MAX_BATCH_SPLIT_DEPTH:
+            mid = len(batch) // 2
+            logger.warning(
+                "Interview batch truncated; splitting %d questions into %d+%d "
+                "[exploration_id=%s persona_id=%s depth=%d]",
+                len(batch), mid, len(batch) - mid, exploration_id, persona_id, depth,
+            )
+            halves = await asyncio.gather(
+                _generate_answer_batch(
+                    batch[:mid], persona_json,
+                    workspace_id=workspace_id, exploration_id=exploration_id,
+                    persona_id=persona_id, user_id=user_id, depth=depth + 1,
+                ),
+                _generate_answer_batch(
+                    batch[mid:], persona_json,
+                    workspace_id=workspace_id, exploration_id=exploration_id,
+                    persona_id=persona_id, user_id=user_id, depth=depth + 1,
+                ),
+            )
+            return [*halves[0], *halves[1]]
+        raise InterviewGenerationError(
+            "The AI could not fit its answers within the response limit, even for a "
+            "single question. Try shortening the questions in your discussion guide."
+        )
+    except LLMRequestTooLargeError as exc:
+        # Input-side overflow: the persona's context is too big for the model,
+        # so splitting the batch cannot help — the questions are a rounding
+        # error next to the persona payload. Fail with a message that points at
+        # the actual cause instead of inviting a pointless retry.
+        logger.error(
+            "Interview prompt exceeded the model context window [exploration_id=%s "
+            "persona_id=%s questions=%d] %s",
+            exploration_id, persona_id, len(batch), exc.raw_excerpt,
+        )
+        raise InterviewGenerationError(
+            "This persona carries too much calibration evidence to fit in one AI "
+            "request. Re-calibrating the persona or reducing its evidence will resolve it."
+        ) from exc
+    except LLMResponseError as exc:
+        logger.error(
+            "Interview batch generation failed [exploration_id=%s persona_id=%s "
+            "questions=%d error=%s]",
+            exploration_id, persona_id, len(batch), type(exc).__name__,
+        )
+        raise InterviewGenerationError(
+            "The AI service returned an unusable response while generating interview "
+            "answers. Please try again."
+        ) from exc
+
+    aligned, missing = _align_answers(batch, answers)
+    returned = sum(1 for a in aligned if a is not None)
+
+    recovered = 0
+    if missing:
+        # Exactly one follow-up per batch, asking only for what is missing.
+        recovered = await _recover_missing_answers(
+            batch,
+            aligned,
+            missing,
+            persona_json,
+            workspace_id=workspace_id,
+            exploration_id=exploration_id,
+            persona_id=persona_id,
+            user_id=user_id,
+        )
+
+    unanswered = sum(1 for a in aligned if a is None)
+    if missing:
+        log = logger.warning if unanswered else logger.info
+        log(
+            "Interview batch answers [exploration_id=%s persona_id=%s requested=%d "
+            "returned=%d recovered=%d unanswered=%d]",
+            exploration_id, persona_id, len(batch), returned, recovered, unanswered,
+        )
+
+    return [a if isinstance(a, dict) else {} for a in aligned]
 
 
 async def start_interview(
@@ -486,7 +988,10 @@ async def start_interview(
             flat_questions.append({"section": sec["title"], "question": q})
 
     persona_obj = await get_persona(persona_id) if persona_id else None
-    persona_json = _safe_json(persona_obj) if persona_obj else "{}"
+    persona_json = (
+        await _build_persona_json_with_digital_brain(persona_obj, exploration_id)
+        if persona_obj else "{}"
+    )
 
 
 #     prompt = f"""
@@ -511,56 +1016,118 @@ async def start_interview(
 # }}
 # """
 
-    prompt = BATCH_INTERVIEW_PROMPT.format(
-        persona_json=persona_json,
-        flat_questions=json.dumps(flat_questions, indent=2),
-        question_count=len(flat_questions)
+    if not flat_questions:
+        raise InterviewGenerationError(
+            "The discussion guide has no questions to ask. Add questions to the guide "
+            "before starting an interview."
+        )
+
+    # Generate in bounded batches rather than one call per interview — see
+    # INTERVIEW_BATCH_SIZE for why a whole guide cannot fit in one completion.
+    batches = [
+        flat_questions[i : i + INTERVIEW_BATCH_SIZE]
+        for i in range(0, len(flat_questions), INTERVIEW_BATCH_SIZE)
+    ]
+    logger.info(
+        "Generating interview answers [exploration_id=%s persona_id=%s questions=%d "
+        "batches=%d]",
+        exploration_id, persona_id, len(flat_questions), len(batches),
     )
 
-    res = await client.chat.completions.create(
-        model="gpt-4o-mini",
-        response_format={"type": "json_object"},
-        messages=[
-            {
-                "role": "system",
-                "content": "You are a qualitative research simulation engine."
-            },
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ]
-    )
+    semaphore = asyncio.Semaphore(_MAX_CONCURRENT_BATCHES)
 
-    data = json.loads(res.choices[0].message.content)
-    answers = data.get("answers", [])
+    async def _run(batch: List[Dict]) -> List[Dict]:
+        async with semaphore:
+            return await _generate_answer_batch(
+                batch,
+                persona_json,
+                workspace_id=workspace_id,
+                exploration_id=exploration_id,
+                persona_id=persona_id,
+                user_id=user_id,
+            )
+
+    # gather preserves input order, so concatenating the results keeps answers
+    # aligned with flat_questions even though the calls run concurrently.
+    batch_results = await asyncio.gather(*(_run(b) for b in batches))
+    answers = [answer for result in batch_results for answer in result]
 
 
-    gen_map = {}
-    answer_infos = []
-    for idx, a in enumerate(answers):
-        fallback_question = flat_questions[idx]["question"] if idx < len(flat_questions) else ""
-        qtext = a.get("question") or fallback_question
-        quality_score = _coerce_score(a.get("quality_score"))
-        independence_score = _coerce_score(a.get("independence_score"))
+    # `generated_answers` is the ONLY source every transcript view enumerates —
+    # the preview endpoint (routers/interview.py), the combined PDF
+    # (utils/interview.py) and the traceability report all iterate its keys. A
+    # guide question that is not a key here is simply invisible in the
+    # transcript, with no error anywhere.
+    #
+    # So the map is built by walking flat_questions — the guide's own list — and
+    # keyed by the guide's canonical question text. Keying off the model's
+    # echoed "question" field (as this previously did) dropped questions three
+    # ways: a short answers array left later questions with no key at all; a
+    # paraphrased echo created a key no consumer could match back to the guide;
+    # and two identical echoes silently overwrote each other.
+    gen_map: Dict[str, dict] = {}
+    answer_infos: List[dict] = []
+    paraphrased = 0
+
+    for idx, q in enumerate(flat_questions):
+        qtext = q["question"]
+        a = answers[idx] if idx < len(answers) else {}
+
+        echoed = (a.get("question") or "").strip()
+        if echoed and echoed != qtext:
+            paraphrased += 1
+
         answer_info = {
             "persona_answer": a.get("revised_persona_answer", ""),
             "implications": a.get("implications", []),
             "persona_id": persona_id,
-            "quality_score": quality_score,
-            "independence_score": independence_score,
+            "quality_score": _coerce_score(a.get("quality_score")),
+            "independence_score": _coerce_score(a.get("independence_score")),
             "stance_indicators": a.get("stance_indicators", []),
-            "behavioral_signals": a.get("behavioral_signals", {})
+            "behavioral_signals": a.get("behavioral_signals", {}),
+            # Both transcript builders read meta_section to group answers, and
+            # otherwise fall back to scanning `messages` for a matching question
+            # — bucketing under "General" when that scan misses. The section is
+            # known right here, so record it and make the fallback unnecessary.
+            "meta_section": q["section"],
         }
+
+        # generated_answers is Dict[question_text, answer] by schema, so a guide
+        # that asks the exact same question in two sections can only keep one of
+        # them. Log it rather than let the transcript quietly come up short.
+        if qtext in gen_map:
+            logger.warning(
+                "Duplicate question text in discussion guide; transcript will show it "
+                "once [exploration_id=%s persona_id=%s section=%r question=%.80r]",
+                exploration_id, persona_id, q["section"], qtext,
+            )
+
         gen_map[qtext] = answer_info
         answer_infos.append(answer_info)
+
+    unanswered = sum(1 for info in answer_infos if not info["persona_answer"])
+    if unanswered:
+        logger.warning(
+            "Interview transcript has %d/%d questions with no answer "
+            "[exploration_id=%s persona_id=%s]",
+            unanswered, len(flat_questions), exploration_id, persona_id,
+        )
+    if paraphrased:
+        logger.info(
+            "Model reworded %d/%d questions; transcript uses the guide's wording "
+            "[exploration_id=%s persona_id=%s]",
+            paraphrased, len(flat_questions), exploration_id, persona_id,
+        )
 
     messages = []
     messages.append({"role": "system", "text": "Interview started", "ts": datetime.utcnow().isoformat()})
     for idx, q in enumerate(flat_questions):
         qtext = q["question"]
         messages.append({"role": "user", "text": qtext, "meta": {"section": q["section"]}, "ts": datetime.utcnow().isoformat()})
-        answer_info = gen_map.get(qtext) or (answer_infos[idx] if idx < len(answer_infos) else {})
+        # Positional, not gen_map.get(qtext): answer_infos is built one entry per
+        # flat_questions entry, so it stays exact even when the guide repeats a
+        # question text (which collapses to a single gen_map key).
+        answer_info = answer_infos[idx]
         pa = answer_info.get("persona_answer", "")
         all_info = answer_info.get("all_info", "")
         all_info_raw = answer_info.get("all_info_raw", "")
@@ -572,6 +1139,25 @@ async def start_interview(
         messages.append({"role": "persona", "text": pa, "meta": answer_meta, "ts": datetime.utcnow().isoformat(), "all_info": all_info, "all_info_raw": all_info_raw})
 
     async with AsyncSession(async_engine) as session:
+        # Replace any prior batch-guide interview for this persona so re-running
+        # (e.g. after editing the discussion guide) never leaves a stale row
+        # behind — otherwise its old Q&A (possibly for since-deleted questions)
+        # can resurface in transcripts. Conversation Studio sessions are left
+        # alone: they carry a different first system message and aren't guide-driven.
+        if persona_id:
+            existing_result = await session.execute(
+                select(Interview).where(
+                    Interview.workspace_id == workspace_id,
+                    Interview.exploration_id == exploration_id,
+                    Interview.persona_id == persona_id,
+                )
+            )
+            for old in existing_result.scalars().all():
+                first_msg = old.messages[0] if old.messages else {}
+                if first_msg.get("text") == "Interview started":
+                    await session.execute(delete(InterviewFile).where(InterviewFile.interview_id == old.id))
+                    await session.delete(old)
+
         iv = Interview(
             id=generate_id(),
             workspace_id=workspace_id,
@@ -641,8 +1227,11 @@ async def add_user_message_and_get_persona_reply(
         
         if iv.persona_id:
             persona_obj = await get_persona(iv.persona_id)
-            persona_json = _safe_json(persona_obj) if persona_obj else "{}"
-            
+            persona_json = (
+                await _build_persona_json_with_digital_brain(persona_obj, iv.exploration_id)
+                if persona_obj else "{}"
+            )
+
             conversation_history = ""
             if len(iv.messages) > 1:
                 recent_messages = iv.messages[-6:]
@@ -655,7 +1244,7 @@ async def add_user_message_and_get_persona_reply(
                     elif role == "persona":
                         history_lines.append(f"You: {text}")
                 conversation_history = "\n".join(history_lines)
-            
+
             from app.services.exploration import get_exploration
             research_context = ""
             try:
@@ -665,86 +1254,66 @@ async def add_user_message_and_get_persona_reply(
                         research_context = exploration.description
             except Exception:
                 pass
-            
-#             prompt = f"""
-# You are role-playing as this persona in FIRST-PERSON for an in-depth interview.
-#
-# PERSONA DETAILS (this is YOU):
-# {persona_json}
-#
-# RESEARCH OBJECTIVE:
-# {research_context or "Understanding user perspectives and experiences"}
-#
-# CONVERSATION SO FAR:
-# {conversation_history or "This is the start of the interview."}
-#
-# CURRENT QUESTION:
-# {user_text}
-#
-# INSTRUCTIONS:
-# - Answer in FIRST-PERSON using "I", "my", "me"
-# - Give SPECIFIC, DETAILED answers based on YOUR persona traits, not generic responses
-# - Reference your actual characteristics: age, occupation, lifestyle, values, experiences
-# - If asked about preferences, explain WHY based on your personality and background
-# - If asked about experiences, create realistic examples that fit your persona
-# - Keep responses conversational and natural (2-4 sentences)
-# - Stay consistent with what you've said earlier in the conversation
-# - Be authentic to your persona's demographics, psychographics, and backstory
-#
-# EXAMPLES OF GOOD ANSWERS:
-# Generic: "I like quality products."
-# Specific: "As a 32-year-old environmental consultant, I prioritize sustainable products. I recently switched to a reusable water bottle brand that uses recycled materials - it costs more, but aligns with my values."
-#
-# Generic: "I use social media sometimes."
-# Specific: "I'm on Instagram daily, mainly following eco-friendly brands and sustainability influencers. LinkedIn is where I network professionally, but I avoid Facebook - too much noise for my taste."
-#
-# Reply briefly (2-4 sentences) in first-person as this persona:
-# """
 
-    prompt = LIVE_REPLY_PROMPT.format(
-        persona_json=persona_json,
-        research_context=research_context or "Not specified",
-        conversation_history=conversation_history,
-        user_text=user_text
-    )
+            prompt = LIVE_REPLY_PROMPT.format(
+                persona_json=persona_json,
+                research_context=research_context or "Not specified",
+                conversation_history=conversation_history,
+                user_text=user_text
+            )
 
-    res_ai = await client.chat.completions.create(
-        model="gpt-4o-mini",
-        response_format={"type": "json_object"},
-        messages=[
-            {
-                "role": "system",
-                "content": "You are a qualitative research simulation engine."
-            },
-            {
-                "role": "user",
-                "content": prompt
+            res_ai = await client.chat.completions.create(
+                model="gpt-4o-mini",
+                response_format={"type": "json_object"},
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a qualitative research simulation engine."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                temperature=0.8
+            )
+            # Recorded after the final (non-streaming) response is obtained —
+            # this call has no streaming loop, so there is no added latency
+            # on any token stream.
+            input_tokens, output_tokens, usage_raw = extract_usage_openai_chat(res_ai)
+            await record_llm_usage(
+                exploration_id=iv.exploration_id,
+                stage="interview_conversation_studio",
+                provider="openai",
+                model="gpt-4o-mini",
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                usage_raw=usage_raw,
+                workspace_id=iv.workspace_id,
+                persona_id=iv.persona_id,
+            )
+
+            data = json.loads(res_ai.choices[0].message.content)
+            persona_reply = data.get("response", "")
+            reply_meta = {
+                "reply_to": user_text,
+                **_score_meta(data),
             }
-        ],
-        temperature=0.8
-    )
 
-    data = json.loads(res_ai.choices[0].message.content)
-    persona_reply = data.get("response", "")
-    reply_meta = {
-        "reply_to": user_text,
-        **_score_meta(data),
-    }
-                
-    persona_msg = {
-        "role": "persona", 
-        "text": persona_reply,
-        "meta": reply_meta, 
-        "ts": datetime.utcnow().isoformat()
-    }
-    iv.messages.append(persona_msg)
-                
-    flag_modified(iv, "messages")
-                
-    session.add(iv)
-    await session.commit()
-    await session.refresh(iv)
-    return _map_interview_row_to_out(iv)
+            persona_msg = {
+                "role": "persona",
+                "text": persona_reply,
+                "meta": reply_meta,
+                "ts": datetime.utcnow().isoformat()
+            }
+            iv.messages.append(persona_msg)
+
+            flag_modified(iv, "messages")
+
+        session.add(iv)
+        await session.commit()
+        await session.refresh(iv)
+        return _map_interview_row_to_out(iv)
 
 async def generate_persona_reply_and_store(interview_id: str, user_text: str):
     """
@@ -912,16 +1481,32 @@ async def create_guide_from_text(
         "Rules: use existing sections if present; group logically otherwise; "
         "2–6 questions per section; remove duplicates; ensure open-ended phrasing."
     )
-    res = await client.chat.completions.create(
-        model="gpt-4o-mini",
-        response_format={"type": "json_object"},
-        messages=[
-            {"role": "system", "content": "You extract and structure discussion guide content."},
-            {"role": "user", "content": prompt},
-        ],
-    )
-    data = json.loads(res.choices[0].message.content)
-    sections_data = data.get("sections", [])
+    try:
+        data = await call_json_object(
+            client,
+            model="gpt-4o-mini",
+            stage="interview_guide_upload_parse",
+            messages=[
+                {"role": "system", "content": "You extract and structure discussion guide content."},
+                {"role": "user", "content": prompt},
+            ],
+            usage={
+                "exploration_id": exploration_id,
+                "workspace_id": workspace_id,
+                "created_by": user_id,
+            },
+        )
+    except LLMResponseError as exc:
+        logger.error(
+            "Guide upload parse failed [exploration_id=%s error=%s]",
+            exploration_id, type(exc).__name__,
+        )
+        raise InterviewGenerationError(
+            "Could not read a discussion guide out of that file. Please check the "
+            "document and try again."
+        ) from exc
+
+    sections_data = data.get("sections") or []
 
     created_sections = []
     for sd in sections_data:
@@ -1076,6 +1661,16 @@ async def generate_decision_intelligence_content(exploration_id: str) -> str:
         model="claude-sonnet-4-6",
         max_tokens=2000,
         messages=[{"role": "user", "content": prompt}],
+    )
+    input_tokens, output_tokens, usage_raw = extract_usage_anthropic_message(response)
+    await record_llm_usage(
+        exploration_id=exploration_id,
+        stage="interview_insights_di",
+        provider="anthropic",
+        model="claude-sonnet-4-6",
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        usage_raw=usage_raw,
     )
     return response.content[0].text
 

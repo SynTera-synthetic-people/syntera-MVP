@@ -50,7 +50,7 @@ const SURVEY_STEPS: SurveyStepData[] = [
       'Reflecting on past experience',
       'Answer being submitted',
     ],
-    outcome: 'Responses are being captured across the calibrated population.',
+    outcome: 'Responses are being captured across the calibrated sample.',
   },
   {
     label: 'Survey Completion',
@@ -160,7 +160,7 @@ const SurveyInMotion: React.FC<SurveyInMotionProps> = ({
       <div className="sim-header">
         <h1 className="sim-title">Survey In Motion</h1>
         <p className="sim-subtitle">
-          Your study is running across a calibrated population — capturing how decisions form
+          Your study is running across a calibrated sample — capturing how decisions form
         </p>
       </div>
 

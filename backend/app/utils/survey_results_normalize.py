@@ -8,9 +8,31 @@ Ensures:
 """
 from __future__ import annotations
 
+import random
 import re
 import unicodedata
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
+
+from app.services.question_engine import (
+    grid_item_allows_multiple,
+    is_verbatim_question_type,
+    question_grid_items,
+)
+
+# Neutral stand-ins used only when a free-text question came back with no
+# usable quotes. Without these the question's column is silently blank for
+# every respondent, which reads as "nobody answered" rather than "the model
+# skipped this question".
+FALLBACK_VERBATIMS: Tuple[str, ...] = (
+    "I don't have a strong reaction either way, honestly.",
+    "It's fine, but nothing about it really stands out to me.",
+    "I'd need to see more before I could say anything definite.",
+)
+
+# Keys an LLM plausibly uses for a free-text answer set. The prompt asks for
+# "verbatims", but a single missed key silently emptied the whole column, so
+# the common synonyms are accepted too.
+_VERBATIM_KEYS = ("verbatims", "verbatim", "responses", "quotes", "answers", "texts")
 
 
 def _norm_label(s: str) -> str:
@@ -132,13 +154,223 @@ def _counts_from_llm_option_list(
 def _pick_llm_row(
     llm_rows: List[Dict[str, Any]], index: int, canonical_text: str
 ) -> Optional[Dict[str, Any]]:
-    if index < len(llm_rows):
-        return llm_rows[index]
+    """Match an LLM row to a questionnaire question.
+
+    Exact question text wins over position: the prompt asks for rows in input
+    order, but a model that drops or reorders one question would otherwise
+    shift every subsequent question onto the wrong row — and a free-text
+    question landing on an options-shape row loses its answers entirely.
+    """
     ct = _norm_label(canonical_text)
-    for r in llm_rows:
-        if _norm_label(r.get("text", "") or "") == ct:
-            return r
+    if ct:
+        for r in llm_rows:
+            if isinstance(r, dict) and _norm_label(r.get("text", "") or "") == ct:
+                return r
+    if index < len(llm_rows) and isinstance(llm_rows[index], dict):
+        return llm_rows[index]
     return None
+
+
+def _extract_verbatims(row: Optional[Dict[str, Any]], limit: int = 8) -> List[str]:
+    """Pull a de-duplicated quote list out of an LLM row, tolerating the key
+    and container shapes models actually return."""
+    if not row:
+        return []
+
+    raw: List[Any] = []
+    for key in _VERBATIM_KEYS:
+        value = row.get(key)
+        if isinstance(value, list):
+            raw = value
+            break
+        if isinstance(value, str) and value.strip():
+            raw = [value]
+            break
+
+    out: List[str] = []
+    seen: set[str] = set()
+    for item in raw:
+        # Some models wrap each quote in an object ({"text": ...}).
+        if isinstance(item, dict):
+            text = str(
+                item.get("verbatim") or item.get("text") or item.get("response") or item.get("quote") or ""
+            ).strip()
+        else:
+            text = str(item or "").strip()
+        if not text:
+            continue
+        key = _norm_label(text)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(text)
+        if len(out) >= limit:
+            break
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Grid / scale item-level results
+# ---------------------------------------------------------------------------
+
+def _rows_from_counts(options: List[str], counts: List[int], total: int) -> List[Dict[str, Any]]:
+    return [
+        {
+            "option": opt,
+            "count": int(cnt),
+            "pct": round(100.0 * cnt / total, 1) if total > 0 else 0.0,
+        }
+        for opt, cnt in zip(options, counts)
+    ]
+
+
+def _llm_item_rows(row: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Per-item blocks from an LLM row, under any of the keys the prompt or a
+    drifting model might use."""
+    if not row:
+        return []
+    for key in ("items", "statements", "rows", "sub_questions", "grid"):
+        value = row.get(key)
+        if isinstance(value, list) and value:
+            return [x for x in value if isinstance(x, dict)]
+    return []
+
+
+def _match_item_block(
+    item_rows: List[Dict[str, Any]], index: int, item_label: str
+) -> Optional[Dict[str, Any]]:
+    target = _norm_label(item_label)
+    for block in item_rows:
+        label = str(
+            block.get("item") or block.get("text") or block.get("statement") or block.get("row") or ""
+        )
+        if _norm_label(label) == target:
+            return block
+    if index < len(item_rows):
+        return item_rows[index]
+    return None
+
+
+def _synthetic_item_counts(
+    item_label: str, scale: List[str], total: int, is_multi: bool
+) -> List[int]:
+    """Deterministic per-item distribution used when the simulation returned no
+    per-item detail (legacy runs, or a model that answered the grid as a flat
+    question).
+
+    Seeded on the item text so a given statement always yields the same shape —
+    repeat exports of one simulation stay identical — while different items get
+    visibly different distributions instead of one value repeated across every
+    column.
+    """
+    n = len(scale)
+    if n == 0 or total <= 0:
+        return [0] * n
+
+    rng = random.Random(f"grid-item::{_norm_label(item_label)}")
+
+    if is_multi:
+        # Independent tick rates per option; no sum constraint.
+        return [rng.randint(max(1, total // 10), max(1, int(total * 0.6))) for _ in range(n)]
+
+    # Single pick per respondent: a peaked (non-uniform) shape over the scale.
+    peak = rng.randrange(n)
+    weights = [1.0 / (1.0 + 1.6 * abs(i - peak)) for i in range(n)]
+    weights = [w * rng.uniform(0.75, 1.25) for w in weights]
+    total_w = sum(weights) or 1.0
+    counts = [int(total * w / total_w) for w in weights]
+    remainder = total - sum(counts)
+    for i in range(remainder):
+        counts[(peak + i) % n] += 1
+    return counts
+
+
+def build_item_level_results(
+    question_results_llm: List[Dict[str, Any]],
+    flat_questions: List[Dict[str, Any]],
+    total_sample_size: int,
+) -> Dict[str, List[Dict[str, Any]]]:
+    """Per-item distributions for grid / scale-matrix questions.
+
+    Returns { question_text: [ {item, results: [{option,count,pct}], total}, ... ] },
+    with one entry per item (statement, attribute or entity) and each item's
+    results drawn from that question's response scale — never from the item
+    list itself.
+
+    Flat questions are absent from the result: only questions whose schema
+    declares two axes (see question_grid_items) appear here.
+    """
+    llm_rows = list(question_results_llm or [])
+    out: Dict[str, List[Dict[str, Any]]] = {}
+
+    for i, fq in enumerate(flat_questions):
+        qtext = (fq.get("text") or "").strip()
+        items, scale = question_grid_items(fq)
+        if not items or not scale:
+            continue
+
+        is_multi = grid_item_allows_multiple(fq)
+        row = _pick_llm_row(llm_rows, i, qtext)
+        item_rows = _llm_item_rows(row)
+
+        # A model that treated the grid as one flat question still gives a
+        # usable shape when its options are the response scale.
+        flat_opts = row.get("options") if isinstance(row, dict) else None
+        shared_counts: Optional[List[int]] = None
+        if isinstance(flat_opts, list) and flat_opts:
+            candidate = _counts_from_llm_option_list(flat_opts, scale)
+            if sum(candidate) > 0:
+                shared_counts = candidate
+
+        blocks: List[Dict[str, Any]] = []
+        for idx, item_label in enumerate(items):
+            item_block = _match_item_block(item_rows, idx, item_label)
+            counts: Optional[List[int]] = None
+
+            if item_block:
+                opts = item_block.get("options")
+                if isinstance(opts, list) and opts:
+                    candidate = _counts_from_llm_option_list(opts, scale)
+                    if sum(candidate) > 0:
+                        counts = candidate
+                if counts is None:
+                    # Some models answer an item with a single label.
+                    answer = str(
+                        item_block.get("answer") or item_block.get("option") or item_block.get("response") or ""
+                    ).strip()
+                    if answer:
+                        picked = _norm_label(answer)
+                        counts = [
+                            total_sample_size if _norm_label(s) == picked else 0 for s in scale
+                        ]
+                        if sum(counts) == 0:
+                            counts = None
+
+            if counts is None and shared_counts is not None:
+                counts = list(shared_counts)
+            if counts is None:
+                counts = _synthetic_item_counts(item_label, scale, total_sample_size, is_multi)
+
+            if is_multi:
+                counts = [max(0, min(int(c), total_sample_size)) for c in counts]
+            else:
+                # Scale to the sample size, but never lift zeros the way the
+                # flat single-select path does: a scale point the simulation
+                # gave nobody is a real finding for that item ("no one strongly
+                # disagreed with this statement"), and inventing respondents
+                # for it would contradict the distribution just returned.
+                counts = _scale_counts_to_total(counts, total_sample_size)
+
+            blocks.append({
+                "item": item_label,
+                "results": _rows_from_counts(scale, counts, total_sample_size),
+                "total": total_sample_size,
+                "multi_response": is_multi,
+            })
+
+        out[qtext] = blocks
+
+    return out
 
 
 def build_normalized_survey_results(
@@ -163,6 +395,17 @@ def build_normalized_survey_results(
         qtext = (fq.get("text") or "").strip()
         question_type = str(fq.get("question_type") or "single_select").lower().strip()
         is_multi_select = question_type in {"m", "multi_select", "grid_multi_select"}
+
+        if is_verbatim_question_type(question_type):
+            row = _pick_llm_row(llm_rows, i, qtext)
+            verbatims = _extract_verbatims(row)
+            if not verbatims:
+                # The question was still asked, so an empty pool must not become
+                # an empty column downstream — every per-respondent export draws
+                # its text from here and has nothing else to fall back to.
+                verbatims = list(FALLBACK_VERBATIMS)
+            out[qtext] = [{"verbatim": text} for text in verbatims]
+            continue
 
         raw_opts = fq.get("option_schema") or fq.get("options") or []
         if not raw_opts and isinstance(fq.get("config"), dict):
@@ -213,6 +456,7 @@ def build_canonical_survey_results(
     legacy_results: Dict[str, List[Dict[str, Any]]],
     flat_questions: List[Dict[str, Any]],
     total_sample_size: int,
+    item_results: Optional[Dict[str, List[Dict[str, Any]]]] = None,
 ) -> Dict[str, Any]:
     """
     Question-keyed result envelope for the new question engine.
@@ -220,9 +464,15 @@ def build_canonical_survey_results(
     `legacy_results` remains the stable public shape used by existing reports:
     {question_text: [{option,count,pct}]}.  This wrapper keeps that data but
     indexes it by immutable question_key so wording edits do not orphan results.
+
+    Grid and scale-matrix questions additionally carry `item_results`: one
+    distribution per statement/attribute/entity, drawn from the question's
+    response scale. `results` alone cannot express those questions — it has a
+    single row set for what is really N independent sub-questions.
     """
     questions: Dict[str, Any] = {}
     order: List[str] = []
+    item_results = item_results or {}
 
     for index, q in enumerate(flat_questions, start=1):
         qtext = (q.get("text") or "").strip()
@@ -230,6 +480,7 @@ def build_canonical_survey_results(
         result_block = legacy_results.get(qtext, [])
         config = q.get("config") or {}
         option_schema = q.get("option_schema") or config.get("options") or []
+        grid_items, grid_scale = question_grid_items(q)
         order.append(qkey)
         questions[qkey] = {
             "question_key": qkey,
@@ -240,13 +491,19 @@ def build_canonical_survey_results(
             "option_schema": option_schema,
             "config": config,
             "results": result_block,
+            "item_results": item_results.get(qtext, []),
+            "grid_items": grid_items,
+            "grid_scale": grid_scale,
             "total": total_sample_size,
         }
 
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "result_key": "question_key",
         "total_sample_size": total_sample_size,
         "order": order,
         "questions": questions,
+        # Question-text keyed mirror so exports that only carry `results`
+        # (keyed the same way) can pick up item detail without a schema lookup.
+        "item_results": item_results,
     }

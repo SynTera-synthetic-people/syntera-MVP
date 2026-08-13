@@ -1,0 +1,28 @@
+# Development and CI dependencies.
+#
+# Deliberately separate from requirements.txt: the Dockerfile installs
+# requirements.txt, so anything added there ships inside the production
+# container. Test tooling has no business in a running production image.
+#
+# Install for local development or in CI:
+#     pip install -r requirements-dev.txt
+#
+# The -r below pulls in the runtime dependencies too, so this single file is
+# enough — there is no need to install both.
+
+-r requirements.txt
+
+# Pinned to the version the migration suite was verified against, for the same
+# reason alembic and SQLAlchemy are pinned in requirements.txt: the tool that
+# decides whether a schema change is safe must not drift between the build that
+# was tested and the build that runs in CI.
+pytest==9.1.1
+
+# NOTE: tests/test_migrations.py needs no pytest-asyncio — every test in it is
+# synchronous, driving the Alembic CLI through subprocess and psycopg2.
+# psycopg2 is already provided by requirements.txt (psycopg2-binary).
+#
+# The async tests under scripts/ (test_artifact_pipeline_*.py) DO use
+# `async def test_`, so a bare `pytest` run that collects them would also need
+# pytest-asyncio. That is not added here because nothing currently runs them in
+# CI; add it in the same change that starts doing so.

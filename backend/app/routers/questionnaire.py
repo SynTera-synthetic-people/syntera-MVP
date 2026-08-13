@@ -1,6 +1,5 @@
 import logging
 from typing import Optional
-from io import BytesIO
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import update
 from app.models.survey_simulation import SurveySimulation
@@ -36,7 +35,8 @@ from app.services.persona import get_persona
 from app.services.population import get_simulation
 from app.services.exploration import get_exploration
 from app.services.questionnaire import get_full_questionnaire, get_questionnaire_by_simulation as get_questionnaire_by_sim
-from fastapi.responses import StreamingResponse, Response
+from fastapi.responses import Response, FileResponse
+from app.services.questionnaire_pdf import generate_questionnaire_pdf
 from app.utils.pdf_generator import generate_survey_pdf
 from app.services.survey_simulation import (
     get_survey_simulation_by_id,
@@ -50,7 +50,6 @@ from app.services.exploration import get_exploration
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Form, Query
 from app.services import questionnaire as questionnaire_service
 from app.services import workspace as ws_service
-from app.utils.questionnaire_csv import questionnaire_sections_to_csv_bytes
 from app.services.question_engine import analysis_options_for_question, get_question_type_catalog
 
 
@@ -346,16 +345,17 @@ async def export_questionnaire_csv_for_exploration(
     exploration_id: str,
     current_user: User = Depends(get_current_active_user),
 ):
-    """Download all questionnaire sections for an exploration as CSV (no simulation needed)."""
+    """Download all questionnaire sections for an exploration as a branded PDF (no simulation needed)."""
     await _ensure_workspace_member(workspace_id, current_user)
     questionnaires = await service.get_full_questionnaire(workspace_id, exploration_id)
     if not questionnaires:
         raise HTTPException(status_code=404, detail="No questionnaire found for this exploration")
-    body = questionnaire_sections_to_csv_bytes(questionnaires, None)
-    return StreamingResponse(
-        BytesIO(body),
-        media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": 'attachment; filename="questionnaire.csv"'},
+    pdf_path = await generate_questionnaire_pdf(questionnaires)
+    return FileResponse(
+        path=pdf_path,
+        media_type="application/pdf",
+        filename="questionnaire.pdf",
+        headers={"Content-Disposition": 'attachment; filename="questionnaire.pdf"'},
     )
 
 
@@ -370,7 +370,7 @@ async def export_questionnaire_csv(
     ),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Download questionnaire as CSV: Q No., Question Description, Options."""
+    """Download questionnaire as a branded PDF: question text + options."""
     await _ensure_workspace_member(workspace_id, current_user)
 
     questionnaires = await service.get_questionnaire_by_simulation(workspace_id, exploration_id, simulation_id)
@@ -390,11 +390,12 @@ async def export_questionnaire_csv(
     else:
         counts_map = await get_latest_survey_results_map(simulation_id)
 
-    body = questionnaire_sections_to_csv_bytes(questionnaires, counts_map)
-    return StreamingResponse(
-        BytesIO(body),
-        media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": 'attachment; filename="questionnaire_exploration.csv"'},
+    pdf_path = await generate_questionnaire_pdf(questionnaires, counts_map)
+    return FileResponse(
+        path=pdf_path,
+        media_type="application/pdf",
+        filename="questionnaire_exploration.pdf",
+        headers={"Content-Disposition": 'attachment; filename="questionnaire_exploration.pdf"'},
     )
 
 
@@ -803,12 +804,19 @@ async def simulate_survey(
 
     # Run the heavy LLM work as a background task.  The client must poll
     # GET /simulation/by-source/{simulation_source_id} until the row appears.
+    # personas_list/persona_samples were resolved above purely to validate
+    # that the requested personas exist; simulate_combined_and_store() now
+    # re-fetches each persona itself (to pull Digital Brain fields), so only
+    # the {persona_id, sample_size} pairs need to be passed through.
+    personas_selection = [
+        {"persona_id": p.get("id"), "sample_size": persona_samples[p.get("id")]}
+        for p in personas_list
+    ]
     background_tasks.add_task(
         simulate_combined_and_store,
         workspace_id=workspace_id,
         research_objective=objective_data,
-        personas_list=personas_list,
-        persona_samples=persona_samples,
+        personas_selection=personas_selection,
         simulation_id=payload.simulation_id,
         questions_sections=questions,
         user_id=current_user.id,

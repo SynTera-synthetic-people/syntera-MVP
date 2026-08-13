@@ -29,6 +29,12 @@ from urllib.parse import urlparse
 from app.db import async_engine
 from app.models.persona import Persona
 from app.utils.id_generator import generate_id
+from app.services.ke_sourcebank_enrichment import enrich_persona_ke_sources
+from app.services.digital_brain_pipeline import (
+    _extract_geography_meta,
+    _assign_cities_to_personas,
+)
+from app.services.llm_usage_tracker import record_llm_usage, extract_usage_openai_responses
 
 from app.services.auto_generated_persona_prompts import (
     PERSONA_GENERATION_PROMPT,
@@ -194,41 +200,113 @@ async def _resolve_domain_and_subject_key(
     return None, None
 
 
-async def _fetch_ml_context(
+async def _fetch_ml_contexts_per_persona(
     description: str,
-) -> tuple[str | None, str | None, str | None]:
+    persona_numbers: list[int],
+) -> dict[int, dict]:
     """
-    Resolve domain → fetch features → run ML prediction → build context string.
-    Returns (domain, subject_key, ml_context_string).
-    Returns (None, None, None) on any failure — generation always falls back gracefully.
+    Resolve one domain for this RO, then ground each persona_number in a
+    DIFFERENT real transactor's behavior (top-N by transaction count) instead
+    of the whole batch sharing one profile — otherwise every persona (and,
+    since find_subject_key always picks the single busiest transactor
+    platform-wide, every exploration in the same domain) converges on
+    identical AOV/orders-per-week figures.
+
+    Returns {persona_number: {"domain", "subject_key", "context"}}. Any
+    persona_number whose lookup fails gets all-None values — generation
+    always falls back gracefully to an LLM-only prompt for that persona.
     """
+    empty = {"domain": None, "subject_key": None, "context": None}
     try:
-        from app.ml.feature_fetch import get_user_features
+        from app.ml.feature_fetch import find_subject_keys, get_user_features
         from app.ml.predictor import predict_from_features
 
-        domain, subject_key = await _resolve_domain_and_subject_key(description)
-        if not domain or not subject_key:
-            return None, None, None
+        domain, _ = await _resolve_domain_and_subject_key(description)
+        if not domain:
+            return {n: dict(empty) for n in persona_numbers}
 
-        features = await get_user_features(subject_key, domain)
-        prediction = await asyncio.to_thread(predict_from_features, domain, features)
+        subject_keys = await find_subject_keys(domain, limit=len(persona_numbers))
+        if not subject_keys:
+            return {n: dict(empty) for n in persona_numbers}
 
-        context = _build_ml_context_string(domain, features, prediction)
-        print(
-            f"[ML] Context ready — domain={domain!r} pred={prediction['prediction']:.2f} "
-            f"conf={prediction['confidence_label']}"
-        )
-        return domain, subject_key, context
+        results: dict[int, dict] = {}
+        for i, persona_number in enumerate(persona_numbers):
+            subject_key = subject_keys[i % len(subject_keys)]
+            try:
+                features = await get_user_features(subject_key, domain)
+                prediction = await asyncio.to_thread(predict_from_features, domain, features)
+                context = _build_ml_context_string(domain, features, prediction)
+                results[persona_number] = {"domain": domain, "subject_key": subject_key, "context": context}
+                print(
+                    f"[ML] Context ready — persona={persona_number} domain={domain!r} "
+                    f"subject_key={subject_key!r} pred={prediction['prediction']:.2f} "
+                    f"conf={prediction['confidence_label']}"
+                )
+            except Exception as exc:
+                print(
+                    f"[ML] Context fetch failed for persona {persona_number} "
+                    f"({type(exc).__name__}: {exc}) — using LLM-only fallback"
+                )
+                results[persona_number] = dict(empty)
+        return results
 
     except Exception as exc:
         print(f"[ML] Context fetch failed ({type(exc).__name__}: {exc}) — using LLM-only fallback")
-        return None, None, None
+        return {n: dict(empty) for n in persona_numbers}
+
+
+def _assign_cities_for_personas(
+    description: str,
+    persona_numbers: list[int],
+    explicit_geography: Optional[list[str]] = None,
+) -> dict[int, tuple[str | None, str | None]]:
+    """
+    Reuses digital_brain_pipeline's battle-tested geography round-robin so Omi
+    personas stop independently converging on the same city (e.g. Bangalore
+    x3) — each parallel generation call had no visibility into what city any
+    other call picked. Maps persona_number -> (assigned_city, assigned_country).
+
+    `explicit_geography`, when supplied, is the Research Objective Framer's
+    structured geography tags (Audience & Segments tab's picker — e.g.
+    ["California", "Mumbai"]). When present, digital_brain_pipeline's
+    _extract_geography_meta() resolves cities from THESE tags in STRICT mode
+    (only ever assigns cities the user actually named, cycling them rather
+    than padding out with an un-requested city) instead of regex-parsing the
+    free-text `description` paragraph — see that function's docstring.
+    Falls back to the original free-text-only behavior when not supplied
+    (RO created via the chat flow, or the picker was left empty).
+
+    Falls back to (None, None) for every persona on any failure — geographic
+    diversity is a nice-to-have, never worth blocking generation over.
+    """
+    pseudo_ro: dict = {"geography": description}
+    if explicit_geography:
+        pseudo_ro["explicit_geography"] = explicit_geography
+    try:
+        geo_meta = _extract_geography_meta(pseudo_ro)
+        print(f"[Geo] Omi geography detected: countries={geo_meta['countries']}")
+
+        city_country_pairs = _assign_cities_to_personas(pseudo_ro, len(persona_numbers))
+        assignments = {
+            persona_number: city_country_pairs[i]
+            for i, persona_number in enumerate(persona_numbers)
+        }
+        print(f"[Geo] Omi city assignments: {assignments}")
+        return assignments
+    except Exception as exc:
+        print(f"[Geo] City assignment failed ({type(exc).__name__}: {exc}) — using generic locations")
+        return {n: (None, None) for n in persona_numbers}
 
 
 async def _generate_persona_themes(
     description: str,
     needed_count: int,
     existing_names: Optional[List[str]] = None,
+    *,
+    exploration_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
+    created_by: Optional[str] = None,
+    request_id: Optional[str] = None,
 ) -> List[str]:
     """
     Stage 1 of persona generation: brainstorm `needed_count` distinct
@@ -284,6 +362,20 @@ Return ONLY this JSON, no markdown, no explanations:
                 },
                 {"role": "user", "content": prompt},
             ],
+        )
+        input_tokens, output_tokens, usage_raw = extract_usage_openai_responses(response)
+        await record_llm_usage(
+            exploration_id=exploration_id,
+            stage="persona_auto_generate",
+            operation="theme_brainstorm",
+            provider="openai",
+            model="gpt-5",
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            usage_raw=usage_raw,
+            workspace_id=workspace_id,
+            created_by=created_by,
+            request_id=request_id,
         )
         data = _load_json_object(response.output_text)
         segments = data.get("segments", [])
@@ -411,6 +503,116 @@ def _json_object_or_none(value: Any) -> Optional[dict]:
     return None
 
 
+_DOMAIN_TO_PLATFORM: dict[str, str] = {
+    "reddit.com":    "Reddit",
+    "quora.com":     "Quora",
+    "youtube.com":   "YouTube",
+    "x.com":         "Twitter/X",
+    "twitter.com":   "Twitter/X",
+    "linkedin.com":  "LinkedIn",
+    "medium.com":    "Medium",
+    "capterra.in":   "Capterra",
+    "capterra.com":  "Capterra",
+}
+
+
+def _extract_omi_url_and_context(raw: str) -> tuple[str, str]:
+    """Split an Omi reference string into (clean_url, context_snippet).
+
+    GPT's web_search tool sometimes returns strings in the format:
+        "https://reddit.com/r/.../post_title/ — summary of what was found"
+    The em-dash (—) or regular " - " separates the URL from the context text.
+    We must store them separately so the href only ever contains a real URL.
+
+    Returns ("", "") when the string is not a valid http/https URL.
+    """
+    raw = raw.strip()
+    context = ""
+    for sep in (" — ", " - ", " | "):   # em-dash, hyphen, pipe
+        if sep in raw:
+            parts = raw.split(sep, 1)
+            raw, context = parts[0].strip(), parts[1].strip()
+            break
+
+    parsed = urlparse(raw)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        return "", ""
+    return raw, context
+
+
+def _build_omi_web_evidence_by_platform(reference_urls: list) -> list[dict]:
+    """Group Omi web-search URLs by platform for the 'All Sources Used' modal.
+
+    Omi uses GPT's web_search tool which returns raw citation strings that can
+    look like:
+        "https://reddit.com/r/.../post/ — community cites brand X for quality"
+
+    We split the URL from the context text (which becomes the quote preview),
+    validate the URL is a real https address, then group by platform.
+    This ensures the accordion shows clickable links without 404 risk from
+    trailing context text being included in the href.
+    """
+    platform_buckets: dict[str, list[dict]] = {}
+    for raw in reference_urls:
+        if not isinstance(raw, str):
+            continue
+        clean_url, context = _extract_omi_url_and_context(raw)
+        if not clean_url:
+            continue
+        netloc = urlparse(clean_url).netloc.lower().removeprefix("www.")
+        platform = next(
+            (name for domain, name in _DOMAIN_TO_PLATFORM.items() if netloc.endswith(domain)),
+            netloc or "Web",
+        )
+        platform_buckets.setdefault(platform, []).append(
+            {"url": clean_url, "quote": context, "confidence": 0.0}
+        )
+
+    return [
+        {
+            "platform": platform,
+            "total_posts": len(citations),
+            "themes": [],
+            "sentiment": {},
+            "source_note": "real_citation_backed",
+            "is_hq": False,
+            "citations": citations,
+        }
+        for platform, citations in platform_buckets.items()
+    ]
+
+
+# location_country is free-texted by the LLM per persona with no consistency
+# constraint — different personas (or different generation batches) can
+# describe the same country as "USA", "United States", "America", etc.,
+# fragmenting country-grouped views (e.g. a persona-list grouped by country)
+# into duplicate buckets for what's really one country. Canonicalize known
+# variants; anything unrecognized passes through unchanged (title-cased) so a
+# genuinely different/rare country name is never dropped or blanked.
+_COUNTRY_DISPLAY_NAMES: dict[str, str] = {
+    "usa": "USA", "us": "USA", "u.s.a.": "USA", "u.s.": "USA",
+    "united states": "USA", "united states of america": "USA",
+    "america": "USA", "american": "USA",
+    "india": "India", "indian": "India",
+    "uk": "UK", "u.k.": "UK", "united kingdom": "UK",
+    "britain": "UK", "british": "UK", "great britain": "UK",
+    "england": "UK", "scotland": "UK", "wales": "UK",
+    "canada": "Canada", "canadian": "Canada",
+    "australia": "Australia", "australian": "Australia",
+    "france": "France", "french": "France",
+    "germany": "Germany", "german": "Germany",
+    "japan": "Japan", "japanese": "Japan",
+    "singapore": "Singapore",
+}
+
+
+def _normalize_country_name(country: str) -> str:
+    if not country:
+        return country
+    canonical = _COUNTRY_DISPLAY_NAMES.get(country.strip().lower())
+    return canonical if canonical else country
+
+
 def _normalise_generated_persona(persona: dict) -> dict:
     source = _json_safe(persona) if isinstance(persona, dict) else {}
     normalised = dict(source)
@@ -418,6 +620,7 @@ def _normalise_generated_persona(persona: dict) -> dict:
     for field in TEXT_PERSONA_FIELDS:
         normalised[field] = _stringify_for_column(source.get(field))
 
+    normalised["location_country"] = _normalize_country_name(normalised["location_country"])
     normalised["name"] = normalised["name"] or "Generated Persona"
     normalised["interests"] = _list_for_jsonb(source.get("interests"))
     normalised["ocean_profile"] = _json_object_or_none(source.get("ocean_profile"))
@@ -589,6 +792,85 @@ async def get_description(exploration_id: str) -> str | None:
     await engine.dispose()
     return result.scalar_one_or_none()
 
+
+async def _get_research_objective_interpretation(exploration_id: str) -> dict:
+    """
+    Fetch the RO's structured `ai_interpretation` JSON (get_description()
+    above only returns the free-text `description`). Used by
+    _get_ro_components_for_ke() below, which needs both fields to call
+    extract_ro_components_for_pipeline() — the same RO-structuring extractor
+    Digital Brain / manual calibration already use.
+    """
+    Base = declarative_base()
+
+    class Exploration(Base):
+        __tablename__ = "research_objectives"
+        exploration_id = Column(String, primary_key=True)
+        ai_interpretation = Column(JSON)
+
+    engine = create_async_engine(DATABASE_URL, echo=False)
+    SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with SessionLocal() as session:
+        result = await session.execute(
+            select(Exploration.ai_interpretation).where(
+                Exploration.exploration_id == exploration_id
+            )
+        )
+        value = result.scalar_one_or_none()
+
+    await engine.dispose()
+    return value or {}
+
+
+async def _get_ro_components_for_ke(
+    exploration_id: str,
+    description: Optional[str],
+    workspace_id: str,
+    created_by: str,
+    ai_interpretation: Optional[dict] = None,
+) -> Optional[dict]:
+    """
+    Best-effort structured RO extraction, used only to drive Knowledge
+    Enrichment query generation (see build_ke_search_queries() in
+    ro_extractor.py) for Omi auto-generated personas.
+
+    Digital Brain and manual calibration already compute this same
+    12-component RO shape for their own generation logic and pass it
+    straight through to KE (see routers/personas.py and
+    manual_digital_brain_persona.py) — zero extra cost there. The Omi
+    auto-generate flow doesn't otherwise need this structure at all, so this
+    is the one call site that runs the shared extractor, once per generation
+    batch (not once per persona — see the ro_components_task wiring in
+    ai_generate_persona()).
+
+    `ai_interpretation`, when the caller already fetched it (ai_generate_persona
+    fetches it early and cheaply — no LLM call — to feed city assignment's
+    explicit_geography, before this function's own, separate, LLM-based
+    extraction runs), is reused here instead of querying it a second time.
+    Falls back to fetching it itself when not supplied.
+
+    Never raises: a failure here must degrade KE query generation to raw RO
+    text (ro_components=None, handled by every downstream KE function), not
+    break persona generation, which never depended on this value.
+    """
+    try:
+        from app.services.ro_extractor import extract_ro_components_for_pipeline
+
+        if ai_interpretation is None:
+            ai_interpretation = await _get_research_objective_interpretation(exploration_id)
+        return await extract_ro_components_for_pipeline(
+            description or "", ai_interpretation,
+            exploration_id=exploration_id, workspace_id=workspace_id, created_by=created_by,
+        )
+    except Exception as exc:
+        print(
+            f"[KE] Structured RO extraction failed ({type(exc).__name__}: {exc}); "
+            f"KE queries will fall back to raw RO text"
+        )
+        return None
+
+
 async def get_all_questions_by_section_id(section_id: str):
     Base = declarative_base()
     engine = create_async_engine(DATABASE_URL, echo=False)
@@ -688,6 +970,8 @@ async def ai_generate_persona(
     starting_persona_number: int = 1,
     _attempt: int = 1,
     assigned_themes: Optional[Dict[int, str]] = None,
+    request_id: Optional[str] = None,
+    ro_components: Optional[dict] = None,
 ):
     """
     Generate the requested number of Omi personas in parallel.
@@ -698,7 +982,46 @@ async def ai_generate_persona(
     if target_count <= 0:
         return {"personas": [], "consumer_personas": []}
 
+    # One request_id per logical batch (including retries) so every LLM
+    # usage row from this call — and any recursive retry below — can be
+    # correlated together.
+    if request_id is None:
+        request_id = uuid.uuid4().hex
+
     description = await get_description(exploration_id)
+
+    # Cheap, non-LLM lookup (single SELECT of ai_interpretation), fetched
+    # eagerly and reused two ways below: (1) explicit_geography is extracted
+    # from it right away, synchronously, to feed city assignment before
+    # generation starts; (2) the same dict is handed to the deferred
+    # ro_components_task below so that call doesn't re-fetch it.
+    from app.services.ro_extractor import _extract_explicit_geography
+
+    ai_interpretation = await _get_research_objective_interpretation(exploration_id)
+    explicit_geography = _extract_explicit_geography(ai_interpretation)
+    if explicit_geography:
+        print(f"[Geo] Omi: explicit geography tags from Framer picker: {explicit_geography}")
+
+    # ============================================================================
+    # KE QUERY GENERATION — kick off structured RO-component extraction
+    # concurrently with the independent setup steps below (city assignment,
+    # ML context, theme brainstorm). Unlike Digital Brain / manual
+    # calibration, the Omi auto-generate flow never otherwise computes the
+    # 12-component RO shape, so this is the one flow that needs a dedicated
+    # call to get it. Started as a background task (not awaited yet) so its
+    # ~1-2s Claude call runs alongside the other setup work instead of adding
+    # latency on top of it; it's only awaited below, right before the first
+    # KE-enrichment call needs it. Computed ONCE per batch (not once per
+    # persona) and threaded through retries via the ro_components parameter,
+    # the same pattern already used for assigned_themes above.
+    ro_components_task = None
+    if ro_components is None:
+        ro_components_task = asyncio.create_task(
+            _get_ro_components_for_ke(
+                exploration_id, description, workspace_id, current_user_id,
+                ai_interpretation=ai_interpretation,
+            )
+        )
 
     # Import the split prompts
     from app.services.auto_generated_persona_prompts import (
@@ -706,12 +1029,22 @@ async def ai_generate_persona(
         RESEARCH_OBJECTIVE_PROMPT
     )
 
-    # ============================================================================
-    # ML CONTEXT — fetch once, reuse across all parallel persona calls
-    # ============================================================================
-    ml_domain, ml_subject_key, ml_context = await _fetch_ml_context(description or "")
-
     persona_numbers = list(range(starting_persona_number, starting_persona_number + target_count))
+
+    # ============================================================================
+    # GEOGRAPHIC DIVERSITY — pre-assign a distinct city per persona so the
+    # independent parallel generation calls below don't all converge on the
+    # same city (reuses digital_brain_pipeline's round-robin + dedup logic)
+    # ============================================================================
+    city_assignments = _assign_cities_for_personas(
+        description or "", persona_numbers, explicit_geography=explicit_geography,
+    )
+
+    # ============================================================================
+    # ML CONTEXT — ground each persona in a DIFFERENT real transactor's
+    # behavior instead of the whole batch sharing one profile
+    # ============================================================================
+    ml_contexts = await _fetch_ml_contexts_per_persona(description or "", persona_numbers)
 
     # ============================================================================
     # STAGE 1 — assign each persona slot a distinct behavioral segment up front
@@ -731,7 +1064,11 @@ async def ai_generate_persona(
         except Exception as exc:
             print(f"[Themes] Could not fetch existing persona names ({type(exc).__name__}: {exc}); continuing without them")
 
-        themes = await _generate_persona_themes(description or "", target_count, existing_names)
+        themes = await _generate_persona_themes(
+            description or "", target_count, existing_names,
+            exploration_id=exploration_id, workspace_id=workspace_id,
+            created_by=current_user_id, request_id=request_id,
+        )
         assigned_themes = {
             num: themes[i] for i, num in enumerate(persona_numbers) if i < len(themes)
         }
@@ -744,6 +1081,7 @@ async def ai_generate_persona(
         """
         Generate a single persona via API call.
         """
+        ml_context = ml_contexts.get(persona_number, {}).get("context")
         ml_section = f"\n\n{ml_context}\n" if ml_context else ""
 
         assigned_theme = assigned_themes.get(persona_number)
@@ -755,6 +1093,15 @@ async def ai_generate_persona(
             else "Ensure this persona represents a distinct behavioral segment from other personas."
         )
 
+        assigned_city, assigned_country = city_assignments.get(persona_number, (None, None))
+        location_instruction = (
+            f"PERSONA LOCATION: {assigned_city}, {assigned_country}\n"
+            "Ground this persona's demographics, occupation, and lifestyle details in this "
+            "specific city — do not substitute a different city."
+            if assigned_city
+            else "Location: City/neighborhood in India"
+        )
+
         # Format dynamic prompt - specify this persona's position in the full plan limit
         dynamic_prompt = f"""
 {RESEARCH_OBJECTIVE_PROMPT.format(research_objective=description)}
@@ -762,6 +1109,7 @@ async def ai_generate_persona(
 Generate exactly 1 high-quality persona (Persona #{persona_number} of {total_persona_goal} total).
 Return exactly one item inside consumer_personas.
 {diversity_instruction}
+{location_instruction}
 """
 
         # API call with caching
@@ -802,7 +1150,22 @@ Return exactly one item inside consumer_personas.
                 }
             ],
         )
-        
+
+        input_tokens, output_tokens, usage_raw = extract_usage_openai_responses(response)
+        await record_llm_usage(
+            exploration_id=exploration_id,
+            stage="persona_auto_generate",
+            operation="persona_generation",
+            provider="openai",
+            model="gpt-5",
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            usage_raw=usage_raw,
+            workspace_id=workspace_id,
+            created_by=current_user_id,
+            request_id=request_id,
+        )
+
         return response.output_text
 
     # ============================================================================
@@ -820,6 +1183,14 @@ Return exactly one item inside consumer_personas.
     
     elapsed = asyncio.get_event_loop().time() - start_time
     print(f"✓ Parallel generation completed in {elapsed:.1f}s\n")
+
+    # Resolve the structured RO components kicked off above. By this point the
+    # single Claude extraction call has almost certainly already finished
+    # alongside the (slower, parallel) persona-generation calls, so this
+    # await adds no meaningful latency. ro_components stays None (graceful
+    # degradation to raw-text KE queries) if extraction failed.
+    if ro_components_task is not None:
+        ro_components = await ro_components_task
 
     # ============================================================================
     # PROCESS RESULTS AND SAVE TO DATABASE
@@ -847,11 +1218,23 @@ Return exactly one item inside consumer_personas.
                     break
 
                 persona["auto_generated_persona"] = True
+
+                assigned_city, assigned_country = city_assignments.get(
+                    persona_numbers[idx - 1], (None, None)
+                )
+                persona["assigned_city"] = assigned_city or "Unspecified"
+                persona["assigned_country"] = assigned_country or "India"
+
                 reference_sites = persona.get("reference_sites_with_usage", [])
                 site_counter = dict(
                     Counter(urlparse(url).netloc for url in reference_sites)
                 )
                 persona["researched_sites"] = site_counter
+                # Group web-search URLs by platform so the frontend can render
+                # a per-URL accordion (same modal shape as Digital Brain pathway).
+                persona["web_evidence_by_platform"] = _build_omi_web_evidence_by_platform(
+                    reference_sites
+                )
 
                 persona_id = generate_id()
                 persona["id"] = persona_id
@@ -894,12 +1277,27 @@ Return exactly one item inside consumer_personas.
                         persona_details=db_persona["persona_details"],
                         auto_generated_persona=True,
                         calibration_confidence=_extract_calibration_confidence(persona),
-                        subject_key=ml_subject_key,
-                        ml_domain=ml_domain,
+                        subject_key=ml_contexts.get(persona_numbers[idx - 1], {}).get("subject_key"),
+                        ml_domain=ml_contexts.get(persona_numbers[idx - 1], {}).get("domain"),
                     )
 
                     session.add(p)
                     await session.commit()
+
+                # Enrich KE sources in background — does not block the response.
+                # ro_components (resolved above) drives structured, geography-
+                # anchored query generation; falls back to raw `description`
+                # text automatically if extraction failed (ro_components is
+                # None) or came back thin.
+                asyncio.create_task(
+                    enrich_persona_ke_sources(
+                        persona_id=persona_id,
+                        research_objective=description,
+                        persona_name=db_persona["name"],
+                        exploration_id=exploration_id,
+                        ro_components=ro_components,
+                    )
+                )
 
                 response["personas"].append({
                     "id": persona_id,
@@ -931,6 +1329,8 @@ Return exactly one item inside consumer_personas.
             starting_persona_number=starting_persona_number + len(response["personas"]),
             _attempt=_attempt + 1,
             assigned_themes=assigned_themes,
+            request_id=request_id,
+            ro_components=ro_components,
         )
         response["personas"].extend(retry_response.get("personas", []))
         response["consumer_personas"].extend(retry_response.get("consumer_personas", []))

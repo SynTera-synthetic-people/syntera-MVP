@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchValue
@@ -334,11 +335,77 @@ def _score_result(result: dict, *, query: str, domain: Optional[str], keywords: 
     )
 
 
+def _normalize_source_url(url: Optional[str]) -> str:
+    """
+    Normalize a URL for identity comparison.
+
+    Collapses trivial variants of the same page (trailing slash, #fragment,
+    scheme/host casing) to the same value, but preserves the query string —
+    query params can address genuinely distinct content (e.g. ?post=123 vs
+    ?post=456), so stripping them risks merging unrelated articles.
+    """
+    if not url:
+        return ""
+    url = url.strip()
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return url.lower()
+    if not parsed.scheme or not parsed.netloc:
+        return url.lower()
+    normalized = f"{parsed.netloc.lower()}{parsed.path.rstrip('/')}"
+    if parsed.query:
+        normalized += f"?{parsed.query}"
+    return normalized
+
+
+def resolve_source_identity(
+    *,
+    document_id: Optional[str] = None,
+    url: Optional[str] = None,
+    chunk_id: Optional[str] = None,
+    title: Optional[str] = None,
+) -> str:
+    """
+    Canonical "is this the same source we've already cited" key.
+
+    Preference order:
+      1. normalized url — the real-world identity of a source. Prioritized
+         over document_id because re-scraping a URL creates a NEW Postgres
+         document row (a new document_id) for identical content — two
+         `sync_source.document` rows with the same source_url are the same
+         source to a user even though their document_ids differ.
+      2. document_id  — fallback for sources with no external URL (manually
+         uploaded files/PDFs — syncdb_source.py inserts source_url=NULL for
+         those, so they never collide with a web citation's url match here).
+      3. chunk_id / title — last-resort fallback for degenerate legacy data
+         that has neither of the above (chunk-level points with no parent
+         document reference).
+
+    Used by every place that aggregates Sourcebank results across multiple
+    retrieval calls, so "same source" means the same thing everywhere.
+    """
+    normalized_url = _normalize_source_url(url)
+    if normalized_url:
+        return f"url:{normalized_url}"
+    if document_id:
+        return f"doc:{document_id}"
+    if chunk_id:
+        return f"chunk:{chunk_id}"
+    if title:
+        return f"title:{title.strip().lower()}"
+    return ""
+
+
 def _dedupe_sources(results: list[dict], max_sources: int) -> list[dict]:
     seen: set[str] = set()
     sources: list[dict] = []
     for result in results:
-        doc_key = str(result.get("document_id") or result.get("source_url") or result.get("document_title"))
+        doc_key = resolve_source_identity(
+            document_id=result.get("document_id"),
+            url=result.get("source_url"),
+            title=result.get("document_title"),
+        )
         if not doc_key or doc_key in seen:
             continue
         seen.add(doc_key)

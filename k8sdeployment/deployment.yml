@@ -20,23 +20,27 @@ spec:
         app: synth-backend-production
     spec:
       serviceAccountName: ssm-reader
-      initContainers:
-        - name: migrate
-          image: 175337843263.dkr.ecr.ap-south-1.amazonaws.com/syntera-platfrom-backend:latest
-          command:
-            - sh
-            - -c
-            - |
-              echo "Running migrations if needed..."
-              alembic upgrade head || echo "Migrations already applied, skipping."
-          env:
-            - name: AWS_REGION
-              value: ap-south-1
-            - name: SSM_PATH
-              value: "/app/platform/"
+
+      # Migrations are NOT run here. They run once per deploy in a dedicated
+      # Job (k8sdeployment/migrate-job.production.yaml) that CI creates and
+      # waits on before this Deployment's image is updated.
+      #
+      # The initContainer this replaces ran per pod — 4x per deploy plus every
+      # restart, and up to 20x under the HPA — and ended in
+      # `|| echo "Migrations already applied, skipping."`, which made it exit 0
+      # even when the migration failed. On a fresh production database that
+      # means the app starts against a schema that was never created.
+      #
+      # DATABASE_URL is resolved inside the container from AWS SSM using
+      # SSM_PATH below (/app/platform/) — see app/parameters.py.
+
       containers:
         - name: backend
-          image: 175337843263.dkr.ecr.ap-south-1.amazonaws.com/syntera-platfrom-backend:latest
+          # Substituted by production.yml with the immutable github.sha tag —
+          # the same image the migration Job ran. Was `:latest`, which let
+          # `kubectl apply` overwrite the tag `kubectl set image` had just set.
+          # Uppercase placeholder: an unsubstituted apply is rejected outright.
+          image: APPLICATION_IMAGE_PLACEHOLDER
           imagePullPolicy: Always
           ports:
             - containerPort: 8000

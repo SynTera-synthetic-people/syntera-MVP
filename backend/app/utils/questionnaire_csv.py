@@ -207,17 +207,25 @@ def questionnaire_sections_to_csv_bytes(
     sections: List[Dict[str, Any]],
     counts_map: Optional[Dict[str, Any]] = None,
     include_count: bool = False,
+    item_results: Optional[Dict[str, List[Dict[str, Any]]]] = None,
 ) -> bytes:
     """
     One row per question-option.
 
     Default output is the questionnaire design export:
-    Q No., Question Description, Options.
+    Q No., Question Description, Sub-Question, Options.
 
     Raw Data Shell can opt in to response counts:
-    Q No., Question Description, Options, Count.
+    Q No., Question Description, Sub-Question, Options, Count.
 
     counts_map: optional { question_text: [ {option, count}, ... ] } from SurveySimulation.results
+
+    item_results: optional { question_text: [ {item, results:[{option,count}]}, ... ] } for grid /
+      scale-matrix questions. A Likert battery or grid is really N sub-questions sharing one
+      response scale, so `counts_map` alone cannot describe it — its single block is keyed by the
+      item axis, which makes a statement look like the chosen answer. When present, each item is
+      emitted as its own sub-question (O1_, O2_, …) with a full row per scale option, and
+      `Sub-Question` stays blank for every other question type.
     """
     if not sections:
         return b""
@@ -230,8 +238,9 @@ def questionnaire_sections_to_csv_bytes(
             flat.append((q_text, opts))
 
     aligned = _align_blocks_to_questions(counts_map, flat)
+    item_results = item_results or {}
 
-    header = ["Q No.", "Question Description", "Options"]
+    header = ["Q No.", "Question Description", "Sub-Question", "Options"]
     if include_count:
         header.append("Count")
     buffer = io.StringIO()
@@ -239,26 +248,54 @@ def questionnaire_sections_to_csv_bytes(
     writer.writerow(header)
 
     for q_no, ((q_text, opts), block) in enumerate(zip(flat, aligned), start=1):
+        item_blocks = _grid_item_blocks(item_results.get(q_text))
+        if item_blocks:
+            # Grid / scale-matrix question: analyse each statement, attribute or
+            # entity on its own, against the scale the respondent actually
+            # answered on. Multi-response grids keep independent per-option
+            # frequencies \u2014 their counts are not rescaled to the sample size.
+            for item_no, item_block in enumerate(item_blocks, start=1):
+                sub_question = f"O{item_no}_{item_block.get('item', '')}"
+                for result in item_block.get("results") or []:
+                    if not isinstance(result, dict):
+                        continue
+                    try:
+                        count = int(result.get("count", 0) or 0)
+                    except (TypeError, ValueError):
+                        count = 0
+                    row = [q_no, q_text, sub_question, str(result.get("option", ""))]
+                    if include_count:
+                        row.append(count)
+                    writer.writerow(row)
+            continue
+
         if opts:
             counts = _counts_for_options(block, opts)
             for opt, count in zip(opts, counts):
-                row = [q_no, q_text, opt if opt is not None else ""]
+                row = [q_no, q_text, "", opt if opt is not None else ""]
                 if include_count:
                     row.append(count)
                 writer.writerow(row)
         elif block and isinstance(block, list):
             for item in block:
                 if isinstance(item, dict):
+                    if "verbatim" in item:
+                        # Open-ended question: no option/count semantics, just the quote.
+                        row = [q_no, q_text, "", str(item.get("verbatim", ""))]
+                        if include_count:
+                            row.append("")
+                        writer.writerow(row)
+                        continue
                     try:
                         count = int(item.get("count", 0) or 0)
                     except (TypeError, ValueError):
                         count = 0
-                    row = [q_no, q_text, str(item.get("option", ""))]
+                    row = [q_no, q_text, "", str(item.get("option", ""))]
                     if include_count:
                         row.append(count)
                     writer.writerow(row)
         else:
-            row = [q_no, q_text, ""]
+            row = [q_no, q_text, "", ""]
             if include_count:
                 row.append(0)
             writer.writerow(row)
@@ -266,30 +303,180 @@ def questionnaire_sections_to_csv_bytes(
     return ("\ufeff" + buffer.getvalue()).encode("utf-8")
 
 
+_MULTI_SELECT_TYPES = {"m", "multi_select", "grid_multi_select", "multiselect"}
+
+
+def _is_multi_select_type(question_type: Optional[str]) -> bool:
+    if not question_type:
+        return False
+    return str(question_type).strip().lower().replace("-", "_") in _MULTI_SELECT_TYPES
+
+
+def _lookup_question_type(question_types: Dict[str, str], q_text: str) -> Optional[str]:
+    if q_text in question_types:
+        return question_types[q_text]
+    nk = _norm_key(q_text)
+    for k, v in question_types.items():
+        if _norm_key(k) == nk:
+            return v
+    return None
+
+
+def _exact_single_select_assignment(
+    rng: random.Random, opts: List[str], counts: List[int], n: int
+) -> List[str]:
+    """One option per respondent; tally of assignments equals `counts` exactly."""
+    pool: List[str] = []
+    for opt, c in zip(opts, counts):
+        pool.extend([opt] * max(int(c), 0))
+    if len(pool) < n:
+        pool.extend([opts[-1] if opts else ""] * (n - len(pool)))
+    elif len(pool) > n:
+        # Shuffle before trimming: the pool is built in option order, so
+        # slicing it first would drop whole options off the tail of the scale
+        # rather than thinning every option proportionally.
+        rng.shuffle(pool)
+        pool = pool[:n]
+    rng.shuffle(pool)
+    return pool
+
+
+def _exact_multi_select_assignment(
+    rng: random.Random, opts: List[str], counts: List[int], n: int
+) -> List[List[str]]:
+    """Each option gets its own independent, exact-count assignment across respondents
+    (multi-select options are not mutually exclusive), so a respondent can end up with
+    zero, one, or several options \u2014 and each option's marginal tally equals `counts`.
+    """
+    flags_by_option: List[List[bool]] = []
+    for _opt, c in zip(opts, counts):
+        c = max(0, min(int(c), n))
+        flags = [True] * c + [False] * (n - c)
+        rng.shuffle(flags)
+        flags_by_option.append(flags)
+
+    picks: List[List[str]] = []
+    for i in range(n):
+        picks.append([opt for opt, flags in zip(opts, flags_by_option) if flags[i]])
+    return picks
+
+
+def _verbatim_pool(opts_data: Any) -> List[str]:
+    """Extract the quote pool from a { "verbatim": "..." } row shape (open-ended
+    questions) — distinct from the { "option", "count" } shape used elsewhere.
+    """
+    if not isinstance(opts_data, list):
+        return []
+    return [
+        str(d.get("verbatim", "")).strip()
+        for d in opts_data
+        if isinstance(d, dict) and str(d.get("verbatim", "")).strip()
+    ]
+
+
+def _grid_item_blocks(raw: Any) -> List[Dict[str, Any]]:
+    """Validate a question's item_results entry, keeping only items that
+    actually carry a distribution. Returns [] for flat questions."""
+    if not isinstance(raw, list):
+        return []
+    blocks: List[Dict[str, Any]] = []
+    for block in raw:
+        if not isinstance(block, dict):
+            continue
+        item = str(block.get("item", "") or "").strip()
+        rows = block.get("results")
+        if not item or not isinstance(rows, list) or not rows:
+            continue
+        blocks.append(block)
+    return blocks
+
+
+def _grid_columns_for_question(
+    q_index: int,
+    q_text: str,
+    items: List[str],
+) -> Tuple[List[str], List[str]]:
+    """Column header + question-text-row entry for each item of a grid question.
+
+    Header follows Q<n>_<nn>: <item text> so each statement/attribute/entity is
+    identifiable on its own, and the parent question is repeated in the second
+    row so an item column is never orphaned from what was asked.
+    """
+    headers = [f"Q{q_index}_{i:02d}: {item}" for i, item in enumerate(items, start=1)]
+    text_row = [f"{q_text} — {item}" for item in items]
+    return headers, text_row
+
+
+def _assign_grid_item_responses(
+    rng: random.Random,
+    item_blocks: List[Dict[str, Any]],
+    n: int,
+) -> List[List[Any]]:
+    """One exact-count assignment column per grid item.
+
+    Returns a list parallel to `item_blocks`; each entry is the per-respondent
+    response for that item. Items are assigned independently of one another, so
+    a respondent's answer to statement 1 never leaks into statement 2's column.
+    """
+    columns: List[List[Any]] = []
+    for block in item_blocks:
+        rows = block.get("results") or []
+        opts = [str(r.get("option", "")) for r in rows if isinstance(r, dict)]
+        counts = [max(int(r.get("count", 0) or 0), 0) for r in rows if isinstance(r, dict)]
+        if not opts:
+            columns.append([""] * n)
+            continue
+        if block.get("multi_response") and sum(counts) > n:
+            # Independent tick-boxes: a respondent may match several options.
+            columns.append(_exact_multi_select_assignment(rng, opts, counts, n))
+        else:
+            columns.append(_exact_single_select_assignment(rng, opts, counts, n))
+    return columns
+
+
 def build_survey_results_csv_bytes(
     results: Dict[str, Any],
     persona_sample_sizes: Dict[str, int],
     persona_names_map: Dict[str, str],
     seed: Optional[str] = None,
+    question_types: Optional[Dict[str, str]] = None,
+    item_results: Optional[Dict[str, List[Dict[str, Any]]]] = None,
 ) -> bytes:
     """
     Generates a per-respondent wide-format CSV matching the reference format:
 
-    Respondent_ID | Persona_Type | Persona_Sample_Size | Q1_<label> | Q2_<label> | ...
+    Row 1 (header):       Respondent_ID | Persona_Type | Persona_Sample_Size | Q1_<label> | Q2_<label> | ...
+    Row 2 (question text): "" | "" | "" | <full Q1 text> | <full Q2 text> | ...
+    Row 3+ (data):          per-respondent chosen options
 
     - results: { question_text: [ {option, count, pct?}, ... ] }  (SurveySimulation.results)
     - persona_sample_sizes: { persona_id: sample_size }
     - persona_names_map: { persona_id: persona_name }
     - seed: deterministic seed (use simulation_id) so same run always produces same CSV
+    - question_types: { question_text: question_type } from the questionnaire (e.g. "single_select",
+      "multi_select"). Used to decide whether a respondent can be assigned more than one option.
+    - item_results: { question_text: [ {item, results:[{option,count}], multi_response}, ... ] } for
+      grid / scale-matrix questions (Likert batteries, single- and multi-select grids). Each item
+      expands into its own column — Q<n>_01, Q<n>_02, … — carrying that item's own answer drawn from
+      the question's response scale. Without it such a question collapses into one column whose
+      "answer" is a statement rather than a scale point, and whose unrelated item responses are
+      flattened together into a single cell.
 
-    Uses weighted random sampling from the aggregate distribution per question.
-    Since per-persona breakdowns are not stored separately, the aggregate distribution
-    is used for all personas (consistent with what the simulation stores).
+    Each respondent's per-question value(s) are drawn from an EXACT shuffled realization of the
+    aggregate option counts in `results`, not independent weighted sampling \u2014 so the per-option
+    tallies in this file always reconcile with questionnaire_overview.csv's Count column for the
+    same simulation. Multi-select questions assign each option independently (a respondent can get
+    0, 1, or several, joined by "; " in the cell); single-select questions assign exactly one.
+    Since per-persona breakdowns are not stored separately, the aggregate distribution is used for
+    all personas (consistent with what the simulation stores), but the exact-count pool is built once
+    across the full respondent population so cross-persona totals still reconcile.
     """
     if not results or not persona_sample_sizes:
         return b""
 
     rng = random.Random(seed or "default")
+    question_types = question_types or {}
+    item_results = item_results or {}
 
     # Build ordered question list + short column labels
     # question_text -> [{option, count}]
@@ -302,29 +489,74 @@ def build_survey_results_csv_bytes(
         label = "_".join(w.title() for w in words[:4] if w)
         return f"Q{idx + 1}_{label}" if label else f"Q{idx + 1}"
 
-    col_labels = [_short_label(q, i) for i, q in enumerate(questions)]
+    total_respondents = sum(max(int(v or 0), 0) for v in persona_sample_sizes.values())
+
+    col_labels: List[str] = []
+    question_text_row_cells: List[str] = []
+    # One exact-count assignment pool per COLUMN, shared across all
+    # respondents/personas. A grid question contributes one column per item;
+    # every other question contributes exactly one, as before.
+    per_question_assignment: List[List[Any]] = []
+
+    for i, q_text in enumerate(questions):
+        opts_data = results.get(q_text) or []
+
+        item_blocks = _grid_item_blocks(item_results.get(q_text))
+        if item_blocks:
+            # Grid / scale-matrix question: each statement, attribute or entity
+            # becomes its own column holding its own respondent answer, drawn
+            # from the question's response scale.
+            items = [str(b.get("item", "")) for b in item_blocks]
+            headers, text_cells = _grid_columns_for_question(i + 1, q_text.strip(), items)
+            col_labels.extend(headers)
+            question_text_row_cells.extend(text_cells)
+            per_question_assignment.extend(
+                _assign_grid_item_responses(rng, item_blocks, total_respondents)
+            )
+            continue
+
+        col_labels.append(_short_label(q_text, i))
+        question_text_row_cells.append(q_text.strip())
+
+        verbatim_pool = _verbatim_pool(opts_data)
+        if verbatim_pool:
+            # Open-ended question: no aggregate count to reconcile against, just a
+            # representative quote pool. Assign each respondent one quote (with
+            # replacement, since the pool is far smaller than the respondent count).
+            per_question_assignment.append(
+                [rng.choice(verbatim_pool) for _ in range(total_respondents)]
+            )
+            continue
+
+        if isinstance(opts_data, list):
+            opts = [str(d.get("option", "")) for d in opts_data if isinstance(d, dict)]
+            counts = [max(int(d.get("count", 0) or 0), 0) for d in opts_data if isinstance(d, dict)]
+        else:
+            opts, counts = [], []
+
+        is_multi = _is_multi_select_type(_lookup_question_type(question_types, q_text))
+
+        if not opts or total_respondents == 0:
+            per_question_assignment.append([([] if is_multi else "") for _ in range(total_respondents)])
+        elif is_multi:
+            per_question_assignment.append(_exact_multi_select_assignment(rng, opts, counts, total_respondents))
+        else:
+            per_question_assignment.append(_exact_single_select_assignment(rng, opts, counts, total_respondents))
 
     headers = ["Respondent_ID", "Persona_Type", "Persona_Sample_Size"] + col_labels
+    # Short column labels are truncated to a few words for readability; the full
+    # question text is never dropped — it's surfaced in a dedicated row right
+    # below the header so it's visible without cross-referencing the other CSV.
+    question_text_row = ["", "", ""] + question_text_row_cells
 
     buffer = io.StringIO()
     writer = csv.writer(buffer)
     writer.writerow(headers)
+    writer.writerow(question_text_row)
 
+    respondent_idx = 0
     for persona_idx, (persona_id, sample_size) in enumerate(persona_sample_sizes.items(), 1):
         persona_name = persona_names_map.get(persona_id, f"Persona_{persona_idx}")
-
-        # Pre-build option lists + weights per question (reused across all respondents)
-        q_options: List[List[str]] = []
-        q_weights: List[List[float]] = []
-        for q_text in questions:
-            opts_data = results.get(q_text) or []
-            if isinstance(opts_data, list):
-                opts = [str(d.get("option", "")) for d in opts_data if isinstance(d, dict)]
-                counts = [max(float(d.get("count", 0) or 0), 0) for d in opts_data if isinstance(d, dict)]
-            else:
-                opts, counts = [], []
-            q_options.append(opts)
-            q_weights.append(counts if sum(counts) > 0 else [1.0] * len(opts))
 
         for respondent_num in range(1, sample_size + 1):
             row: List[Any] = [
@@ -332,13 +564,11 @@ def build_survey_results_csv_bytes(
                 persona_name,
                 sample_size,
             ]
-            for opts, weights in zip(q_options, q_weights):
-                if opts:
-                    chosen = rng.choices(opts, weights=weights, k=1)[0]
-                else:
-                    chosen = ""
-                row.append(chosen)
+            for q_assignment in per_question_assignment:
+                value = q_assignment[respondent_idx] if respondent_idx < len(q_assignment) else ""
+                row.append("; ".join(value) if isinstance(value, list) else value)
             writer.writerow(row)
+            respondent_idx += 1
 
     return ("\ufeff" + buffer.getvalue()).encode("utf-8")
 
