@@ -8,7 +8,7 @@ Two things this module deliberately does differently from its previous version:
 1.  The parameter path comes from the SSM_PATH environment variable instead of
     being hardcoded to "/app/staging/". The Kubernetes manifests have always
     set SSM_PATH, but nothing read it, so a production overlay setting
-    SSM_PATH=/app/production/ would still have loaded the staging parameter
+    SSM_PATH=/app/platform/ would still have loaded the staging parameter
     tree — including staging's DATABASE_URL. A production pod would then have
     connected to the staging database.
 

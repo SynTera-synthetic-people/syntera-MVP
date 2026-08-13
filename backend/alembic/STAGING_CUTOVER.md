@@ -366,11 +366,14 @@ Then delete the revision and confirm the next deploy is green.
 Production is a different procedure — an empty database, so `upgrade head` runs
 the baseline in full rather than being stamped. Prerequisites:
 
-- [ ] `SSM_PATH=/app/production/` in the production overlay, and the parameter
-      tree actually populated
-- [ ] **Verified by hand** from inside a production pod that the resolved
-      `DATABASE_URL` host is *not* the staging host. Do not infer this from a
-      green pipeline — this was a real defect in the manifests.
+- [ ] Use the committed overlay `k8sdeployment/migrate-job.production.yaml`,
+      which sets `SSM_PATH=/app/platform/`. Production's parameter tree is
+      `/app/platform/`, **not** `/app/production/`.
+- [ ] The `/app/platform/` tree is actually populated — at minimum
+      `DATABASE_URL`, `JWT_SECRET`, `SUPERADMIN_*` and `MAIL_*`
+- [ ] **Verified by hand** that the resolved `DATABASE_URL` host is *not* the
+      staging host, by reading the `migrations: target=` line. Do not infer
+      this from a green pipeline — this was a real defect in the manifests.
 - [ ] Pre-flight: `SELECT count(*) FROM information_schema.tables WHERE
       table_schema='public'` returns 0
 - [ ] `RUN_STARTUP_MIGRATIONS` false from the very first pod — production's

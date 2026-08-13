@@ -58,9 +58,11 @@ spec:
           env:
             - name: AWS_REGION
               value: ap-south-1
-            # Selects the parameter tree. A production overlay MUST change this
-            # to /app/production/ — app/parameters.py now reads it, so this
-            # value determines which database is migrated.
+            # Selects the parameter tree. app/parameters.py reads this, so it
+            # alone determines which database is migrated. Production uses
+            # /app/platform/ and has its own committed overlay —
+            # k8sdeployment/migrate-job.production.yaml. Do not repoint this
+            # file; use that one.
             - name: SSM_PATH
               value: "/app/staging/"
             # Fail fast instead of queueing behind an application query while
