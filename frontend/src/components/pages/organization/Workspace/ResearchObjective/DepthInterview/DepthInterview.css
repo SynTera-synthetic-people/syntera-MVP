@@ -265,6 +265,178 @@
   line-height: 1.4;
 }
 
+/* ── Header right cluster (Artifact button + ready toast) ───────────────── */
+
+.di-guide-page-header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+/* ── Artifact button ─────────────────────────────────────────────────────── */
+
+.di-artifact-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 18px;
+  background: rgba(14, 99, 236, 0.1);
+  border: 1px solid rgba(14, 99, 236, 0.35);
+  border-radius: 10px;
+  color: #5B9DF5;
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s;
+}
+.di-artifact-btn:hover {
+  background: rgba(14, 99, 236, 0.18);
+  border-color: rgba(14, 99, 236, 0.55);
+}
+.di-artifact-btn__icon { flex-shrink: 0; }
+
+/* ── Artifact view modal content ─────────────────────────────────────────── */
+
+.di-artifact-modal__body {
+  max-height: 60vh;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.di-artifact-modal__instruction {
+  font-size: 0.8125rem;
+  color: rgba(255,255,255,0.6);
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin: 0 0 1.25rem;
+  text-align: left;
+  line-height: 1.5;
+}
+
+.di-artifact-modal__section {
+  text-align: left;
+  margin-bottom: 1.25rem;
+}
+.di-artifact-modal__section:last-child { margin-bottom: 0; }
+
+.di-artifact-modal__section-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(255,255,255,0.4);
+  margin: 0 0 0.6rem;
+}
+
+.di-artifact-modal__link-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.di-artifact-modal__link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  background: rgba(6,161,123,0.06);
+  border: 1px solid rgba(6,161,123,0.25);
+  border-radius: 10px;
+  color: #37FFCE;
+  font-size: 0.8125rem;
+  text-decoration: none;
+  transition: background 0.15s, border-color 0.15s;
+}
+.di-artifact-modal__link:hover {
+  background: rgba(6,161,123,0.12);
+  border-color: rgba(6,161,123,0.45);
+}
+
+.di-artifact-modal__link-text {
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
+
+.di-artifact-modal__link-icon { flex-shrink: 0; }
+
+.di-artifact-modal__file-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.di-artifact-modal__file-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 14px 10px;
+  background: #060606;
+  border: 1px solid #393C45;
+  border-radius: 12px;
+  color: rgba(255,255,255,0.8);
+  text-align: center;
+  text-decoration: none;
+}
+
+.di-artifact-modal__file-card img {
+  width: 100%;
+  height: 84px;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+/* Non-image files with a real dataUrl render as a clickable download */
+.di-artifact-modal__file-card--download {
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.di-artifact-modal__file-card--download:hover {
+  border-color: rgba(14, 99, 236, 0.45);
+  background: rgba(14, 99, 236, 0.06);
+}
+
+.di-artifact-modal__file-download-icon {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255,255,255,0.8);
+}
+
+.di-artifact-modal__file-download-badge {
+  position: absolute;
+  bottom: -4px;
+  right: -6px;
+  background: #0E63EC;
+  color: #fff;
+  border-radius: 50%;
+  padding: 2.5px;
+  box-shadow: 0 0 0 2px #060606;
+}
+
+.di-artifact-modal__file-name {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #fff;
+  word-break: break-word;
+}
+
+.di-artifact-modal__file-size {
+  font-size: 0.6875rem;
+  color: rgba(255,255,255,0.4);
+}
+
 /* ── Ready toast ─────────────────────────────────────────────────────────── */
 
 .di-ready-toast {
@@ -849,3 +1021,24 @@
 .di-spin { animation: di-spin 1s linear infinite; }
 
 @keyframes di-spin { to { transform: rotate(360deg); } }
+.di-loading__omi-wrap {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 1.5px solid rgba(14, 99, 236, 0.3);
+  flex-shrink: 0;
+}
+
+.di-loading__omi-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 25%;
+  display: block;
+}
+.di-loading__subtext {
+  font-size: 0.8125rem;
+  color: rgba(255,255,255,0.35);
+  margin: 0;
+}

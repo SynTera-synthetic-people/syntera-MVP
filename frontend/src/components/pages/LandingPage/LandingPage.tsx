@@ -6,6 +6,7 @@ import { useSelector } from "react-redux";
 import { useTheme } from "../../../context/ThemeContext";
 import WorkspacePopup from "../organization/Workspace/WorkspacePopup";
 import { useWorkspace as useWorkspaceContext } from "../../../context/WorkspaceContext";
+import { useWorkspaces } from "../../../hooks/useWorkspaces";
 import CreateExploration from "../organization/Workspace/Exploration/CreateExploration";
 import IdleState from "../../../assets/Omi Animations/IdleStateMotion_Lite.mp4";
 import "./LandingPage.css";
@@ -46,12 +47,19 @@ const LandingPage: React.FC = () => {
 
   const [showWorkspaceModal, setShowWorkspaceModal] = useState(false);
   const [showCreateExploration, setShowCreateExploration] = useState(false);
+  const [newlyCreatedWorkspaceId, setNewlyCreatedWorkspaceId] = useState<string | null>(null);
 
-  // Workspace ID — from user object set by backend on login via buildAuthUser
+  // Fetch live workspace list so we always use a real, existing workspace ID
+  const { data: liveWorkspaces } = useWorkspaces();
+  const liveWorkspaceId = (liveWorkspaces as any[])?.[0]?.id;
+
+  // Prefer: newly created → live first workspace → stale Redux field (last resort)
   const workspaceId =
+    newlyCreatedWorkspaceId ||
+    liveWorkspaceId ||
+    selectedWorkspace?.id ||
     user?.preferred_workspace_id ||
-    user?.default_workspace_id ||
-    selectedWorkspace?.id;
+    user?.default_workspace_id;
 
   // Only admins with can_create_workspace flag can create workspaces
   const canCreateWorkspace = user?.can_create_workspace === true;
@@ -76,6 +84,7 @@ const LandingPage: React.FC = () => {
     setShowWorkspaceModal(false);
     if (newWorkspace?.id) {
       setSelectedWorkspace(newWorkspace);
+      setNewlyCreatedWorkspaceId(newWorkspace.id);
       setShowCreateExploration(true);
     }
   };
@@ -174,7 +183,7 @@ const LandingPage: React.FC = () => {
       {showCreateExploration && (
         <CreateExploration
           workspaceId={workspaceId}
-          onClose={() => setShowCreateExploration(false)}
+          onClose={() => { setShowCreateExploration(false); setNewlyCreatedWorkspaceId(null); }}
         />
       )}
     </div>

@@ -23,7 +23,13 @@ RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# The migration Job runs `alembic upgrade head` from this image with WORKDIR
+# /app, so alembic.ini and alembic/versions must be present and discoverable.
+# Fail the build rather than the deploy if they are not.
+RUN test -f /app/alembic.ini \
+    && test -d /app/alembic/versions \
+    && alembic --version
+
 EXPOSE 8000
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-

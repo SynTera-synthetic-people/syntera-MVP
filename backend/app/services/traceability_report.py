@@ -22,6 +22,7 @@ from app.services.auto_generated_persona import get_description
 from app.services.persona import _resolve_calibration_confidence
 from app.services.omi import get_conversation_history
 from app.services.research_objectives import build_conversation_text
+from app.services.llm_usage_tracker import record_llm_usage, extract_usage_openai_responses
 
 # -------------------------------------------------------------------
 # OpenAI Client (async-safe, single instance per process)
@@ -587,6 +588,16 @@ Never skip any component and ro_score should be greater then 75
             model="gpt-4.1",
             input=[{"role": "user", "content": ro_prompt}],
         )
+        input_tokens, output_tokens, usage_raw = extract_usage_openai_responses(ro_response)
+        await record_llm_usage(
+            exploration_id=exploration_id,
+            stage="traceability_ro_score",
+            provider="openai",
+            model="gpt-4.1",
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            usage_raw=usage_raw,
+        )
         try:
             result = json.loads(ro_response.output_text)
         except (json.JSONDecodeError, AttributeError):
@@ -718,6 +729,16 @@ Return STRICT JSON only and score can be 0 to 100.
                 model="gpt-4.1",
                 input=[{"role": "user", "content": quant_prompt}],
             )
+        input_tokens, output_tokens, usage_raw = extract_usage_openai_responses(quant_response)
+        await record_llm_usage(
+            exploration_id=exploration_id,
+            stage="traceability_quant_score",
+            provider="openai",
+            model="gpt-4.1",
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            usage_raw=usage_raw,
+        )
 
         try:
             return json.loads(quant_response.output_text)
@@ -828,6 +849,16 @@ Return STRICT JSON only. **Never miss any dimension**
                 model="gpt-4.1",
                 input=[{"role": "user", "content": qual_prompt}],
             )
+        input_tokens, output_tokens, usage_raw = extract_usage_openai_responses(qual_response)
+        await record_llm_usage(
+            exploration_id=exploration_id,
+            stage="traceability_qual_score",
+            provider="openai",
+            model="gpt-4.1",
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            usage_raw=usage_raw,
+        )
 
         try:
             return json.loads(qual_response.output_text)

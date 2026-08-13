@@ -12,6 +12,8 @@ from app.services import interview as interview_service
 from app.services import workspace as ws_service
 from app.services import report_orchestrator as report_cache
 from app.services.exploration import require_persona_exists, WorkflowError
+from app.services.interview import InterviewGenerationError
+from app.config import settings
 from app.models.user import User
 from app.routers.auth_dependencies import get_current_active_user
 from app.utils.file_utils import save_upload_file
@@ -51,21 +53,47 @@ async def download_discussion_guide(
     exploration_id: str,
     current_user: User = Depends(get_current_active_user),
 ):
-    """Download the current discussion guide as a DOCX generated from DB state."""
+    """Download the current discussion guide as a branded PDF generated from DB state."""
     members = await ws_service.list_workspace_members(workspace_id)
     if not any(m.get("user_id") == current_user.id for m in members):
         raise HTTPException(status_code=403, detail=ErrorResponse(status="error", message="Not a member").dict())
 
     try:
-        content = await interview_service.generate_discussion_guide_docx_bytes(workspace_id, exploration_id)
+        pdf_path = await interview_service.generate_discussion_guide_pdf(workspace_id, exploration_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    return Response(
-        content=content,
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    return FileResponse(
+        path=pdf_path,
+        media_type="application/pdf",
+        filename=f"discussion_guide_{exploration_id}.pdf",
         headers={
-            "Content-Disposition": f'attachment; filename="discussion_guide_{exploration_id}.docx"'
+            "Content-Disposition": f'attachment; filename="discussion_guide_{exploration_id}.pdf"'
+        },
+    )
+
+
+@router.get("/guides/limits", response_model=SuccessResponse)
+async def get_guide_limits(
+    workspace_id: str,
+    exploration_id: str,
+    current_user: User = Depends(get_current_active_user),
+):
+    """Discussion Guide size limits, so the UI can gate its Add controls.
+
+    Additive endpoint rather than a new field on GET /all — that returns a bare
+    list of sections and reshaping it would break every existing consumer.
+    Serving the limits from `settings` keeps one source of truth: the frontend
+    never hardcodes its own copy of these numbers.
+    """
+    return SuccessResponse(
+        message="Discussion guide limits fetched",
+        data={
+            "default_questions_per_section": settings.DG_DEFAULT_QUESTIONS_PER_SECTION,
+            "max_extra_questions_per_section": settings.DG_MAX_EXTRA_QUESTIONS_PER_SECTION,
+            "max_questions_per_section": settings.DG_MAX_QUESTIONS_PER_SECTION,
+            "max_sections_per_guide": settings.DG_MAX_SECTIONS_PER_GUIDE,
+            "max_questions_per_guide": settings.DG_MAX_QUESTIONS_PER_GUIDE,
         },
     )
 
@@ -81,7 +109,25 @@ async def create_section(
     members = await ws_service.list_workspace_members(workspace_id)
     if not any(m.get("user_id") == current_user.id for m in members):
         raise HTTPException(status_code=403, detail="Not a workspace member")
-    
+
+    # Without this, the per-section question cap is trivially sidestepped by
+    # adding another section, and total guide size stays unbounded.
+    existing = await interview_service.list_interview_sections(workspace_id, exploration_id)
+    if len(existing) >= settings.DG_MAX_SECTIONS_PER_GUIDE:
+        return SuccessResponse(
+            message="Section limit reached",
+            data={
+                "validation_status": "limit_reached",
+                "reason": (
+                    f"A discussion guide can hold at most "
+                    f"{settings.DG_MAX_SECTIONS_PER_GUIDE} sections. Remove a section "
+                    f"first if you need to cover another theme."
+                ),
+                "limit": settings.DG_MAX_SECTIONS_PER_GUIDE,
+                "current": len(existing),
+            },
+        )
+
     section = await interview_service.create_interview_section(
         workspace_id, exploration_id, payload.title, current_user.id, ""
     )
@@ -120,6 +166,29 @@ async def create_question(
     current_user: User = Depends(get_current_active_user)
 ):
     """Create a new interview question in a section"""
+    # Checked BEFORE the is_force_insert branch on purpose. Theme validation is
+    # advisory — the UI offers "add anyway", which re-sends with
+    # is_force_insert=True and skips it. The size limit is not advisory: guide
+    # size drives interview cost for every persona, so it must not be
+    # click-through bypassable. A distinct validation_status tells the UI to
+    # render this as final rather than offering the override.
+    existing = await interview_service.list_interview_questions(section_id)
+    if len(existing) >= settings.DG_MAX_QUESTIONS_PER_SECTION:
+        return SuccessResponse(
+            message="Question limit reached",
+            data={
+                "validation_status": "limit_reached",
+                "reason": (
+                    f"Each section can hold at most {settings.DG_MAX_QUESTIONS_PER_SECTION} "
+                    f"questions ({settings.DG_DEFAULT_QUESTIONS_PER_SECTION} generated plus "
+                    f"{settings.DG_MAX_EXTRA_QUESTIONS_PER_SECTION} you can add). Remove a "
+                    f"question first, or add this one to a different section."
+                ),
+                "limit": settings.DG_MAX_QUESTIONS_PER_SECTION,
+                "current": len(existing),
+            },
+        )
+
     if not payload.is_force_insert:
         valid_or_not, reason = await validate_new_question_against_theme(section_id, payload)
 
@@ -214,11 +283,14 @@ async def start_interview(workspace_id: str, exploration_id: str, payload: Inter
     if not await ws_service.is_workspace_admin(workspace_id, current_user.id):
         raise HTTPException(status_code=403, detail=ErrorResponse(status="error", message="Only workspace admins can start interviews").dict())
 
+    if payload.persona_id == "__all__":
+        raise HTTPException(status_code=400, detail=ErrorResponse(status="error", message="persona_id must be a real persona; start one interview per persona for group mode").dict())
+
     # Conversation Studio lightweight path: skip LLM batch generation entirely.
     # Creates an empty session instantly; individual messages use the live reply endpoint.
     if payload.force_new and payload.lightweight:
         iv = await interview_service.create_conversation_session(
-            workspace_id, exploration_id, payload.persona_id, current_user.id
+            workspace_id, exploration_id, payload.persona_id, current_user.id, payload.session_group_id
         )
         await report_cache.invalidate_cache(exploration_id)
         return SuccessResponse(message="Conversation session started", data=iv)
@@ -243,7 +315,14 @@ async def start_interview(workspace_id: str, exploration_id: str, payload: Inter
             "questions": questions
         })
 
-    iv = await interview_service.start_interview(workspace_id, exploration_id, payload.persona_id, current_user.id, sections)
+    # Answer generation depends on an upstream LLM; surface its failures as a
+    # 502 with an actionable message instead of letting a parse error escape as
+    # a raw 500 (see services/llm_json.py).
+    try:
+        iv = await interview_service.start_interview(workspace_id, exploration_id, payload.persona_id, current_user.id, sections)
+    except InterviewGenerationError as e:
+        raise HTTPException(status_code=502, detail=ErrorResponse(status="error", message=e.message).dict())
+
     await report_cache.invalidate_cache(exploration_id)
     return SuccessResponse(message="Interview started", data=iv)
 
@@ -561,7 +640,10 @@ async def upload_guide(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=ErrorResponse(status="error", message=str(exc)).dict())
 
-    guide = await interview_service.create_guide_from_text(workspace_id, exploration_id, current_user.id, raw_text)
+    try:
+        guide = await interview_service.create_guide_from_text(workspace_id, exploration_id, current_user.id, raw_text)
+    except InterviewGenerationError as exc:
+        raise HTTPException(status_code=502, detail=ErrorResponse(status="error", message=exc.message).dict())
     return SuccessResponse(message="Guide created from uploaded file", data=guide)
 
 

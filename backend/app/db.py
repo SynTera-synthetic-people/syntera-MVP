@@ -2,10 +2,8 @@ from collections.abc import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
-from sqlmodel import SQLModel
 
 from app.config import settings
-from app.models import register_all_models
 
 
 async_engine = create_async_engine(
@@ -31,12 +29,12 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
-async def init_db() -> None:
-    """Create any missing SQLModel-managed public tables.
-
-    This intentionally does not alter existing tables. Startup compatibility
-    migrations in app.migrations.startup own all schema repair/backfill work.
-    """
-    register_all_models()
-    async with async_engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+# NOTE: init_db() was removed deliberately. It called
+# SQLModel.metadata.create_all, which made SQLModel a second schema authority
+# alongside app/migrations/startup.py — that is how the same column ended up
+# with different types depending on a database's deployment history
+# (e.g. questionnairequestionasset.metadata is `json` here but `jsonb` on
+# databases where the column predated create_all).
+#
+# Alembic is now the single source of schema truth. Do not reintroduce
+# create_all: to change the schema, add a revision under alembic/versions/.

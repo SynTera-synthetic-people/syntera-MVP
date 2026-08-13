@@ -20,10 +20,13 @@ from app.services.exploration import (
     TrialLimitReachedException,
     PlanLimitReachedException,
     WorkflowError,
+    WorkspaceNotFoundException,
 )
 from app.models.user import User
 from app.routers.auth_dependencies import get_current_active_user
 from app.services.product_state import compute_user_product_state
+from app.schemas.llm_usage import ExplorationLLMUsageOut
+from app.services.llm_usage_reporting import get_exploration_llm_usage
 
 router = APIRouter(prefix="/explorations", tags=["Explorations"])
 
@@ -70,6 +73,8 @@ async def create(
                 "product_state": product_state,
             }),
         )
+    except WorkspaceNotFoundException:
+        raise HTTPException(status_code=404, detail="Workspace not found.")
 
 
 @router.get("/workspace/{workspace_id}", response_model=list[ExplorationOut])
@@ -142,3 +147,18 @@ async def select_method(
         raise HTTPException(status_code=400, detail=e.message)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/{exploration_id}/usage", response_model=ExplorationLLMUsageOut)
+async def get_llm_usage(
+    exploration_id: str,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
+):
+    exploration = await get_exploration(session, exploration_id)
+    if not exploration:
+        raise HTTPException(status_code=404, detail="Exploration not found")
+
+    _assert_owner_or_admin(exploration, current_user)
+
+    return await get_exploration_llm_usage(session, exploration_id)

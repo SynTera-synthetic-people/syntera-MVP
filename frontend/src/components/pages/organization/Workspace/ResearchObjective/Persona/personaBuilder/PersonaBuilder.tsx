@@ -281,6 +281,31 @@ const DownloadSuccessToast: React.FC<{ onClose: () => void }> = ({ onClose }) =>
   </AnimatePresence>
 );
 
+// ── DownloadErrorToast ────────────────────────────────────────────────────────
+
+const DownloadErrorToast: React.FC<{ onClose: () => void }> = ({ onClose }) => (
+  <AnimatePresence>
+    <motion.div
+      className="pb-download-toast pb-download-toast--error"
+      initial={{ opacity: 0, y: 40, scale: 0.95 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 40, scale: 0.95 }}
+      transition={{ duration: 0.22, ease: 'easeOut' }}
+    >
+      <span className="pb-download-toast-icon">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <circle cx="10" cy="10" r="9" stroke="#ef4444" strokeWidth="1.8" />
+          <path d="M10 6v4.5M10 13.5v.5" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      </span>
+      <span className="pb-download-toast-label">Download failed — please try again</span>
+      <button className="pb-download-toast-close" onClick={onClose} aria-label="Dismiss">
+        <TbX size={16} />
+      </button>
+    </motion.div>
+  </AnimatePresence>
+);
+
 // ── KebabMenu ────────────────────────────────────────────────────────────────
 
 interface KebabMenuProps {
@@ -289,9 +314,6 @@ interface KebabMenuProps {
 
 const KebabMenu: React.FC<KebabMenuProps> = ({ items }) => {
   const [open, setOpen] = useState(false);
-
-  // Render nothing when there are no actions to show
-  if (items.length === 0) return null;
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -301,6 +323,8 @@ const KebabMenu: React.FC<KebabMenuProps> = ({ items }) => {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
+
+  if (items.length === 0) return null;
 
   return (
     <div ref={ref} className="pb-kebab-wrap" onClick={e => e.stopPropagation()}>
@@ -975,12 +999,14 @@ const PersonaGridCard: React.FC<PersonaGridCardProps> = ({
       icon: <TbEye size={14} />,
       onClick: () => onViewPersona?.(persona),
     },
-    ...(!isViewOnly ? [
+    ...(!isViewOnly && !isPersonaCreationLocked ? [
       {
         label: 'Replicate Personas',
         icon: <TbCopy size={14} />,
         onClick: () => onReplicatePersona?.(persona),
       },
+    ] : []),
+    ...(!isViewOnly ? [
       {
         label: 'Delete Persona',
         icon: <TbTrash size={14} />,
@@ -1076,7 +1102,7 @@ const CountryGroup: React.FC<CountryGroupProps> = ({
   isViewOnly = false,
   isPersonaCreationLocked = false,
 }) => {
-  const countryKebabItems = isViewOnly ? [] : [
+  const countryKebabItems = (isViewOnly || isPersonaCreationLocked) ? [] : [
     {
       label: 'Replicate Personas',
       icon: <TbCopy size={14} />,
@@ -1106,6 +1132,7 @@ const CountryGroup: React.FC<CountryGroupProps> = ({
               onReplicatePersona={onReplicatePersona}
               onDeletePersona={onDeletePersona}
               isViewOnly={isViewOnly}
+              isPersonaCreationLocked={isPersonaCreationLocked}
             />
           </motion.div>
         ))}
@@ -1453,14 +1480,21 @@ const PersonaBuilder: React.FC = () => {
   const isApproachLocked = !!((exploration as Record<string, unknown> | undefined)?.is_qualitative || (exploration as Record<string, unknown> | undefined)?.is_quantitative);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
   const [showDownloadToast, setShowDownloadToast] = useState(false);
+  const [showDownloadError, setShowDownloadError] = useState(false);
 
   const handleDownloadPersonaCards = async (selectedIds: string[]) => {
-    await downloadPersonaCardsFrontend(
-      selectedIds,
-      savedPersonasFromAPI as unknown as PersonaCardData[]
-    );
-    setShowDownloadToast(true);
-    setTimeout(() => setShowDownloadToast(false), 3500);
+    try {
+      await downloadPersonaCardsFrontend(
+        selectedIds,
+        savedPersonasFromAPI as unknown as PersonaCardData[]
+      );
+      setShowDownloadToast(true);
+      setTimeout(() => setShowDownloadToast(false), 3500);
+    } catch (err) {
+      console.error('[PersonaCard] Download failed:', err);
+      setShowDownloadError(true);
+      setTimeout(() => setShowDownloadError(false), 4000);
+    }
   };
 
   // ── formatPersonaData ───────────────────────────────────────────────────────
@@ -1633,13 +1667,20 @@ const PersonaBuilder: React.FC = () => {
   const handleCreateWithOmi = useCallback(() => {
     trigger({ stage: 'persona_builder', event: 'PERSONA_WORKFLOW_LOADED', payload: {} });
 
-    try { generatePersonas(); } catch (err) { console.error('Failed to kick off persona generation:', err); }
+    // Fire-and-forget so the loading page below can navigate to immediately;
+    // once generation actually finishes, invalidate the saved-personas list
+    // so the grid reflects the newly-saved personas without a manual refresh.
+    Promise.resolve(generatePersonas())
+      .then(() => {
+        queryClient.invalidateQueries({ queryKey: personaKeys.list(workspaceId, objectiveId) });
+      })
+      .catch((err) => console.error('Failed to kick off persona generation:', err));
 
     navigate(
       `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-generating`,
       { state: { flow: 'omi' } }
     );
-  }, [isFreeUser, isTier1User, isFreeOrTier1, personaLimitForTier, savedPersonasFromAPI.length, generatePersonas, navigate, workspaceId, objectiveId]);
+  }, [isFreeUser, isTier1User, isFreeOrTier1, personaLimitForTier, savedPersonasFromAPI.length, generatePersonas, navigate, workspaceId, objectiveId, queryClient]);
 
   const handleBuildManually = useCallback(() => {
     if (!isEnterpriseUser) {
@@ -2393,6 +2434,10 @@ const PersonaBuilder: React.FC = () => {
 
         {showDownloadToast && (
           <DownloadSuccessToast onClose={() => setShowDownloadToast(false)} />
+        )}
+
+        {showDownloadError && (
+          <DownloadErrorToast onClose={() => setShowDownloadError(false)} />
         )}
       </>
     );

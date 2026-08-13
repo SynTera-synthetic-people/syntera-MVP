@@ -179,6 +179,12 @@ table.studied-personas-table td {
     text-align: left;
 }
 
+.report-toc-sub {
+    font-size: 10px;
+    margin: 0 0 5px 18px;
+    color: #5A6B7F;
+}
+
 .cover-page {
     page-break-after: always;
     text-align: center;

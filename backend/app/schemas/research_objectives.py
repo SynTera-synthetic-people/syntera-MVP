@@ -30,3 +30,43 @@ class ResearchObjectivesOut(BaseModel):
 
 class ResearchObjectivesSummaryPatch(BaseModel):
     description: str = Field(..., min_length=2, max_length=50000)
+
+class ResearchObjectiveFramerInput(BaseModel):
+    """Structured payload from the Research Objective Framer wizard."""
+    brand_name: Optional[str] = None
+    industry: Optional[str] = None
+    website: Optional[str] = None
+    extra_context: Optional[str] = None
+    competitors: List[str] = Field(default_factory=list)
+
+    business_context: Optional[str] = None
+    decision_problem: Optional[str] = None
+    information_gap: Optional[str] = None
+    primary_hypothesis: Optional[str] = None
+    secondary_hypotheses: Optional[str] = None
+    target_audience: Optional[str] = None
+    segmentation_logic: Optional[str] = None
+    competitive_frame: Optional[str] = None
+    behaviors_attitudes: Optional[str] = None
+    # Audience & Segments tab's Geography picker sends a list of discrete
+    # tags (e.g. ["California", "Mumbai"]) added one at a time via the FE's
+    # "Add" control — NOT a single free-text string. Was Optional[str] before
+    # this fix, which meant the FE's actual payload shape (a JSON array)
+    # failed Pydantic validation on every submit that used the picker.
+    geography: Optional[List[str]] = None
+    additional_notes: Optional[str] = None
+
+class ResearchObjectiveMaterialOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    material_kind: Optional[str]
+    original_name: str
+    source_url: Optional[str]
+    content_type: Optional[str]
+    size: Optional[int]
+    instruction: Optional[str]
+    has_context: bool
+    uploaded_at: datetime
+    artifact_category: Optional[str] = None
+    comparison_mode: Optional[str] = None

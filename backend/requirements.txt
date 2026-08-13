@@ -1,9 +1,13 @@
 # Core FastAPI
 fastapi
 uvicorn[standard]
-sqlmodel
+# Pinned exactly: these three decide what DDL runs against the database.
+# An unattended minor bump can change autogenerate rendering or reflection
+# behaviour between the build that was tested and the build that deploys.
+sqlmodel==0.0.38
+SQLAlchemy==2.0.49
+alembic==1.18.4
 asyncpg>=0.29.0
-alembic
 passlib[bcrypt]
 python-dotenv
 httpx
@@ -30,6 +34,7 @@ Markdown==3.10.2
 pandas>=2.1.4
 numpy>=1.26.2
 openpyxl
+matplotlib>=3.8.0
 
 # ML Models
 scikit-learn==1.8.0
@@ -41,7 +46,11 @@ joblib>=1.3.0
 # AI APIs
 anthropic==0.79.0
 openai>=1.52.0
+google-genai>=1.2.0
 qdrant-client==1.18.0
+
+# Rate limiting
+slowapi>=0.1.9
 
 # AWS
 boto3

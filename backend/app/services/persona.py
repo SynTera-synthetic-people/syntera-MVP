@@ -7,6 +7,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 from app.utils.id_generator import generate_id
 import json
+import re
 import logging
 import time
 from openai import AsyncOpenAI
@@ -17,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import delete
 from app.models.persona import Persona
+from app.services.llm_usage_tracker import record_llm_usage, extract_usage_openai_chat
 
 
 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
@@ -339,6 +341,103 @@ def _build_calibration_breakdown(persona_details: Optional[dict]) -> dict:
     }
 
 
+def compute_master_calibration_confidence(
+    full_persona_info: dict,
+    confidence: Optional[dict],
+    predominant_patterns: Optional[dict],
+) -> Optional[int]:
+    """
+    Single source of truth for the "Master Calibration Confidence" score shown
+    on the persona grid card and the preview page. Averages three layers:
+
+      1. Real Actions Signal   — predominant_patterns["score"] (RO Alignment)
+      2. Knowledge Enrichment  — ke_confidence["overall"], fallback 90
+      3. Multi-platform Conv.  — average of calibration_breakdown
+                                 .multi_platform_conversations
+                                 .confidence_components, else
+                                 confidence["weighted_score"] * 100
+
+    Missing layers are skipped rather than treated as 0, so a persona with only
+    partial data still gets an honest average of what's actually known. Returns
+    None only when NEITHER Real Actions Signal nor Multi-platform Conversation
+    has real data yet — i.e. all we'd have is the constant KE fallback, which
+    alone is not "enough data" to persist a score.
+    """
+    sub_scores: list[float] = []
+    # Only Real Actions Signal and Multi-platform Conversation count towards the
+    # "enough data" gate below — Knowledge Enrichment always contributes via its
+    # own fallback, so it alone can't prove there's real evidence behind the score.
+    real_non_ke_layers = 0
+
+    if isinstance(predominant_patterns, dict):
+        ro_score = predominant_patterns.get("score")
+        if isinstance(ro_score, (int, float)):
+            sub_scores.append(float(ro_score))
+            real_non_ke_layers += 1
+
+    ke_confidence = (full_persona_info or {}).get("ke_confidence")
+    ke_overall = ke_confidence.get("overall") if isinstance(ke_confidence, dict) else None
+    if isinstance(ke_overall, (int, float)):
+        sub_scores.append(float(ke_overall))
+    else:
+        sub_scores.append(90.0)
+
+    calibration_breakdown = (full_persona_info or {}).get("calibration_breakdown") or {}
+    multi_platform = calibration_breakdown.get("multi_platform_conversations") or {}
+    confidence_components = multi_platform.get("confidence_components")
+    multi_platform_score: Optional[float] = None
+    if isinstance(confidence_components, dict) and confidence_components:
+        numeric_vals = [
+            float(v) for v in confidence_components.values() if isinstance(v, (int, float))
+        ]
+        if numeric_vals:
+            multi_platform_score = sum(numeric_vals) / len(numeric_vals)
+    if multi_platform_score is None and calibration_breakdown.get("is_manual_mode"):
+        # confidence_components itself is never actually populated anywhere yet, so
+        # without this the richer per-dimension average was silently unreachable and
+        # every persona fell straight to the single weighted_score fallback below.
+        # Manual Build Mode's component_scores ARE genuine 0-100 percentages (see
+        # _build_calibration_breakdown's is_manual_mode branch) — safe to average
+        # directly. Legacy/Omi mode's component_scores holds raw per-platform
+        # conversation counts, not percentages, so it's deliberately excluded here.
+        component_scores = multi_platform.get("component_scores")
+        if isinstance(component_scores, dict) and component_scores:
+            numeric_vals = [
+                float(v) for v in component_scores.values() if isinstance(v, (int, float))
+            ]
+            if numeric_vals:
+                multi_platform_score = sum(numeric_vals) / len(numeric_vals)
+    if multi_platform_score is None and isinstance(confidence, dict):
+        weighted_score = confidence.get("weighted_score")
+        if isinstance(weighted_score, (int, float)):
+            multi_platform_score = float(weighted_score) * 100
+    if multi_platform_score is not None:
+        sub_scores.append(multi_platform_score)
+        real_non_ke_layers += 1
+
+    if real_non_ke_layers < 1:
+        return None
+
+    average = sum(sub_scores) / len(sub_scores)
+    return max(0, min(100, int(round(average))))
+
+
+def _confidence_for_master_scoring(full_persona_info: dict) -> dict:
+    """Best-available confidence dict for compute_master_calibration_confidence's
+    legacy weighted_score fallback, for call sites that don't already have a
+    resolved `confidence` object (preview_persona resolves its own, richer one)."""
+    confidence_scoring = full_persona_info.get("confidence_scoring")
+    if isinstance(confidence_scoring, dict) and confidence_scoring:
+        return confidence_scoring
+    evidence_snapshot = full_persona_info.get("evidence_snapshot") or {}
+    detail = evidence_snapshot.get("confidence_calculation_detail") or {}
+    # `or` would treat a genuine 0.0 confidence as missing and fall through to
+    # weighted_total — use an explicit None-check so a real 0 is preserved.
+    value = detail.get("value")
+    weighted_score = value if value is not None else detail.get("weighted_total")
+    return {"weighted_score": weighted_score}
+
+
 def _coerce_confidence_percent(value: Any) -> Optional[int]:
     if value is None or isinstance(value, bool):
         return None
@@ -412,6 +511,78 @@ def _resolve_calibration_confidence(p: Persona, persona_details: dict) -> Option
     if not p.auto_generated_persona and _has_manual_trait_snapshot(persona_details):
         return 50
     return None
+
+
+def _manual_evidence_snapshot_from_details(persona_details: dict, calibration_confidence: Optional[int]) -> Optional[dict]:
+    evidence_metadata = persona_details.get("evidence_metadata")
+    evidence = persona_details.get("evidence")
+    if not isinstance(evidence_metadata, dict) or not isinstance(evidence, dict):
+        return None
+
+    action_meta = evidence_metadata.get("action_data") or {}
+    web_meta = evidence_metadata.get("web_evidence") or {}
+    hq_meta = evidence_metadata.get("hq_research") or {}
+    if not all(isinstance(x, dict) for x in (action_meta, web_meta, hq_meta)):
+        return None
+
+    def _count(meta: dict, key: str) -> int:
+        try:
+            return int(meta.get(key) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def _source_level(meta: dict) -> str:
+        return "Real" if meta.get("source") == "real" else "Estimated"
+
+    action_count = _count(action_meta, "real_records_found")
+    web_count = _count(web_meta, "real_citations_found")
+    hq_count = _count(hq_meta, "real_sources_found")
+
+    confidence_scoring = persona_details.get("confidence_scoring") or {}
+    if not isinstance(confidence_scoring, dict):
+        confidence_scoring = {}
+    try:
+        confidence_value = float(calibration_confidence or 0) / 100
+    except (TypeError, ValueError):
+        confidence_value = 0.0
+    confidence_value = round(max(0.0, min(confidence_value, 1.0)), 2)
+
+    return {
+        "evidence_source": "manual_digital_brain",
+        "total_conversations": action_count + web_count + hq_count,
+        "sources": [
+            {
+                "platform": "Action Data",
+                "threads_or_posts": action_count,
+                "source_type": _source_level(action_meta),
+            },
+            {
+                "platform": "Web Evidence",
+                "threads_or_posts": web_count,
+                "source_type": _source_level(web_meta),
+            },
+            {
+                "platform": "HQ Research",
+                "threads_or_posts": hq_count,
+                "source_type": _source_level(hq_meta),
+            },
+        ],
+        "confidence_calculation_detail": {
+            "level": confidence_scoring.get("confidence_level", "Medium"),
+            "value": confidence_value,
+            "weighted_total": confidence_value,
+        },
+        "timeframe": {
+            "months_analyzed": None,
+            "recent_activity": {"months": None, "percentage": None},
+        },
+        "stream_counts": evidence_metadata,
+        "verdict_counts": {
+            "action_data": len(evidence.get("action_data") or []),
+            "web_evidence": len(evidence.get("web_evidence") or []),
+            "hq_research": len(evidence.get("hq_research") or []),
+        },
+    }
 
 
 def persona_to_dict(p: Persona, creator_full_name: Optional[str] = None) -> dict:
@@ -510,6 +681,11 @@ def persona_to_dict(p: Persona, creator_full_name: Optional[str] = None) -> dict
         }
 
     resolved_confidence = _resolve_calibration_confidence(p, persona_details)
+    evidence_snapshot = (
+        persona_details.get("evidence_snapshot")
+        if isinstance(persona_details.get("evidence_snapshot"), dict)
+        else _manual_evidence_snapshot_from_details(persona_details, resolved_confidence)
+    )
 
     return {
         "id": p.id,
@@ -554,6 +730,7 @@ def persona_to_dict(p: Persona, creator_full_name: Optional[str] = None) -> dict
         "created_by_name": created_by_name,
         "calibration_confidence": resolved_confidence,
         "confidence_score": resolved_confidence,
+        "master_calibration_confidence": p.master_calibration_confidence,
         "created_at": p.created_at,
         "auto_generated_persona": p.auto_generated_persona,
         "persona_source": _persona_source(p),
@@ -585,6 +762,8 @@ def persona_to_dict(p: Persona, creator_full_name: Optional[str] = None) -> dict
         "industry": persona_details.get("industry"),
         "family_structure": persona_details.get("family_structure"),
         "occupation_level": persona_details.get("occupation_level"),
+        "assigned_city": persona_details.get("assigned_city"),
+        "assigned_country": persona_details.get("assigned_country"),
         # Replication Engine v5.0 fields live inside persona_details so existing
         # deployments do not require new persona table columns.
         "replication_mode": persona_details.get("replication_mode"),
@@ -644,62 +823,85 @@ def persona_to_dict(p: Persona, creator_full_name: Optional[str] = None) -> dict
         
         # Evidence & Sources
         "reference_sites_with_usage": persona_details.get("reference_sites_with_usage", []),
-        "evidence_snapshot": persona_details.get("evidence_snapshot"),
-        
+        "evidence_snapshot": evidence_snapshot,
+        "evidence": persona_details.get("evidence"),
+        "evidence_metadata": persona_details.get("evidence_metadata"),
+        "brain_assignment": persona_details.get("brain_assignment"),
+        "say_do_gap": persona_details.get("say_do_gap"),
+
+        # Computed and persisted by save_predominant_patterns_and_master_confidence()
+        # (predominant_patterns) and ke_sourcebank_enrichment.py (ke_source_type_breakdown,
+        # ke_confidence) — previously only reachable via the nested persona_details blob
+        # below, not at top level, so PersonaCardRenderer's backend-first read of these
+        # exact field names (persona.predominant_patterns / persona.ke_source_type_breakdown
+        # / persona.ke_confidence) always fell through to its frontend fallback.
+        "predominant_patterns": persona_details.get("predominant_patterns"),
+        "ke_source_type_breakdown": persona_details.get("ke_source_type_breakdown"),
+        "ke_confidence": persona_details.get("ke_confidence"),
+
         # Flattened evidence fields for easy frontend access
         "sources_breakdown": (
-            persona_details.get("evidence_snapshot", {}).get("sources", [])
-            if isinstance(persona_details.get("evidence_snapshot"), dict)
+            evidence_snapshot.get("sources", [])
+            if isinstance(evidence_snapshot, dict)
             else []
         ),
         "total_conversations_analyzed": (
-            persona_details.get("evidence_snapshot", {}).get("total_conversations", 0)
-            if isinstance(persona_details.get("evidence_snapshot"), dict)
+            evidence_snapshot.get("total_conversations", 0)
+            if isinstance(evidence_snapshot, dict)
             else 0
         ),
         "evidence_confidence_score": (
-            persona_details.get("evidence_snapshot", {})
+            evidence_snapshot
             .get("confidence_calculation_detail", {})
             .get("value")
-            if isinstance(persona_details.get("evidence_snapshot"), dict)
+            if isinstance(evidence_snapshot, dict)
             else None
         ),
         "evidence_confidence_level": (
-            persona_details.get("evidence_snapshot", {})
+            evidence_snapshot
             .get("confidence_calculation_detail", {})
             .get("level")
-            if isinstance(persona_details.get("evidence_snapshot"), dict)
+            if isinstance(evidence_snapshot, dict)
             else None
         ),
         "evidence_source": (
-            persona_details.get("evidence_snapshot", {}).get("evidence_source", "evidence_based")
-            if isinstance(persona_details.get("evidence_snapshot"), dict)
+            evidence_snapshot.get("evidence_source", "evidence_based")
+            if isinstance(evidence_snapshot, dict)
             else "evidence_based"
         ),
         "recency_percentage": (
-            persona_details.get("evidence_snapshot", {})
+            evidence_snapshot
             .get("timeframe", {})
             .get("recent_activity", {})
             .get("percentage")
-            if isinstance(persona_details.get("evidence_snapshot"), dict)
+            if isinstance(evidence_snapshot, dict)
             else None
         ),
         "recency_months": (
-            persona_details.get("evidence_snapshot", {})
+            evidence_snapshot
             .get("timeframe", {})
             .get("recent_activity", {})
             .get("months")
-            if isinstance(persona_details.get("evidence_snapshot"), dict)
+            if isinstance(evidence_snapshot, dict)
             else None
         ),
         "months_analyzed": (
-            persona_details.get("evidence_snapshot", {})
+            evidence_snapshot
             .get("timeframe", {})
             .get("months_analyzed")
-            if isinstance(persona_details.get("evidence_snapshot"), dict)
+            if isinstance(evidence_snapshot, dict)
             else None
         ),
     }
+
+
+def _full_persona_info_for_scoring(p: Persona) -> dict:
+    """Same merge shape the preview endpoint builds for its own confidence/patterns
+    resolution: flat + derived columns (via persona_to_dict) overlaid with the raw
+    persona_details JSON, so predominant_patterns/ke_confidence/calibration_breakdown
+    are all readable at the top level for compute_master_calibration_confidence."""
+    return {**persona_to_dict(p), **(p.persona_details or {})}
+
 
 async def get_persona(persona_id: str) -> Optional[dict]:
     from app.models.user import User
@@ -717,6 +919,69 @@ async def get_persona(persona_id: str) -> Optional[dict]:
                 full_name = u.full_name or f"{u.first_name} {u.last_name}".strip() or None
 
         return persona_to_dict(p, creator_full_name=full_name)
+
+
+async def save_predominant_patterns_and_master_confidence(
+    persona_id: str,
+    predominant_patterns: Optional[dict] = None,
+    master_calibration_confidence: Optional[int] = None,
+) -> None:
+    """Persist a freshly-generated predominant_patterns payload and/or a
+    recomputed master_calibration_confidence onto the Persona row. Called from
+    the preview endpoint after a live (uncached) computation so subsequent
+    requests read the same numbers back instead of recomputing them per visit."""
+    if predominant_patterns is None and master_calibration_confidence is None:
+        return
+    async with AsyncSession(async_engine) as session:
+        res = await session.execute(select(Persona).where(Persona.id == persona_id))
+        p = res.scalars().first()
+        if not p:
+            return
+        if predominant_patterns is not None:
+            details = dict(p.persona_details or {})
+            details["predominant_patterns"] = predominant_patterns
+            p.persona_details = details
+        if master_calibration_confidence is not None:
+            p.master_calibration_confidence = master_calibration_confidence
+        session.add(p)
+        await session.commit()
+
+
+async def mark_persona_calibrating(persona_id: str) -> Optional[dict]:
+    """Flip calibration_status to 'calibrating' so POST /{persona_id}/calibrate
+    can return immediately while the actual multi-LLM-call enrichment (often
+    30-180s+) runs in the background — see run_manual_calibration_background()
+    in manual_digital_brain_persona.py. A synchronous request that long was
+    getting killed by a reverse-proxy/gateway timeout before the backend could
+    respond, which the browser then misreports as a CORS error rather than the
+    actual 502 timeout."""
+    async with AsyncSession(async_engine) as session:
+        res = await session.execute(select(Persona).where(Persona.id == persona_id))
+        p = res.scalars().first()
+        if not p:
+            return None
+        p.calibration_status = "calibrating"
+        session.add(p)
+        await session.commit()
+        await session.refresh(p)
+        return persona_to_dict(p)
+
+
+async def reset_persona_after_calibration_failure(persona_id: str, error_message: str) -> None:
+    """Revert calibration_status to 'draft' and record the failure so the
+    polling client can show it and let the user retry (see
+    run_manual_calibration_background() in manual_digital_brain_persona.py)."""
+    async with AsyncSession(async_engine) as session:
+        res = await session.execute(select(Persona).where(Persona.id == persona_id))
+        p = res.scalars().first()
+        if not p:
+            return
+        p.calibration_status = "draft"
+        details = dict(p.persona_details or {})
+        details["last_calibration_error"] = error_message
+        p.persona_details = details
+        session.add(p)
+        await session.commit()
 
 
 async def list_personas(workspace_id: str, exploration_id: str) -> List[dict]:
@@ -875,6 +1140,56 @@ async def preview_replication_anchor(
     }
 
 
+_REPLICATED_SCORE_TO_OMI_KEY: Dict[str, str] = {
+    "volume": "volume_score",
+    "source_diversity": "source_diversity_score",
+    "recency": "recency_score",
+    "signal_clarity": "signal_clarity_score",
+    "ro_alignment": "ro_alignment_score",
+}
+
+
+def _build_replicated_evidence_snapshot(
+    source_details: dict, confidence_comparison: dict
+) -> dict:
+    """
+    Deep/full replication regenerates persona_details from a fresh LLM schema that
+    excludes evidence_snapshot (see replication/utils.py _EXCLUDED_SCHEMA_KEYS).
+    Stage 5 (stage5_confidence.py) still recomputes all 5 confidence dimensions for
+    the target country, but only stores them under replication_artifacts — a path
+    the preview UI never reads. Carry that breakdown forward in the same shape the
+    Omi/legacy flow uses (components as 0-1 fractions, matching
+    evidence_snapshot.confidence_calculation_detail.components) so the existing
+    calibration UI renders the recalibrated bars + platform breakdown instead of
+    falling back to the single stored calibration_confidence value.
+    """
+    raw_evidence = source_details.get("evidence_snapshot") or {}
+    if isinstance(raw_evidence, str):
+        try:
+            raw_evidence = json.loads(raw_evidence)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            raw_evidence = {}
+    source_evidence: dict = raw_evidence if isinstance(raw_evidence, dict) else {}
+
+    replicated_scores = confidence_comparison.get("replicated_scores") or {}
+    components = {
+        omi_key: replicated_scores[field]
+        for field, omi_key in _REPLICATED_SCORE_TO_OMI_KEY.items()
+        if isinstance(replicated_scores.get(field), (int, float))
+    }
+    weighted_score = replicated_scores.get("weighted_score")
+
+    return {
+        "total_conversations": source_evidence.get("total_conversations") or 0,
+        "sources": source_evidence.get("sources") or [],
+        "confidence_calculation_detail": {
+            "components": components,
+            "weighted_total": weighted_score,
+            "value": weighted_score,
+        },
+    }
+
+
 async def replicate_persona(
     source_persona_id: str,
     target_country: str,
@@ -939,6 +1254,16 @@ async def replicate_persona(
     adapted["replication_mode"] = mode
     adapted["replication_artifacts"] = artifact_dict
 
+    # Deep/full replication's LLM-generated schema excludes evidence_snapshot, so
+    # without this the calibration breakdown has nothing to render and falls back
+    # to a single stored score. Fast-localization already carries evidence_snapshot
+    # forward from the source persona, so only backfill when it's genuinely missing.
+    confidence_comparison = artifact_dict.get("confidence_comparison")
+    if confidence_comparison and not adapted.get("evidence_snapshot"):
+        adapted["evidence_snapshot"] = _build_replicated_evidence_snapshot(
+            source_details, confidence_comparison
+        )
+
     # Round-trip through JSON to guarantee asyncpg receives a fully serializable
     # dict. Catches edge cases like nan/inf floats from LLM output, datetime objects
     # embedded in persona_details, or any type that json.dumps rejects without
@@ -997,6 +1322,19 @@ async def replicate_persona(
             calibration_status=source.get("calibration_status") or "calibrated",
             calibration_confidence=result.confidence_int,
         )
+
+        # Replication produces its own confidence data (evidence_snapshot /
+        # predominant_patterns above) — recompute the master score now so the
+        # replicated persona doesn't show a stale/blank value until its next preview.
+        full_persona_info = _full_persona_info_for_scoring(p)
+        master_score = compute_master_calibration_confidence(
+            full_persona_info,
+            _confidence_for_master_scoring(full_persona_info),
+            full_persona_info.get("predominant_patterns"),
+        )
+        if master_score is not None:
+            p.master_calibration_confidence = master_score
+
         session.add(p)
         await session.commit()
         await session.refresh(p)
@@ -1037,7 +1375,11 @@ async def total_sample_size(workspace_id: str, exploration_id: str) -> int:
 
         return sum(r.sample_size for r in rows)
 
-async def generate_persona_confidence(persona: dict, research_objective: str = "") -> dict:
+async def generate_persona_confidence(
+    persona: dict, research_objective: str = "",
+    *, exploration_id: Optional[str] = None, workspace_id: Optional[str] = None,
+    persona_id: Optional[str] = None, created_by: Optional[str] = None,
+) -> dict:
     persona_json = safe_json(persona)
 
     prompt = f"""
@@ -1108,6 +1450,19 @@ NO text outside JSON. NO markdown. NO explanations.
             {"role": "user", "content": prompt}
         ],
     )
+    input_tokens, output_tokens, usage_raw = extract_usage_openai_chat(res)
+    await record_llm_usage(
+        exploration_id=exploration_id,
+        stage="persona_confidence_scoring",
+        provider="openai",
+        model="gpt-4o-mini",
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        usage_raw=usage_raw,
+        workspace_id=workspace_id,
+        persona_id=persona_id,
+        created_by=created_by,
+    )
 
     raw = res.choices[0].message.content
 
@@ -1122,6 +1477,333 @@ NO text outside JSON. NO markdown. NO explanations.
             "weaknesses": ["Persona scoring failed due to formatting"],
             "improvements": "Ensure persona fields are complete and formatting is correct."
         }
+
+
+_BRAIN_NAMES_RE = re.compile(
+    r"\b(Explorer|Connector|Guardian|Pragmatist|Achiever|Visionary|Optimizer|"
+    r"Hedonist|Empath|Nomad|Rebel|Maverick|Aspirational Achiever)\s*(brain|type)?\b",
+    re.IGNORECASE,
+)
+
+
+def _compute_ro_alignment_sanity_check(patterns: list, ro: dict) -> int:
+    """Rule-based RO alignment score — no LLM. Counts keyword overlap between patterns and RO."""
+    if not patterns or not ro:
+        return 0
+
+    ro_text = " ".join(filter(None, [
+        ro.get("business_objective", ""),
+        ro.get("key_questions", ""),
+    ])).lower()
+
+    ro_keywords = {w for w in ro_text.split() if len(w) > 3}
+    if not ro_keywords:
+        return 50
+
+    aligned_count = sum(
+        1 for pattern in patterns
+        if set(pattern.lower().split()) & ro_keywords
+    )
+    return max(0, min(100, int((aligned_count / len(patterns)) * 100)))
+
+
+def _extract_manual_signals(full_persona_info: dict) -> list[str]:
+    """Extract behavioral signals from manual persona trait fields (no digital brain evidence)."""
+    signals: list[str] = []
+
+    def _add(prefix: str, value) -> None:
+        if not value:
+            return
+        items = value if isinstance(value, list) else [value]
+        for item in items:
+            text = str(item).strip()
+            if len(text) > 5:
+                signals.append(f"[{prefix}] {text}")
+
+    _add("PERSONALITY", full_persona_info.get("personality"))
+    _add("VALUES", full_persona_info.get("values"))
+    _add("MOTIVATIONS", full_persona_info.get("motivations"))
+    _add("LIFESTYLE", full_persona_info.get("lifestyle"))
+    _add("INTERESTS", full_persona_info.get("interests"))
+    _add("DECISION_STYLE", full_persona_info.get("decision_making_style"))
+    _add("PURCHASE_CHANNEL", full_persona_info.get("purchase_channel"))
+    _add("PURCHASE_TRIGGER", full_persona_info.get("purchase_triggers"))
+    _add("PURCHASE_BARRIER", full_persona_info.get("purchase_barriers"))
+    _add("MEDIA", full_persona_info.get("media_consumption_patterns"))
+    _add("DIGITAL", full_persona_info.get("digital_behaviour") or full_persona_info.get("digital_activity"))
+
+    for key, label in [
+        ("price_sensitivity", "PRICE_SENSITIVITY"),
+        ("brand_sensitivity", "BRAND_SENSITIVITY"),
+        ("switching_tendency", "SWITCHING_TENDENCY"),
+    ]:
+        val = full_persona_info.get(key)
+        if val:
+            signals.append(f"[{label}] {val}")
+
+    bpp = full_persona_info.get("barriers_pain_points")
+    if isinstance(bpp, dict):
+        for items in bpp.values():
+            if isinstance(items, list):
+                for item in items[:2]:
+                    text = str(item).strip()
+                    if len(text) > 5:
+                        signals.append(f"[BARRIER] {text}")
+
+    trig = full_persona_info.get("triggers_opportunities")
+    if isinstance(trig, dict):
+        for items in trig.values():
+            if isinstance(items, list):
+                for item in items[:2]:
+                    text = str(item).strip()
+                    if len(text) > 5:
+                        signals.append(f"[TRIGGER] {text}")
+
+    backstory = full_persona_info.get("backstory") or full_persona_info.get("formative_experience_description")
+    if backstory:
+        text = str(backstory).strip()[:300]
+        if len(text) > 20:
+            signals.append(f"[BACKSTORY] {text}")
+
+    return signals
+
+
+def _build_patterns_prompt(ro_text: str, signals: list[str]) -> str:
+    return f"""You are a consumer insights expert. Transform the raw behavioral signals below into exactly 10 clear, complete behavioral insights.
+
+RESEARCH OBJECTIVE:
+{ro_text}
+
+RAW BEHAVIORAL SIGNALS:
+{chr(10).join(f"- {s}" for s in signals[:15])}
+
+RULES:
+1. Output EXACTLY 10 patterns (or fewer only if fewer than 10 signals exist)
+2. Each pattern must be a complete, clear sentence — 10 to 20 words
+3. ZERO brain names (Explorer, Optimizer, Guardian, Connector, Achiever, Visionary, Hedonist, Empath, Pragmatist, Nomad, Rebel, Maverick)
+4. ZERO technical jargon — write for a non-technical marketing manager who has never seen this data
+5. Each pattern must express a specific, observable behavior, contradiction, or consumer insight
+6. Cover a variety of signal types: price behavior, brand switching, peer influence, timing, trust, lifestyle, say-do gaps
+7. Compute ro_alignment_score: integer 0-100 — what % of patterns directly address the research objective's key questions
+
+GOOD EXAMPLES:
+- "They regularly switch between brands, but claim to value brand loyalty when asked."
+- "Most purchases happen late at night, suggesting deliberate, reward-driven shopping sessions."
+- "Peer recommendations consistently override personal brand preferences during switching decisions."
+- "Shoppers spend at premium tier but describe themselves as budget-conscious buyers."
+
+BAD EXAMPLES (avoid):
+- "Explorer brain overrides stated quality preference" (brain name + jargon)
+- "Peer-driven switching clusters" (fragment, too vague)
+- "Behavioral heterogeneity signals" (jargon)
+
+OUTPUT — strict JSON only, no markdown:
+{{
+  "patterns": ["Complete sentence pattern 1.", "Complete sentence pattern 2.", ...],
+  "ro_alignment_score": 78
+}}"""
+
+
+async def _generate_patterns_fallback(
+    full_persona_info: dict, ro_text: str,
+    *, exploration_id: Optional[str] = None, workspace_id: Optional[str] = None,
+    persona_id: Optional[str] = None, created_by: Optional[str] = None,
+) -> dict:
+    """Minimal LLM call when main generation fails. Returns {patterns, score, error}."""
+    name = full_persona_info.get("name", "")
+    occupation = full_persona_info.get("occupation", "")
+    values = full_persona_info.get("values", "")
+    motivations = full_persona_info.get("motivations", "")
+    personality = full_persona_info.get("personality", "")
+    lifestyle = full_persona_info.get("lifestyle", "")
+    price_sensitivity = full_persona_info.get("price_sensitivity", "")
+    brand_sensitivity = full_persona_info.get("brand_sensitivity", "")
+
+    try:
+        res = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            response_format={"type": "json_object"},
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Generate clear, jargon-free behavioral patterns from persona data. "
+                        "Output strict JSON only. No brain names, no technical jargon."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": f"""Research Objective: {ro_text}
+Persona: {name}, {occupation}
+Values: {values} | Motivations: {motivations}
+Personality: {personality} | Lifestyle: {lifestyle}
+Price sensitivity: {price_sensitivity} | Brand sensitivity: {brand_sensitivity}
+
+Generate 8 clear behavioral patterns (complete sentences, 10-20 words each, no brain names) and an ro_alignment_score (0-100).
+JSON: {{"patterns": [...], "ro_alignment_score": 70}}""",
+                },
+            ],
+        )
+        input_tokens, output_tokens, usage_raw = extract_usage_openai_chat(res)
+        await record_llm_usage(
+            exploration_id=exploration_id,
+            stage="persona_pattern_fallback",
+            provider="openai",
+            model="gpt-4o-mini",
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            usage_raw=usage_raw,
+            workspace_id=workspace_id,
+            persona_id=persona_id,
+            created_by=created_by,
+        )
+        data = json.loads(res.choices[0].message.content)
+        patterns = [
+            _BRAIN_NAMES_RE.sub("", str(p)).strip(" ,")
+            for p in (data.get("patterns") or [])
+            if p and len(str(p).strip()) > 3
+        ][:10]
+        score = max(0, min(100, int(data.get("ro_alignment_score") or 50)))
+        logger.info("generate_predominant_patterns: fallback succeeded patterns=%d score=%d", len(patterns), score)
+        return {"patterns": patterns, "score": score, "error": False}
+    except Exception:
+        logger.exception("generate_predominant_patterns: fallback also failed")
+        return {"patterns": [], "score": 0, "error": True}
+
+
+async def generate_predominant_patterns(
+    full_persona_info: dict,
+    *, exploration_id: Optional[str] = None, workspace_id: Optional[str] = None,
+    persona_id: Optional[str] = None, created_by: Optional[str] = None,
+) -> dict:
+    """Generate 10 clear, jargon-free behavioral patterns + RO Alignment score.
+    Works for both digital brain personas (uses evidence streams) and manual
+    personas (extracts signals from trait fields).
+    """
+    evidence = (full_persona_info or {}).get("evidence") or {}
+    ro = (full_persona_info or {}).get("research_objective") or {}
+    say_do = (full_persona_info or {}).get("say_do_gap") or {}
+
+    # --- Digital brain signals ---
+    signals: list[str] = []
+    for layer in (evidence.get("action_data") or []):
+        text = str(layer.get("pattern_detected") or "").strip()
+        if len(text) > 8:
+            signals.append(f"[ACTION] {text}")
+    for verdict in (evidence.get("web_evidence") or []):
+        for theme in (verdict.get("key_discussion_themes") or []):
+            text = str(theme or "").strip()
+            if len(text) > 8:
+                signals.append(f"[WEB] {text}")
+    # Manual flow: divergences list
+    for div in (say_do.get("divergences") or []):
+        text = str(div or "").strip()
+        if len(text) > 8:
+            signals.append(f"[SAY_DO_GAP] {text}")
+    # Digital brain flow: flat claim/actual_behavior/reasoning fields
+    _claim = str(say_do.get("claim") or say_do.get("stated_value") or "").strip()
+    _actual = str(say_do.get("actual_behavior") or say_do.get("evidence_based_observation") or "").strip()
+    _reason = str(say_do.get("reasoning") or say_do.get("hidden_driver") or "").strip()
+    if _claim and _actual:
+        signals.append(f"[SAY_DO_GAP] Claims: {_claim}. Actual behavior: {_actual}.")
+    if _reason and len(_reason) > 8:
+        signals.append(f"[SAY_DO_GAP] Hidden driver: {_reason}")
+
+    # --- Fallback to manual trait signals for non-digital-brain personas ---
+    if not signals:
+        signals = _extract_manual_signals(full_persona_info or {})
+
+    if isinstance(ro, dict):
+        ro_text = " | ".join(filter(None, [
+            ro.get("business_objective", ""),
+            ro.get("key_questions", ""),
+            ro.get("hypotheses", ""),
+        ]))
+    else:
+        ro_text = str(ro)
+
+    prompt = _build_patterns_prompt(ro_text, signals)
+
+    try:
+        res = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            response_format={"type": "json_object"},
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You produce concise, jargon-free behavioral patterns from consumer research signals. "
+                        "Output strict JSON only. Never use brain names or technical jargon."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+        )
+        input_tokens, output_tokens, usage_raw = extract_usage_openai_chat(res)
+        await record_llm_usage(
+            exploration_id=exploration_id,
+            stage="persona_pattern_generation",
+            provider="openai",
+            model="gpt-4o-mini",
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            usage_raw=usage_raw,
+            workspace_id=workspace_id,
+            persona_id=persona_id,
+            created_by=created_by,
+        )
+        data = json.loads(res.choices[0].message.content)
+        raw_patterns = data.get("patterns") or []
+        patterns = [
+            _BRAIN_NAMES_RE.sub("", str(pat)).strip(" ,")
+            for pat in raw_patterns
+            if pat and len(str(pat).strip()) > 3
+        ][:10]
+        llm_score = max(0, min(100, int(data.get("ro_alignment_score") or 0)))
+        # sanity_score is a naive literal-keyword-overlap check, but the prompt above
+        # deliberately instructs the LLM to rephrase patterns in plain, jargon-free
+        # language rather than repeat the RO's wording — so sanity_score trends low
+        # by design, independent of true alignment quality. Averaging it 50/50 was
+        # silently dragging every persona's score down (an 85 LLM score could land
+        # in the 50s). Trust the LLM's direct semantic judgment for the persisted
+        # score; sanity_score is kept only as a diagnostic signal in the logs.
+        sanity_score = _compute_ro_alignment_sanity_check(patterns, ro if isinstance(ro, dict) else {})
+        final_score = llm_score
+        if abs(llm_score - sanity_score) > 20:
+            logger.warning(
+                "generate_predominant_patterns: large llm/sanity divergence (diagnostic only) llm=%d sanity=%d",
+                llm_score, sanity_score,
+            )
+        else:
+            logger.info(
+                "generate_predominant_patterns: patterns=%d llm=%d sanity=%d",
+                len(patterns), llm_score, sanity_score,
+            )
+        return {"metric": "RO Alignment", "score": final_score, "patterns": patterns}
+    except Exception:
+        logger.exception("generate_predominant_patterns: main LLM call failed, trying fallback")
+        fallback = await _generate_patterns_fallback(
+            full_persona_info or {}, ro_text,
+            exploration_id=exploration_id, workspace_id=workspace_id,
+            persona_id=persona_id, created_by=created_by,
+        )
+        patterns = fallback.get("patterns", [])
+        sanity_score = _compute_ro_alignment_sanity_check(patterns, ro if isinstance(ro, dict) else {})
+        if fallback.get("error"):
+            # Both LLMs failed — sanity_score is the only signal left, never 0
+            final_score = max(sanity_score, 1)
+            logger.info("generate_predominant_patterns: sanity_only score=%d", final_score)
+        else:
+            # Same reasoning as the main path above — trust the fallback LLM's own
+            # score rather than averaging it down with the jargon-biased sanity check.
+            fallback_llm_score = fallback.get("score", 50)
+            final_score = fallback_llm_score
+            logger.info(
+                "generate_predominant_patterns: fallback_llm score=%d sanity=%d(diagnostic)",
+                fallback_llm_score, sanity_score,
+            )
+        return {"metric": "RO Alignment", "score": final_score, "patterns": patterns}
+
 
 def persona_preview_from_dict(p, full_persona_info, confidence=None):
 
@@ -1345,7 +2027,11 @@ No additional text. No explanations. No markdown.
 async def validate_persona_traits_with_omi(
     research_objective: str,
     trait_group: str,
-    traits: Dict[str, str]
+    traits: Dict[str, str],
+    *,
+    exploration_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
+    created_by: Optional[str] = None,
 ) -> dict:
     prompt = build_persona_validation_prompt(
         research_objective=research_objective,
@@ -1356,7 +2042,10 @@ async def validate_persona_traits_with_omi(
     result = await call_omi(
         system_prompt=PERSONA_VALIDATION_SYSTEM_PROMPT,
         user_prompt=prompt,
-        response_format="json"
+        response_format="json",
+        exploration_id=exploration_id,
+        workspace_id=workspace_id,
+        created_by=created_by,
     )
 
     reasons = [

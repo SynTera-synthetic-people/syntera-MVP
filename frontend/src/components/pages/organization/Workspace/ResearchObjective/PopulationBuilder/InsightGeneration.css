@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════
-   InsightsGeneration — 4-card insights screen
+   InsightsGeneration — 3-card insights screen
    ═══════════════════════════════════════════════════════ */
 
 .ig-root {
@@ -31,10 +31,14 @@
 }
 
 /* ── Grid ────────────────────────────────────────────── */
+/* Behaviour Archaeology card was removed, leaving 3 active
+   cards (Raw Data Shell, Decision Intelligence, Data Playground).
+   Switched from a 2x2 grid to a single 3-across row to match
+   the qualitative InsightGeneration layout (.ig-cards). */
 .ig-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
 }
 
 /* ── Card ────────────────────────────────────────────── */
@@ -42,12 +46,12 @@
   background: var(--T-Base-B3, #16181C);
   border: 1px solid var(--T-GreyScale-Grey-800, #393C45);
   border-radius: 16px;
-  padding: 24px 24px 20px;
+  padding: 32px 28px 28px;
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
-  gap: 12px;
+  gap: 14px;
   transition: border-color 0.2s;
 }
 
@@ -57,8 +61,8 @@
 
 /* Icon */
 .ig-card__icon-wrap {
-  width: 44px;
-  height: 44px;
+  width: 48px;
+  height: 48px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -71,11 +75,13 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 4px 12px;
-  background: var(--T-GreyScale-Grey-800, #393C45);
-  border-radius: 100px;
-  font-size: 11px;
+  padding: 4px 10px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  font-size: 0.75rem;
   color: white;
+  font-weight: 500;
 }
 
 .ig-card__badge-clock {
@@ -87,35 +93,40 @@
 
 /* Title */
 .ig-card__title {
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 1.0625rem;
+  font-weight: 700;
   color: #ffffff;
   margin: 0;
+  line-height: 1.3;
 }
 
 /* Description */
 .ig-card__desc {
-  font-size: 13px;
+  font-size: 0.875rem;
   color: #D2D5DE;
   margin: 0;
-  line-height: 1.55;
-  max-width: 280px;
+  line-height: 1.6;
+  max-width: 300px;
+  flex: 1;
 }
 
 /* Action button */
 .ig-card__btn {
-  margin-top: auto;
+  margin-top: 6px;
   padding: 9px 36px;
-  background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 8px;
+  background: var(--T-Base-B3, #16181C);
+  border: 1px solid var(--T-GreyScale-Grey-800, #393C45);
+  border-radius: 16px;
   color: rgba(255, 255, 255, 0.75);
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 500;
+  font-family: inherit;
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 7px;
+  justify-content: center;
+  gap: 6px;
+  min-width: 120px;
   transition: background 0.18s, border-color 0.18s, color 0.18s;
 }
 
@@ -156,6 +167,18 @@
 }
 
 .ig-card__btn--view:hover {
+  background: rgba(6, 161, 123, 0.12);
+  border-color: rgba(6, 161, 123, 0.6);
+}
+
+.ig-card__btn--open {
+  border-color: rgba(6, 161, 123, 0.4);
+  color: #06A17B;
+  background: rgba(6, 161, 123, 0.06);
+  cursor: pointer;
+}
+
+.ig-card__btn--open:hover {
   background: rgba(6, 161, 123, 0.12);
   border-color: rgba(6, 161, 123, 0.6);
 }
@@ -363,8 +386,7 @@
 
 /* ════════════════════════════════════════════════════════════════════════════
    OMI LOADER BAR
-   Shown below the insight cards while Decision Intelligence or
-   Behaviour Archaeology is generating.
+   Shown below the insight cards while Decision Intelligence is generating.
    ════════════════════════════════════════════════════════════════════════════ */
 
 .ig-omi-bar {
@@ -383,8 +405,10 @@
 }
 
 .ig-omi-bar__avatar {
-  width: 36px;
-  height: 36px;
+  /* Sized up from 36px: at the smaller size the crop only fit Omi's head, so
+     the keyboard he is typing on fell outside the circle entirely. */
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
   overflow: hidden;
   flex-shrink: 0;
@@ -398,7 +422,9 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: center top;
+  /* Framed below centre so the hands and keyboard stay in shot — anchoring to
+     the top pushed the typing action out of the visible circle. */
+  object-position: center 68%;
   display: block;
 }
 
@@ -455,4 +481,11 @@
 @keyframes ig-dot-pulse {
   0%, 80%, 100% { opacity: 0.25; transform: scale(0.9); }
   40%           { opacity: 1;    transform: scale(1.2); }
+}
+
+/* ── Responsive: collapse to a single column on narrow viewports ─────────── */
+@media (max-width: 900px) {
+  .ig-grid {
+    grid-template-columns: 1fr;
+  }
 }

@@ -161,7 +161,13 @@ const RunningInterviews: React.FC = () => {
         const results = await Promise.allSettled(
             personas.map((persona, i) =>
                 interviewService
-                    .startInterview(workspaceId, objectiveId, persona.id)
+                    // forceNew: this screen always represents a fresh run against
+                    // the current discussion guide — without it, a persona that
+                    // already has an interview (e.g. from an earlier pass before
+                    // the guide was edited) gets its stale interview silently
+                    // returned instead of regenerated, so deleted questions can
+                    // still show up in the transcript.
+                    .startInterview(workspaceId, objectiveId, persona.id, true)
                     .then((res: unknown) => {
                         setStatuses(prev => { const n = [...prev]; n[i] = 'done'; return n; });
                         return res;

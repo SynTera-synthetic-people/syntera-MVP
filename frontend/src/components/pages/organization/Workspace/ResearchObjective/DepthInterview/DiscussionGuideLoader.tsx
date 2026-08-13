@@ -159,7 +159,7 @@ const DiscussionGuideLoader: React.FC<DiscussionGuideLoaderProps> = ({
             {step?.statement}
           </p>
           {waitingForBackend && !done && (
-            <p className="dgl-waiting-label">Finalising your guide…</p>
+            <p className="dgl-waiting-label"></p>
           )}
         </div>
       </div>

@@ -6,15 +6,57 @@ from datetime import datetime
 from math import isfinite
 from app.models.survey_simulation import SurveySimulation
 from app.utils.id_generator import generate_id
-from app.utils.survey_results_normalize import build_canonical_survey_results, build_normalized_survey_results
+from app.utils.survey_results_normalize import (
+    build_canonical_survey_results,
+    build_item_level_results,
+    build_normalized_survey_results,
+)
 from app.db import async_engine
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 from app.config import OPENAI_API_KEY
 from openai import AsyncOpenAI
-from app.services.question_engine import analysis_options_for_question
+from app.services.question_engine import (
+    analysis_options_for_question,
+    grid_item_allows_multiple,
+    is_verbatim_question_type,
+    question_grid_items,
+)
+from app.services.anti_sycophancy_rules import ANTI_SYCOPHANCY_RULES
 
 logger = logging.getLogger(__name__)
+
+# Injected alongside ANTI_SYCOPHANCY_RULES: that block governs the *tone* of an
+# individual answer, this one governs the *shape* of the aggregate distribution
+# the LLM returns for a question (counts across options for one persona's whole
+# sample_size). Without it, models default to flat/near-uniform splits that read
+# as "safe" but don't reflect a persona with actual convictions.
+DISTRIBUTION_REALISM_RULES = """
+DISTRIBUTION REALISM RULES (apply to every question_results option distribution):
+
+1. NO FLAT/UNIFORM DEFAULTS
+   - Do not spread counts near-evenly across options "to be safe"
+   - A persona with real convictions produces a skewed distribution: one
+     dominant option, a smaller-but-plausible secondary, and a minority tail
+   - Only produce a genuinely flat distribution when the persona would
+     actually be torn on that specific question
+
+2. CALIBRATION-DRIVEN SKEW
+   - Use the persona's calibration_confidence (0-100) to size the skew:
+     higher calibration -> sharper dominant option, smaller secondary, thin tail
+     lower calibration -> flatter, more hedged spread across plausible options
+   - Scale the size of any in-character "contrarian" minority (an option that
+     cuts against the persona's expected lean) by (1 - calibration_confidence):
+     confident personas allow a small contrarian minority, uncertain personas
+     should not manufacture contrarian mass they wouldn't actually have
+
+3. ANTI-SYCOPHANCY APPLIES TO THE SHAPE, NOT JUST THE WORDING
+   - The ANTI_SYCOPHANCY_RULES below govern tone, but the same authenticity
+     must show up as skew: don't bunch counts into the middle options to
+     avoid committing to an extreme distribution
+   - If this persona would genuinely reject/dislike/avoid something, that
+     should read as a small "positive" count, not a moderate one
+"""
 
 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
@@ -47,17 +89,81 @@ def _build_simulation_prompt(research_desc: str, persona: dict, sample_size: int
     an overall 'llm_source_explanation' block describing where the numbers were sourced from.
     """
     qs_text = []
+    verbatim_question_ids = []
+    grid_question_ids = []
     for i, q in enumerate(questions, start=1):
         opts = q.get("options") or []
+        q_id = q.get("question_key") or q.get("id") or f"Q{i}"
+        is_verbatim = is_verbatim_question_type(q.get("question_type"))
+        grid_items, grid_scale = question_grid_items(q)
+        is_grid = bool(grid_items and grid_scale)
+
+        if is_grid:
+            response_shape = "items"
+        elif is_verbatim:
+            response_shape = "verbatims"
+        else:
+            response_shape = "options"
+
         q_meta = {
-            "question_id": q.get("question_key") or q.get("id") or f"Q{i}",
+            "question_id": q_id,
             "type": q.get("question_type") or "single_select",
             "config": q.get("config") or {},
-            "options": q.get("option_schema") or opts,
+            "response_shape": response_shape,
         }
+        if is_grid:
+            # The item list and the response scale are different axes; sending
+            # only a flat "options" list collapses them and the model answers
+            # the grid as if it were one question.
+            q_meta["items"] = grid_items
+            q_meta["response_scale"] = grid_scale
+            q_meta["multi_response_per_item"] = grid_item_allows_multiple(q)
+            grid_question_ids.append(q_id)
+        elif is_verbatim:
+            verbatim_question_ids.append(q_id)
+        else:
+            q_meta["options"] = q.get("option_schema") or opts
+
         qs_text.append(f"{i}. QUESTION: {q.get('text')}\nSCHEMA: {json.dumps(q_meta, default=str)}")
 
     qs_joined = "\n\n".join(qs_text)
+
+    grid_instructions = ""
+    if grid_question_ids:
+        grid_instructions = f"""
+GRID / SCALE-MATRIX QUESTIONS ({", ".join(grid_question_ids)}):
+These ask the SAME response scale about several separate items, so one
+distribution cannot represent them. Do NOT return "options". Return "items":
+one entry per item in the schema's "items" list, each with its own
+distribution over the schema's "response_scale".
+
+Every item must appear, and each must get its OWN distribution — items differ
+from one another, so never repeat a single distribution across them. An item's
+answer may only be a label from "response_scale"; the item text itself is never
+an answer.
+"""
+
+    verbatim_instructions = ""
+    if verbatim_question_ids:
+        verbatim_instructions = f"""
+OPEN-ENDED / FREE-TEXT QUESTIONS ({", ".join(verbatim_question_ids)}):
+For these questions, do NOT return "options". Instead return "verbatims": a list of
+5-8 short first-person quotes representative of how this persona's sample would answer,
+in their own voice.
+
+Each verbatim should read as one natural paragraph (2-4 sentences) that blends these
+four aspects without labeling them:
+1. OPENING: a hook or attention-grab tied to the question
+2. CONTEXT: the life situation/experience that shapes this persona's answer
+3. KEY MESSAGE: the direct, concrete answer to the question
+4. CONCLUSION: a personal takeaway or verdict
+
+Vary the verbatims across the set (different angles, not restatements of the same
+sentence) and apply the anti-sycophancy and distribution-realism rules below: not
+every verbatim should be positive about the subject if this persona wouldn't be.
+"""
+
+
 
     prompt = f"""
 You are an expert market-research statistician. Simulate how a population of exactly {sample_size} people
@@ -72,15 +178,42 @@ RESEARCH OBJECTIVE:
 QUESTIONS:
 {qs_joined}
 
+{ANTI_SYCOPHANCY_RULES}
+
+{DISTRIBUTION_REALISM_RULES}
+{verbatim_instructions}{grid_instructions}
 REQUIREMENTS (STRICT):
 1) Return ONLY valid JSON, and nothing else.
 2) JSON must have these top-level keys:
    - sample_size: integer
-   - question_results: array of objects, each:
+   - question_results: array of objects. Each question uses ONE of these two shapes,
+     per its "response_shape" in the SCHEMA above:
+     Shape "options" (default, single/multi-select, rating, ranking, etc.):
      {{
        "text": "<question text>",
        "options": [
          {{ "option": "<option text>", "count": <int>, "pct": <float> }},
+         ...
+       ],
+       "total": <int>
+     }}
+     Shape "verbatims" (free-text/open-ended questions only):
+     {{
+       "text": "<question text>",
+       "verbatims": ["<quote 1>", "<quote 2>", ...],
+       "total": <int>
+     }}
+     Shape "items" (grid / scale-matrix questions only):
+     {{
+       "text": "<question text>",
+       "items": [
+         {{
+           "item": "<exact item text from the schema's items list>",
+           "options": [
+             {{ "option": "<exact label from response_scale>", "count": <int>, "pct": <float> }},
+             ...
+           ]
+         }},
          ...
        ],
        "total": <int>
@@ -93,11 +226,15 @@ REQUIREMENTS (STRICT):
         - used_research_objective_elements (list of strings)
         - final_reasoning_summary (string)
 
-3) For each question:
+3) For "options"-shape questions:
    - counts must be integers and MUST sum to sample_size.
    - pct must equal round(100 * count / sample_size, 1)
+   - Follow the DISTRIBUTION REALISM RULES above — do not default to flat/uniform splits.
 4) Be realistic and conservative: bias answers only according to the persona text above.
-5) If options are empty or free-text, distribute uniformly.
+5) For "verbatims"-shape questions, follow the OPEN-ENDED instructions above instead of rule 3.
+5b) For "items"-shape questions, follow the GRID instructions above instead of rule 3: each item's
+   counts must sum to sample_size (unless multi_response_per_item is true, where each option's
+   count is an independent frequency).
 6) Do NOT invent external documents or cite external sources. The llm_source_explanation should reference only persona, research objective, and sample/population signals.
 7) Output JSON only (no explanatory text).
 
@@ -141,12 +278,56 @@ async def _call_llm_simulation(research_desc: str, persona: dict, sample_size: i
         return None, "Invalid LLM simulation response shape"
     return data, None
 
+_FALLBACK_VERBATIMS = [
+    "I don't have a strong reaction either way, honestly.",
+    "It's fine, but nothing about it really stands out to me.",
+    "I'd need to see more before I could say anything definite.",
+]
+
+
 def _fallback_simulation(sample_size: int, questions: List[Dict]) -> Dict:
     """
-    Deterministic fallback: uniform distribution across provided options.
+    Deterministic fallback: uniform distribution across provided options
+    (or a small set of neutral verbatims for free-text questions).
     """
     q_results = []
     for q in questions:
+        if is_verbatim_question_type(q.get("question_type")):
+            q_results.append({
+                "text": q.get("text", ""),
+                "verbatims": list(_FALLBACK_VERBATIMS),
+                "total": sample_size
+            })
+            continue
+
+        grid_items, grid_scale = question_grid_items(q)
+        if grid_items and grid_scale:
+            # Grid questions need one distribution per item; a flat option
+            # list here would leave every item column empty downstream.
+            n_scale = max(1, len(grid_scale))
+            base = sample_size // n_scale
+            rem = sample_size - (base * n_scale)
+            counts = [base + (1 if i < rem else 0) for i in range(n_scale)]
+            q_results.append({
+                "text": q.get("text", ""),
+                "items": [
+                    {
+                        "item": item,
+                        "options": [
+                            {
+                                "option": label,
+                                "count": cnt,
+                                "pct": round(100.0 * cnt / sample_size, 1) if sample_size > 0 else 0.0,
+                            }
+                            for label, cnt in zip(grid_scale, counts)
+                        ],
+                    }
+                    for item in grid_items
+                ],
+                "total": sample_size,
+            })
+            continue
+
         opts = q.get("options") or []
         n_opts = max(1, len(opts))
         base = sample_size // n_opts
@@ -210,6 +391,14 @@ def _group_results_by_section(sections: List[Dict], results_map: Dict[str, List[
             if not sim_results:
                 continue
 
+            is_verbatim_row = bool(sim_results) and "verbatim" in sim_results[0]
+            if is_verbatim_row:
+                sec_block["questions"].append({
+                    "question": q_text,
+                    "verbatims": [row.get("verbatim", "") for row in sim_results if row.get("verbatim")]
+                })
+                continue
+
             formatted_opt = []
             for opt in sim_results:
                 pct = opt.get("pct", 0.0)
@@ -254,7 +443,17 @@ async def simulate_and_store(
     for sec in questions_sections:
         for q in sec.get("questions", []):
             text = q.get("text") or ""
-            opts = q.get("options") or analysis_options_for_question(q)
+            # analysis_options_for_question() invents reporting buckets
+            # ("Response provided" / "No response") for free-text questions.
+            # Handing those to the simulation as if they were real options
+            # makes the model answer in option shape, and the verbatim pool
+            # then comes back empty — the question's column ends up blank for
+            # every respondent. Free-text questions must reach the prompt with
+            # no options at all.
+            if is_verbatim_question_type(q.get("question_type")):
+                opts = []
+            else:
+                opts = q.get("options") or analysis_options_for_question(q)
             flat_questions.append({
                 "id": q.get("id"),
                 "question_key": q.get("question_key") or q.get("id"),
@@ -313,10 +512,16 @@ async def simulate_and_store(
         flat_questions,
         sample_size,
     )
+    item_results = build_item_level_results(
+        data.get("question_results", []),
+        flat_questions,
+        sample_size,
+    )
     canonical_results = build_canonical_survey_results(
         normalized_results,
         flat_questions,
         sample_size,
+        item_results=item_results,
     )
 
     grouped_output = _group_results_by_section(questions_sections, normalized_results)

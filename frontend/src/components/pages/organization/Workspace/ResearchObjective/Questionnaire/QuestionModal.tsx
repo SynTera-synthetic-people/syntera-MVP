@@ -5,6 +5,9 @@ import {
   TbGripVertical, TbPlus, TbCloudUpload, TbLink,
   TbFile, TbPhoto, TbPlayerPlay, TbDatabase, TbSearch,
 } from 'react-icons/tb';
+// Value import; questionCodec's import of this file is `import type` only, so
+// the two do not form a runtime cycle.
+import { validateQuestion } from './questionCodec';
 import './QuestionModal.css';
 
 // ── Question type definitions ─────────────────────────────────────────────────
@@ -1333,16 +1336,44 @@ export interface QuestionModalProps {
   sectionTitle: string;
   onSave: (q: Question) => void;
   onClose: () => void;
+  /** Message from a failed save attempt, shown above the footer. */
+  saveError?: string | null;
+  /** True while a save is in flight — blocks duplicate submissions. */
+  isSaving?: boolean;
 }
 
-const QuestionModal: React.FC<QuestionModalProps> = ({ initial, sectionTitle, onSave, onClose }) => {
+const QuestionModal: React.FC<QuestionModalProps> = ({
+  initial,
+  sectionTitle,
+  onSave,
+  onClose,
+  saveError = null,
+  isSaving = false,
+}) => {
   const [q, setQ] = useState<Question>(() =>
     initial ? { ...defaultQuestion(), ...initial } : defaultQuestion()
   );
   const [typeOpen, setTypeOpen] = useState(false);
   const [typeSearch, setTypeSearch] = useState('');
+  const [localError, setLocalError] = useState<string | null>(null);
   const typeRef = useRef<HTMLDivElement>(null);
   const typeSearchRef = useRef<HTMLInputElement>(null);
+
+  /**
+   * Validate against the API's own rules before sending. Catches the common
+   * case — an option-bearing type with no options — inline, instead of
+   * spending a round trip to be told the same thing by a 422.
+   */
+  const handleSave = () => {
+    if (isSaving) return;
+    const problem = validateQuestion(q);
+    if (problem) {
+      setLocalError(problem);
+      return;
+    }
+    setLocalError(null);
+    onSave(q);
+  };
 
   // ── Outside click closes dropdown ──────────────────────────────────────────
   useEffect(() => {
@@ -1379,10 +1410,14 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ initial, sectionTitle, on
     }
   }, [typeOpen]);
 
-  const set = <K extends keyof Question>(key: K, val: Question[K]) =>
+  const set = <K extends keyof Question>(key: K, val: Question[K]) => {
+    // Any edit may resolve the outstanding complaint — don't leave it up.
+    setLocalError(null);
     setQ((prev) => ({ ...prev, [key]: val }));
+  };
 
   const handleTypeChange = (type: QuestionType) => {
+    setLocalError(null);
     setQ((prev) => ({
       ...defaultQuestion(),
       id: prev.id,
@@ -1565,15 +1600,24 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ initial, sectionTitle, on
 
         </div>
 
+        {/* Save failures render here rather than on the page behind, so the
+            reason stays visible without discarding what was typed. */}
+        {(localError || saveError) && (
+          <div className="qm-save-error" role="alert">
+            <TbInfoCircle size={15} className="qm-save-error__icon" />
+            <span>{localError || saveError}</span>
+          </div>
+        )}
+
         <div className="qm-footer">
           <button type="button" className="qm-cancel-btn" onClick={onClose}>Cancel</button>
           <button
             type="button"
-            className={`qm-add-btn ${isValid ? 'qm-add-btn--active' : ''}`}
-            onClick={() => isValid && onSave(q)}
-            disabled={!isValid}
+            className={`qm-add-btn ${isValid && !isSaving ? 'qm-add-btn--active' : ''}`}
+            onClick={handleSave}
+            disabled={!isValid || isSaving}
           >
-            {initial ? 'Save Changes' : 'Add'}
+            {isSaving ? 'Saving…' : initial ? 'Save Changes' : 'Add'}
           </button>
         </div>
       </motion.div>

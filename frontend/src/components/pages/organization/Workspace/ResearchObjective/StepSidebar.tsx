@@ -63,7 +63,7 @@ const STEPS: StepItem[] = [
     path: "questionnaire",
     subSteps: [
       { number: 1, label: "Step 1", name: "Questionnaire Design", path: "questionnaire" },
-      { number: 2, label: "Step 2", name: "Population Calibration", path: "population-builder" },
+      { number: 2, label: "Step 2", name: "Sample Calibration", path: "population-builder" },
       { number: 3, label: "Step 3", name: "Survey Execution", path: "population-builder" },
       { number: 4, label: "Step 4", name: "Insights Generation", path: "population-builder" },
     ],

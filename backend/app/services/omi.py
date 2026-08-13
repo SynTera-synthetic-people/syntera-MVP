@@ -16,6 +16,7 @@ from app.services.research_objectives import validate_description_with_llm
 from app.services import research_objectives as exp_service
 from app.services.research_objectives import generate_and_save_research_objective
 from sqlalchemy.orm.attributes import flag_modified
+from app.services.llm_usage_tracker import record_llm_usage, extract_usage_openai_chat
 
 
 
@@ -79,8 +80,7 @@ async def get_or_create_session(exploration_id: str, user_id: str) -> OmiSession
         await add_message(
             omi_session.id,
             "omi",
-            "Hey, I'm Omi - your research co-pilot! 👋 Ready to define your research objectives? Let's start by understanding what you want to explore. What's the question or curiosity that brought you here today?",
-            "greeting",
+            "Hey, I’m Omi  Let’s uncover how people really think, feel, and make decisions.What are we diving into today?",
             WorkflowStage.RESEARCH_OBJECTIVES,
             OmiState.GREETING
         )
@@ -566,14 +566,29 @@ async def chat_with_omi(
         # -------------------------------
         # LLM ANALYSIS
         # -------------------------------
+        # Pulls in any materials the user shared via the "Add supporting
+        # material" modal in this chat window (or an earlier, low-confidence
+        # Framer submission that handed off into this chat loop) — same
+        # materials pipeline either way, keyed by exploration_id.
+        materials = await exp_service.get_unlinked_materials(db, exploration.id)
         analysis = await validate_description_with_llm(
             description=user_message,
-            conversation=ro_ctx.get("conversation", [])
+            conversation=ro_ctx.get("conversation", []),
+            materials=materials,
+            exploration_id=exploration.id,
+            workspace_id=exploration.workspace_id,
         )
 
         questions = analysis.get("questions", "")
         if isinstance(questions, list):
             questions = " ".join(questions)
+
+        # Deterministic, not prose-inferred: persist the flag immediately so this
+        # material is structurally excluded from every future prompt — the
+        # mismatch question can only ever be asked once for a given material.
+        flagged_ids = analysis.get("materials_flagged_mismatch", [])
+        if flagged_ids:
+            await exp_service.mark_materials_flagged(db, flagged_ids)
 
         missing = analysis.get("missing", [])
 
@@ -761,9 +776,25 @@ Be encouraging even when pointing out issues!"""
             temperature=0.3,
             max_tokens=400
         )
-        
+        # exploration_id/workspace_id aren't passed into this function — read
+        # from the session's own FK columns instead of threading through every
+        # caller (guide_research_objectives/guide_persona_building/routers).
+        _omi_session = await get_session(session_id)
+        input_tokens, output_tokens, usage_raw = extract_usage_openai_chat(response)
+        await record_llm_usage(
+            exploration_id=_omi_session.exploration_id if _omi_session else None,
+            stage="omi_validation",
+            provider="openai",
+            model="gpt-4o-mini",
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            usage_raw=usage_raw,
+            workspace_id=_omi_session.workspace_id if _omi_session else None,
+            session_id=session_id,
+        )
+
         validation_text = response.choices[0].message.content
-        
+
         is_valid = not any(word in validation_text.lower() for word in ["issue", "missing", "contradiction", "problem", "clash"])
         
         omi_state = OmiState.ENCOURAGING if is_valid else OmiState.CONCERNED
@@ -1032,6 +1063,11 @@ async def call_omi(
     response_format: str = "text",
     temperature: float = 0.2,
     max_tokens: int = 700,
+    *,
+    exploration_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
+    persona_id: Optional[str] = None,
+    created_by: Optional[str] = None,
 ) -> dict | str:
     """
     Unified Omi LLM caller
@@ -1055,6 +1091,19 @@ async def call_omi(
             response_format=(
                 {"type": "json_object"} if response_format == "json" else None
             )
+        )
+        input_tokens, output_tokens, usage_raw = extract_usage_openai_chat(response)
+        await record_llm_usage(
+            exploration_id=exploration_id,
+            stage="omi_chat",
+            provider="openai",
+            model="gpt-4o-mini",
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            usage_raw=usage_raw,
+            workspace_id=workspace_id,
+            persona_id=persona_id,
+            created_by=created_by,
         )
 
         content = response.choices[0].message.content

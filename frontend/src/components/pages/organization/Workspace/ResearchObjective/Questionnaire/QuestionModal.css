@@ -87,6 +87,26 @@
 .qm-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
 
 /* ── Footer ───────────────────────────────────────────────────────────────── */
+.qm-save-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 28px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: rgba(229, 72, 77, 0.12);
+  border: 1px solid rgba(229, 72, 77, 0.32);
+  color: #F5B5B7;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  flex-shrink: 0;
+}
+.qm-save-error__icon {
+  color: #F2555A;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
 .qm-footer {
   display: flex;
   align-items: center;

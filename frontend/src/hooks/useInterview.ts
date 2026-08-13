@@ -21,6 +21,7 @@ export interface StartInterviewPayload {
   personaId: string;
   forceNew?: boolean;
   lightweight?: boolean;
+  sessionGroupId?: string | null;
 }
 
 export interface ExportInterviewPayload {
@@ -151,8 +152,8 @@ export const useStartInterview = (
   const queryClient = useQueryClient();
 
   return useMutation<Interview, Error, StartInterviewPayload>({
-    mutationFn: ({ personaId, forceNew = false, lightweight = false }: StartInterviewPayload) =>
-      interviewService.startInterview(workspaceId, explorationId, personaId, forceNew, lightweight),
+    mutationFn: ({ personaId, forceNew = false, lightweight = false, sessionGroupId = null }: StartInterviewPayload) =>
+      interviewService.startInterview(workspaceId, explorationId, personaId, forceNew, lightweight, sessionGroupId),
 
     onSuccess: (newInterview, { personaId, forceNew }) => {
       // Invalidate interviews list
@@ -225,11 +226,13 @@ export const useSendMessage = (
         message
       ),
 
-    onSuccess: (updatedInterview) => {
-      queryClient.setQueryData(
-        interviewKeys.detail(workspaceId, explorationId, interviewId),
-        updatedInterview
-      );
+    onSuccess: () => {
+      // The response here is just the persona's reply message, not the full
+      // interview — invalidate so the next read pulls the canonical record
+      // instead of waiting for the 4s poll interval.
+      queryClient.invalidateQueries({
+        queryKey: interviewKeys.detail(workspaceId, explorationId, interviewId),
+      });
     },
   });
 };
@@ -357,7 +360,7 @@ export const useExportAllInterviewsPdf = (
   });
 };
 
-// Download qualitative transcripts (.docx)
+// Download qualitative transcripts (.pdf)
 export const useDownloadQualTranscripts = (
   workspaceId?: string,
   explorationId?: string
@@ -367,7 +370,7 @@ export const useDownloadQualTranscripts = (
     mutationFn: () =>
       interviewService.downloadQualTranscripts(workspaceId, explorationId),
     onSuccess: (blob) => {
-      _triggerBlobDownload(blob, `transcripts_${explorationId}.docx`);
+      _triggerBlobDownload(blob, `transcripts_${explorationId}.pdf`);
       queryClient.invalidateQueries({ queryKey: interviewKeys.reportStatus(workspaceId, explorationId) });
     },
     onError: () =>
