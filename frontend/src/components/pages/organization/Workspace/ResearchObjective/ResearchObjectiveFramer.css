@@ -815,6 +815,56 @@
   color: rgba(255, 255, 255, 0.28);
 }
 
+/* Preview step: "Download PDF" sits beside Submit inside .rofp-tab-cta-right,
+   which is a column (button row on top, hint underneath). */
+.rofp-cta-btn-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.rofp-btn-download {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 13px 22px;
+  background: rgba(36, 229, 182, 0.1);
+  border: 1px solid rgba(36, 229, 182, 0.35);
+  border-radius: 14px;
+  color: #24E5B6;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s, opacity 0.15s, transform 0.15s;
+}
+
+.rofp-btn-download:hover:not(.rofp-btn-download--disabled) {
+  background: rgba(36, 229, 182, 0.18);
+  border-color: rgba(36, 229, 182, 0.55);
+  transform: translateY(-2px);
+}
+
+.rofp-btn-download:active:not(.rofp-btn-download--disabled) {
+  transform: translateY(0);
+}
+
+.rofp-btn-download--disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.rofp-btn-download-icon {
+  font-size: 16px;
+  font-weight: 400;
+  transition: transform 0.15s;
+}
+
+.rofp-btn-download:hover:not(.rofp-btn-download--disabled) .rofp-btn-download-icon {
+  transform: translateY(2px);
+}
+
 /* ═══════════════════════════════════════════════════════════════════
    ADD MATERIAL — two sections side-by-side in a grid row
    ═══════════════════════════════════════════════════════════════════ */
@@ -1589,6 +1639,16 @@
     align-items: stretch;
   }
 
+  /* Two full-width buttons stacked, primary (Submit) on top. */
+  .rofp-cta-btn-row {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .rofp-btn-download {
+    justify-content: center;
+  }
+
   .rofp-btn-back {
     justify-content: center;
   }
@@ -1629,6 +1689,8 @@
   }
 
   .rofp-btn-continue,
+  .rofp-btn-download,
+  .rofp-btn-download-icon,
   .rofp-progress-fill {
     transition: none !important;
   }

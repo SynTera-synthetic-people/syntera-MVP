@@ -70,6 +70,26 @@ export const createResearchObjectiveFromFramer = async (workspaceId, exploration
   }
 };
 
+// Reads back what was submitted through the Framer for an exploration:
+// { framer_input, description, materials, source, submitted_at }.
+//
+// framer_input is the raw structured fields (null for objectives created via
+// the chat flow); description is the synthesized objective, present for every
+// finalized objective. This is what lets the read-only review screen show
+// framings submitted on another device — or before the local snapshot existed.
+export const getFramerInput = async (workspaceId, explorationId) => {
+  try {
+    const response = await axiosInstance.get(
+      `/workspaces/${workspaceId}/research/objectives/framer-input`,
+      { params: { exploration_id: explorationId } }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching saved Framer input:', error);
+    throw error;
+  }
+};
+
 // Submits one Framer "Add Material" section (Research Brief or Artifact) —
 // one-or-several files and/or links plus a shared instruction. Backend
 // extracts/fetches and summarizes everything synchronously, returning only

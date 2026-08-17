@@ -27,6 +27,7 @@ import {
   useConversationHistory,
   usePatchResearchObjectiveSummary,
   usePatchOmiMessageContent,
+  useFramerInput,
   useSubmitFramerMaterialSection,
 } from "../../../../../hooks/useOmiChat";
 import { useOmniWorkflow } from '../../../../../hooks/useOmiWorkflow';
@@ -235,19 +236,42 @@ const AddResearchObjective: React.FC = () => {
   // handler — i.e. only once the user has actually pressed Submit on the
   // last step of the Framer. This is what should drive the
   // "Review your research framing →" entry point below.
-  const [hasSubmittedFramer, setHasSubmittedFramer] = useState<boolean>(false);
+  //
+  // That flag is per-browser though, so it can't be the only signal: a framing
+  // submitted on another device would leave this entry point hidden and the
+  // saved framing unreachable. The backend query below covers that case.
+  const [hasLocalFramerFlag, setHasLocalFramerFlag] = useState<boolean>(false);
 
   useEffect(() => {
-    if (!objectiveId) { setHasSubmittedFramer(false); return; }
+    if (!objectiveId) { setHasLocalFramerFlag(false); return; }
     try {
       const raw = localStorage.getItem(`ro_framer_submitted_${objectiveId}`);
-      setHasSubmittedFramer(Boolean(raw));
+      setHasLocalFramerFlag(Boolean(raw));
     } catch {
-      setHasSubmittedFramer(false);
+      setHasLocalFramerFlag(false);
     }
     // Re-check whenever we land back on this screen (e.g. after returning
     // from the framer), since location.pathname changes on navigation back.
   }, [objectiveId, location.pathname]);
+
+  // Server-side truth: did this exploration's objective come from the Framer?
+  const { data: framerInputResponse } = useFramerInput(workspaceId, objectiveId) as {
+    data?: { data?: { framer_input?: Record<string, unknown> | null; description?: string | null } };
+  };
+  const hasServerFramerInput = Boolean(framerInputResponse?.data?.framer_input);
+  // Objectives built through the chat instead of the wizard have no framer
+  // fields, but they do have the objective Omi synthesized — worth an entry
+  // point of its own so it can be reviewed and downloaded too.
+  const hasServerObjective = Boolean((framerInputResponse?.data?.description ?? "").trim());
+
+  const hasFramerFields = hasLocalFramerFlag || hasServerFramerInput;
+  const hasSubmittedFramer = hasFramerFields || hasServerObjective;
+  const reviewEntryLabel = hasFramerFields
+    ? "Review your research framing →"
+    : "Review your research objective →";
+  const reviewEntryTitle = hasFramerFields
+    ? "Review what you entered in the research framer"
+    : "Review the research objective saved for this exploration";
 
   // ── TanStack Query hooks ───────────────────────────────────────────────────
   const {
@@ -1138,9 +1162,9 @@ const AddResearchObjective: React.FC = () => {
                   className="aro-ro-framer-btn"
                   type="button"
                   onClick={handleViewROFramerSummary}
-                  title="Review what you entered in the research framer"
+                  title={reviewEntryTitle}
                 >
-                  Review your research framing →
+                  {reviewEntryLabel}
                 </button>
               )}
               <p className="aro-cta-heading">All set. Now let's bring the personas to life.</p>
@@ -1283,9 +1307,9 @@ const AddResearchObjective: React.FC = () => {
                   className="aro-ro-framer-btn"
                   type="button"
                   onClick={handleViewROFramerSummary}
-                  title="Review what you entered in the research framer"
+                  title={reviewEntryTitle}
                 >
-                  Review your research framing →
+                  {reviewEntryLabel}
                 </button>
               )}
 
