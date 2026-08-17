@@ -113,13 +113,24 @@ const AttributeSelectionPanel: React.FC<AttributeSelectionPanelProps> = ({
   const [selectedState, setSelectedState] = useState('');
   const [selectedCity, setSelectedCity] = useState('');
 
-  const options = getAttributeOptions(attributeName);
   const isMultiSelect = isMultiSelectAttribute(attributeName);
   const isGeo = attributeName === GEO_ATTRIBUTE;
 
   const selectedValues = Array.isArray(currentValue)
     ? currentValue
     : currentValue ? [currentValue] : [];
+
+  // A value added through "Add Custom" isn't in the predefined list, so it has
+  // no pill to light up: the panel looked empty even though the value was set
+  // (visible whenever this panel remounts — switching sub-tabs, or coming back
+  // to a restored draft). Append any such selection so it renders as selected.
+  const presetOptions = getAttributeOptions(attributeName);
+  const customSelections = selectedValues.filter(
+    (value) => value && !presetOptions.includes(value)
+  );
+  const options = customSelections.length
+    ? [...presetOptions, ...customSelections]
+    : presetOptions;
 
   // ── Non-geo pill click ────────────────────────────────────────────────────
   const handlePillClick = (value: string) => {

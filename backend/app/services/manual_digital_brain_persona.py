@@ -569,6 +569,10 @@ async def create_manual_persona_draft(
         persona_details_init: Dict[str, Any] = {
             "raw_traits": raw_traits,
             "raw_form_payload": payload.dict(),
+            # Remembered so Phase 2 calibration knows whether the name on this
+            # row is the user's own (never overwrite) or the builder's
+            # placeholder (free to replace with a generated name).
+            "user_named": bool(payload.name_is_custom and (payload.name or "").strip()),
             "occupation_level": d.occupation_level or "",
             "family_structure": d.family_structure or "",
             "industry": industry,
@@ -771,7 +775,12 @@ async def calibrate_manual_persona_with_brains(
                     if value:
                         enriched[field] = value
 
-            p.name = enriched.get("name") or p.name
+            # A name the user typed is as sacred as their demographics above:
+            # only auto-name personas still carrying the builder's placeholder.
+            # Drafts created before "user_named" existed have no flag, so they
+            # keep the previous behaviour of taking the generated name.
+            if not details.get("user_named"):
+                p.name = enriched.get("name") or p.name
 
             flat_str_fields = (
                 "age_range", "gender", "location_country", "location_state",
