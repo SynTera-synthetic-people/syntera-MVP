@@ -28,6 +28,7 @@ from app.services.interview_prompts import (
 
 
 from app.services.auto_generated_persona import get_description
+from app.neuro import service as neuro_service
 from app.services.llm_usage_tracker import (
     record_llm_usage,
     extract_usage_openai_chat,
@@ -221,6 +222,7 @@ async def create_interview_question(
         session.add(question)
         await session.commit()
         await session.refresh(question)
+        await neuro_service.cache_interview_question_features(question.id, text)
         
         return {
             "id": question.id,
@@ -523,6 +525,7 @@ async def update_interview_question(question_id: str, text: str) -> Optional[Dic
         session.add(question)
         await session.commit()
         await session.refresh(question)
+        await neuro_service.cache_interview_question_features(question.id, text)
         
         return {
             "id": question.id,
@@ -1051,6 +1054,17 @@ async def start_interview(
     # aligned with flat_questions even though the calls run concurrently.
     batch_results = await asyncio.gather(*(_run(b) for b in batches))
     answers = [answer for result in batch_results for answer in result]
+
+    # Record one shadow affect computation per question.
+    # record_interview_shadow_turns never raises and is a no-op when the
+    # neuro flag is off, so the interview flow is unaffected either way.
+    await neuro_service.record_interview_shadow_turns(
+        workspace_id=workspace_id,
+        exploration_id=exploration_id,
+        persona_id=persona_id,
+        question_texts=[q["question"] for q in flat_questions],
+        persona=persona_obj,
+    )
 
 
     # `generated_answers` is the ONLY source every transcript view enumerates —

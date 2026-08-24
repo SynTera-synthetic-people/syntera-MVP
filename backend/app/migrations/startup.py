@@ -1794,6 +1794,104 @@ async def _repair_data_playground_schema(conn: AsyncConnection) -> None:
 
 
 
+async def _repair_neuro_schema(conn: AsyncConnection) -> None:
+    """Neuroscience layer tables. create_sqlmodel_tables creates these on a
+    fresh database via the model registry; this step converges databases
+    that predate the models. Index names match the ones SQLModel emits for
+    Field(index=True) so create_all plus this repair never duplicates
+    them."""
+    await ensure_table(
+        conn,
+        """
+        CREATE TABLE IF NOT EXISTS neuro_conversation_state (
+            conversation_key VARCHAR PRIMARY KEY,
+            workspace_id     VARCHAR NOT NULL,
+            exploration_id   VARCHAR NOT NULL,
+            persona_id       VARCHAR,
+            turn_index       INTEGER NOT NULL DEFAULT 0,
+            state_json       JSONB NOT NULL DEFAULT '{}',
+            updated_at       TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
+        )
+        """,
+    )
+    await ensure_table(
+        conn,
+        """
+        CREATE TABLE IF NOT EXISTS neuro_event (
+            id                 VARCHAR PRIMARY KEY,
+            conversation_key   VARCHAR NOT NULL,
+            workspace_id       VARCHAR NOT NULL,
+            exploration_id     VARCHAR NOT NULL,
+            persona_id         VARCHAR,
+            question_id        VARCHAR,
+            question_text_hash VARCHAR,
+            turn_index         INTEGER NOT NULL DEFAULT 0,
+            surface            VARCHAR NOT NULL,
+            shadow             BOOLEAN NOT NULL DEFAULT TRUE,
+            state_json         JSONB NOT NULL DEFAULT '{}',
+            error              VARCHAR,
+            neuro_version      VARCHAR NOT NULL DEFAULT '',
+            created_at         TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
+        )
+        """,
+    )
+    await ensure_table(
+        conn,
+        """
+        CREATE TABLE IF NOT EXISTS neuro_model_version (
+            id                     VARCHAR PRIMARY KEY,
+            model_version          VARCHAR NOT NULL,
+            artifact_version       VARCHAR NOT NULL,
+            renderer_version       VARCHAR NOT NULL,
+            feature_schema_version VARCHAR NOT NULL,
+            notes                  VARCHAR,
+            created_at             TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
+        )
+        """,
+    )
+    await ensure_table(
+        conn,
+        """
+        CREATE TABLE IF NOT EXISTS neuro_question_feature (
+            id              VARCHAR PRIMARY KEY,
+            question_id     VARCHAR NOT NULL,
+            question_source VARCHAR NOT NULL,
+            features        JSONB NOT NULL DEFAULT '{}',
+            neuro_version   VARCHAR NOT NULL DEFAULT '',
+            created_at      TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
+        )
+        """,
+    )
+    await ensure_table(
+        conn,
+        """
+        CREATE TABLE IF NOT EXISTS neuro_flag (
+            key        VARCHAR PRIMARY KEY,
+            value      VARCHAR NOT NULL,
+            updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
+        )
+        """,
+    )
+    await ensure_column(conn, "interviewquestion", "config JSONB")
+    for index_sql in (
+        "CREATE INDEX IF NOT EXISTS ix_neuro_conversation_state_workspace_id ON neuro_conversation_state (workspace_id)",
+        "CREATE INDEX IF NOT EXISTS ix_neuro_conversation_state_exploration_id ON neuro_conversation_state (exploration_id)",
+        "CREATE INDEX IF NOT EXISTS ix_neuro_conversation_state_persona_id ON neuro_conversation_state (persona_id)",
+        "CREATE INDEX IF NOT EXISTS ix_neuro_event_conversation_key ON neuro_event (conversation_key)",
+        "CREATE INDEX IF NOT EXISTS ix_neuro_event_workspace_id ON neuro_event (workspace_id)",
+        "CREATE INDEX IF NOT EXISTS ix_neuro_event_exploration_id ON neuro_event (exploration_id)",
+        "CREATE INDEX IF NOT EXISTS ix_neuro_event_persona_id ON neuro_event (persona_id)",
+        "CREATE INDEX IF NOT EXISTS ix_neuro_event_question_id ON neuro_event (question_id)",
+        "CREATE INDEX IF NOT EXISTS ix_neuro_event_surface ON neuro_event (surface)",
+        "CREATE INDEX IF NOT EXISTS ix_neuro_event_neuro_version ON neuro_event (neuro_version)",
+        "CREATE INDEX IF NOT EXISTS ix_neuro_event_created_at ON neuro_event (created_at)",
+        "CREATE INDEX IF NOT EXISTS ix_neuro_model_version_model_version ON neuro_model_version (model_version)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ix_neuro_question_feature_question_id ON neuro_question_feature (question_id)",
+        "CREATE INDEX IF NOT EXISTS ix_neuro_question_feature_question_source ON neuro_question_feature (question_source)",
+    ):
+        await ensure_index(conn, index_sql)
+
+
 _MIGRATION_STEPS: tuple[tuple[str, str, MigrationStep], ...] = (
     ("base", "create_sqlmodel_tables", _create_sqlmodel_tables),
     ("public", "repair_core_public_schema", _repair_core_public_schema),
@@ -1807,4 +1905,5 @@ _MIGRATION_STEPS: tuple[tuple[str, str, MigrationStep], ...] = (
     ("llm_usage", "repair_llm_usage_schema", _repair_llm_usage_schema),
     ("artifact_pipeline", "repair_artifact_pipeline_schema", _repair_artifact_pipeline_schema),
     ("data_playground", "repair_data_playground_schema", _repair_data_playground_schema),
+    ("neuro", "repair_neuro_schema", _repair_neuro_schema),
 )

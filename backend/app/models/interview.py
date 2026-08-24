@@ -23,6 +23,7 @@ class InterviewQuestion(SQLModel, table=True):
     id: str = Field(default_factory=generate_id, primary_key=True)
     section_id: str = Field(foreign_key="interviewsection.id")
     text: str
+    config: Optional[dict] = Field(default=None, sa_column=Column(JSON))
     created_by: str = Field(foreign_key="user.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
