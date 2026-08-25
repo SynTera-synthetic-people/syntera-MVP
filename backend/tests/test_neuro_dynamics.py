@@ -1,8 +1,4 @@
-"""Unit tests for carry-over, arbitration and turn chaining. No database or
-network needed; the stored-state continuity path is covered by
-scripts/neuro_shadow_smoke.py.
-
-Run: pytest tests/test_neuro_dynamics.py -v
+"""Carry-over, arbitration and turn chaining. No database needed.
 """
 from __future__ import annotations
 
@@ -263,3 +259,72 @@ def test_rebuttal_adapter_resolves_single_persona_forms():
     assert _single_persona_id(listed) == "per1"
     assert _single_persona_id('["a", "b"]') is None
     assert _single_persona_id(None) is None
+
+
+def test_artifact_adapter_records_on_its_own_thread(monkeypatch):
+    from app.neuro import service as neuro_service
+
+    seen_keys = []
+
+    async def _enabled():
+        return True
+
+    async def _fake_transact(*, conversation_key, compute, **kwargs):
+        seen_keys.append(conversation_key)
+        return compute(None)
+
+    monkeypatch.setattr(neuro_service, "is_enabled", _enabled)
+    monkeypatch.setattr(neuro_service.state_store, "transact_turn", _fake_transact)
+
+    recorded = asyncio.run(
+        neuro_service.record_artifact_shadow_turns(
+            workspace_id="ws1", exploration_id="ex1", persona_id="per1",
+            question_texts=["q1", "q2"], session_id="sess9",
+        )
+    )
+    assert recorded == 2
+    assert all(k == "conv1:ws1:ex1:per1:artifact:sess9" for k in seen_keys)
+
+
+def test_live_reply_continues_from_stored_state(monkeypatch):
+    from app.neuro import service as neuro_service
+
+    stored = _turn(_persona(persistence=0.5), _question(), turn_index=4)
+
+    async def _enabled():
+        return True
+
+    async def _fake_transact(*, compute, **kwargs):
+        return compute(stored)
+
+    monkeypatch.setattr(neuro_service, "is_enabled", _enabled)
+    monkeypatch.setattr(neuro_service.state_store, "transact_turn", _fake_transact)
+
+    state = asyncio.run(
+        neuro_service.record_live_reply_shadow_turn(
+            workspace_id="ws1", exploration_id="ex1", persona_id="per1",
+            question_text="and why is that?",
+        )
+    )
+    assert state is not None and state.turn_index == 5
+
+
+def test_live_reply_requires_a_persona(monkeypatch):
+    from app.neuro import service as neuro_service
+
+    async def _enabled():
+        return True
+
+    async def _must_not_run(**kwargs):
+        raise AssertionError("must not record without a persona")
+
+    monkeypatch.setattr(neuro_service, "is_enabled", _enabled)
+    monkeypatch.setattr(neuro_service.state_store, "transact_turn", _must_not_run)
+
+    state = asyncio.run(
+        neuro_service.record_live_reply_shadow_turn(
+            workspace_id="ws1", exploration_id="ex1", persona_id=None,
+            question_text="hello",
+        )
+    )
+    assert state is None

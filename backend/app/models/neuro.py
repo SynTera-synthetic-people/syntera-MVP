@@ -1,18 +1,4 @@
-"""Neuroscience layer tables.
-
-  neuro_conversation_state  current affective state per conversation,
-                            written under a row lock (see app/neuro/state_store.py)
-  neuro_event               append-only record of every computation; shadow
-                            rows included; also records layer failures. This
-                            is the audit trail and the dataset validation
-                            experiments run against, so it outlives studies.
-  neuro_model_version       provenance registry
-  neuro_question_feature    per-question affect metadata cache
-  neuro_flag                runtime on/off switch; when no NEURO_MODE row
-                            exists, settings.NEURO_MODE_DEFAULT applies
-
-Schema truth is Alembic (revision 0003_neuro_layer). These models exist for
-queries and so autogenerate sees the tables.
+"""Read-only neuroscience endpoints plus the runtime flag; shadow-only.
 """
 from __future__ import annotations
 

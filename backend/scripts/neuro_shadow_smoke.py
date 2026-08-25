@@ -1,16 +1,5 @@
-"""End-to-end check of the neuro shadow recording path against the database
-configured in .env. Keep DATABASE_URL pointed at localhost; the script writes
-and deletes its own rows under smoke-* identifiers only.
-
-Covers: flag default off, runtime flip on, per-question event rows and state
-upsert, determinism across re-runs, computed states responding to question
-content and persona differences, question feature caching, carry-over and
-interview-to-rebuttal state continuity, the say-do gap, confidence and
-abstention with effective counts, the conversation-key convention, failure
-recording on a forced engine crash, and flip off.
-
-Run:   python -m scripts.neuro_shadow_smoke
-Exits 0 and prints ALL SMOKE CHECKS PASSED on success.
+"""End-to-end check of shadow recording against the database in .env; writes
+and deletes only smoke-* rows. Run: python -m scripts.neuro_shadow_smoke
 """
 from __future__ import annotations
 
@@ -47,13 +36,13 @@ def check(name: str, ok: bool, detail: str = "") -> bool:
 async def _cleanup() -> None:
     async with AsyncSession(async_engine) as session:
         async with session.begin():
-            key = interview_conversation_key(WS, EX, PER)
+            prefix = f"conv1:{WS}:{EX}:%"
             await session.execute(
-                text("DELETE FROM neuro_event WHERE conversation_key = :k"), {"k": key}
+                text("DELETE FROM neuro_event WHERE conversation_key LIKE :p"), {"p": prefix}
             )
             await session.execute(
-                text("DELETE FROM neuro_conversation_state WHERE conversation_key = :k"),
-                {"k": key},
+                text("DELETE FROM neuro_conversation_state WHERE conversation_key LIKE :p"),
+                {"p": prefix},
             )
             await session.execute(
                 text("DELETE FROM neuro_flag WHERE key = 'NEURO_MODE'")
@@ -244,7 +233,50 @@ async def main() -> int:
         and (direct_state.say_do_gap or 0) > (projective_state.say_do_gap or 0),
     )
 
-    print("7) Confidence, abstention and effective counts")
+    print("7) Additional surfaces")
+    before_row = await state_store.read_state(key)
+    live = await service.record_live_reply_shadow_turn(
+        workspace_id=WS, exploration_id=EX, persona_id=PER,
+        question_text="And why do you feel that way?", persona=sticky,
+    )
+    ok &= check(
+        "live reply continues the stored interview thread",
+        live is not None and before_row is not None
+        and live.turn_index == before_row.turn_index + 1,
+    )
+    n_art = await service.record_artifact_shadow_turns(
+        workspace_id=WS, exploration_id=EX, persona_id=PER,
+        question_texts=["What stands out in this ad?", "Would you trust this brand?"],
+        persona=sticky, session_id="smoke-art",
+    )
+    ok &= check("artifact adapter recorded both turns", n_art == 2, f"got {n_art}")
+    art_key = f"conv1:{WS}:{EX}:{PER}:artifact:smoke-art"
+    art_row = await state_store.read_state(art_key)
+    main_row = await state_store.read_state(key)
+    ok &= check("artifact thread has its own state row", art_row is not None and art_row.turn_index == 1)
+    ok &= check(
+        "interview thread untouched by the artifact run",
+        main_row is not None and live is not None and main_row.turn_index == live.turn_index,
+    )
+    art_events = await state_store.read_events(art_key, limit=5)
+    ok &= check(
+        "artifact events carry the artifact surface",
+        len(art_events) == 2 and all(e.surface == "artifact_response" for e in art_events),
+    )
+    n_svy = await service.record_survey_shadow_turns(
+        workspace_id=WS, exploration_id=EX, persona_id="smoke-survey-persona",
+        question_texts=["Pick a colour", "Rate the price"], simulation_id="smoke-sim",
+    )
+    ok &= check("survey adapter recorded both turns", n_svy == 2, f"got {n_svy}")
+    svy_events = await state_store.read_events(
+        f"conv1:{WS}:{EX}:smoke-survey-persona:survey:smoke-sim", limit=5
+    )
+    ok &= check(
+        "survey events carry the survey surface",
+        len(svy_events) == 2 and all(e.surface == "survey_simulation" for e in svy_events),
+    )
+
+    print("8) Confidence, abstention and effective counts")
     no_evidence = {
         "id": "smoke-no-evidence",
         "persona_details": {
@@ -299,13 +331,13 @@ async def main() -> int:
         counts and counts["answered"] < counts["total"],
     )
 
-    print("8) Conversation-key convention")
+    print("9) Conversation-key convention")
     ok &= check(
         "interview and rebuttal resolve to the same key",
         interview_conversation_key(WS, EX, PER) == rebuttal_conversation_key(WS, EX, PER),
     )
 
-    print("9) Failure recording on forced engine crash")
+    print("10) Failure recording on forced engine crash")
     real_compute = neuro_engine.compute_turn
 
     def _boom(**kwargs):
@@ -326,7 +358,7 @@ async def main() -> int:
         and "forced crash" in events3[0].error,
     )
 
-    print("10) Flip off again")
+    print("11) Flip off again")
     await service.set_enabled(False)
     ok &= check("is_enabled() is False", not await service.is_enabled())
     before = len(await state_store.read_events(key, limit=200))

@@ -1,7 +1,4 @@
-"""Unit tests for confidence, abstention and effective-count aggregation.
-No database or network needed.
-
-Run: pytest tests/test_neuro_confidence.py -v
+"""Confidence, abstention and effective-count aggregation. No database needed.
 """
 from __future__ import annotations
 
@@ -129,12 +126,34 @@ def test_unknown_evidence_defaults_to_answering():
     assert state.abstain is False
 
 
-def test_feature_vector_carries_confidence_terms():
+def test_feature_vector_carries_every_confidence_term():
+    # Each exported confidence_* feature must carry the value of the matching
+    # term, not a default: a name mismatch between the exporter and
+    # confidence.assess() silently exports a constant.
     state = _turn(_persona(evidence_n=4))
     vector = state.to_feature_vector()
     assert len(vector) == len(FEATURE_VECTOR_FIELDS)
-    idx = FEATURE_VECTOR_FIELDS.index("confidence_evidence")
-    assert vector[idx] == state.confidence_terms["evidence"]
+    for term, value in state.confidence_terms.items():
+        idx = FEATURE_VECTOR_FIELDS.index(f"confidence_{term}")
+        assert vector[idx] == value, f"confidence_{term} not exported"
+
+
+def test_exported_confidence_fields_match_assess_keys():
+    _, _, terms = confidence.assess(
+        CoreAffect.neutral(), {"certainty": 0.5}, evidence_n=1
+    )
+    exported = {f[len("confidence_"):] for f in FEATURE_VECTOR_FIELDS
+                if f.startswith("confidence_")}
+    assert exported == set(terms)
+
+
+def test_abstention_threshold_is_defined_once():
+    # A second assignment silently shadows the first and changes every
+    # abstention decision.
+    import inspect
+
+    source = inspect.getsource(parameters)
+    assert source.count("\nABSTENTION_THRESHOLD = ") == 1
 
 
 def test_abstaining_state_round_trips():

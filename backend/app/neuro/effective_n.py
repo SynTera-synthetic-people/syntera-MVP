@@ -1,10 +1,5 @@
-"""Effective respondent counts from recorded shadow events.
-
-For each question (identified by text hash), the latest state per persona
-decides whether that persona answered or abstained. The effective count is
-answered personas, which is the denominator percentages should reconcile
-against once abstention is live; while the layer is shadow-only these
-numbers are informational.
+"""Per-question effective respondent counts from recorded events: latest state
+per persona decides answered vs abstained; failed computations are ignored.
 """
 from __future__ import annotations
 

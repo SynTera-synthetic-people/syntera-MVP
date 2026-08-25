@@ -1307,6 +1307,15 @@ async def add_user_message_and_get_persona_reply(
                 persona_id=iv.persona_id,
             )
 
+            if iv.persona_id:
+                await neuro_service.record_live_reply_shadow_turn(
+                    workspace_id=iv.workspace_id,
+                    exploration_id=iv.exploration_id,
+                    persona_id=iv.persona_id,
+                    question_text=user_text,
+                    persona=persona_obj,
+                )
+
             data = json.loads(res_ai.choices[0].message.content)
             persona_reply = data.get("response", "")
             reply_meta = {

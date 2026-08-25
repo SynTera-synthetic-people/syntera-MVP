@@ -1,9 +1,5 @@
-"""Unit tests for the neuroscience layer scaffolding: type invariants, the
-conversation-key convention, engine reproducibility, and the fail-open
-contract at the service boundary. No database or network needed;
-database-backed behaviour is covered by scripts/neuro_shadow_smoke.py.
-
-Run: pytest tests/test_neuro_layer.py -v
+"""Type invariants, key convention, engine reproducibility, fail-open
+contract. No database needed.
 """
 from __future__ import annotations
 
@@ -125,6 +121,14 @@ def test_interview_and_rebuttal_resolve_to_same_key():
     a = interview_conversation_key("ws1", "ex1", "per1")
     b = rebuttal_conversation_key("ws1", "ex1", "per1")
     assert a == b == "conv1:ws1:ex1:per1"
+
+
+def test_thread_qualified_keys_are_separate():
+    base = conversation_key("ws1", "ex1", "per1")
+    art = conversation_key("ws1", "ex1", "per1", thread="artifact:s1")
+    svy = conversation_key("ws1", "ex1", "per1", thread="survey:sim1")
+    assert art != base and svy != base and art != svy
+    assert art.startswith(base + ":")
 
 
 def test_conversation_keys_separate_conversations():

@@ -1,21 +1,6 @@
-"""Conversation identity for affective state.
-
-Interview and RebuttalSession rows share no identifier (interviews group by
-session_group_id, rebuttals by simulation_id), but emotional state must carry
-from an interview into the rebuttal that challenges it. Both therefore derive
-the same key from what they do share:
-
-    conv1:<workspace_id>:<exploration_id>:<persona_id>
-
-One emotional thread per persona per exploration. This is unambiguous today
-because start_interview() replaces any prior guide-driven interview for the
-same triple, so exactly one live guide interview exists per key. Rebuttals in
-the same exploration resolve to the same triple and hence the same state.
-
-The "conv1" prefix versions the convention: if a stored conversation id ever
-replaces derivation, old keys stay distinguishable. Population-level runs
-(persona_id is None) use a literal "population" segment so survey-simulation
-call sites can reuse the same function.
+"""Conversation identity. Interview and rebuttal rows share no identifier, so
+both derive the same key from (workspace, exploration, persona); the prefix
+versions the convention. See conversation_key() for thread qualifiers.
 """
 from __future__ import annotations
 
@@ -29,10 +14,15 @@ def conversation_key(
     workspace_id: str,
     exploration_id: str,
     persona_id: Optional[str],
+    thread: Optional[str] = None,
 ) -> str:
+    """One key per emotional thread. Interview and rebuttal share the default
+    thread; surfaces that must not overwrite it (artifact runs, surveys) pass
+    a thread qualifier and get their own state row."""
     if not workspace_id or not exploration_id:
         raise ValueError("workspace_id and exploration_id are required")
-    return f"{_PREFIX}:{workspace_id}:{exploration_id}:{persona_id or _POPULATION}"
+    base = f"{_PREFIX}:{workspace_id}:{exploration_id}:{persona_id or _POPULATION}"
+    return f"{base}:{thread}" if thread else base
 
 
 def interview_conversation_key(

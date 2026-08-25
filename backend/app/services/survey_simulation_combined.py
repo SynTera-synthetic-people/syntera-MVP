@@ -15,6 +15,7 @@ from openai import AsyncOpenAI
 from app.services.survey_simulation import _group_results_by_section, _fallback_simulation
 from app.utils.survey_results_normalize import build_canonical_survey_results, build_normalized_survey_results
 from app.services.question_engine import analysis_options_for_question
+from app.neuro import service as neuro_service
 from app.services.persona import get_persona
 from app.services.auto_generated_persona import get_description
 from app.services.llm_usage_tracker import record_llm_usage, extract_usage_openai_chat
@@ -653,6 +654,14 @@ async def _simulate_single_brain(
     logger.info(
         "Single-brain survey simulation completed | survey_simulation_id=%s brain=%s sample_size=%s",
         sim_obj.id, ctx["brain_assignment"].get("primary_brain"), sample_size,
+    )
+
+    await neuro_service.record_survey_shadow_turns(
+        workspace_id=workspace_id,
+        exploration_id=exploration_id,
+        persona_id=persona_id,
+        question_texts=[q.get("text") or "" for q in flat_questions],
+        simulation_id=simulation_id,
     )
 
     return _survey_result_payload(sim_obj, questions_sections, llm_source_explanation=llm_source_explanation)

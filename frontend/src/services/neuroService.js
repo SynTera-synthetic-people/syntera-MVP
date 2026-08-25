@@ -1,6 +1,5 @@
-// Read-only access to the neuroscience layer endpoints. Every call returns
-// null instead of throwing so callers can hide the panel when the layer is
-// off, unreachable, or has recorded nothing yet.
+// Every call returns null instead of throwing so callers can hide the panel
+// when the layer is off, unreachable, or empty.
 import axiosInstance from '../utils/axiosConfig';
 
 const quiet = async (fn) => {

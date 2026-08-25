@@ -1,9 +1,6 @@
-"""Arbitration: what the persona would express, versus what it feels.
-
-The expressed state is the felt state pulled toward a presentation anchor by
-a weight that grows with how directly the question is framed and how much is
-at stake. When the anchor coincides with the felt state there is nothing to
-conceal and the gap is zero. Deterministic for identical inputs.
+"""Expressed state vs felt state: expression is pulled toward a presentation
+anchor by framing directness and stakes; the say-do gap is the distance
+between the two, zero when there is nothing to conceal.
 """
 from __future__ import annotations
 

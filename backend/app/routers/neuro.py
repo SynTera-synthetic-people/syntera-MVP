@@ -1,7 +1,4 @@
-"""Neuroscience layer endpoints: read-only state, trajectory and
-effective-count visibility for the frontend and debugging, plus the runtime
-on/off switch. Shadow-only: enabling the layer only starts recording; no
-response content changes.
+"""Read-only neuroscience endpoints plus the runtime flag; shadow-only.
 """
 from __future__ import annotations
 
@@ -12,8 +9,19 @@ from app.models.user import User
 from app.neuro import effective_n, engine, service, state_store
 from app.neuro.conversation_key import conversation_key
 from app.routers.auth_dependencies import get_current_active_user
+from app.services import workspace as ws_service
 
 router = APIRouter(prefix="/neuro", tags=["Neuroscience Layer"])
+
+# Changing the flag affects every workspace in the deployment, so it is
+# restricted to platform administrators rather than any authenticated user.
+FLAG_ADMIN_ROLES = ("super_admin",)
+
+
+async def _require_workspace_member(workspace_id: str, current_user: User) -> None:
+    members = await ws_service.list_workspace_members(workspace_id)
+    if not any(m["user_id"] == current_user.id for m in members):
+        raise HTTPException(status_code=403, detail="Not authorized")
 
 
 class NeuroModeIn(BaseModel):
@@ -37,6 +45,8 @@ async def neuro_set_mode(
     payload: NeuroModeIn,
     current_user: User = Depends(get_current_active_user),
 ):
+    if current_user.role not in FLAG_ADMIN_ROLES:
+        raise HTTPException(status_code=403, detail="Not authorized")
     await service.set_enabled(payload.enabled)
     return {"status": "success", "data": {"enabled": await service.is_enabled()}}
 
@@ -50,6 +60,7 @@ async def get_conversation_state(
     persona_id: str,
     current_user: User = Depends(get_current_active_user),
 ):
+    await _require_workspace_member(workspace_id, current_user)
     key = conversation_key(workspace_id, exploration_id, persona_id)
     row = await state_store.read_state(key)
     if row is None:
@@ -78,6 +89,7 @@ async def get_conversation_events(
     limit: int = 50,
     current_user: User = Depends(get_current_active_user),
 ):
+    await _require_workspace_member(workspace_id, current_user)
     key = conversation_key(workspace_id, exploration_id, persona_id)
     events = await state_store.read_events(key, limit=limit)
     return {
@@ -109,6 +121,7 @@ async def get_effective_n(
     """Per-question effective respondent counts over recorded shadow events:
     for each question, how many personas answered versus abstained on their
     latest computation."""
+    await _require_workspace_member(workspace_id, current_user)
     events = await state_store.read_events_for_exploration(
         workspace_id, exploration_id
     )

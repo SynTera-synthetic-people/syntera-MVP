@@ -1,11 +1,6 @@
-"""Appraisal: score a question against a persona and produce an observation
-in affect space with an uncertainty.
-
-Five judgements each score in [0, 1]; (score - 0.5) moves the observation
-from the persona's resting position along that judgement's direction, scaled
-by its weight. The observation noise R grows as certainty and category
-familiarity fall, so unfamiliar or uncertain questions move the persona less
-once the gain is applied downstream.
+"""Scores five judgment dimensions for a persona/question pair and produces an
+observation with noise; noise grows as certainty and category familiarity
+fall, so unfamiliar questions move the persona less.
 """
 from __future__ import annotations
 

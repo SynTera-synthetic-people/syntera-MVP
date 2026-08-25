@@ -1,20 +1,7 @@
-"""Affect computation engine.
-
-One turn: predict from the persona's resting position and any carried state,
-appraise the question into an observation with a noise R, apply the gain
-spread^2 / (spread^2 + R), clamp back into the space, then arbitrate the
-expressed state. Low certainty or familiarity inflates R, so the prediction
-dominates; a fully certain, fully familiar observation moves the persona the
-most.
-
-Carry-over: with a previous state, the prediction sits between the resting
-position and the previous summary, weighted by the persona's persistence.
-Zero persistence reproduces a fresh turn exactly; persistence one starts
-from the previous state unchanged. Recovery toward rest is a property of
-the prediction step, not a separate rule.
-
-Deterministic: identical persona parameters, question features, previous
-state and versions give an identical state.
+"""Affect computation. Prediction blends baseline with any carried state by
+persona persistence; the appraisal observation moves it by a gain that
+shrinks with observation noise. Deterministic for identical inputs and
+versions.
 """
 from __future__ import annotations
 

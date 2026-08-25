@@ -1,10 +1,5 @@
-"""Question affect features: framing, stakes, and affect relevance.
-
-Tagging is rule-based and deterministic so a question always produces the
-same features for a given TAGGER_VERSION. Features are computed once per
-question and cached in neuro_question_feature keyed by question id; call
-sites that only hold question text use tag_question directly, which is cheap
-enough to run inline.
+"""Rule-based question tagging (framing, stakes, affect relevance),
+deterministic and versioned; cached per question id.
 """
 from __future__ import annotations
 

@@ -1,7 +1,4 @@
-// Emotional-state panel: per-persona affect trajectory across the guide,
-// the latest confidence with its three terms, a visibly distinct abstained
-// state, and effective respondent counts for the exploration. Renders
-// nothing at all unless the neuroscience layer is enabled and has recorded
+// Renders nothing unless the neuroscience layer is enabled and has recorded
 // state for this exploration.
 import React, { useEffect, useMemo, useState } from 'react';
 import {

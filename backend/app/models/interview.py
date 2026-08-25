@@ -1,7 +1,7 @@
 from sqlmodel import SQLModel, Field, Column
 from typing import Optional, List, Dict
 from datetime import datetime
-from sqlalchemy.dialects.postgresql import JSON
+from sqlalchemy.dialects.postgresql import JSON, JSONB
 from app.utils.id_generator import generate_id
 
 class InterviewSection(SQLModel, table=True):
@@ -23,7 +23,7 @@ class InterviewQuestion(SQLModel, table=True):
     id: str = Field(default_factory=generate_id, primary_key=True)
     section_id: str = Field(foreign_key="interviewsection.id")
     text: str
-    config: Optional[dict] = Field(default=None, sa_column=Column(JSON))
+    config: Optional[dict] = Field(default=None, sa_column=Column(JSONB))
     created_by: str = Field(foreign_key="user.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
 

@@ -1,9 +1,6 @@
-"""Derivation of per-persona affect parameters from stored persona records.
-
-All derivation happens here, in code, from whatever the persona row and its
-persona_details JSON actually contain. Field presence varies widely across
-personas, so every lookup degrades to a sensible default instead of raising,
-and the result is deterministic for a given record.
+"""Derives per-persona affect parameters from stored persona records by
+deterministic code, never from an LLM at computation time. Missing fields
+degrade to defaults.
 """
 from __future__ import annotations
 

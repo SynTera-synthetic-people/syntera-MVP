@@ -1,21 +1,8 @@
-"""Neuro layer orchestration: runtime flag and shadow turn recording.
-
-Call sites import this module and nothing else from the package. Contract:
-no exception raised here ever reaches a call site — on any internal error the
-turn proceeds exactly as it would with the layer off, and the failure is
-recorded as a neuro_event row with `error` set. Every computation writes one
-event row, flagged shadow.
-
-Turn chaining: within one guide run, each question carries the state produced
-by the one before it, and a fresh run starts from scratch so re-running a
-guide reproduces identical states. Rebuttal turns instead continue from the
-stored conversation state, so emotion carried out of an interview persists
-into the challenge that follows it.
-
-The on/off switch is a single row in neuro_flag, read with a short
-in-process cache so the check adds no per-question query. Flipping the row
-takes effect on every replica within the cache TTL, with no restart. When no
-row exists, settings.NEURO_MODE_DEFAULT applies (False).
+"""Orchestration and the runtime flag. Contract: nothing here raises into a
+call site — failures are recorded as neuro_event rows with error set and the
+caller proceeds unchanged. Interview runs chain turns in guide order and
+start fresh (re-runs reproduce identical states); rebuttal and live replies
+continue from the stored state.
 """
 from __future__ import annotations
 
@@ -32,6 +19,7 @@ from app.db import async_engine
 from app.models.neuro import NeuroFlag
 from app.neuro import engine, persona_params, question_features, state_store
 from app.neuro.conversation_key import (
+    conversation_key,
     interview_conversation_key,
     rebuttal_conversation_key,
 )
@@ -263,3 +251,142 @@ async def record_rebuttal_shadow_turn(
             "Neuro rebuttal adapter failed open [exploration_id=%s]", exploration_id
         )
         return None
+
+
+async def record_artifact_shadow_turns(
+    *,
+    workspace_id: Optional[str],
+    exploration_id: Optional[str],
+    persona_id: Optional[str],
+    question_texts: List[str],
+    persona: Optional[dict] = None,
+    session_id: Optional[str] = None,
+) -> int:
+    """Shadow turns for an artifact-response run, chained in guide order on a
+    dedicated thread so artifact state never overwrites the persona's
+    interview thread. Never raises; no-op when the flag is off or ids are
+    missing."""
+    try:
+        if not await is_enabled():
+            return 0
+        if not workspace_id or not exploration_id:
+            return 0
+        key = conversation_key(
+            workspace_id, exploration_id, persona_id,
+            thread=f"artifact:{session_id}" if session_id else "artifact",
+        )
+        recorded = 0
+        previous: Optional[AffectiveState] = None
+        for idx, text in enumerate(question_texts):
+            state = await record_shadow_turn(
+                conversation_key=key,
+                workspace_id=workspace_id,
+                exploration_id=exploration_id,
+                persona_id=persona_id,
+                question_text=text,
+                question_id=None,
+                surface=Surface.ARTIFACT_RESPONSE,
+                turn_index=idx,
+                persona=persona,
+                previous_state=previous,
+            )
+            if state is not None:
+                recorded += 1
+                previous = state
+        return recorded
+    except Exception:
+        logger.exception(
+            "Neuro artifact adapter failed open [exploration_id=%s]", exploration_id
+        )
+        return 0
+
+
+async def record_live_reply_shadow_turn(
+    *,
+    workspace_id: str,
+    exploration_id: str,
+    persona_id: Optional[str],
+    question_text: str,
+    persona: Optional[dict] = None,
+) -> Optional[AffectiveState]:
+    """Shadow turn for a live conversation reply. Continues the persona's
+    stored interview thread, so emotion carried out of the guide run persists
+    into the live exchange. Never raises; no-op when the flag is off."""
+    try:
+        if not await is_enabled():
+            return None
+        if not workspace_id or not exploration_id or not persona_id:
+            return None
+        key = interview_conversation_key(workspace_id, exploration_id, persona_id)
+        return await record_shadow_turn(
+            conversation_key=key,
+            workspace_id=workspace_id,
+            exploration_id=exploration_id,
+            persona_id=persona_id,
+            question_text=question_text,
+            question_id=None,
+            surface=Surface.INTERVIEW,
+            turn_index=None,
+            persona=persona,
+            continue_from_stored=True,
+        )
+    except Exception:
+        logger.exception(
+            "Neuro live-reply adapter failed open [exploration_id=%s]", exploration_id
+        )
+        return None
+
+async def record_survey_shadow_turns(
+    *,
+    workspace_id: str,
+    exploration_id: str,
+    persona_id: Optional[str],
+    question_texts: List[str],
+    simulation_id: Optional[str] = None,
+) -> int:
+    """Shadow turns for a survey simulation run, on a dedicated thread per
+    simulation. Persona parameters are fetched here so the call site stays a
+    single line; a fetch failure degrades to population defaults. Never
+    raises; no-op when the flag is off."""
+    try:
+        if not await is_enabled():
+            return 0
+        if not workspace_id or not exploration_id:
+            return 0
+        persona = None
+        if persona_id:
+            try:
+                from app.services.persona import get_persona
+
+                persona = await get_persona(persona_id)
+            except Exception:
+                persona = None
+        key = conversation_key(
+            workspace_id, exploration_id, persona_id,
+            thread=f"survey:{simulation_id}" if simulation_id else "survey",
+        )
+        recorded = 0
+        previous: Optional[AffectiveState] = None
+        for idx, text in enumerate(question_texts):
+            state = await record_shadow_turn(
+                conversation_key=key,
+                workspace_id=workspace_id,
+                exploration_id=exploration_id,
+                persona_id=persona_id,
+                question_text=text,
+                question_id=None,
+                surface=Surface.SURVEY_SIMULATION,
+                turn_index=idx,
+                persona=persona,
+                previous_state=previous,
+            )
+            if state is not None:
+                recorded += 1
+                previous = state
+        return recorded
+    except Exception:
+        logger.exception(
+            "Neuro survey adapter failed open [exploration_id=%s]", exploration_id
+        )
+        return 0
+

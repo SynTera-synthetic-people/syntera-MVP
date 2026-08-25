@@ -1,15 +1,7 @@
-"""Confidence and abstention.
-
-Confidence multiplies three terms, each in (0, 1]: whether the felt state
-sits in a humanly plausible region of the space, how certain the appraisal
-was, and how much evidence stands behind the persona. Multiplication means
-any single weak term is enough to withhold; an average would let two strong
-terms mask one weak one. Below the abstention threshold the state is
-flagged abstain — the call still succeeds and the state is still recorded.
-
-Bimodality never enters this calculation: holding two positions is a
-finding, not uncertainty, so a two-minded state and a one-minded state with
-identical terms score identically.
+"""Confidence multiplies plausibility, certainty and evidence terms — any weak
+term withholds, which averaging would mask. Below the threshold the state is
+flagged abstain while still being computed and recorded. Bimodality never
+enters this calculation.
 """
 from __future__ import annotations
 

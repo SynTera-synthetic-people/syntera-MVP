@@ -1,15 +1,6 @@
-"""Versioned numeric parameters for the neuro engine.
-
-Everything the engine computes from is data in this module, stamped with
-ARTIFACT_VERSION. Values are adjusted by publishing a new version, never by
-editing in place, so identical inputs plus a version always reproduce the
-same state. Coordinate values are the prior-only artifact; they are subject
-to review by the model owner and replaceable without code changes elsewhere.
-
-Coordinates are (valence, arousal, direction) in [-1, 1]; direction is
-approach-positive. Tiers: "baseline" emotions shape a persona's resting
-position; "contextual" emotions are available to appraisal; "rare" ones
-contribute only when explicitly triggered.
+"""Versioned numeric parameters. Values change only via a new ARTIFACT_VERSION
+so identical inputs plus versions reproduce identical states. Coordinates
+are (valence, arousal, direction), direction approach-positive.
 """
 from __future__ import annotations
 
@@ -158,17 +149,6 @@ PRESENTATION_WEIGHTS: dict[str, float] = {
     "projective": 0.15,
     "unknown": 0.40,
 }
-
-# Confidence terms. Density measures whether the felt state sits in a region
-# occupied by known emotions (kernel over the coordinate table plus the
-# neutral origin). Certainty and evidence are floored so a single mid-scale
-# term cannot zero the product on its own; any genuinely weak term still
-# pulls confidence under the abstention threshold.
-DENSITY_SIGMA = 0.45
-CERTAINTY_TERM_FLOOR = 0.25
-EVIDENCE_TERM_FLOOR = 0.18
-EVIDENCE_HALF_COUNT = 2.0
-ABSTENTION_THRESHOLD = 0.15
 
 # Confidence: three multiplicative terms in (0, 1], so any single weak term
 # is enough to withhold. Below ABSTENTION_THRESHOLD the state is flagged

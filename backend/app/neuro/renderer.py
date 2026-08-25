@@ -1,10 +1,6 @@
-"""Render an affective state as a short deterministic text block.
-
-Identical state, persona granularity and RENDERER_VERSION always produce
-byte-identical output: templates are fixed and every branch keys off bucketed
-state values, never randomness. A bimodal state names both positions rather
-than averaging them; the block reads as data about the persona, suitable for
-inclusion inside a persona JSON payload.
+"""Deterministic text rendering of a state: identical state, granularity and
+renderer version give byte-identical output. Bimodal states name both
+positions; abstained states read as an explicit decline.
 """
 from __future__ import annotations
 

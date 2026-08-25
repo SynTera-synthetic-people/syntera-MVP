@@ -1,14 +1,8 @@
-"""Row-locked persistence for conversation affective state.
-
-One transaction per turn: SELECT ... FOR UPDATE on the single
-neuro_conversation_state row serialises concurrent turns of the same
-conversation while different conversations touch different rows and never
-contend. SET LOCAL lock_timeout bounds the wait so a stuck lock holder
-surfaces as an error the caller can degrade from, instead of hanging a
-request. The stored previous state is read, the new state computed, and the
-state upsert plus the append-only neuro_event row are all written inside
-that same transaction, so a turn can neither observe a half-written
-predecessor nor leave an event without its state.
+"""Row-locked persistence: the state row is locked, the previous state read,
+the new state computed and written, and the event appended in one
+transaction, so turns of one conversation serialise while different
+conversations never contend. lock_timeout bounds waits so a stuck holder
+fails the turn instead of hanging a request.
 """
 from __future__ import annotations
 
@@ -26,8 +20,7 @@ from app.neuro.types import AffectiveState
 
 logger = logging.getLogger(__name__)
 
-# Well above a healthy turn (no LLM call happens under the lock), well below
-# a user noticing a stall.
+# No LLM call happens under the lock; this only bounds a stuck holder.
 LOCK_TIMEOUT_MS = 3000
 
 

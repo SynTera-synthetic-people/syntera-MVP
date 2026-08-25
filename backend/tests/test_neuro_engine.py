@@ -1,8 +1,5 @@
-"""Unit tests for the neuro computation path: parameters, persona parameter
-derivation, question tagging, appraisal, engine and renderer. No database or
-network needed.
-
-Run: pytest tests/test_neuro_engine.py -v
+"""Parameters, persona/question derivation, appraisal, engine and renderer.
+No database needed.
 """
 from __future__ import annotations
 

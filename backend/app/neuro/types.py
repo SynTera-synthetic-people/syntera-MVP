@@ -1,10 +1,6 @@
-"""Shared value types for the neuroscience layer.
-
-Every model here is frozen: a computed state is a value, and a new turn
-produces a new state rather than mutating an old one. State rows are stored
-as JSON (to_state_json / from_state_json round-trip exactly), so within a
-schema version fields may be appended but never renamed, removed or
-reordered.
+"""Value types for the neuroscience layer. All models are frozen;
+state JSON round-trips exactly, so fields are append-only within a schema
+version.
 """
 from __future__ import annotations
 
@@ -14,15 +10,12 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-# Belief distributions carry at most two components (unimodal, or bimodal for
-# a persona genuinely of two minds). Consumers are written against this bound,
-# so changing it is a schema-version change, not an edit.
+# Consumers assume this bound; changing it is a schema-version change.
 MAX_COMPONENTS: int = 2
 
 NEURO_SCHEMA_VERSION: str = "1.3.0"
 
-# Fixed order of the numeric feature vector exported per state. Append-only
-# within a schema version.
+# Append-only within a schema version.
 FEATURE_VECTOR_FIELDS: tuple[str, ...] = (
     "valence",
     "arousal",
@@ -38,7 +31,7 @@ FEATURE_VECTOR_FIELDS: tuple[str, ...] = (
     "coping_potential",
     "norm_compatibility",
     "say_do_gap",
-    "confidence_density",
+    "confidence_plausibility",
     "confidence_certainty",
     "confidence_evidence",
 )
@@ -182,7 +175,7 @@ class AffectiveState(_Frozen):
             scores.get("coping_potential", 0.5),
             scores.get("norm_compatibility", 0.5),
             self.say_do_gap if self.say_do_gap is not None else 0.0,
-            terms.get("density", 1.0),
+            terms.get("plausibility", 1.0),
             terms.get("certainty", 1.0),
             terms.get("evidence", 1.0),
         ]
