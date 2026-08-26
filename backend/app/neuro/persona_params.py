@@ -7,7 +7,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from app.neuro import parameters
-from app.neuro.types import CoreAffect, PersonaAffectParams
+from app.neuro.types import CoreAffect, PersonaAffectParams, ValueTension
 
 _CLAMP = 1.0
 
@@ -105,6 +105,48 @@ def _evidence_n(persona: dict):
     return None
 
 
+def _tensions(persona: dict) -> tuple[ValueTension, ...]:
+    """Standing value tensions from the persona record. Sources, strongest
+    first: an explicit value_tensions list if the pipeline emits one, the
+    layer_6 says-does contradiction, and the layer_7 aspiration-fear pair.
+    Personas carrying none of these never produce a bimodal state."""
+    d = _details(persona)
+    out: list[ValueTension] = []
+    explicit = d.get("value_tensions") or persona.get("value_tensions")
+    if isinstance(explicit, list):
+        for item in explicit:
+            if isinstance(item, dict) and item.get("label"):
+                out.append(ValueTension(
+                    label=str(item["label"])[:80],
+                    strength=_clamp01(item.get("strength", 0.6)),
+                    categories=tuple(
+                        str(c).strip().lower()
+                        for c in (item.get("categories") or [])
+                        if str(c).strip()
+                    ),
+                ))
+            elif isinstance(item, str) and item.strip():
+                out.append(ValueTension(label=item.strip()[:80], strength=0.6))
+    layer6 = d.get("layer_6_contradiction")
+    if isinstance(layer6, dict) and layer6.get("says") and layer6.get("does"):
+        out.append(ValueTension(
+            label=str(layer6.get("why") or "says-does contradiction")[:80],
+            strength=0.6,
+        ))
+    layer7 = d.get("layer_7_aspiration_fear")
+    if isinstance(layer7, dict) and layer7.get("hoped_for_self") and layer7.get("feared_self"):
+        out.append(ValueTension(label="aspiration-fear", strength=0.7))
+    out.sort(key=lambda t: (-t.strength, t.label))
+    return tuple(out[:3])
+
+
+def _clamp01(x) -> float:
+    try:
+        return max(0.0, min(1.0, float(x)))
+    except (TypeError, ValueError):
+        return 0.6
+
+
 def from_persona(persona: Optional[dict]) -> PersonaAffectParams:
     """Build affect parameters for one persona record (the dict shape returned
     by persona services, including persona_details). None yields neutral
@@ -143,4 +185,5 @@ def from_persona(persona: Optional[dict]) -> PersonaAffectParams:
         persistence=_persistence(persona),
         granularity=granularity,
         evidence_n=_evidence_n(persona),
+        tensions=_tensions(persona),
     )

@@ -57,6 +57,52 @@ def _predict(
     return prediction, previous.turn_index
 
 
+def _conflict(persona, question, felt):
+    """Strongest activated tension, or None. Category-scoped tensions need a
+    category match; identity-level tensions (no categories) need stakes. The
+    counter-position sits across neutral from the persona's lean, scaled by
+    tension strength; a persona with no lean has no second position to hold.
+    """
+    best = None
+    for t in persona.tensions:
+        if t.strength < parameters.CONFLICT_STRENGTH_FLOOR:
+            continue
+        if t.categories:
+            if not set(t.categories) & set(question.categories):
+                continue
+        elif question.stakes < parameters.CONFLICT_MIN_STAKES:
+            continue
+        if question.affect_relevance < parameters.CONFLICT_MIN_AFFECT_RELEVANCE:
+            continue
+        if best is None or t.strength > best.strength:
+            best = t
+    if best is None:
+        return None
+    lean_v = felt.valence if abs(felt.valence) >= 0.05 else persona.baseline.valence
+    lean_d = felt.direction if abs(felt.direction) >= 0.05 else persona.baseline.direction
+    if max(abs(lean_v), abs(lean_d)) < parameters.CONFLICT_MIN_LEAN:
+        return None
+    magnitude = parameters.CONFLICT_COUNTER_BASE + parameters.CONFLICT_COUNTER_SPAN * best.strength
+    sign_v = 1.0 if lean_v >= 0 else -1.0
+    sign_d = 1.0 if lean_d >= 0 else -1.0
+    counter = CoreAffect(
+        valence=_clamp(-sign_v * magnitude),
+        arousal=_clamp(min(1.0, felt.arousal + parameters.CONFLICT_AROUSAL_BOOST * best.strength)),
+        direction=_clamp(-sign_d * magnitude * 0.8),
+    )
+    separation = abs(counter.valence - felt.valence) + abs(counter.direction - felt.direction)
+    if separation < parameters.CONFLICT_SEPARATION_MIN:
+        return None
+    w2 = min(
+        0.5,
+        parameters.CONFLICT_SECOND_WEIGHT_BASE
+        + parameters.CONFLICT_SECOND_WEIGHT_SPAN * best.strength,
+    )
+    if w2 < parameters.MIN_COMPONENT_WEIGHT:
+        return None
+    return counter, w2
+
+
 def compute_turn(
     *,
     persona: PersonaAffectParams,
@@ -81,11 +127,27 @@ def compute_turn(
     expressed, gap = arbitration.arbitrate(persona, question, felt)
     conf, abstain, conf_terms = confidence.assess(felt, scores, persona.evidence_n)
 
-    component = BeliefComponent(weight=1.0, mean=felt, spread=round(posterior_spread, 6))
+    conflict = _conflict(persona, question, felt)
+    if conflict is not None:
+        counter, w2 = conflict
+        components = (
+            BeliefComponent(weight=round(1.0 - w2, 6), mean=felt, spread=round(posterior_spread, 6)),
+            BeliefComponent(weight=round(w2, 6), mean=counter, spread=round(min(0.6, posterior_spread * 1.2), 6)),
+        )
+        summary = CoreAffect(
+            valence=_clamp((1.0 - w2) * felt.valence + w2 * counter.valence),
+            arousal=felt.arousal,
+            direction=_clamp((1.0 - w2) * felt.direction + w2 * counter.direction),
+        )
+        bimodal = True
+    else:
+        components = (BeliefComponent(weight=1.0, mean=felt, spread=round(posterior_spread, 6)),)
+        summary = felt
+        bimodal = False
     state = AffectiveState(
-        components=(component,),
-        summary=felt,
-        bimodal=False,
+        components=components,
+        summary=summary,
+        bimodal=bimodal,
         confidence=conf,
         abstain=abstain,
         turn_index=turn_index,

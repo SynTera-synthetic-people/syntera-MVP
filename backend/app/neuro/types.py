@@ -181,6 +181,15 @@ class AffectiveState(_Frozen):
         ]
 
 
+class ValueTension(_Frozen):
+    """A standing conflict between two of a persona's goals or values. When a
+    relevant question activates it, the engine may add a second belief
+    component rather than averaging the two positions away."""
+    label: str
+    strength: float = Field(ge=0.0, le=1.0)
+    categories: tuple[str, ...] = ()
+
+
 class PersonaAffectParams(_Frozen):
     """Per-persona affect parameters.
 
@@ -194,6 +203,7 @@ class PersonaAffectParams(_Frozen):
     persistence: float = Field(default=0.0, ge=0.0, le=1.0)
     granularity: float = Field(default=0.5, ge=0.0, le=1.0)
     presentation_anchor: Optional[CoreAffect] = None
+    tensions: tuple[ValueTension, ...] = ()
     # None means no evidence information on the record; 0 means the record
     # explicitly carries an empty evidence set. Confidence treats these
     # differently.

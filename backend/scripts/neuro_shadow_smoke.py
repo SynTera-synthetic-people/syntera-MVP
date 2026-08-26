@@ -12,12 +12,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import async_engine
 from app.neuro import effective_n
 from app.neuro import engine as neuro_engine
-from app.neuro import question_features, service, state_store
+from app.neuro import persona_params, question_features, service, state_store
 from app.neuro.conversation_key import (
     interview_conversation_key,
     rebuttal_conversation_key,
 )
-from app.neuro.types import Surface
+from app.neuro.types import QuestionAffectFeatures, Surface
 
 WS, EX, PER = "smoke-ws", "smoke-ex", "smoke-persona"
 QUESTIONS = [
@@ -270,6 +270,35 @@ async def main() -> int:
     ok &= check("survey adapter recorded both turns", n_svy == 2, f"got {n_svy}")
     svy_events = await state_store.read_events(
         f"conv1:{WS}:{EX}:smoke-survey-persona:survey:smoke-sim", limit=5
+    )
+    amb_record = {
+        "id": "smoke-amb",
+        "persona_details": {
+            "layer_3_emotional_fingerprint": {
+                "baseline_emotions": ["content", "hopeful"],
+                "emotional_memory": "long",
+            },
+            "layer_7_aspiration_fear": {
+                "hoped_for_self": "disciplined saver",
+                "feared_self": "reckless spender",
+            },
+        },
+    }
+    amb_params = persona_params.from_persona(amb_record)
+    amb_state = neuro_engine.compute_turn(
+        persona=amb_params,
+        question=QuestionAffectFeatures(
+            text_hash="smoke-amb-q", framing="direct",
+            stakes=0.9, affect_relevance=0.9,
+        ),
+        previous=None,
+        turn_index=0,
+    )
+    ok &= check("persona record yields value tensions", len(amb_params.tensions) > 0)
+    ok &= check("activated tension produces a bimodal state", amb_state.bimodal)
+    ok &= check(
+        "bimodal rendering names both sides",
+        "two things at once" in (amb_state.rendered or ""),
     )
     ok &= check(
         "survey events carry the survey surface",

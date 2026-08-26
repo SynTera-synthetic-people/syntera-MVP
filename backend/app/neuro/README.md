@@ -23,6 +23,8 @@ deferred (with owner/reason), or deviation (deliberate, with rationale).
 | Confidence (multiplicative), abstention threshold, ambivalence excluded | `app/neuro/confidence.py` |
 | Effective respondent counts per question | `app/neuro/effective_n.py`, `/neuro/.../effective-n` |
 | Deterministic renderer; distinct bimodal and abstained renderings | `app/neuro/renderer.py` |
+| Goal-conflict ambivalence: tension derivation and bimodal state assembly, capped at two components | `app/neuro/persona_params.py`, `engine._conflict`, `tests/test_neuro_ambivalence.py` |
+| Validation gate runner over recorded shadow events plus synthetic ablations | `scripts/neuro_validation/run.py` (execution over accumulated staging data pending) |
 | Provenance versions on every state; feature vector export, fixed order | `types.Provenance`, `to_feature_vector` |
 | Shadow adapters: interview guide runs, interview live replies, rebuttal start and replies, artifact responses, single-persona survey simulation | `app/services/interview.py`, `rebuttal.py`, `persona_response.py`, `survey_simulation_combined.py` via `app/neuro/service.py` |
 | Workspace-membership authorization on read endpoints | `app/routers/neuro.py` |
@@ -33,8 +35,7 @@ deferred (with owner/reason), or deviation (deliberate, with rationale).
 
 | Item | Reason / owner |
 |---|---|
-| Ambivalence trigger (goal-conflict populating the second component) | Spec sequences it last; needs conflict threshold and anchor-pull values from the model owner. Schema, confidence and rendering already handle two components. |
-| Validation experiments (affect variance, persona discrimination, carry-over ablation, renderer discriminability) | Release-gate work over recorded shadow data. |
+| Validation gate execution and sign-off | Requires accumulated staging shadow data; runner is implemented. |
 | Trajectory into client reports; provenance into traceability reports; effective-N as live report denominator | Client-visible output changes; gated on rollout. |
 | Anti-sycophancy variance handover to arbitration; rendered-state prompt injection | Live-behaviour changes; one coordinated go-live commit. |
 | Rollout gates, runbook, dashboards, owner handover | Release gate. |

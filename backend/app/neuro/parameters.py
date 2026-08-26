@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from app.neuro.types import CoreAffect
 
-ARTIFACT_VERSION = "prior-0.1.0"
+ARTIFACT_VERSION = "prior-0.2.0"
 
 # name -> (valence, arousal, direction, tier)
 EMOTION_COORDINATES: dict[str, tuple[float, float, float, str]] = {
@@ -162,3 +162,20 @@ CERTAINTY_FLOOR = 0.05
 EVIDENCE_UNKNOWN_TERM = 0.60
 EVIDENCE_BASE = 0.20
 EVIDENCE_PER_ITEM = 0.20
+
+
+# Goal-conflict (ambivalence). A second belief component appears only when a
+# sufficiently strong tension is activated by a relevant question and the
+# persona actually leans somewhere for a counter-position to oppose.
+# Model-owner tunables.
+CONFLICT_STRENGTH_FLOOR = 0.35
+CONFLICT_MIN_AFFECT_RELEVANCE = 0.5
+CONFLICT_MIN_STAKES = 0.5
+CONFLICT_MIN_LEAN = 0.15
+CONFLICT_COUNTER_BASE = 0.25
+CONFLICT_COUNTER_SPAN = 0.45
+CONFLICT_AROUSAL_BOOST = 0.1
+CONFLICT_SEPARATION_MIN = 0.5
+CONFLICT_SECOND_WEIGHT_BASE = 0.2
+CONFLICT_SECOND_WEIGHT_SPAN = 0.3
+MIN_COMPONENT_WEIGHT = 0.2
