@@ -34,6 +34,47 @@ import './PersonaBuilderManual.css';
 
 // ══════════════════════════════════════════════════════════════════════════════
 
+const DEFAULT_PERSONA_NAME = 'Persona 1';
+
+// Draft persona name, held per exploration until the persona is created.
+// localStorage access is wrapped because it throws outright in some privacy
+// modes — a blocked store must degrade to the default name, never crash the
+// builder.
+const draftPersonaNameKey = (objectiveId?: string) =>
+    objectiveId ? `persona_draft_name_${objectiveId}` : null;
+
+const readDraftPersonaName = (objectiveId?: string): string => {
+    const key = draftPersonaNameKey(objectiveId);
+    if (!key) return DEFAULT_PERSONA_NAME;
+    try {
+        return localStorage.getItem(key)?.trim() || DEFAULT_PERSONA_NAME;
+    } catch {
+        return DEFAULT_PERSONA_NAME;
+    }
+};
+
+const writeDraftPersonaName = (objectiveId: string | undefined, name: string): void => {
+    const key = draftPersonaNameKey(objectiveId);
+    if (!key) return;
+    try {
+        const trimmed = name.trim();
+        if (trimmed) localStorage.setItem(key, trimmed);
+        else localStorage.removeItem(key);
+    } catch {
+        /* storage unavailable — the name still applies for this session */
+    }
+};
+
+const clearDraftPersonaName = (objectiveId?: string): void => {
+    const key = draftPersonaNameKey(objectiveId);
+    if (!key) return;
+    try {
+        localStorage.removeItem(key);
+    } catch {
+        /* nothing to clean up if the store is unavailable */
+    }
+};
+
 const PersonaBuilderManual: React.FC = () => {
     const navigate = useNavigate();
     const { theme } = useTheme();
@@ -63,7 +104,14 @@ const PersonaBuilderManual: React.FC = () => {
     const [activeCategory, setActiveCategory] = useState<MainCategory>('Demographics');
     const [activeSubTab, setActiveSubTab] = useState<string>('Age');
 
-    const [personaName, setPersonaName] = useState<string>('Persona 1');
+    // The persona row does not exist in the DB until "Calibrate Persona" is
+    // submitted, so there is nothing to PATCH while the user is still building
+    // it. Keep the chosen name in localStorage — same per-exploration key
+    // convention this screen already uses for step2_done_ / approach_ — so a
+    // refresh mid-build does not silently reset it to "Persona 1".
+    const [personaName, setPersonaName] = useState<string>(
+        () => readDraftPersonaName(objectiveId)
+    );
     const [showEditNameModal, setShowEditNameModal] = useState<boolean>(false);
 
     const [formData, setFormData] = useState<PersonaFormData>({});
@@ -93,6 +141,15 @@ const PersonaBuilderManual: React.FC = () => {
     useEffect(() => {
         if (!objectiveId) return;
         trigger({ stage: 'persona_builder', event: 'PERSONA_WORKFLOW_LOADED', payload: {} });
+    }, [objectiveId]);
+
+    // The lazy initialiser above only runs on mount, but React Router keeps this
+    // component mounted when the :objectiveId param changes — so re-read the
+    // stored name, otherwise one exploration's persona name leaks into another.
+    // Setting the same string is a no-op re-render in React, so the common case
+    // costs nothing.
+    useEffect(() => {
+        setPersonaName(readDraftPersonaName(objectiveId));
     }, [objectiveId]);
 
     // ── Category & Sub-Tab ────────────────────────────────────────────────────
@@ -282,6 +339,9 @@ const PersonaBuilderManual: React.FC = () => {
             }>;
             const result = await (submitCompletePersona as unknown as SubmitFn)(payload);
             draftPersonaId = result?.data?.id;
+            // The name now lives on the persona row; drop the draft copy so the
+            // next persona built in this exploration starts from the default.
+            clearDraftPersonaName(objectiveId);
             setPendingDraftPersonaId(draftPersonaId);
             const warnings = result?.data?.validation_warnings ?? [];
             if (result?.data?.has_plausibility_warnings && warnings.length > 0) {
@@ -587,6 +647,7 @@ const PersonaBuilderManual: React.FC = () => {
                 currentName={personaName}
                 onSave={(name) => {
                     setPersonaName(name);
+                    writeDraftPersonaName(objectiveId, name);
                     setShowEditNameModal(false);
                 }}
                 onClose={() => setShowEditNameModal(false)}
