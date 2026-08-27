@@ -28,8 +28,13 @@ BACKEND = pathlib.Path(__file__).resolve().parent.parent
 # 732 columns, 207 indexes, 151 constraints, 86 foreign keys, 1 sequence,
 # 1 function, 1 trigger. Staging — not local — is the reference, because
 # production is built from the staging-derived baseline.
+#
+# 62 -> 67 in 0004_neuro_layer: the five neuro_* tables. They had existed only
+# in app/migrations/startup.py, which no longer runs by default, so a database
+# built from Alembic alone was missing them. This guard is what makes that kind
+# of drift visible — the count moving is expected here, and only here.
 EXPECTED_SCHEMAS = {"public", "sync_action", "sync_survey", "sync_source"}
-EXPECTED_TABLE_COUNT = 62
+EXPECTED_TABLE_COUNT = 67
 
 # Tables present in the database with no SQLModel model. They are easy to lose
 # to an unreviewed autogenerate, so they are asserted by name.
