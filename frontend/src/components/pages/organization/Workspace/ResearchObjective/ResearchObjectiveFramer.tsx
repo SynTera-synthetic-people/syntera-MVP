@@ -1094,8 +1094,12 @@ const AudienceSegmentsTab: React.FC<AudienceSegmentsTabProps> = ({
 const BRIEF_EXTENSIONS = [".pdf", ".pptx", ".ppt", ".docx", ".doc", ".xlsx", ".xls"];
 const BRIEF_MAX_BYTES = 5 * 1024 * 1024;
 
+// .pdf is accepted alongside the raster formats: the backend already allows it
+// (MATERIAL_ALLOWED_EXT in app/utils/file_utils.py) and both downstream paths
+// handle it — material_extraction._extract_pdf for text, and Gemini resolves
+// application/pdf natively for artifact dissection.
 const ARTIFACT_EXTENSIONS = [
-    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg",
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".pdf",
 ];
 const ARTIFACT_MAX_BYTES = 10 * 1024 * 1024;
 
@@ -1306,7 +1310,7 @@ const UploadSlot: React.FC<UploadSlotProps> = ({
                 >
                     <span className="rofp-upload-zone-icon"><SpIcon name="sp-File-Cloud_Upload" /></span>
                     <span className="rofp-upload-zone-title">
-                        {compact ? <>Click to upload {label.toLowerCase()}</> : <>Drop your files here,<br />or click to upload</>}
+                        {compact ? <>Click to upload {label}</> : <>Drop your files here,<br />or click to upload</>}
                     </span>
                     <input
                         ref={fileInputRef}
@@ -2014,11 +2018,11 @@ const MaterialTab: React.FC<MaterialTabProps> = ({
                             )}
 
                             <MultiUploadSlot
-                                label="Image"
+                                label="image or PDF"
                                 acceptExtensions={ARTIFACT_EXTENSIONS}
                                 maxBytes={ARTIFACT_MAX_BYTES}
                                 maxFiles={ARTIFACT_MAX_FILES}
-                                formatsLabel="PNG, JPG, GIF, WEBP"
+                                formatsLabel="PNG, JPG, GIF, WEBP, PDF"
                                 files={data.artifact.files}
                                 onFilesChange={files => updateArtifact({ files })}
                                 disabled={data.artifact.submitted}

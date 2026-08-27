@@ -7,7 +7,11 @@ import "./FileUploadModal.css";
 const BRIEF_EXTENSIONS = [".pdf", ".pptx", ".ppt", ".docx", ".doc", ".xlsx", ".xls"];
 const BRIEF_MAX_BYTES = 5 * 1024 * 1024;
 
-const ARTIFACT_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"];
+// .pdf is accepted alongside the raster formats: the backend already allows it
+// (MATERIAL_ALLOWED_EXT in app/utils/file_utils.py) and both downstream paths
+// handle it — material_extraction._extract_pdf for text, and Gemini resolves
+// application/pdf natively for artifact dissection.
+const ARTIFACT_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".pdf"];
 const ARTIFACT_MAX_BYTES = 10 * 1024 * 1024;
 
 const ARTIFACT_MAX_LINKS = 3;
@@ -292,12 +296,16 @@ interface MultiUploadZoneProps {
   maxFiles: number;
   formatsLabel: string;
   compact?: boolean;
+  /** Compact-mode call-to-action. Kept a prop so each section can name what it
+   *  actually accepts instead of every zone claiming "image". */
+  uploadLabel?: string;
   onFilesAccepted: (files: File[]) => void;
   onRemoveAt: (index: number) => void;
 }
 
 const MultiUploadZone: React.FC<MultiUploadZoneProps> = ({
   slots, acceptExtensions, maxBytes, maxFiles, formatsLabel, compact,
+  uploadLabel = "Click to upload image",
   onFilesAccepted, onRemoveAt,
 }) => {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -382,7 +390,7 @@ const MultiUploadZone: React.FC<MultiUploadZoneProps> = ({
             <SpIcon name="sp-File-Cloud_Upload" />
           </span>
           <span className="fum-upload-label">
-            {compact ? "Click to upload image" : <>Drop files here,<br />or click to upload</>}
+            {compact ? uploadLabel : <>Drop files here,<br />or click to upload</>}
             {slots.length > 0 && <> ({slots.length}/{maxFiles})</>}
           </span>
           <input
@@ -827,7 +835,8 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                 acceptExtensions={ARTIFACT_EXTENSIONS}
                 maxBytes={ARTIFACT_MAX_BYTES}
                 maxFiles={ARTIFACT_MAX_FILES}
-                formatsLabel="PNG, JPG, GIF, WEBP"
+                formatsLabel="PNG, JPG, GIF, WEBP, PDF"
+                uploadLabel="Click to upload image or PDF"
                 compact
                 onFilesAccepted={addArtifactFiles}
                 onRemoveAt={removeArtifactFileAt}
