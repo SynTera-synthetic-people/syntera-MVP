@@ -16,6 +16,7 @@ MODEL_MODULES = (
     "exploration",
     "interview",
     "llm_usage",
+    "neuro",
     "omi",
     "organization",
     "persona",

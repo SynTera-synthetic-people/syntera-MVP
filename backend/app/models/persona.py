@@ -96,6 +96,18 @@ class Persona(SQLModel, table=True):
     # Lineage: set when this persona was replicated from another
     parent_persona_id: Optional[str] = Field(default=None)
 
+    # Persona Library provenance: the persona this row was copied from when the
+    # user reused it in a new exploration. A soft pointer with no FK on purpose
+    # — the origin persona is hard-deleted along with its exploration, and a
+    # real constraint would either block that or erase the provenance.
+    #
+    # Deliberately NOT parent_persona_id: that column means "country-replicated
+    # variant" and is excluded from the persona quota count in
+    # routers/personas.py::_count_primary_personas. A library reuse IS a primary
+    # persona and must count, so it leaves parent_persona_id NULL.
+    library_source_persona_id: Optional[str] = Field(default=None, index=True)
+    library_imported_at: Optional[datetime] = Field(default=None)
+
     # Lifecycle: "draft" (traits only, no AI) | "calibrating" (background
     # calibration job in progress, see run_manual_calibration_background) |
     # "calibrated" (AI-enriched). A failed calibration reverts to "draft" with

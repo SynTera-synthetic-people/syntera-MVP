@@ -14,6 +14,7 @@ from app.config import OPENAI_API_KEY
 from openai import AsyncOpenAI
 from app.services.llm_usage_tracker import record_llm_usage, extract_usage_openai_chat
 from app.services.anti_sycophancy_rules import ANTI_SYCOPHANCY_RULES_BRIEF
+from app.neuro import service as neuro_service
 
 
 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
@@ -510,6 +511,16 @@ async def start_rebuttal_session(
         await db.commit()
         await db.refresh(session)
 
+    # Continues the persona's stored affective state into the challenge;
+    # no-op when the neuro flag is off or for group sessions.
+    await neuro_service.record_rebuttal_shadow_turn(
+        workspace_id=workspace_id,
+        exploration_id=exploration_id,
+        persona_id=session.persona_id,
+        question_text=str(found_question.get("text") or found_question.get("question") or ""),
+        persona=persona_dict if len(personas) == 1 else None,
+    )
+
     if survey_result:
         found_question["survey_results"] = survey_result
 
@@ -667,6 +678,14 @@ async def reply_rebuttal_session(session_id: str, user_message: str, user_id: st
         db.add(s)
         await db.commit()
         await db.refresh(s)
+
+    await neuro_service.record_rebuttal_shadow_turn(
+        workspace_id=s.workspace_id,
+        exploration_id=s.exploration_id,
+        persona_id=s.persona_id,
+        question_text=user_message,
+        persona=persona_dict if len(personas) == 1 else None,
+    )
 
     return {
         "session_id": session_id,

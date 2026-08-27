@@ -1449,6 +1449,9 @@ const QuestionModal: React.FC<QuestionModalProps> = ({
   const currentMeta = TYPE_META[q.type];
   const isValid = canSave(q);
 
+  // See the overlay handlers below.
+  const pressStartedOnOverlay = useRef(false);
+
   return (
     <motion.div
       className="qm-overlay"
@@ -1456,7 +1459,18 @@ const QuestionModal: React.FC<QuestionModalProps> = ({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.18 }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      // Dismiss-on-backdrop is driven by mousedown + mouseup, not click: a
+      // `click` fires on the nearest common ancestor of its mousedown and
+      // mouseup targets, so selecting text in a field and releasing the mouse
+      // outside it dispatched a click targeting the overlay — closing the
+      // modal mid-edit and discarding the user's input. Requiring both press
+      // and release to land on the overlay fixes it.
+      onMouseDown={(e) => { pressStartedOnOverlay.current = e.target === e.currentTarget; }}
+      onMouseUp={(e) => {
+        const shouldClose = pressStartedOnOverlay.current && e.target === e.currentTarget;
+        pressStartedOnOverlay.current = false;
+        if (shouldClose) onClose();
+      }}
     >
       <motion.div
         className="qm-modal"

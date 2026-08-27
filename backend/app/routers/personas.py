@@ -24,6 +24,9 @@ from app.services import auto_generated_persona
 # plus a Digital Brain (primary/secondary archetype) assignment step, with
 # per-tier persona limits (free=2, tier1=8, enterprise=8) enforced inside
 # create_manual_persona_draft_with_brains() itself.
+from app.services import persona_library as persona_library_service
+from app.services.persona_library import PersonaLibraryError
+from app.schemas.persona_library import PersonaLibraryImportRequest
 from app.services import persona_loader_context
 from app.services import interview as interview_service
 from app.services import report_orchestrator as report_cache
@@ -986,6 +989,103 @@ async def get_persona_quota(
 
     quota = await _build_persona_quota(session, current_user, workspace_id, exploration_id, exp)
     return SuccessResponse(message="Persona quota fetched successfully", data=quota)
+
+
+@router.post("/import-from-library", response_model=SuccessResponse)
+async def import_personas_from_library(
+    workspace_id: str,
+    exploration_id: str,
+    payload: PersonaLibraryImportRequest,
+    current_user: User = Depends(get_current_active_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Reuse personas from the organisation's library in this exploration.
+
+    The library is a live view over the personas the organisation already owns,
+    so the ids are source persona ids. Each reuse creates a NEW persona row with
+    library_source_persona_id set and parent_persona_id left NULL, so it counts
+    toward the exploration's persona limit exactly like a generated one. That is
+    what lets the existing /auto-generate arithmetic generate only the remaining
+    slots — and, when the library fills every slot, skip generation entirely.
+    """
+    exp = await exploration_service.get_exploration(session, exploration_id)
+    if not exp or str(exp.workspace_id) != str(workspace_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=ErrorResponse(status="error", message="Exploration not found").dict(),
+        )
+
+    members = await ws_service.list_workspace_members(workspace_id)
+    if not any(m["user_id"] == current_user.id for m in members):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=ErrorResponse(
+                status="error", message="You are not a member of this workspace"
+            ).dict(),
+        )
+
+    try:
+        org_id = await persona_library_service.resolve_organization_id(session, workspace_id)
+    except PersonaLibraryError as e:
+        raise HTTPException(
+            status_code=e.status_code,
+            detail=ErrorResponse(status="error", message=e.message).dict(),
+        ) from e
+
+    persona_limit = _persona_limit_for(current_user, exp)
+    total_count, _ = await _count_primary_personas(session, workspace_id, exploration_id)
+    if total_count >= persona_limit:
+        raise _persona_limit_response(persona_limit)
+
+    try:
+        created, skipped = await persona_library_service.import_personas(
+            session,
+            org_id=org_id,
+            workspace_id=workspace_id,
+            exploration_id=exploration_id,
+            source_persona_ids=payload.source_persona_ids,
+            user_id=current_user.id,
+            persona_limit=persona_limit,
+            current_persona_count=total_count,
+        )
+    except PersonaLibraryError as e:
+        raise HTTPException(
+            status_code=e.status_code,
+            detail=ErrorResponse(status="error", message=e.message).dict(),
+        ) from e
+    except Exception as e:
+        error_id = str(uuid.uuid4())
+        logger.exception(
+            "import_personas_from_library:failed error_id=%s workspace=%s exploration=%s personas=%s",
+            error_id, workspace_id, exploration_id, payload.source_persona_ids,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=ErrorResponse(
+                status="error",
+                message=f"Could not add personas from the library. Error ID: {error_id}",
+            ).dict(),
+        ) from e
+
+    imported = [persona_service.persona_to_dict(p) for p in created]
+    quota = await _build_persona_quota(session, current_user, workspace_id, exploration_id, exp)
+
+    if not created and skipped:
+        message = skipped[0]["message"]
+    elif len(created) == 1:
+        message = "1 persona added from the library"
+    else:
+        message = f"{len(created)} personas added from the library"
+
+    return SuccessResponse(
+        message=message,
+        data={
+            "imported": imported,
+            "skipped": skipped,
+            "quota": quota,
+            "personas_still_to_generate": quota["remaining"],
+        },
+    )
 
 
 @router.post("/purchase", response_model=SuccessResponse)

@@ -15,6 +15,7 @@ from openai import AsyncOpenAI
 from pydantic import ValidationError
 
 from app.config import settings
+from app.neuro import service as neuro_service
 from app.schemas.artifact_pipeline import (
     ComparisonMode,
     DiscussionGuide,
@@ -108,6 +109,17 @@ class PersonaResponseService:
                 )
 
         logger.info("%s provided %d artifact responses", data.persona_name, len(data.responses))
+
+        await neuro_service.record_artifact_shadow_turns(
+            workspace_id=workspace_id,
+            exploration_id=exploration_id,
+            persona_id=persona_id,
+            question_texts=[
+                q.question for s in discussion_guide.sections for q in s.questions
+            ],
+            persona=persona,
+            session_id=session_id,
+        )
         return data
 
     async def _generate_once(

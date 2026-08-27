@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     MAIL_SSL_TLS: bool = False
     FRONTEND_URL: str = "https://dev-ui.synthetic-people.ai"
 
+    # Neuroscience layer (app/neuro). Fallback used only when the
+    # neuro_flag table has no NEURO_MODE row; the DB flag is the runtime
+    # switch and always wins.
+    NEURO_MODE_DEFAULT: bool = False
+
     # Claude / Anthropic (survey PDF report, qualitative reports)
     ANTHROPIC_API_KEY: Optional[str] = None
 

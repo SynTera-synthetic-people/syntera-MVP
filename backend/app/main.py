@@ -20,7 +20,8 @@ from app.migrations.startup import run_startup_migrations
 from app.routers import (auth, orgs, workspace, research_objectives, personas, interview,
                          population, questionnaire, rebuttal, traceability, omi, exploration,
                          omi_workflow, admin, enterprise, syncdb, billing, product_state,
-                         decision_room, artifacts, data_playground)
+                         decision_room, artifacts, data_playground, neuro)
+from app.routers import persona_library as persona_library_router
 from app.routers import settings as settings_router
 from app.routers import reports as reports_router_module
 from app.schemas.response import ErrorResponse
@@ -135,6 +136,7 @@ app.include_router(omi.router)
 app.include_router(workspace.router)
 app.include_router(research_objectives.router)
 app.include_router(personas.router)
+app.include_router(persona_library_router.router)
 app.include_router(interview.router)
 app.include_router(population.router)
 app.include_router(questionnaire.router)
@@ -153,6 +155,7 @@ app.include_router(insights.router)
 app.include_router(decision_room.router)
 app.include_router(artifacts.router)
 app.include_router(data_playground.router)
+app.include_router(neuro.router)
 
 # default_cors_origins = [
 #     "http://localhost:5173",

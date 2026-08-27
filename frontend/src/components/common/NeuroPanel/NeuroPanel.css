@@ -1,0 +1,87 @@
+.neuro-panel {
+  margin: 24px auto 0;
+  max-width: 860px;
+  padding: 16px 20px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+}
+
+.neuro-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.neuro-panel__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.neuro-panel__subtitle {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.neuro-panel__select {
+  padding: 6px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 13px;
+  background: #f8fafc;
+  max-width: 260px;
+}
+
+.neuro-panel__badges {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.neuro-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.neuro-badge--high { background: #dcfce7; color: #166534; }
+.neuro-badge--mid  { background: #fef9c3; color: #854d0e; }
+.neuro-badge--low  { background: #fee2e2; color: #991b1b; }
+
+/* An abstained answer is visibly declined, not merely low-confidence. */
+.neuro-badge--abstained {
+  background: #f1f5f9;
+  color: #334155;
+  border: 1px dashed #94a3b8;
+}
+
+.neuro-panel__terms {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.neuro-panel__chart { margin-top: 12px; }
+
+.neuro-panel__loading,
+.neuro-panel__empty {
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.neuro-panel__footer {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #f1f5f9;
+  font-size: 12px;
+  color: #475569;
+}

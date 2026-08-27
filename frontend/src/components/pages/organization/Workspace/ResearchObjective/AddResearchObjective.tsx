@@ -16,6 +16,7 @@ import {
   TbFileTypeDoc,
   TbFileTypeXls,
   TbAlertCircle,
+  TbBooks,
 } from "react-icons/tb";
 import SpIcon from "../../../../SPIcon";
 import { useTheme } from "../../../../../context/ThemeContext";
@@ -108,6 +109,12 @@ const canBuildManually = (tier: string | undefined): boolean => {
   return t === 'enterprise' || t === 'enterprise_admin';
 };
 
+// The Persona Library is an organisation-level asset. Free/Tier-1 users have no
+// enterprise organisation behind them, so the CTA is hidden rather than locked —
+// there is nothing for them to upgrade *into* on this screen.
+const canUsePersonaLibrary = (tier: string | undefined): boolean =>
+  canBuildManually(tier);
+
 const MAX_SUMMARY_EDITS = 5;
 
 const isInternalRefinePrompt = (text: unknown): boolean =>
@@ -182,6 +189,7 @@ const AddResearchObjective: React.FC = () => {
   const { user } = useSelector((state: RootState) => state.auth);
   const userTier = user?.account_tier ?? 'free';
   const manualAllowed = canBuildManually(userTier);
+  const libraryAllowed = canUsePersonaLibrary(userTier);
 
   // ── Upgrade modal ──────────────────────────────────────────────────────────
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
@@ -625,6 +633,17 @@ const AddResearchObjective: React.FC = () => {
     navigate(
       `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-builder/manual`,
       { state: { flow: "manual", viewOnly: isViewOnly } }
+    );
+  };
+
+  const handleChooseFromLibrary = () => {
+    if (!libraryAllowed) return;
+    setPersonaFlowStarted(true);
+    trigger({ stage: 'persona_builder', event: 'PERSONA_WORKFLOW_LOADED', payload: {} });
+    if (objectiveId) localStorage.setItem(`step1_done_${objectiveId}`, '1');
+    navigate(
+      `/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/persona-library`,
+      { state: { flow: "library", viewOnly: isViewOnly } }
     );
   };
 
@@ -1195,6 +1214,24 @@ const AddResearchObjective: React.FC = () => {
                     <span>Build Manually</span>
                   </button>
                 </motion.div>
+
+                {libraryAllowed && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.3 }}
+                    className="aro-btn-manual-wrap"
+                    title="Reuse a persona your organisation has already saved"
+                  >
+                    <button
+                      onClick={handleChooseFromLibrary}
+                      className="aro-btn-manual"
+                    >
+                      <TbBooks size={16} />
+                      <span>Choose From Library</span>
+                    </button>
+                  </motion.div>
+                )}
               </div>
             </motion.div>
 

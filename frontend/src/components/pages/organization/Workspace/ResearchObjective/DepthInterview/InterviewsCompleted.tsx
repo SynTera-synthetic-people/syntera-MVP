@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { TbX } from 'react-icons/tb';
 import SpIcon from '../../../../../SPIcon';
 import './InterviewsCompleted.css';
+import NeuroPanel from '../../../../../common/NeuroPanel/NeuroPanel';
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -73,6 +74,8 @@ const InterviewsCompleted: React.FC = () => {
           Generate Insights
         </button>
       </motion.div>
+
+      <NeuroPanel workspaceId={workspaceId} explorationId={objectiveId} />
 
     </div>
   );
