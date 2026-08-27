@@ -15,7 +15,7 @@ from datetime import datetime
 from openai import AsyncOpenAI
 import json
 from app.config import OPENAI_API_KEY
-from sqlalchemy import update
+from sqlalchemy import update, or_
 from app.services import omi as omi_service
 from app.services.llm_usage_tracker import (
     record_llm_usage,
@@ -706,6 +706,55 @@ async def replace_framer_materials_for_kind(
         .order_by(ResearchObjectivesFile.uploaded_at)
     )
     return list(current.scalars().all())
+
+
+async def get_framer_review_bundle(exploration_id: str) -> dict:
+    """
+    Everything needed to rebuild the Framer's read-only review screen for an
+    exploration from the server, instead of from the browser that happened to
+    submit it. The frontend used to have only a localStorage snapshot, so a
+    framing submitted on another device — or before that snapshot existed —
+    was invisible and impossible to download.
+
+    Nothing new is stored for this: the raw structured fields are already kept
+    in ai_interpretation["framer_input"] by persist_framer_research_objective().
+
+    framer_input is None for objectives that came from the chat flow rather
+    than the Framer; `description` (the synthesized objective) is present for
+    every finalized objective, so callers can always show something.
+    """
+    async with AsyncSession(async_engine) as session:
+        result = await session.execute(
+            select(ResearchObjectives)
+            .where(ResearchObjectives.exploration_id == exploration_id)
+            .order_by(ResearchObjectives.created_at.desc())
+        )
+        ro = result.scalars().first()
+
+        # Framer materials are anchored on exploration_id at upload time and
+        # only backfilled with research_objectives_id at submit, so match either.
+        conditions = [ResearchObjectivesFile.exploration_id == exploration_id]
+        if ro:
+            conditions.append(ResearchObjectivesFile.research_objectives_id == ro.id)
+        files_result = await session.execute(
+            select(ResearchObjectivesFile)
+            .where(or_(*conditions))
+            .order_by(ResearchObjectivesFile.uploaded_at)
+        )
+        materials = [map_material_to_out(f) for f in files_result.scalars().all()]
+
+        ai = ro.ai_interpretation if ro and isinstance(ro.ai_interpretation, dict) else {}
+        framer_input = ai.get("framer_input")
+
+        return {
+            "exploration_id": exploration_id,
+            "source": ai.get("source"),
+            "framer_input": framer_input if isinstance(framer_input, dict) else None,
+            "description": ro.description if ro else None,
+            "confidence_level": ro.confidence_level if ro else None,
+            "submitted_at": ro.created_at if ro else None,
+            "materials": materials,
+        }
 
 
 async def get_unlinked_materials(

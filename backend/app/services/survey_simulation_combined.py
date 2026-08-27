@@ -13,8 +13,16 @@ from sqlmodel import select
 from app.config import OPENAI_API_KEY, settings
 from openai import AsyncOpenAI
 from app.services.survey_simulation import _group_results_by_section, _fallback_simulation
-from app.utils.survey_results_normalize import build_canonical_survey_results, build_normalized_survey_results
-from app.services.question_engine import analysis_options_for_question
+from app.utils.survey_results_normalize import (
+    build_canonical_survey_results,
+    build_item_level_results,
+    build_normalized_survey_results,
+)
+from app.services.question_engine import (
+    analysis_options_for_question,
+    is_verbatim_question_type,
+    question_grid_items,
+)
 from app.neuro import service as neuro_service
 from app.services.persona import get_persona
 from app.services.auto_generated_persona import get_description
@@ -80,21 +88,67 @@ def _simulation_question_type_code(question_type: Any) -> str:
     qtype = str(question_type or "single_select").lower().strip()
     if qtype in {"m", "multi_select", "grid_multi_select", "reusable_answer_lists"}:
         return "M"
-    if qtype in {"oe", "text", "essay"}:
+    if qtype in {"oe", "text", "essay", "auto_suggest"}:
         return "OE"
     return "S"
+
+
+def _format_question_for_prompt(index: int, q: Dict) -> str:
+    """Render one question for the prompt in the shape its answer must take.
+
+    Grid and free-text questions need a different answer shape from a flat
+    select, so they must be presented differently — a grid listed as a flat
+    option list comes back as one distribution for what are really N
+    sub-questions, and a free-text question listed with options comes back as
+    counts instead of quotes.
+    """
+    text = q.get("text", "")
+    items, scale = question_grid_items(q)
+
+    if items and scale:
+        item_lines = "\n".join(f"  {i:02d}. {item}" for i, item in enumerate(items, 1))
+        scale_lines = "\n".join(f"  - {s}" for s in scale)
+        mode = (
+            "each respondent may tick SEVERAL scale options per item"
+            if str(q.get("question_type") or "").lower().strip() == "grid_multi_select"
+            else "each respondent picks EXACTLY ONE scale option per item"
+        )
+        return (
+            f"Q{index} [GRID]: {text}\n"
+            f"Items (answer each one separately, {mode}):\n{item_lines}\n"
+            f"Response scale (the ONLY valid answers for every item):\n{scale_lines}"
+        )
+
+    if is_verbatim_question_type(q.get("question_type")):
+        return f"Q{index} [OE]: {text}\n(Open-ended — no options; answer with verbatim quotes.)"
+
+    opts = q.get("option_schema") or q.get("options") or []
+    opts_text = "\n".join(
+        f"  - {(o.get('text') if isinstance(o, dict) else o)}" for o in opts
+    )
+    qtype_code = _simulation_question_type_code(q.get("question_type"))
+    return f"Q{index} [{qtype_code}]: {text}\nOptions:\n{opts_text}"
 
 
 def _flatten_questions(questions_sections: List[Dict]) -> List[Dict]:
     flat_questions = []
     for sec in questions_sections or []:
         for q in sec.get("questions", []):
+            # Free-text questions must carry no options: the synthetic
+            # reporting buckets analysis_options_for_question() returns for
+            # them ("Response provided" / "No response") read as real answer
+            # choices in the prompt, and the model then returns counts instead
+            # of quotes — leaving the question blank in every export.
+            if is_verbatim_question_type(q.get("question_type")):
+                options = []
+            else:
+                options = q.get("options") or analysis_options_for_question(q)
             flat_questions.append({
                 "id": q.get("id"),
                 "question_key": q.get("question_key") or q.get("id"),
                 "question_type": q.get("question_type") or "single_select",
                 "text": q.get("text") or "",
-                "options": q.get("options") or analysis_options_for_question(q),
+                "options": options,
                 "option_schema": q.get("option_schema") or (q.get("config") or {}).get("options") or [],
                 "config": q.get("config") or {},
             })
@@ -302,16 +356,9 @@ Distribute respondents: roughly 40-50% answer per the stated/aspirational claim,
             f"- Estimated %: {f['estimated_percent']}%\n\n"
         )
 
-    questions_formatted = []
-    for i, q in enumerate(questions, 1):
-        qtype_code = _simulation_question_type_code(q.get("question_type"))
-        opts = q.get("option_schema") or q.get("options") or []
-        opts_text = "\n".join(
-            f"  - {(o.get('text') if isinstance(o, dict) else o)}" for o in opts
-        )
-        questions_formatted.append(
-            f"Q{i} [{qtype_code}]: {q.get('text', '')}\nOptions:\n{opts_text}"
-        )
+    questions_formatted = [
+        _format_question_for_prompt(i, q) for i, q in enumerate(questions, 1)
+    ]
     questions_section = "\n\n".join(questions_formatted)
 
     prompt = f"""You are a market-research statistician simulating persona-based survey responses.
@@ -419,10 +466,38 @@ OUTPUT FORMAT (STRICT JSON, no explanatory text):
   }}
 }}
 
+TWO QUESTION TYPES REPLACE "options" WITH A DIFFERENT KEY:
+
+[GRID] questions — use "items" instead of "options". One entry per listed item,
+each carrying its own distribution over the SHARED response scale:
+{{
+  "text": "<EXACT question text from input>",
+  "total": {sample_size},
+  "items": [
+    {{
+      "item": "<EXACT item text from input>",
+      "options": [{{"option": "<EXACT scale label>", "count": <int>, "pct": <float>}}]
+    }}
+  ]
+}}
+Every listed item MUST appear, each with its own distribution — items differ
+from one another, so do NOT repeat one distribution across them. An item's
+answers may only come from the response scale, never from the item list.
+
+[OE] questions — use "verbatims" instead of "options": 5-8 short first-person
+quotes (2-4 sentences each) in this persona's own voice, varied in angle:
+{{
+  "text": "<EXACT question text from input>",
+  "total": {sample_size},
+  "verbatims": ["<quote 1>", "<quote 2>", "..."]
+}}
+
 CRITICAL RULES:
 - "option" must be the EXACT option text from the input — never an option_id, never paraphrased.
 - For single-select [S] questions, counts must sum to {sample_size}; pct = round(100 * count / {sample_size}, 1).
 - For multi-select [M] questions, counts are independent per-option frequencies (no sum constraint).
+- For [GRID] questions, each item's counts sum to {sample_size} unless the item allows several ticks.
+- [OE] questions must NEVER return "options" or counts — quotes only.
 - NEVER use uniform distributions (e.g. all options at the same percentage).
 - "question_results" must list every question in the SAME ORDER as the input.
 
@@ -519,17 +594,38 @@ def _combine_persona_results(
 
     for q in flat_questions:
         qtext = (q.get("text") or "").strip()
+
+        # Free-text questions carry {"verbatim": ...} rows, which have no
+        # option/count to sum — pool every persona's quotes instead.
+        verbatims: List[str] = []
+        seen_verbatims: set = set()
+        for persona_result in per_persona_normalized:
+            for row in persona_result.get(qtext, []):
+                if not isinstance(row, dict) or "verbatim" not in row:
+                    continue
+                text = str(row.get("verbatim") or "").strip()
+                if text and text.lower() not in seen_verbatims:
+                    seen_verbatims.add(text.lower())
+                    verbatims.append(text)
+        if verbatims:
+            combined[qtext] = [{"verbatim": text} for text in verbatims]
+            continue
+
         # Preserve canonical option order/labels from the first persona that has them.
         ordered_options: List[str] = []
         for persona_result in per_persona_normalized:
             for row in persona_result.get(qtext, []):
+                if not isinstance(row, dict) or "option" not in row:
+                    continue
                 if row["option"] not in ordered_options:
                     ordered_options.append(row["option"])
 
         option_counts = {opt: 0 for opt in ordered_options}
         for persona_result in per_persona_normalized:
             for row in persona_result.get(qtext, []):
-                option_counts[row["option"]] = option_counts.get(row["option"], 0) + row["count"]
+                if not isinstance(row, dict) or "option" not in row:
+                    continue
+                option_counts[row["option"]] = option_counts.get(row["option"], 0) + int(row.get("count", 0) or 0)
 
         combined[qtext] = [
             {
@@ -539,6 +635,53 @@ def _combine_persona_results(
             }
             for opt, count in option_counts.items()
         ]
+
+    return combined
+
+
+def _combine_item_results(
+    per_persona_items: List[Dict[str, List[Dict]]],
+    flat_questions: List[Dict],
+    total_sample: int,
+) -> Dict[str, List[Dict]]:
+    """Sum per-persona grid item distributions into one combined set, keeping
+    each item's own distribution separate from every other item's."""
+    combined: Dict[str, List[Dict]] = {}
+
+    for q in flat_questions:
+        qtext = (q.get("text") or "").strip()
+        items, scale = question_grid_items(q)
+        if not items or not scale:
+            continue
+
+        multi = False
+        blocks: List[Dict] = []
+        for item_label in items:
+            option_counts: Dict[str, int] = {label: 0 for label in scale}
+            for persona_items in per_persona_items:
+                for block in persona_items.get(qtext, []):
+                    if not isinstance(block, dict) or block.get("item") != item_label:
+                        continue
+                    multi = multi or bool(block.get("multi_response"))
+                    for row in block.get("results") or []:
+                        if isinstance(row, dict) and row.get("option") in option_counts:
+                            option_counts[row["option"]] += int(row.get("count", 0) or 0)
+
+            blocks.append({
+                "item": item_label,
+                "results": [
+                    {
+                        "option": label,
+                        "count": count,
+                        "pct": round(100.0 * count / total_sample, 1) if total_sample > 0 else 0.0,
+                    }
+                    for label, count in option_counts.items()
+                ],
+                "total": total_sample,
+                "multi_response": multi,
+            })
+
+        combined[qtext] = blocks
 
     return combined
 
@@ -613,8 +756,12 @@ async def _simulate_single_brain(
     normalized_results = build_normalized_survey_results(
         data.get("question_results", []), flat_questions, sample_size,
     )
+    item_results = build_item_level_results(
+        data.get("question_results", []), flat_questions, sample_size,
+    )
     canonical_results = build_canonical_survey_results(
         normalized_results, flat_questions, sample_size,
+        item_results=item_results,
     )
     llm_source_explanation = data.get("llm_source_explanation", {})
 
@@ -727,12 +874,16 @@ async def _simulate_multiple_brains(
         normalized = build_normalized_survey_results(
             data.get("question_results", []), flat_questions, sample_size,
         )
+        items = build_item_level_results(
+            data.get("question_results", []), flat_questions, sample_size,
+        )
         return {
             "persona_id": persona_id,
             "persona_name": persona_name,
             "brain": brain_name,
             "sample_size": sample_size,
             "normalized": normalized,
+            "item_results": items,
         }
 
     persona_runs = await asyncio.gather(*(_simulate_one(p) for p in personas_selection))
@@ -740,8 +891,12 @@ async def _simulate_multiple_brains(
     combined_results = _combine_persona_results(
         [run["normalized"] for run in persona_runs], flat_questions, total_sample,
     )
+    combined_item_results = _combine_item_results(
+        [run["item_results"] for run in persona_runs], flat_questions, total_sample,
+    )
     canonical_results = build_canonical_survey_results(
         combined_results, flat_questions, total_sample,
+        item_results=combined_item_results,
     )
 
     personas_info = [

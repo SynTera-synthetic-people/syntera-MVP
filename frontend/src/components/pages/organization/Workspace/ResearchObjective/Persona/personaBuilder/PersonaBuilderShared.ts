@@ -262,6 +262,10 @@ export const buildManualPersonaPayload = (
   formData: PersonaFormData,
   name?: string,
   formativeExperience?: string,
+  // True only when the user actually renamed the persona. Calibration replaces
+  // the name with an LLM-generated one unless this says the name is the user's
+  // own — otherwise a persona the user called "Ravi Kumar" comes back renamed.
+  nameIsCustom?: boolean,
 ): Record<string, unknown> => {
   const toArray = (v: unknown): string[] | null => {
     if (!v) return null;
@@ -271,6 +275,7 @@ export const buildManualPersonaPayload = (
 
   return {
     name: name ?? null,
+    name_is_custom: nameIsCustom ?? false,
     demographics: {
       age_range: formData.age ?? '',
       gender: formData.gender ?? '',

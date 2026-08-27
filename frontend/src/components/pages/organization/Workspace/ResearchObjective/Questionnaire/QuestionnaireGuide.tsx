@@ -48,28 +48,23 @@ const extractApiError = (err: any, fallback: string): string => {
 
 // ── Question preview renderers ─────────────────────────────────────────────────
 
-const MAX_VISIBLE = 7;
-
 /**
  * Pill-chip list — used by multi_select / single_select / dropdown / rank_sort / card_sort / maxdiff / this_or_that
+ *
+ * Every option is rendered. Long lists scroll inside the preview box rather
+ * than being cut off after the first few with a "+N" chip, which named a count
+ * but gave no way to read the options it stood for.
  */
 const PillPreview: React.FC<{ items: string[] }> = ({ items }) => {
     const filtered = items.filter(Boolean);
     if (!filtered.length) return null;
-    const visible = filtered.slice(0, MAX_VISIBLE);
-    const overflow = filtered.length - MAX_VISIBLE;
     return (
         <div className="qdg-preview qdg-preview--pills">
-            {visible.map((item, i) => (
+            {filtered.map((item, i) => (
                 <div key={i} className="qdg-option-row">
                     <span className="qdg-option-pill">{item}</span>
                 </div>
             ))}
-            {overflow > 0 && (
-                <div className="qdg-option-row">
-                    <span className="qdg-options-overflow">+{overflow}</span>
-                </div>
-            )}
         </div>
     );
 };

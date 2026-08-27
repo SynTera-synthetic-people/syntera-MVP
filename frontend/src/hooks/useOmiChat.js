@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   createResearchObjective,
   createResearchObjectiveFromFramer,
+  getFramerInput,
   submitFramerMaterialSection,
   initializeOmiSession,
   sendMessageToOmi,
@@ -16,6 +17,7 @@ export const omiKeys = {
   session: (explorationId) => [...omiKeys.all, 'session', explorationId],
   chat: (explorationId) => [...omiKeys.all, 'chat', explorationId],
   conversation: (workspaceId, explorationId) => [...omiKeys.all, 'conversation', workspaceId, explorationId],
+  framerInput: (workspaceId, explorationId) => [...omiKeys.all, 'framer_input', workspaceId, explorationId],
 };
 
 // Hook to initialize Omi session
@@ -126,6 +128,22 @@ export const useCreateResearchObjectiveFromFramer = (workspaceId, explorationId)
     onError: (error) => {
       console.error('Error saving research objective from Framer:', error);
     },
+  });
+};
+
+// Hook to read back the Framer submission stored server-side for an exploration.
+// Used by the read-only review screen (and the "Review your research framing"
+// entry point) so a framing submitted on another device — or before the local
+// snapshot existed — can still be viewed and downloaded.
+export const useFramerInput = (workspaceId, explorationId, options = {}) => {
+  return useQuery({
+    queryKey: omiKeys.framerInput(workspaceId, explorationId),
+    queryFn: () => getFramerInput(workspaceId, explorationId),
+    enabled: !!(workspaceId && explorationId),
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    retry: false,
+    ...options,
   });
 };
 

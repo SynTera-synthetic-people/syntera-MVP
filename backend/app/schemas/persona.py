@@ -71,6 +71,10 @@ class AdditionalInfoInput(BaseModel):
 class ManualPersonaCreate(BaseModel):
     """Structured input for the manual persona builder form."""
     name: Optional[str] = Field(None, max_length=100)
+    # True when `name` is a name the user actually typed, rather than the
+    # builder's "Persona 1" placeholder. Calibration only auto-names personas
+    # where this is False (see calibrate_manual_persona_with_brains).
+    name_is_custom: bool = False
     demographics: Optional[DemographicsInput] = None
     psychological: Optional[PsychologicalInput] = None
     behavioural: Optional[BehaviouralInput] = None

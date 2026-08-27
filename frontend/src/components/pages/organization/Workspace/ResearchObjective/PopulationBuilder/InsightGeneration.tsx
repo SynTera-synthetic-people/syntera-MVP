@@ -43,7 +43,8 @@ type CardState = 'idle' | 'generating' | 'done';
 interface InsightCard {
   id: string;
   icon: React.ReactNode;
-  timeLabel: string;
+  /** Omitted on cards that have no meaningful duration to advertise. */
+  timeLabel?: string;
   title: string;
   description: string;
   actionLabel: 'Generate' | 'Start';
@@ -96,9 +97,10 @@ const INSIGHT_CARDS: InsightCard[] = [
   // },
   {
     id: 'playground',
-    icon: <SpIcon name="sp-Environment-Puzzle" size={48} />,
-    timeLabel: '2 to 3 mins',
+    // No time badge: the Playground opens straight into an interactive
+    // session rather than running a generation of a predictable length.
     title: 'Data Playground',
+    icon: <SpIcon name="sp-Environment-Puzzle" size={48} />,
     description: 'Slice, filter, and explore your data dynamically to test hypotheses and uncover patterns',
     // ↑ actionLabel is 'Start' — clicking this opens the DataPlayground modal directly.
     // It does NOT go through the generate/download flow.
@@ -528,10 +530,12 @@ const InsightsGeneration: React.FC<InsightsGenerationProps> = ({
             <motion.div key={card.id} className="ig-card" variants={cardVariants}>
               <div className="ig-card__icon-wrap">{card.icon}</div>
 
-              <div className="ig-card__badge">
-                <SpIcon name="sp-Calendar-Alarm" size={16} />
-                {card.timeLabel}
-              </div>
+              {card.timeLabel && (
+                <div className="ig-card__badge">
+                  <SpIcon name="sp-Calendar-Alarm" size={16} />
+                  {card.timeLabel}
+                </div>
+              )}
 
               <h3 className="ig-card__title">{card.title}</h3>
               <p className="ig-card__desc">{card.description}</p>

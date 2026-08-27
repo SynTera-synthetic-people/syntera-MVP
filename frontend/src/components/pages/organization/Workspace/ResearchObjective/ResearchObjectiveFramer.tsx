@@ -3,8 +3,10 @@ import { useNavigate, useLocation, useParams } from "react-router-dom";
 import { toast } from "react-toastify";
 import {
     useCreateResearchObjectiveFromFramer,
+    useFramerInput,
     useSubmitFramerMaterialSection,
 } from "../../../../../hooks/useOmiChat";
+import { downloadFramerContextPdf } from "./downloadFramerContextPdf";
 import "./ResearchObjectiveFramer.css";
 
 import OmiIdle from "../../../../../assets/Omi Animations/IdleStateMotion_Lite.mp4";
@@ -2169,6 +2171,15 @@ interface PreviewTabProps {
     onBack: () => void;
     isSubmitting?: boolean;
     readOnly?: boolean;
+    // Sections that don't come from the local form data: the materials the
+    // backend has on file for this exploration, and — for objectives created
+    // through the chat flow rather than this wizard — the objective Omi
+    // synthesized. Rendered after the form-derived sections and included in
+    // the PDF export like any other section.
+    extraSections?: PreviewSection[];
+    // True while the server-side review bundle is still in flight, so the
+    // screen doesn't flash "nothing's been filled in" before it arrives.
+    isLoadingSaved?: boolean;
 }
 
 interface PreviewSection {
@@ -2180,12 +2191,17 @@ const buildPreviewSections = (data: ROFramerData): PreviewSection[] => {
     const sections: PreviewSection[] = [];
 
     const { context } = data;
-    const hasContext = context.companyName || context.industry || context.website || context.competitors.length > 0;
+    // Extra Context was missing here even though it's typed on the Context tab
+    // and sent to the backend as extra_context — so it showed up neither in the
+    // preview nor (by extension) in the PDF export.
+    const hasContext = context.companyName || context.industry || context.website
+        || context.extraContext.trim() || context.competitors.length > 0;
     if (hasContext) {
         const lines: string[] = [];
         if (context.companyName) lines.push(`Brand: ${context.companyName}`);
         if (context.industry) lines.push(`Industry: ${context.industry}`);
         if (context.website) lines.push(`Website: ${context.website}`);
+        if (context.extraContext.trim()) lines.push(`Extra context: ${context.extraContext.trim()}`);
         if (context.competitors.length) lines.push(`Competitors: ${context.competitors.map(c => c.name).join(", ")}`);
         sections.push({ heading: "The Context", body: lines.join("\n") });
     }
@@ -2231,29 +2247,172 @@ const buildPreviewSections = (data: ROFramerData): PreviewSection[] => {
     return sections;
 };
 
-const PreviewTab: React.FC<PreviewTabProps> = ({ data, onSubmit, onBack, isSubmitting, readOnly }) => {
-    const sections = buildPreviewSections(data);
+// ─────────────────────────────────────────────────────────────────────────────
+// Server-side review data
+//
+// The read-only Preview used to read ONLY the local `ro_framer_submitted_data_*`
+// snapshot, so a framing submitted from another browser/device — or before that
+// snapshot key existed — showed up as "nothing's been filled in" and couldn't be
+// downloaded. The backend has had the raw fields all along (the /from-framer
+// payload is stored in ai_interpretation["framer_input"]), so these helpers turn
+// GET .../objectives/framer-input back into what this screen renders.
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface ServerMaterial {
+    material_kind?: string | null;
+    original_name?: string | null;
+    source_url?: string | null;
+    instruction?: string | null;
+}
+
+interface FramerReviewBundle {
+    framer_input?: Record<string, unknown> | null;
+    description?: string | null;
+    materials?: ServerMaterial[] | null;
+}
+
+/** Inverse of buildFramerPayload — server field names back into form state. */
+const framerDataFromServerInput = (input: Record<string, unknown>): ROFramerData => {
+    const text = (value: unknown): string => (typeof value === "string" ? value : "");
+
+    // Tag lists (competitors, geography) are arrays in current submissions, but
+    // rows written before geography became Optional[List[str]] server-side hold
+    // one free-text string — verified against live data, where an older
+    // objective stores geography as "Primary markets:\nBangalore\n…". Keeping
+    // such a string as a single entry preserves its line breaks (the preview box
+    // is pre-line and the PDF wraps per line), whereas treating it as "not an
+    // array" would silently drop exactly the framing this screen exists to show.
+    // Only ever rendered read-only, so a multi-line tag never reaches an input.
+    const names = (value: unknown): string[] => {
+        if (Array.isArray(value)) {
+            return value.filter((item): item is string => typeof item === "string" && item.trim() !== "");
+        }
+        return typeof value === "string" && value.trim() !== "" ? [value.trim()] : [];
+    };
+
+    const data = emptyFramerData();
+    data.context.companyName = text(input.brand_name);
+    data.context.industry = text(input.industry);
+    data.context.website = text(input.website);
+    data.context.extraContext = text(input.extra_context);
+    data.context.competitors = names(input.competitors).map((name, i) => ({ id: `srv-comp-${i}`, name }));
+    data.businessTrigger.trigger = text(input.business_context);
+    data.customerUnknown.unknown = text(input.information_gap);
+    data.decisionMoment.decision = text(input.decision_problem);
+    data.audienceSegments.audience = text(input.target_audience);
+    data.audienceSegments.geographies = names(input.geography).map((name, i) => ({ id: `srv-geo-${i}`, name }));
+    data.otherInformation.notes = text(input.additional_notes);
+    return data;
+};
+
+const materialKindLabel = (kind?: string | null) =>
+    kind === "artifact" ? "Artifact" : "Research Brief";
+
+/** Materials aren't part of the framer payload — they're their own rows keyed
+ *  on the exploration — so they're rebuilt as a section of their own. */
+const buildServerMaterialSection = (materials: ServerMaterial[]): PreviewSection | null => {
+    const lines: string[] = [];
+
+    // One instruction is stored per file/link of a submission, so the same text
+    // repeats across rows — show each section's instruction once.
+    const seenInstructions = new Set<string>();
+    materials.forEach(material => {
+        const instruction = (material.instruction ?? "").trim();
+        if (!instruction) return;
+        const key = `${material.material_kind ?? ""}:${instruction}`;
+        if (seenInstructions.has(key)) return;
+        seenInstructions.add(key);
+        lines.push(`${materialKindLabel(material.material_kind)} instruction: ${instruction}`);
+    });
+
+    materials.forEach(material => {
+        const url = (material.source_url ?? "").trim();
+        const name = (material.original_name ?? "").trim();
+        if (url) lines.push(`${materialKindLabel(material.material_kind)} link: ${url}`);
+        else if (name) lines.push(`${materialKindLabel(material.material_kind)} file: ${name}`);
+    });
+
+    return lines.length ? { heading: "Add Material", body: lines.join("\n") } : null;
+};
+
+/** Extra sections for a review screen hydrated from the server. Omi's
+ *  synthesized objective is only included when there are no framer fields to
+ *  show (a chat-created objective) — otherwise this screen stays a record of
+ *  what the user themselves entered. */
+const buildServerReviewSections = (
+    bundle: FramerReviewBundle | undefined,
+    hasFormData: boolean,
+): PreviewSection[] => {
+    if (!bundle) return [];
+    const sections: PreviewSection[] = [];
+
+    const description = (bundle.description ?? "").trim();
+    if (!hasFormData && description) {
+        sections.push({ heading: "Research Objective", body: description });
+    }
+
+    const materialSection = buildServerMaterialSection(bundle.materials ?? []);
+    if (materialSection) sections.push(materialSection);
+
+    return sections;
+};
+
+const PreviewTab: React.FC<PreviewTabProps> = ({
+    data, onSubmit, onBack, isSubmitting, readOnly, extraSections, isLoadingSaved,
+}) => {
+    const formSections = buildPreviewSections(data);
+    const sections = [...formSections, ...(extraSections ?? [])];
     const isEmpty = sections.length === 0;
+
+    // Nothing from the wizard's own fields, but the server had something to
+    // show (a chat-created objective, or a submission that only attached
+    // materials) — the copy shouldn't claim these are fields the user typed here.
+    const isServerObjectiveOnly = Boolean(readOnly && formSections.length === 0 && sections.length > 0);
+
+    // "Download PDF" exports exactly the sections rendered below — same
+    // builder, so the file can never drift from what the user is looking at.
+    const [isDownloading, setIsDownloading] = useState(false);
+    const canDownload = !isEmpty && !isDownloading && !isSubmitting && !isLoadingSaved;
+
+    const handleDownloadPdf = async () => {
+        if (!canDownload) return;
+        setIsDownloading(true);
+        try {
+            const filename = await downloadFramerContextPdf(sections, { brandName: data.context.companyName });
+            toast.success(`Downloaded ${filename}`);
+        } catch (err) {
+            console.error("[ResearchObjectiveFramer] framer PDF export failed:", err);
+            toast.error("Couldn't build the PDF. Please try again.");
+        } finally {
+            setIsDownloading(false);
+        }
+    };
 
     return (
         <div className="rofp-tab-content">
             <div className="rofp-tab-head">
                 <h2 className="rofp-tab-title">
-                    {readOnly ? "Your research framing so far" : "Your research objective, compiled"}
+                    {isServerObjectiveOnly
+                        ? "Your saved research objective"
+                        : readOnly ? "Your research framing so far" : "Your research objective, compiled"}
                 </h2>
                 <p className="rofp-tab-tagline">
-                    {readOnly
-                        ? "Here's everything you've entered in the research framer. This is read-only — close this to continue your chat with Omi."
-                        : "A quick look at everything Omi will use to build your brief. Go back to adjust anything before you submit."}
+                    {isServerObjectiveOnly
+                        ? "This is what's saved for this exploration. Download it as a PDF, or close this to continue your chat with Omi."
+                        : readOnly
+                            ? "Here's everything you've entered in the research framer. This is read-only — close this to continue your chat with Omi."
+                            : "A quick look at everything Omi will use to build your brief. Go back to adjust anything before you submit."}
                 </p>
             </div>
 
             {isEmpty ? (
                 <div className="rofp-preview-empty">
                     <p className="rofp-preview-empty-text">
-                        {readOnly
-                            ? "No saved framing yet — nothing's been filled in."
-                            : "Nothing's been filled in yet — go back and answer a few prompts to see your compiled objective here."}
+                        {isLoadingSaved
+                            ? "Loading your saved research framing…"
+                            : readOnly
+                                ? "No saved framing yet — nothing's been filled in."
+                                : "Nothing's been filled in yet — go back and answer a few prompts to see your compiled objective here."}
                     </p>
                 </div>
             ) : (
@@ -2273,19 +2432,34 @@ const PreviewTab: React.FC<PreviewTabProps> = ({ data, onSubmit, onBack, isSubmi
                     <span className="rofp-btn-arrow rofp-btn-arrow--back">←</span>
                     {readOnly ? "Close" : "Back"}
                 </button>
-                {!readOnly && (
-                    <div className="rofp-tab-cta-right">
+                <div className="rofp-tab-cta-right">
+                    <div className="rofp-cta-btn-row">
+                        {/* Offered in read-only mode too — a user reviewing an
+                            already-submitted framing is exactly who wants a
+                            copy of what they sent. */}
                         <button
-                            className={["rofp-btn-continue", isEmpty || isSubmitting ? "rofp-btn-continue--disabled" : ""].filter(Boolean).join(" ")}
-                            disabled={isEmpty || isSubmitting}
-                            onClick={() => { if (!isSubmitting) onSubmit(); }}
+                            className={["rofp-btn-download", !canDownload ? "rofp-btn-download--disabled" : ""].filter(Boolean).join(" ")}
+                            disabled={!canDownload}
+                            onClick={handleDownloadPdf}
+                            title="Download everything you've entered as a PDF"
                             type="button"
                         >
-                            {isSubmitting ? "Saving…" : "Submit"}
+                            <span className="rofp-btn-download-icon" aria-hidden="true">↓</span>
+                            {isDownloading ? "Preparing…" : "Download PDF"}
                         </button>
-                        {isEmpty && !isSubmitting && <p className="rofp-cta-hint">Fill in at least one section to submit</p>}
+                        {!readOnly && (
+                            <button
+                                className={["rofp-btn-continue", isEmpty || isSubmitting ? "rofp-btn-continue--disabled" : ""].filter(Boolean).join(" ")}
+                                disabled={isEmpty || isSubmitting}
+                                onClick={() => { if (!isSubmitting) onSubmit(); }}
+                                type="button"
+                            >
+                                {isSubmitting ? "Saving…" : "Submit"}
+                            </button>
+                        )}
                     </div>
-                )}
+                    {!readOnly && isEmpty && !isSubmitting && <p className="rofp-cta-hint">Fill in at least one section to submit</p>}
+                </div>
             </div>
         </div>
     );
@@ -2346,12 +2520,52 @@ const ResearchObjectiveFramer: React.FC<ResearchObjectiveFramerProps> = ({
     // In review-only mode, hydrate from the permanent "last submitted"
     // snapshot — NOT the draft, which is cleared as soon as a submit
     // succeeds and would otherwise leave this screen empty.
+    const [localSnapshot] = useState(() =>
+        isReviewOnlyOpen ? loadFramerSubmittedData(objectiveId) : null
+    );
     const [data, setData] = useState<ROFramerData>(() => {
         if (isReviewOnlyOpen) {
-            return loadFramerSubmittedData(objectiveId) ?? emptyFramerData();
+            return localSnapshot ?? emptyFramerData();
         }
         return loadFramerDraft(objectiveId) ?? emptyFramerData();
     });
+
+    // That snapshot only exists in the browser that did the submitting, so it
+    // can't be the only source: fetch what the backend stored as well. This is
+    // what makes an already-submitted framing reviewable and downloadable from
+    // any device (and at all, for framings submitted before the snapshot key
+    // existed).
+    const { data: framerBundleResponse, isLoading: isLoadingFramerBundle } = useFramerInput(
+        workspaceId,
+        objectiveId,
+        { enabled: isReviewOnlyOpen && !localSnapshot && !!workspaceId && !!objectiveId }
+    ) as { data?: { data?: FramerReviewBundle }; isLoading: boolean };
+
+    const serverBundle = framerBundleResponse?.data;
+    const serverInput = localSnapshot ? undefined : serverBundle?.framer_input;
+
+    // Derived, not copied into state: nothing on the review screen can edit
+    // this, and deriving avoids a render where the fields are still blank.
+    const serverData = React.useMemo(
+        () => (serverInput && Object.keys(serverInput).length > 0 ? framerDataFromServerInput(serverInput) : null),
+        [serverInput]
+    );
+    const previewData = isReviewOnlyOpen && serverData ? serverData : data;
+
+    // Materials (and, when there are no framer fields to show, Omi's
+    // synthesized objective) live outside the framer payload, so they're
+    // appended as their own sections.
+    //
+    // "Are there fields to show" is judged on the sections the stored input
+    // actually produces, not merely on framer_input being present — real
+    // submissions exist where every field is empty and only materials were
+    // attached, and those should still show the synthesized objective rather
+    // than a near-blank screen.
+    const serverReviewSections = React.useMemo(() => {
+        if (localSnapshot) return [];
+        const hasFields = serverData ? buildPreviewSections(serverData).length > 0 : false;
+        return buildServerReviewSections(serverBundle, hasFields);
+    }, [localSnapshot, serverBundle, serverData]);
 
     // Persist the draft locally on every change, so users can come back and
     // review (or continue) without losing what they've typed. Nothing here
@@ -2491,7 +2705,7 @@ const ResearchObjectiveFramer: React.FC<ResearchObjectiveFramerProps> = ({
                 )}
                 {activeTab === "review" && (
                     <PreviewTab
-                        data={data}
+                        data={previewData}
                         onSubmit={handleContinue}
                         // Read-only mode must never route "back" into an
                         // editable tab (that's exactly the hole we're
@@ -2499,6 +2713,8 @@ const ResearchObjectiveFramer: React.FC<ResearchObjectiveFramerProps> = ({
                         onBack={isReviewOnlyOpen ? handleBackToObjective : handleBack}
                         isSubmitting={isSaving}
                         readOnly={isReviewOnlyOpen}
+                        extraSections={serverReviewSections}
+                        isLoadingSaved={isReviewOnlyOpen && isLoadingFramerBundle}
                     />
                 )}
             </div>

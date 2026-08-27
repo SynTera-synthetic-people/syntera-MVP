@@ -617,6 +617,55 @@ async def list_objectives(exploration_id: str, current_user: User = Depends(get_
         data=data
     )
 
+# NOTE: must stay above GET /{objective_id} — FastAPI matches in declaration
+# order, and the parameterised route would otherwise swallow "framer-input".
+@router.get("/framer-input", response_model=SuccessResponse)
+async def get_framer_input(
+    workspace_id: str,
+    exploration_id: str,
+    current_user: User = Depends(get_current_active_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    What the user actually entered in the Research Objective Framer for this
+    exploration, so the read-only review screen can be rebuilt (and exported)
+    on any device instead of only in the browser that submitted it.
+
+    Returns framer_input (the raw structured fields), description (the
+    objective Omi synthesized from them) and the Add-Material items. Objectives
+    created through the chat flow have no framer_input — description is still
+    returned so they can be reviewed too. An exploration with no finalized
+    objective yet returns nulls rather than a 404: "nothing saved yet" is a
+    normal state for this screen, not an error.
+    """
+    exp = await get_exploration(session, exploration_id)
+    if not exp:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=ErrorResponse(status="error", message="Exploration not found").dict(),
+        )
+
+    if str(exp.workspace_id) != str(workspace_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=ErrorResponse(
+                status="error", message="Exploration is not part of the provided workspace"
+            ).dict(),
+        )
+
+    members = await ws_service.list_workspace_members(workspace_id)
+    if not any(m.get("user_id") == current_user.id for m in members):
+        raise HTTPException(
+            status_code=403,
+            detail=ErrorResponse(
+                status="error", message="You do not have access to this workspace"
+            ).dict(),
+        )
+
+    data = await exp_service.get_framer_review_bundle(exploration_id)
+    return SuccessResponse(message="Framer input fetched successfully", data=data)
+
+
 @router.get("/{objective_id}", response_model=SuccessResponse)
 async def get_objective(workspace_id: str, objective_id: str, current_user: User = Depends(get_current_active_user)):
     members = await ws_service.list_workspace_members(workspace_id)

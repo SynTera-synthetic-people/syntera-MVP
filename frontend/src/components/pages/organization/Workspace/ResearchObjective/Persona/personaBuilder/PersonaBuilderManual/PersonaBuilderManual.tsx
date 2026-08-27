@@ -26,6 +26,13 @@ import SubTabNavigation from './SubTabNavigation';
 import AttributeSelectionPanel from './AttributeSelectionPanel';
 import PersonaSummaryView from './PersonaSummaryView';
 import EditPersonaNameModal from './EditPersonaNameModal';
+import {
+    DEFAULT_PERSONA_NAME,
+    clearPersonaDraft,
+    draftHasContent,
+    loadPersonaDraft,
+    savePersonaDraft,
+} from './personaDraftStorage';
 import PersonaSearch from '../PersonaSearch';
 import PlausibilityCheckModal from '../components/PlausibilityCheckModal';
 import type { PlausibilityWarning } from '../components/PlausibilityWarningStrip';
@@ -33,47 +40,6 @@ import type { PlausibilityWarning } from '../components/PlausibilityWarningStrip
 import './PersonaBuilderManual.css';
 
 // ══════════════════════════════════════════════════════════════════════════════
-
-const DEFAULT_PERSONA_NAME = 'Persona 1';
-
-// Draft persona name, held per exploration until the persona is created.
-// localStorage access is wrapped because it throws outright in some privacy
-// modes — a blocked store must degrade to the default name, never crash the
-// builder.
-const draftPersonaNameKey = (objectiveId?: string) =>
-    objectiveId ? `persona_draft_name_${objectiveId}` : null;
-
-const readDraftPersonaName = (objectiveId?: string): string => {
-    const key = draftPersonaNameKey(objectiveId);
-    if (!key) return DEFAULT_PERSONA_NAME;
-    try {
-        return localStorage.getItem(key)?.trim() || DEFAULT_PERSONA_NAME;
-    } catch {
-        return DEFAULT_PERSONA_NAME;
-    }
-};
-
-const writeDraftPersonaName = (objectiveId: string | undefined, name: string): void => {
-    const key = draftPersonaNameKey(objectiveId);
-    if (!key) return;
-    try {
-        const trimmed = name.trim();
-        if (trimmed) localStorage.setItem(key, trimmed);
-        else localStorage.removeItem(key);
-    } catch {
-        /* storage unavailable — the name still applies for this session */
-    }
-};
-
-const clearDraftPersonaName = (objectiveId?: string): void => {
-    const key = draftPersonaNameKey(objectiveId);
-    if (!key) return;
-    try {
-        localStorage.removeItem(key);
-    } catch {
-        /* nothing to clean up if the store is unavailable */
-    }
-};
 
 const PersonaBuilderManual: React.FC = () => {
     const navigate = useNavigate();
@@ -101,23 +67,32 @@ const PersonaBuilderManual: React.FC = () => {
 
     // ── State ──────────────────────────────────────────────────────────────────
 
-    const [activeCategory, setActiveCategory] = useState<MainCategory>('Demographics');
-    const [activeSubTab, setActiveSubTab] = useState<string>('Age');
+    // Restore whatever the user had typed before the last refresh/navigation.
+    // Read once, lazily, so every field below hydrates from the same snapshot.
+    const [initialDraft] = useState(() => loadPersonaDraft(objectiveId));
 
-    // The persona row does not exist in the DB until "Calibrate Persona" is
-    // submitted, so there is nothing to PATCH while the user is still building
-    // it. Keep the chosen name in localStorage — same per-exploration key
-    // convention this screen already uses for step2_done_ / approach_ — so a
-    // refresh mid-build does not silently reset it to "Persona 1".
-    const [personaName, setPersonaName] = useState<string>(
-        () => readDraftPersonaName(objectiveId)
+    const [activeCategory, setActiveCategory] = useState<MainCategory>(
+        initialDraft?.activeCategory ?? 'Demographics'
     );
+    const [activeSubTab, setActiveSubTab] = useState<string>(initialDraft?.activeSubTab ?? 'Age');
+
+    const [personaName, setPersonaName] = useState<string>(
+        initialDraft?.personaName ?? DEFAULT_PERSONA_NAME
+    );
+    // Distinguishes "user deliberately named this persona" from the untouched
+    // "Persona 1" placeholder — sent to the backend so calibration knows
+    // whether it may replace the name with an LLM-generated one.
+    const [isNameCustom, setIsNameCustom] = useState<boolean>(initialDraft?.isNameCustom ?? false);
     const [showEditNameModal, setShowEditNameModal] = useState<boolean>(false);
 
-    const [formData, setFormData] = useState<PersonaFormData>({});
-    const [formativeExperience, setFormativeExperience] = useState<string>('');
+    const [formData, setFormData] = useState<PersonaFormData>(initialDraft?.formData ?? {});
+    const [formativeExperience, setFormativeExperience] = useState<string>(
+        initialDraft?.formativeExperience ?? ''
+    );
 
-    const [completedSubTabs, setCompletedSubTabs] = useState<Set<string>>(new Set());
+    const [completedSubTabs, setCompletedSubTabs] = useState<Set<string>>(
+        () => new Set(initialDraft?.completedSubTabs ?? [])
+    );
 
     // Submit-time modal warnings
     const [plausibilityWarnings, setPlausibilityWarnings] = useState<PlausibilityWarning[]>([]);
@@ -143,14 +118,27 @@ const PersonaBuilderManual: React.FC = () => {
         trigger({ stage: 'persona_builder', event: 'PERSONA_WORKFLOW_LOADED', payload: {} });
     }, [objectiveId]);
 
-    // The lazy initialiser above only runs on mount, but React Router keeps this
-    // component mounted when the :objectiveId param changes — so re-read the
-    // stored name, otherwise one exploration's persona name leaks into another.
-    // Setting the same string is a no-op re-render in React, so the common case
-    // costs nothing.
+    // ── Draft persistence ─────────────────────────────────────────────────────
+    // Mirror every input into localStorage so a refresh no longer resets the
+    // screen. Cleared in handleCalibratePersona once the persona exists in the
+    // backend, and whenever the user empties the form again.
+
     useEffect(() => {
-        setPersonaName(readDraftPersonaName(objectiveId));
-    }, [objectiveId]);
+        const draft = {
+            personaName,
+            isNameCustom,
+            formData,
+            formativeExperience,
+            completedSubTabs: Array.from(completedSubTabs),
+            activeCategory,
+            activeSubTab,
+        };
+        if (draftHasContent(draft)) savePersonaDraft(objectiveId, draft);
+        else clearPersonaDraft(objectiveId);
+    }, [
+        objectiveId, personaName, isNameCustom, formData,
+        formativeExperience, completedSubTabs, activeCategory, activeSubTab,
+    ]);
 
     // ── Category & Sub-Tab ────────────────────────────────────────────────────
 
@@ -158,7 +146,16 @@ const PersonaBuilderManual: React.FC = () => {
         return getCategoryItems(activeCategory);
     }, [activeCategory]);
 
+    // A restored draft carries the sub-tab the user was actually on. This
+    // effect (which snaps to the category's first attribute) must therefore
+    // skip its initial run, or it would immediately overwrite that.
+    const skipSubTabReset = useRef<boolean>(Boolean(initialDraft));
+
     useEffect(() => {
+        if (skipSubTabReset.current) {
+            skipSubTabReset.current = false;
+            return;
+        }
         const items = getCurrentCategoryItems();
         if (items.length > 0 && activeCategory !== 'Formative Experience') {
             setActiveSubTab(items[0] ?? 'Age');
@@ -325,7 +322,7 @@ const PersonaBuilderManual: React.FC = () => {
 
         trigger({ stage: 'persona_builder', event: 'PERSONA_CREATION_STARTED', payload: {} });
 
-        const payload = buildManualPersonaPayload(formData, personaName, formativeExperience);
+        const payload = buildManualPersonaPayload(formData, personaName, formativeExperience, isNameCustom);
 
         let draftPersonaId: string | undefined;
 
@@ -339,10 +336,12 @@ const PersonaBuilderManual: React.FC = () => {
             }>;
             const result = await (submitCompletePersona as unknown as SubmitFn)(payload);
             draftPersonaId = result?.data?.id;
-            // The name now lives on the persona row; drop the draft copy so the
-            // next persona built in this exploration starts from the default.
-            clearDraftPersonaName(objectiveId);
             setPendingDraftPersonaId(draftPersonaId);
+            // The persona now exists server-side, so the local draft has done
+            // its job. Dropped here (not after the plausibility modal) so a
+            // user who abandons that modal doesn't come back to a stale form
+            // that would create a duplicate.
+            clearPersonaDraft(objectiveId);
             const warnings = result?.data?.validation_warnings ?? [];
             if (result?.data?.has_plausibility_warnings && warnings.length > 0) {
                 setPlausibilityWarnings(warnings);
@@ -647,7 +646,10 @@ const PersonaBuilderManual: React.FC = () => {
                 currentName={personaName}
                 onSave={(name) => {
                     setPersonaName(name);
-                    writeDraftPersonaName(objectiveId, name);
+                    // Saving the untouched placeholder back is not a rename —
+                    // those personas should still get a generated name at
+                    // calibration, exactly like ones never opened this modal.
+                    setIsNameCustom(name !== DEFAULT_PERSONA_NAME);
                     setShowEditNameModal(false);
                 }}
                 onClose={() => setShowEditNameModal(false)}
