@@ -1,0 +1,224 @@
+/* ═══════════════════════════════════════════════════════════════
+   PersonaLibraryPicker.css
+   Prefix: plb-
+   Selection affordances only — the page geometry, cards, action bar
+   and confidence bars all come from PersonaBuilder.css so the library
+   picker is visually identical to the persona grid.
+═══════════════════════════════════════════════════════════════ */
+
+/* ── Card selection ── */
+
+.plb-card {
+  position: relative;
+  user-select: none;
+}
+
+.plb-card:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.plb-card--selected {
+  border-color: #2563eb;
+  background: linear-gradient(
+    180deg,
+    rgba(37, 99, 235, 0.10),
+    var(--T-Base-B3, #16181C) 58%
+  );
+  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.35);
+}
+
+.plb-card--disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.plb-card--disabled:hover {
+  border-color: var(--T-GreyScale-Grey-800, #393C45);
+}
+
+.plb-title-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.plb-check {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  border: 1.5px solid rgba(255, 255, 255, 0.28);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  color: #fff;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.plb-check--on {
+  background: #2563eb;
+  border-color: #2563eb;
+}
+
+/* ── Card metadata ── */
+
+.plb-origin {
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.4);
+  margin: 6px 0 0;
+}
+
+.plb-origin span {
+  color: #93b4fc;
+  font-weight: 600;
+}
+
+.plb-meta {
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.42);
+  margin: 4px 0 0;
+}
+
+/* ── Pills ── */
+
+.plb-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 3px 7px;
+  border-radius: 999px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.plb-pill--added {
+  background: rgba(34, 197, 94, 0.13);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.32);
+}
+
+/* ── Toolbar ── */
+
+.plb-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  width: 100%;
+  max-width: 860px;
+  margin-bottom: 16px;
+}
+
+.plb-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--T-Base-B3, #16181C);
+  border: 1px solid var(--T-GreyScale-Grey-800, #393C45);
+  border-radius: 10px;
+  color: rgba(255, 255, 255, 0.45);
+  min-width: 220px;
+}
+
+.plb-search:focus-within {
+  border-color: rgba(37, 99, 235, 0.6);
+}
+
+.plb-search input {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #e2e8f0;
+  font-size: 13px;
+  font-family: inherit;
+  width: 100%;
+}
+
+.plb-search input::placeholder {
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.plb-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.plb-toggle input {
+  accent-color: #2563eb;
+  cursor: pointer;
+}
+
+.plb-spacer {
+  flex: 1;
+}
+
+.plb-counter {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #93b4fc;
+  background: rgba(37, 99, 235, 0.1);
+  border: 1px solid rgba(37, 99, 235, 0.28);
+  padding: 6px 12px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+/* ── Loading / error states ── */
+
+.plb-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 72px 24px;
+  text-align: center;
+}
+
+.plb-status-text {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.55);
+  margin: 0;
+}
+
+.plb-status-icon-warn {
+  color: #fbbf24;
+}
+
+.plb-empty-icon {
+  color: rgba(255, 255, 255, 0.3);
+  margin-bottom: 14px;
+}
+
+.plb-action-bar--center {
+  justify-content: center;
+}
+
+/* ── Utilities ── */
+
+@keyframes plb-spin {
+  to { transform: rotate(360deg); }
+}
+
+.plb-spin {
+  animation: plb-spin 0.9s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plb-spin { animation: none; }
+}
+
+/* ── Narrow screens: PersonaBuilder's grid is 2-up; collapse to 1 ── */
+
+@media (max-width: 720px) {
+  .plb-toolbar { max-width: 100%; }
+}

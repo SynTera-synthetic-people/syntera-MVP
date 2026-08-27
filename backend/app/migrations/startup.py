@@ -583,8 +583,18 @@ async def _repair_persona_schema(conn: AsyncConnection) -> None:
         "calibration_status VARCHAR",
         "subject_key VARCHAR",
         "ml_domain VARCHAR",
+        "library_source_persona_id VARCHAR",
+        "library_imported_at TIMESTAMP WITHOUT TIME ZONE",
     ):
         await ensure_column(conn, "persona", column)
+    # No FK on library_source_persona_id on purpose: the origin persona is
+    # hard-deleted along with its exploration, and a constraint would either
+    # block that or erase the provenance we still want to show.
+    await ensure_index(
+        conn,
+        "CREATE INDEX IF NOT EXISTS ix_persona_library_source_persona_id "
+        "ON persona (library_source_persona_id)",
+    )
     await _exec(
         conn,
         """

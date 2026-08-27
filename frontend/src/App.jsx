@@ -27,6 +27,7 @@ import WorkspaceForm from "./components/pages/organization/Workspace/WorkspaceFo
 import PersonaBuilder from "./components/pages/organization/Workspace/ResearchObjective/Persona/personaBuilder/PersonaBuilder";
 import ApproachSelectionPage from "./components/pages/organization/Workspace/ResearchObjective/Persona/personaBuilder/components/ApproachSelectionPage";
 import PersonaBuilderManual from "./components/pages/organization/Workspace/ResearchObjective/Persona/personaBuilder/PersonaBuilderManual/PersonaBuilderManual";
+import PersonaLibraryPicker from "./components/pages/organization/Workspace/ResearchObjective/Persona/personaLibrary/PersonaLibraryPicker";
 import PersonaGenerationLoader from "./components/pages/organization/Workspace/ResearchObjective/PersonaGenerationLoader";
 import AddPersona from "./components/pages/organization/Workspace/ResearchObjective/Persona/AddPersona";
 import PersonaPreview from "./components/pages/organization/Workspace/ResearchObjective/Persona/PersonaPreview";
@@ -279,6 +280,10 @@ function App() {
                 <Route
                   path=":objectiveId/persona-builder/manual"
                   element={<PersonaBuilderManual />}
+                />
+                <Route
+                  path=":objectiveId/persona-library"
+                  element={<PersonaLibraryPicker />}
                 />
                 <Route
                   path=":objectiveId/persona-preview/:personaId"
