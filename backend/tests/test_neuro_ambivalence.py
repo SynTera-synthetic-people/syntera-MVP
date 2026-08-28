@@ -118,3 +118,12 @@ def test_tension_derivation_from_persona_record():
     assert labels[0] == "health vs indulgence"
     assert params.tensions[0].categories == ("food",)
     assert len(params.tensions) == 3
+
+
+def test_separation_requirement_scales_with_granularity():
+    tension = ValueTension(label="borderline", strength=0.36)
+    base = CoreAffect(valence=0.18, arousal=0.2, direction=0.15)
+    coarse = _persona(tensions=(tension,), granularity=0.1, baseline=base, spread=0.3)
+    fine = _persona(tensions=(tension,), granularity=0.9, baseline=base, spread=0.3)
+    assert not _turn(coarse).bimodal
+    assert _turn(fine).bimodal

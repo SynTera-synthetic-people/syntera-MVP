@@ -91,7 +91,16 @@ def _conflict(persona, question, felt):
         direction=_clamp(-sign_d * magnitude * 0.8),
     )
     separation = abs(counter.valence - felt.valence) + abs(counter.direction - felt.direction)
-    if separation < parameters.CONFLICT_SEPARATION_MIN:
+    # Scaled by how finely this persona distinguishes its own feelings: a
+    # coarse persona needs the two positions further apart to be genuinely of
+    # two minds rather than merely unsure.
+    required = parameters.CONFLICT_SEPARATION_MIN * (
+        parameters.CONFLICT_SEPARATION_GRANULARITY_FLOOR
+        + (1.0 - parameters.CONFLICT_SEPARATION_GRANULARITY_FLOOR)
+        * (1.0 - persona.granularity)
+        * 2.0
+    )
+    if separation < required:
         return None
     w2 = min(
         0.5,

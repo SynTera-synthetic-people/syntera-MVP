@@ -23,6 +23,7 @@ import uuid
 from typing import Any, Optional
 
 from app.schemas.artifact_pipeline import ComparisonMode, PipelineStageError
+from app.neuro import service as neuro_service
 from app.services.survey_simulation_combined import (
     _call_single_brain_llm,
     _fetch_digital_brain_context,
@@ -159,6 +160,15 @@ async def simulate_artifact_population_responses(
         )
         # _call_single_brain_llm already falls back to a deterministic uniform
         # distribution internally on any LLM/parse failure — never raises.
+        await neuro_service.record_survey_shadow_turns(
+            workspace_id=workspace_id,
+            exploration_id=exploration_id,
+            persona_id=persona_id,
+            question_texts=[q.get("text") or "" for q in flat_questions],
+            simulation_id=run_id,
+            persona=ctx["persona"],
+        )
+
         normalized = build_normalized_survey_results(
             data.get("question_results", []), flat_questions, sample_size,
         )
