@@ -809,6 +809,7 @@ async def _simulate_single_brain(
         persona_id=persona_id,
         question_texts=[q.get("text") or "" for q in flat_questions],
         simulation_id=simulation_id,
+        persona=ctx["persona"] if ctx else None,
     )
 
     return _survey_result_payload(sim_obj, questions_sections, llm_source_explanation=llm_source_explanation)
@@ -870,6 +871,15 @@ async def _simulate_multiple_brains(
             )
             persona_name = ctx["persona"].get("name", "Unknown")
             brain_name = ctx["brain_assignment"].get("primary_brain")
+
+        await neuro_service.record_survey_shadow_turns(
+            workspace_id=workspace_id,
+            exploration_id=exploration_id,
+            persona_id=persona_id,
+            question_texts=[q.get("text") or "" for q in flat_questions],
+            simulation_id=simulation_id,
+            persona=ctx["persona"] if ctx else None,
+        )
 
         normalized = build_normalized_survey_results(
             data.get("question_results", []), flat_questions, sample_size,

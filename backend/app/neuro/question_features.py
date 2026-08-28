@@ -17,39 +17,74 @@ from app.neuro.types import Framing, QuestionAffectFeatures
 
 logger = logging.getLogger(__name__)
 
-TAGGER_VERSION = "lex-0.1.0"
+TAGGER_VERSION = "lex-0.2.0"
 
 _WORD = re.compile(r"[a-z']+")
 
 _PROJECTIVE_MARKERS = (
     "imagine", "suppose", "picture yourself", "if you could", "pretend",
     "what would someone", "a friend of yours", "people like you",
+    "someone like you", "hypothetically",
 )
 _BEHAVIORAL_MARKERS = (
     "last time", "walk me through", "describe a time", "tell me about a time",
-    "how often", "when did you last", "what did you do", "recently",
-    "typically do", "usually do",
+    "how often", "how frequently", "when did you last", "what did you do",
+    "typically do", "usually do", "have you used", "have you ever",
+    "did you", "describe a specific", "what prevents you",
 )
 _INDIRECT_MARKERS = (
     "some people", "others say", "many people", "in general",
-    "would you say people", "how do people",
+    "would you say people", "how do people", "most users", "other users",
 )
 _DIRECT_MARKERS = (
     "do you", "would you", "how do you feel", "what do you think",
     "why do you", "are you", "have you", "rate", "how likely are you",
+    "make you feel", "to what extent do you", "what emotions do you",
+    "how important is", "how frustrating", "which aspect", "your ",
 )
 
-_HIGH_STAKES_TERMS = (
-    "money", "afford", "debt", "salary", "income", "spend", "cost", "price",
-    "health", "family", "children", "marriage", "partner", "guilt", "guilty",
-    "ashamed", "shame", "embarrass", "fail", "failure", "risk", "afraid",
-    "fear", "worry", "secret", "honest", "trust", "judge",
+# Questions that classify the respondent rather than probe them. Routine in a
+# survey and low emotional stake even when the nominal topic is sensitive, so
+# they are capped below the evaluative band unless they also carry a
+# self-judgement term.
+_DEMOGRAPHIC_MARKERS = (
+    "what is your age", "which city", "what is your current occupation",
+    "highest level of education", "annual income", "marital status",
+    "do you have any children", "what is your gender", "household size",
+)
+_DEMOGRAPHIC_STAKES_CAP = 0.5
+
+# Severity tiers. Stakes take the strongest tier present rather than a
+# density: a long question naming one self-judgement term is high-stakes, and
+# a short factual one is not made high-stakes by brevity.
+_STAKES_TIERS = (
+    (0.95, (
+        "shame", "ashamed", "guilt", "guilty", "judged", "judge", "judging",
+        "embarrass", "humiliat", "failure", "failed", "inadequate",
+        "secret", "lied", "lying", "hide", "hiding",
+    )),
+    (0.75, (
+        "afraid", "fear", "anxious", "anxiety", "worry", "worried", "stress",
+        "stressed", "regret", "avoid", "avoiding", "quit", "quitting",
+        "abandon", "give up", "let myself down", "disappoint",
+    )),
+    (0.55, (
+        "money", "afford", "debt", "salary", "income", "spend", "cost",
+        "price", "health", "family", "children", "marriage", "partner",
+        "religion", "weight", "body", "trust", "honest",
+    )),
+)
+
+_AFFECT_STRONG = (
+    "make you feel", "makes you feel", "how do you feel", "what emotions",
+    "feelings", "emotionally", "how frustrating", "what feelings",
 )
 _AFFECT_TERMS = (
     "feel", "feeling", "felt", "emotion", "love", "hate", "enjoy", "worry",
     "excite", "frustrat", "anger", "angry", "happy", "sad", "anxious",
     "comfort", "uncomfort", "stress", "proud", "guilt", "regret", "wish",
-    "hope", "fear", "annoyed", "satisf", "disappoint",
+    "hope", "fear", "annoyed", "satisf", "disappoint", "judged", "shame",
+    "motivat", "confident", "overwhelm",
 )
 
 
@@ -57,12 +92,28 @@ def _contains_any(text: str, markers: tuple[str, ...]) -> bool:
     return any(m in text for m in markers)
 
 
-def _term_ratio(text: str, terms: tuple[str, ...]) -> float:
+def _tier_score(text: str) -> float:
+    """Strongest severity tier present, nudged up when several terms from
+    that tier appear."""
     words = _WORD.findall(text)
-    if not words:
-        return 0.0
-    hits = sum(1 for w in words for t in terms if w.startswith(t))
-    return min(1.0, hits / max(4, len(words)) * 4)
+    for weight, terms in _STAKES_TIERS:
+        hits = sum(1 for w in words for t in terms if w.startswith(t))
+        hits += sum(1 for t in terms if " " in t and t in text)
+        if hits:
+            return min(1.0, weight + 0.05 * (hits - 1))
+    return 0.0
+
+
+def _affect_score(text: str) -> float:
+    if _contains_any(text, _AFFECT_STRONG):
+        return 0.9
+    words = _WORD.findall(text)
+    hits = sum(1 for w in words for t in _AFFECT_TERMS if w.startswith(t))
+    if hits >= 2:
+        return 0.75
+    if hits == 1:
+        return 0.6
+    return 0.3
 
 
 def tag_question(text: str, question_id: Optional[str] = None) -> QuestionAffectFeatures:
@@ -82,12 +133,14 @@ def tag_question(text: str, question_id: Optional[str] = None) -> QuestionAffect
     else:
         framing = Framing.UNKNOWN
 
-    stakes = 0.3 + 0.7 * _term_ratio(lowered, _HIGH_STAKES_TERMS)
-    affect_relevance = 0.3 + 0.7 * _term_ratio(lowered, _AFFECT_TERMS)
-    # Second-person direct questions carry more personal stake than
-    # generalised ones.
+    tier = _tier_score(lowered)
+    stakes = 0.3 + 0.7 * tier
+    affect_relevance = _affect_score(lowered)
+
+    if _contains_any(lowered, _DEMOGRAPHIC_MARKERS) and tier < 0.9:
+        stakes = min(stakes, _DEMOGRAPHIC_STAKES_CAP)
     if framing == Framing.DIRECT and " you" in f" {lowered}":
-        stakes = min(1.0, stakes + 0.1)
+        stakes = min(1.0, stakes + 0.05)
     if framing == Framing.INDIRECT:
         stakes = max(0.0, stakes - 0.1)
 
