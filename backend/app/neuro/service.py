@@ -343,6 +343,7 @@ async def record_survey_shadow_turns(
     persona_id: Optional[str],
     question_texts: List[str],
     simulation_id: Optional[str] = None,
+    persona: Optional[dict] = None,
 ) -> int:
     """Shadow turns for a survey simulation run, on a dedicated thread per
     simulation. Persona parameters are fetched here so the call site stays a
@@ -353,8 +354,7 @@ async def record_survey_shadow_turns(
             return 0
         if not workspace_id or not exploration_id:
             return 0
-        persona = None
-        if persona_id:
+        if persona is None and persona_id:
             try:
                 from app.services.persona import get_persona
 
@@ -389,4 +389,3 @@ async def record_survey_shadow_turns(
             "Neuro survey adapter failed open [exploration_id=%s]", exploration_id
         )
         return 0
-
