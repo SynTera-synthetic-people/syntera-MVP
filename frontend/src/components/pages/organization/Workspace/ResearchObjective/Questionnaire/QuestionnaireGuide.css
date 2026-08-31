@@ -1080,7 +1080,15 @@
        tall, which is where the old "+N" cut-off used to sit. */
     max-height: 210px;
     overflow-y: auto;
-    overscroll-behavior: contain;
+    /* No overscroll-behavior: contain here. `overflow-y: auto` makes this box a
+       scroll container even when the options fit inside it, and `contain`
+       stops a scroll container from chaining the wheel to its ancestors once
+       its own boundary is reached. With a short list that boundary is reached
+       on the very first wheel tick, so the page never scrolled while the
+       cursor sat over the options — while the question title above, which is
+       not inside any scroll container, scrolled fine. Without `contain` a
+       short list chains to the page immediately, and a long one still scrolls
+       in place first and only then hands the wheel on. */
 }
 
 /* Slim scrollbar so the preview box keeps its compact look */
