@@ -1671,6 +1671,55 @@ JSON: {{"patterns": [...], "ro_alignment_score": 70}}""",
         return {"patterns": [], "score": 0, "error": True}
 
 
+async def _research_objective_text_for_alignment(full_persona_info: dict) -> str:
+    """The objective text RO Alignment is scored against.
+
+    Digital Brain personas carry the structured 12-component RO on
+    persona_details["research_objective"] (set by
+    _persona_kwargs_from_digital_brain). Omi-generated personas never do —
+    their persona_details is the raw generation output — so this used to
+    resolve to the empty string, and the scoring prompt asked the model "what
+    % of these patterns address the research objective's key questions" with
+    no objective in the prompt at all. The only honest answer to that is 0,
+    which is exactly what came back: every Omi persona lost the entire RO
+    Alignment layer the first time someone opened its preview.
+
+    Falling back to the exploration's own objective text fixes personas
+    already in the database as well as new ones, since the score is resolved
+    at read time rather than baked in at generation.
+    """
+    ro = (full_persona_info or {}).get("research_objective") or {}
+    if isinstance(ro, dict):
+        ro_text = " | ".join(filter(None, [
+            ro.get("business_objective", ""),
+            ro.get("key_questions", ""),
+            ro.get("hypotheses", ""),
+        ]))
+    else:
+        ro_text = str(ro)
+    if ro_text.strip():
+        return ro_text
+
+    exploration_id = (full_persona_info or {}).get("exploration_id")
+    if not exploration_id:
+        return ""
+    try:
+        from app.models.research_objectives import ResearchObjectives
+        async with AsyncSession(async_engine) as session:
+            result = await session.execute(
+                select(ResearchObjectives)
+                .where(ResearchObjectives.exploration_id == str(exploration_id))
+                .order_by(ResearchObjectives.created_at.desc())
+            )
+            ro_row = result.scalars().first()
+            return (ro_row.description or "").strip() if ro_row else ""
+    except Exception:
+        logger.exception(
+            "generate_predominant_patterns: RO lookup failed for exploration=%s", exploration_id
+        )
+        return ""
+
+
 async def generate_predominant_patterns(
     full_persona_info: dict,
     *, exploration_id: Optional[str] = None, workspace_id: Optional[str] = None,
@@ -1713,14 +1762,7 @@ async def generate_predominant_patterns(
     if not signals:
         signals = _extract_manual_signals(full_persona_info or {})
 
-    if isinstance(ro, dict):
-        ro_text = " | ".join(filter(None, [
-            ro.get("business_objective", ""),
-            ro.get("key_questions", ""),
-            ro.get("hypotheses", ""),
-        ]))
-    else:
-        ro_text = str(ro)
+    ro_text = await _research_objective_text_for_alignment(full_persona_info or {})
 
     prompt = _build_patterns_prompt(ro_text, signals)
 
@@ -1769,6 +1811,19 @@ async def generate_predominant_patterns(
         # score; sanity_score is kept only as a diagnostic signal in the logs.
         sanity_score = _compute_ro_alignment_sanity_check(patterns, ro if isinstance(ro, dict) else {})
         final_score = llm_score
+        if not ro_text.strip():
+            # No objective could be resolved even after the fallback above, so
+            # "how well do these patterns align to it" has no answer. Report the
+            # layer as unavailable (score=None, which
+            # compute_master_calibration_confidence skips and the UI falls back
+            # from) instead of recording a 0 that silently drags the persona's
+            # master confidence down by a third.
+            logger.warning(
+                "generate_predominant_patterns: no research objective resolved for persona=%s "
+                "— RO Alignment reported as unavailable rather than 0",
+                persona_id,
+            )
+            return {"metric": "RO Alignment", "score": None, "patterns": patterns}
         if abs(llm_score - sanity_score) > 20:
             logger.warning(
                 "generate_predominant_patterns: large llm/sanity divergence (diagnostic only) llm=%d sanity=%d",

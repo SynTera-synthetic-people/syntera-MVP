@@ -654,6 +654,7 @@ async def enrich_persona_ke_sources(
     from app.models.persona import Persona
     from app.services.persona import (
         compute_master_calibration_confidence,
+        generate_predominant_patterns,
         _confidence_for_master_scoring,
         _full_persona_info_for_scoring,
     )
@@ -757,6 +758,40 @@ async def enrich_persona_ke_sources(
             # here, after persona creation — recompute and persist now rather than
             # leaving a stale/blank master score until the next preview call.
             full_persona_info = _full_persona_info_for_scoring(persona)
+
+            # RO Alignment is the THIRD input, and nothing used to compute it
+            # until someone opened the persona's preview. That made the score
+            # persisted here a two-layer average (KE + multi-platform) which the
+            # preview then replaced with a three-layer one — the same persona
+            # visibly dropping ~30 points the first time it was opened, with no
+            # change to the persona itself. Computing it here means the number
+            # written to the grid is the number the preview shows: the preview
+            # reuses these cached patterns rather than generating its own.
+            #
+            # Nested try: RO Alignment is a bonus layer on top of an already
+            # successful KE fetch, exactly like the web top-up above. Losing it
+            # must degrade to the two-layer score, never discard the KE work.
+            if not (full_persona_info.get("predominant_patterns") or {}).get("patterns"):
+                try:
+                    patterns = await generate_predominant_patterns(
+                        full_persona_info,
+                        exploration_id=exploration_id,
+                        workspace_id=persona.workspace_id,
+                        persona_id=persona_id,
+                        created_by=persona.created_by,
+                    )
+                    # New dict rather than an in-place key set, so the JSON
+                    # column is reliably flagged dirty on this second assignment.
+                    updated_details = {**updated_details, "predominant_patterns": patterns}
+                    persona.persona_details = updated_details
+                    full_persona_info["predominant_patterns"] = patterns
+                except Exception:
+                    logger.warning(
+                        "KE enrichment: RO Alignment generation failed for persona %s — "
+                        "master confidence falls back to the KE + multi-platform layers",
+                        persona_id, exc_info=True,
+                    )
+
             master_score = compute_master_calibration_confidence(
                 full_persona_info,
                 _confidence_for_master_scoring(full_persona_info),
