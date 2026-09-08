@@ -31,6 +31,7 @@ from app.models.persona import Persona
 from app.utils.id_generator import generate_id
 from app.services.ke_sourcebank_enrichment import enrich_persona_ke_sources
 from app.services.digital_brain_pipeline import (
+    GeographyResolutionError,
     _extract_geography_meta,
     _assign_cities_to_personas,
 )
@@ -278,6 +279,9 @@ def _assign_cities_for_personas(
 
     Falls back to (None, None) for every persona on any failure — geographic
     diversity is a nice-to-have, never worth blocking generation over.
+    GeographyResolutionError is the one exception and is re-raised: it means
+    the user named a geography this pipeline cannot place, and generating
+    personas anyway would put them somewhere the user never asked for.
     """
     pseudo_ro: dict = {"geography": description}
     if explicit_geography:
@@ -293,6 +297,8 @@ def _assign_cities_for_personas(
         }
         print(f"[Geo] Omi city assignments: {assignments}")
         return assignments
+    except GeographyResolutionError:
+        raise
     except Exception as exc:
         print(f"[Geo] City assignment failed ({type(exc).__name__}: {exc}) — using generic locations")
         return {n: (None, None) for n in persona_numbers}
@@ -1094,12 +1100,17 @@ async def ai_generate_persona(
         )
 
         assigned_city, assigned_country = city_assignments.get(persona_number, (None, None))
+        # Whatever geography the user selected is what this persona is placed
+        # in. A slot with only a country still says that country, and a slot
+        # with no geography at all leaves the location open for the model to
+        # infer from the objective — it never names a country nobody chose.
+        assigned_place = ", ".join(p for p in (assigned_city, assigned_country) if p)
         location_instruction = (
-            f"PERSONA LOCATION: {assigned_city}, {assigned_country}\n"
+            f"PERSONA LOCATION: {assigned_place}\n"
             "Ground this persona's demographics, occupation, and lifestyle details in this "
-            "specific city — do not substitute a different city."
-            if assigned_city
-            else "Location: City/neighborhood in India"
+            "specific location — do not substitute a different one."
+            if assigned_place
+            else "Location: infer from the research objective's own market."
         )
 
         # Format dynamic prompt - specify this persona's position in the full plan limit
@@ -1223,7 +1234,11 @@ Return exactly one item inside consumer_personas.
                     persona_numbers[idx - 1], (None, None)
                 )
                 persona["assigned_city"] = assigned_city or "Unspecified"
-                persona["assigned_country"] = assigned_country or "India"
+                # "Unspecified", not a default country: this value is recorded
+                # against the persona, and recording India for a slot that was
+                # never assigned one is how a user's geography quietly became
+                # somebody else's. Matches the Digital Brain path's own value.
+                persona["assigned_country"] = assigned_country or "Unspecified"
 
                 reference_sites = persona.get("reference_sites_with_usage", [])
                 site_counter = dict(

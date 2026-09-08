@@ -42,23 +42,54 @@ def _strip_json_fences(raw: str) -> str:
     return match.group(0) if match else raw
 
 
+# Separators a user's own typing or pasting can leave inside a single picker
+# tag. Deliberately excludes "/" and "-", which belong INSIDE real place names
+# ("Greater Jakarta / Jabodetabek", "Baden-Württemberg") — splitting on those
+# would invent places the user never named, which is the same class of bug as
+# dropping the ones they did.
+_GEOGRAPHY_ENTRY_SEPARATORS = re.compile(r"[\n\r\t;,]+")
+
+
+def split_geography_entries(values: list) -> list[str]:
+    """One place per entry, from a tag list that may hold several in one tag.
+
+    The picker sends discrete tags, but a tag added by pasting or typing a
+    whole list at once arrives as a single run-on value like
+    "Indonesia,Jakarta Surabaya Bandung". Splitting it here means an objective
+    already saved that way still resolves to the right country, instead of
+    being handed to the resolver as one unrecognisable blob. Order is
+    preserved, because the resolver reads a selection positionally (a country,
+    then the locations belonging to it).
+    """
+    entries: list[str] = []
+    for value in values or []:
+        for part in _GEOGRAPHY_ENTRY_SEPARATORS.split(str(value or "")):
+            part = part.strip()
+            if part:
+                entries.append(part)
+    return entries
+
+
 def _extract_explicit_geography(ai_interpretation: dict) -> list[str]:
     """
     Pull the Research Objective Framer's structured, discrete geography tags
-    (Audience & Segments tab's Geography picker — e.g. ["California",
-    "Mumbai"], added one at a time via the FE's "Add" control) out of
+    (Audience & Segments tab's Geography picker — e.g. ["Indonesia",
+    "Jakarta"], added one at a time via the FE's "Add" control) out of
     ai_interpretation, when the RO came from that path.
 
     persist_framer_research_objective() (research_objectives.py) stores the
     raw Framer payload verbatim at ai_interpretation["framer_input"], so this
-    is a straight pass-through — never inferred or rewritten by this
-    extractor, unlike the other RO_COMPONENTS fields above which ARE
-    LLM-derived. Consumed downstream as validated_ro["explicit_geography"] by
-    digital_brain_pipeline._extract_geography_meta(), which resolves each tag
-    via exact city/country lookup (STRICT mode: only ever assigns cities the
-    user actually named) instead of regex-parsing the free-text `geography`
-    component — see that function's docstring for why structured tags take
-    priority. RO's created via the conversational chat flow (whose
+    is a pass-through of the user's own words — never inferred or rewritten by
+    this extractor, unlike the other RO_COMPONENTS fields above which ARE
+    LLM-derived. The only thing done to it is split_geography_entries() above,
+    which separates a run-on tag back into one place per entry without
+    changing, adding to, or dropping any of them. Consumed downstream as
+    validated_ro["explicit_geography"] by
+    digital_brain_pipeline._extract_geography_meta(), which groups the entries
+    into countries and their locations (STRICT mode: only ever assigns
+    locations the user actually named) instead of regex-parsing the free-text
+    `geography` component — see that function's docstring for why structured
+    tags take priority. RO's created via the conversational chat flow (whose
     ai_interpretation has a different shape, no "framer_input" key) simply
     have no explicit_geography — this returns [] for them, not an error.
 
@@ -70,7 +101,7 @@ def _extract_explicit_geography(ai_interpretation: dict) -> list[str]:
     geography = framer_input.get("geography")
     if not isinstance(geography, list):
         return []
-    return [str(g).strip() for g in geography if str(g or "").strip()]
+    return split_geography_entries(geography)
 
 
 async def extract_ro_components_for_pipeline(

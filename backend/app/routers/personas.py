@@ -61,7 +61,7 @@ from app.services.exploration import get_exploration
 from app.services.persona_plausibility import evaluate_from_schema
 from app.core.rate_limit import limiter
 from app.models.persona import Persona
-from app.services.digital_brain_pipeline import digital_brain_pipeline
+from app.services.digital_brain_pipeline import digital_brain_pipeline, GeographyResolutionError
 from app.services.ro_extractor import extract_ro_components_for_pipeline
 from app.services.manual_digital_brain_persona import (
     create_manual_persona_draft as create_manual_persona_draft_with_brains,
@@ -382,6 +382,19 @@ async def auto_generate_personas(
             },
         )
 
+    except GeographyResolutionError as e:
+        # The user's own geography selection is the problem and only they can
+        # fix it, so it comes back as a validation error naming what could not
+        # be placed — never as personas quietly generated somewhere else.
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "status": "error",
+                "message": str(e),
+                "type": e.__class__.__name__,
+                "field": "geography",
+            }
+        )
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -748,6 +761,14 @@ async def generate_personas_digital_brain(
         result = await run_in_threadpool(
             digital_brain_pipeline, ro_dict, None, account_tier,
             exploration_id=exploration_id, usage_collector=usage_collector,
+        )
+    except GeographyResolutionError as e:
+        # Same contract as the Omi path above: an unplaceable geography is the
+        # user's to correct, not ours to substitute.
+        logger.warning("Digital Brain geography unresolved for exploration=%s: %s", exploration_id, e)
+        raise HTTPException(
+            status_code=422,
+            detail=ErrorResponse(status="error", message=str(e)).dict(),
         )
     except Exception as e:
         logger.error("Digital Brain Pipeline failed for exploration=%s: %s", exploration_id, e)

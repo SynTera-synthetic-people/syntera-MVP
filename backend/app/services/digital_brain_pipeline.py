@@ -13,7 +13,6 @@ import json
 import logging
 import pickle
 import re
-import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -21,6 +20,7 @@ from typing import Any
 import pandas as pd
 
 from app.utils.anthropic_client import get_anthropic_client
+from app.services.country_names import is_country, iso_country_name, normalize_place
 from app.services.llm_usage_tracker import (
     UsageCollector,
     extract_usage_anthropic_message,
@@ -417,9 +417,9 @@ _REGION_TO_COUNTRY_HINTS: dict[str, str] = {
 }
 
 
-def _normalize_text(s: str) -> str:
-    """Lowercase + strip diacritics so 'Sao Paulo' matches 'São Paulo'."""
-    return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii").lower()
+# Single definition of "the same place name", shared by every lookup below
+# and by the ISO country index, so they can never disagree about what matches.
+_normalize_text = normalize_place
 
 
 # city (normalized, accent-stripped) -> (canonical display name, country)
@@ -434,21 +434,135 @@ _CITY_LOOKUP: dict[str, tuple[str, str]] = {
 _CITY_LOOKUP[_normalize_text("Bengaluru")] = ("Bangalore", "India")
 
 
-def _resolve_geography_entry(entry: str) -> tuple[str | None, str | None]:
-    """Resolve ONE discrete geography entry (not free text — a single tag
-    value like "Sacramento", "California", or "USA") to (city_or_None,
-    country). City match takes priority over region/country, since it's the
-    most specific. Returns (None, None) if unrecognized — callers skip
-    unrecognized entries rather than guessing a country for them."""
+class GeographyResolutionError(ValueError):
+    """The user named a geography this pipeline cannot resolve to a country.
+
+    Raised — never swallowed into a default — because the alternative is the
+    bug this class exists to prevent: an explicit selection silently becoming
+    a different country's personas. Callers surface it as a validation error
+    so the user can correct their own input.
+    """
+
+
+def _country_pool_key(country: str) -> str:
+    """The key a country's built-in metro pool / demographic guidance is filed
+    under, for a country label that may be the user's own spelling.
+
+    Explicit selections keep the user's wording ("United States" stays
+    "United States" — see _resolve_explicit_geography), while COUNTRY_CITY_POOLS
+    is keyed by this module's short labels ("USA"). This maps one to the other
+    so preserving the user's wording never costs them the pool.
+    """
+    return COUNTRY_ALIASES.get(_normalize_text(country), country)
+
+
+def _classify_geography_entry(entry: str) -> tuple[str, str, str | None]:
+    """Classify ONE discrete geography selection — a single picker tag such as
+    "Indonesia", "Sacramento", "California", or "Greater Jakarta / Jabodetabek".
+    Never free text.
+
+    Returns (kind, label, country_hint):
+      kind == "country"  — label is the country as it should be displayed and
+                           country_hint repeats it.
+      kind == "location" — label is the city/state/region, and country_hint is
+                           the country it is known to belong to, or None when
+                           this process has never heard of it.
+
+    Every non-blank entry is classified: an unrecognised place is still a place
+    the user asked for, so it comes back as a location rather than being
+    dropped. Recognition runs most-specific-first — known city, then known
+    state/region, then country — so an entry that already resolved before
+    resolves to exactly the same thing now (notably "Georgia" and "Victoria",
+    which stay the US and Australian states this module has always read them
+    as, rather than becoming the countries ISO also lists under those names).
+
+    A country keeps the user's own wording whenever that wording is itself a
+    real country name, so "United States" stays "United States" rather than
+    being rewritten to this module's short label. The short labels still
+    resolve the informal forms ISO does not carry ("America", "Britain"), and
+    _country_pool_key() maps any of these back to the pool.
+    """
     normalized = _normalize_text(entry)
+
     city_hit = _CITY_LOOKUP.get(normalized)
     if city_hit:
-        return city_hit
-    if normalized in COUNTRY_ALIASES:
-        return None, COUNTRY_ALIASES[normalized]
+        return "location", city_hit[0], city_hit[1]
     if normalized in _REGION_TO_COUNTRY_HINTS:
-        return None, _REGION_TO_COUNTRY_HINTS[normalized]
-    return None, None
+        return "location", entry, _REGION_TO_COUNTRY_HINTS[normalized]
+    if is_country(entry):
+        # Any of the world's countries, spelled however the user spelled it.
+        return "country", entry, entry
+    if normalized in COUNTRY_ALIASES:
+        canonical = COUNTRY_ALIASES[normalized]
+        return "country", canonical, canonical
+    return "location", entry, None
+
+
+def _resolve_explicit_geography(entries: list) -> tuple[list[str], dict[str, list[str]]]:
+    """Turn the user's ordered geography selections into the canonical
+    (countries, locations_by_country) pair the rest of the pipeline consumes.
+
+    Grouping is positional, which is how the picker is filled in and how the
+    selection reads back: a country entry opens a group and every location
+    entry after it belongs to that country, until another country is named.
+    Locations selected before any country are held and attached to the first
+    country the selection names.
+
+    Two rules make this faithful to the user rather than to this module's own
+    idea of world geography:
+      - An explicitly named country wins over a location's built-in country.
+        "Indonesia" followed by a location never adds a second country just
+        because that location's name also exists in a pool elsewhere.
+      - Locations are preserved verbatim (bar a known city's canonical
+        spelling), including states, metro areas, and places with no pool
+        entry at all. Nothing is dropped for being unfamiliar.
+
+    Returns ([], {}) when the selection names no country and implies none —
+    the caller decides what to do about that, and the answer is never
+    "substitute a different country".
+    """
+    countries: list[str] = []
+    locations: dict[str, list[str]] = {}
+    country_keys: dict[str, str] = {}     # identity key -> display label
+    pending: list[str] = []               # locations named before any country
+
+    def register_country(display: str) -> str:
+        # One identity per country however it was spelled, so a selection of
+        # both "USA" and "United States of America" is one country, not two.
+        # ISO folds the formal spellings together and the short labels then
+        # fold in the informal ones ISO does not carry ("Britain" and "United
+        # Kingdom" both land on "UK"), so either map alone would still split.
+        key = _normalize_text(_country_pool_key(iso_country_name(display) or display))
+        if key in country_keys:
+            return country_keys[key]
+        country_keys[key] = display
+        countries.append(display)
+        locations[display] = []
+        # First country in the selection adopts anything named ahead of it.
+        for parked in pending:
+            if parked not in locations[display]:
+                locations[display].append(parked)
+        pending.clear()
+        return display
+
+    current_country: str | None = None
+    for raw in entries or []:
+        entry = str(raw or "").strip()
+        if not entry:
+            continue
+        kind, label, country_hint = _classify_geography_entry(entry)
+        if kind == "country":
+            current_country = register_country(label)
+            continue
+        owner = current_country or (register_country(country_hint) if country_hint else None)
+        if owner is None:
+            if label not in pending:
+                pending.append(label)
+            continue
+        if label not in locations[owner]:
+            locations[owner].append(label)
+
+    return countries, locations
 
 
 def _extract_geography_meta(validated_ro: dict) -> dict:
@@ -456,22 +570,29 @@ def _extract_geography_meta(validated_ro: dict) -> dict:
     Resolve geography with 3-tier priority:
 
     1. validated_ro["explicit_geography"] — a structured list[str] of
-       discrete tags (e.g. ["Sacramento", "Stockton"]), sourced from the RO
-       Framing Guide's Audience & Segments tab when that field is filled in
+       discrete tags (e.g. ["Indonesia", "Jakarta", "Bali"]), sourced from the
+       RO Framing Guide's Audience & Segments tab when that field is filled in
        (storage/wiring of this key upstream is out of scope here — this
        function just consumes it if present). Skips free-text parsing
-       entirely. Cities resolved this way populate explicit_cities_by_country,
-       which _assign_cities_to_personas() already treats as STRICT (no pool
-       fallback, round-robin repeat if more personas are needed than cities
-       given) — no separate strict-mode plumbing needed here.
+       entirely. Locations resolved this way populate
+       explicit_cities_by_country, which _assign_cities_to_personas() already
+       treats as STRICT (no pool fallback, round-robin repeat if more personas
+       are needed than locations given) — no separate strict-mode plumbing
+       needed here.
     2. Free-text parsing of the RO's "geography" description field (the
-       original, pre-existing behavior) — used whenever (1) is absent/empty,
-       or every entry in it was unrecognized.
-    3. Default to ["India"] if neither source yields anything.
+       original, pre-existing behavior) — used only when (1) is absent/empty.
+    3. Default to ["India"] when the user supplied no geography at all and
+       none could be read out of the RO's own text.
+
+    An explicit selection is never allowed to degrade into any of the tiers
+    below it. If the user named a geography and no country can be resolved
+    from it, this raises GeographyResolutionError rather than falling through
+    to free text or to the default — a selection of "Indonesia" must never
+    come back as India's personas.
 
     Returns:
         {
-          "countries": list[str],  # deduped, ordered by first mention; defaults to ["India"]
+          "countries": list[str],  # deduped, ordered by first mention
           "explicit_cities_by_country": dict[str, list[str]],
           "explicit_regions": list[str],
           "tier_signal": "tier1" | "tier2" | "unknown",
@@ -485,30 +606,33 @@ def _extract_geography_meta(validated_ro: dict) -> dict:
     }
 
     # ---- Priority 1: structured geography from the RO Framing Guide ----
-    explicit_geography = validated_ro.get("explicit_geography")
+    # A picker holding only blanks is an empty picker, not a failed one, so it
+    # falls through to the tiers below exactly as an untouched picker does.
+    explicit_geography = [
+        str(entry).strip()
+        for entry in (validated_ro.get("explicit_geography") or [])
+        if str(entry or "").strip()
+    ]
     if explicit_geography:
-        countries: list[str] = []
-        seen_countries: set[str] = set()
-        explicit_cities_by_country: dict[str, list[str]] = {}
-        seen_pairs: set[tuple[str, str]] = set()
-        for entry in explicit_geography:
-            if not entry:
-                continue
-            city, country = _resolve_geography_entry(str(entry))
-            if country is None:
-                logger.warning("Framing-guide geography entry %r not recognized; skipping", entry)
-                continue
-            if country not in seen_countries:
-                countries.append(country)
-                seen_countries.add(country)
-            if city and (city, country) not in seen_pairs:
-                seen_pairs.add((city, country))
-                explicit_cities_by_country.setdefault(country, []).append(city)
+        countries, locations_by_country = _resolve_explicit_geography(explicit_geography)
         if countries:
             result["countries"] = countries
-            result["explicit_cities_by_country"] = explicit_cities_by_country
+            result["explicit_cities_by_country"] = {
+                country: places for country, places in locations_by_country.items() if places
+            }
+            logger.info(
+                "Explicit geography resolved: countries=%s locations=%s",
+                result["countries"], result["explicit_cities_by_country"],
+            )
             return result
-        # every entry was unrecognized — fall through to Priority 2
+        # The user named places but nothing in the selection identifies a
+        # country, so there is no honest way to place these personas. Say so
+        # instead of quietly generating somewhere else.
+        raise GeographyResolutionError(
+            "Could not determine a country from the selected geography: "
+            f"{', '.join(explicit_geography)}. "
+            "Add the country these locations belong to and try again."
+        )
 
     # ---- Priority 2: free-text parsing of the RO's geography description ----
     geography_text = str(validated_ro.get("geography", "") or "")
@@ -644,7 +768,7 @@ def _assign_cities_to_personas(
         else:
             candidates: list[str] = []
             seen_candidates: set[str] = set()
-            for city in COUNTRY_CITY_POOLS.get(country, []):
+            for city in COUNTRY_CITY_POOLS.get(_country_pool_key(country), []):
                 if city.lower() not in seen_candidates:
                     candidates.append(city)
                     seen_candidates.add(city.lower())
@@ -694,14 +818,14 @@ _INDIA_DEMOGRAPHIC_GUIDANCE = """- Mumbai (Tier 1, premium markets): typical Pro
 
 
 def _is_major_hub(city: str, country: str) -> bool:
-    pool = COUNTRY_CITY_POOLS.get(country, [])
+    pool = COUNTRY_CITY_POOLS.get(_country_pool_key(country), [])
     if not pool:
         return True
     return city in pool[: max(1, len(pool) // 2)]
 
 
 def _country_demographic_guidance(city: str, country: str) -> str:
-    if country == "India":
+    if _country_pool_key(country) == "India":
         return _INDIA_DEMOGRAPHIC_GUIDANCE
     tier_label = "major hub" if _is_major_hub(city, country) else "secondary market"
     return (
@@ -2725,21 +2849,42 @@ def generate_persona(
         for v in all_verdicts[:6]
     ]
 
-    if assigned_city:
-        country_label = assigned_country or "India"
+    # The persona's location comes from the user's own geography selection, so
+    # neither half of it is ever defaulted to a country they did not pick — a
+    # country with no assigned city is still stated as that country, and a run
+    # with no geography at all says nothing rather than inventing one.
+    if assigned_city and assigned_country:
         tier_or_hub = (
-            _city_tier(assigned_city) if country_label == "India"
-            else ("major hub" if _is_major_hub(assigned_city, country_label) else "secondary market")
+            _city_tier(assigned_city) if _country_pool_key(assigned_country) == "India"
+            else ("major hub" if _is_major_hub(assigned_city, assigned_country) else "secondary market")
         )
-        location_section = f"\nPERSONA LOCATION: {assigned_city}, {country_label} ({tier_or_hub})\n"
+        location_section = f"\nPERSONA LOCATION: {assigned_city}, {assigned_country} ({tier_or_hub})\n"
         city_demographic_guidance = f"""
-This persona lives in {assigned_city}, {country_label}. Adjust occupation and income_range accordingly:
-{_country_demographic_guidance(assigned_city, country_label)}
+This persona lives in {assigned_city}, {assigned_country}. Adjust occupation and income_range accordingly:
+{_country_demographic_guidance(assigned_city, assigned_country)}
+"""
+    elif assigned_city or assigned_country:
+        place = assigned_city or assigned_country
+        location_section = f"\nPERSONA LOCATION: {place}\n"
+        city_demographic_guidance = f"""
+This persona lives in {place}. Adjust occupation and income_range to that market's
+realistic local norms, and state income_range in that market's own annual-salary
+convention rather than converting it to another country's.
 """
     else:
         logger.warning("No assigned_city provided; inferring from behavioral data")
         location_section = ""
         city_demographic_guidance = ""
+
+    # Which market the currency/income guidance below should read in. Prefer
+    # the slot's own assigned country, then the RO's stated geography; when
+    # there is genuinely nothing, say "the persona's own market" rather than
+    # naming a country the research never asked for.
+    geography_label = (
+        assigned_country
+        or str(validated_ro.get("geography") or "").strip()
+        or "the persona's own market"
+    )
 
     prompt = f"""
 You are the Persona Generation engine for Synthetic People AI.
@@ -2789,8 +2934,8 @@ Inference guidance:
 - occupation: Use the generic label "Professional" unless evidence strongly implies a specific role.
   Default "Professional".
 - income_range: Derive from spend level/price tier signals in the evidence (e.g. "premium tier",
-  "budget tier", average order value). Use buckets appropriate to {validated_ro.get('geography', 'India')}'s
-  currency (e.g. LPA for India, USD/year for US). Default to the mid-range bucket if signals are weak.
+  "budget tier", average order value). Use buckets appropriate to {geography_label}'s own
+  currency and salary convention. Default to the mid-range bucket if signals are weak.
 {city_demographic_guidance}
 Confidence calibration (be honest, do not inflate):
 - 0.90-1.00: multiple reinforcing signals point the same way
@@ -2827,7 +2972,7 @@ Return a JSON object with:
   - layer_digital_sources: string citing action data signals (e.g. "DL_004: peak order time 21:00, COD in Tier-2 cities")
   - overall_confidence: float 0.70–0.95
 
-Use {validated_ro.get('geography', 'India')} context. Be specific, vivid, and psychologically grounded.
+Use {geography_label} context. Be specific, vivid, and psychologically grounded.
 Use the brain's core contradiction to build Layer 6.
 Return ONLY the JSON object.
 """

@@ -976,25 +976,48 @@ const AudienceSegmentsTab: React.FC<AudienceSegmentsTabProps> = ({
     const handleContinueClick = () => { if (!canContinue) return; onOmiStateChange("navigating"); setTimeout(onContinue, 400); };
     const handleBackClick = () => { onOmiStateChange("navigating"); setTimeout(onBack, 400); };
 
-    const addGeography = () => {
-        const val = geoInput.trim();
-        if (!val) return;
-        const alreadyExists = data.geographies.some(
-            g => g.name.toLowerCase() === val.toLowerCase()
-        );
-        if (alreadyExists) {
-            setGeoInput("");
-            return;
-        }
-        onChange({
-            ...data,
-            geographies: [
-                ...data.geographies,
-                { id: `geo-${Date.now()}`, name: val },
-            ],
+    // One pill per place, however the user got the places into the box.
+    //
+    // This picker is the source of the structured geography the backend
+    // resolves into a country and its locations, and it only stays structured
+    // if each entry names exactly one place. Typing or pasting a whole list at
+    // once used to become a SINGLE pill — a paste of
+    //     Indonesia
+    //     Jakarta
+    //     Surabaya
+    // arrives here as one string (the browser flattens newlines into an
+    // input), so the backend received "Indonesia Jakarta Surabaya" as one
+    // unresolvable value and had no country to work with. Splitting on the
+    // separators a list actually arrives with keeps the payload structured.
+    //
+    // "/" and "-" are deliberately NOT separators: they belong inside real
+    // place names ("Greater Jakarta / Jabodetabek", "Baden-Wurttemberg"), and
+    // splitting on them would invent places the user never selected.
+    const GEO_SEPARATORS = /[\n\r\t;,]+/;
+
+    const addGeographies = (raw: string) => {
+        const candidates = raw
+            .split(GEO_SEPARATORS)
+            .map(part => part.trim())
+            .filter(Boolean);
+        if (candidates.length === 0) return;
+
+        const seen = new Set(data.geographies.map(g => g.name.toLowerCase()));
+        const added: Geography[] = [];
+        candidates.forEach((name, i) => {
+            const key = name.toLowerCase();
+            if (seen.has(key)) return;
+            seen.add(key);
+            added.push({ id: `geo-${Date.now()}-${i}`, name });
         });
+
+        if (added.length > 0) {
+            onChange({ ...data, geographies: [...data.geographies, ...added] });
+        }
         setGeoInput("");
     };
+
+    const addGeography = () => addGeographies(geoInput);
 
     const removeGeography = (id: string) =>
         onChange({
@@ -1026,14 +1049,14 @@ const AudienceSegmentsTab: React.FC<AudienceSegmentsTabProps> = ({
                             Geography
                             <span className="rofp-label-optional">Optional</span>
                         </label>
-                        <Tooltip text="Add the countries, states, or cities this exploration should focus on." />
+                        <Tooltip text="Add the country first, then the cities or regions inside it. Add one per line — pasting a list adds them all." />
                     </div>
                     <div className="rofp-input-row">
                         <input
                             id="rof-geography"
                             className="rofp-input"
                             type="text"
-                            placeholder="e.g., India, California, Mumbai"
+                            placeholder="Country first, then its cities or regions"
                             value={geoInput}
                             onFocus={handleFieldFocus}
                             onBlur={handleFieldBlur}
@@ -1043,6 +1066,16 @@ const AudienceSegmentsTab: React.FC<AudienceSegmentsTabProps> = ({
                                     e.preventDefault();
                                     addGeography();
                                 }
+                            }}
+                            onPaste={e => {
+                                // Read the clipboard directly: a multi-line
+                                // paste loses its line breaks the moment the
+                                // input takes it, which is what collapsed a
+                                // whole list into one pill.
+                                const pasted = e.clipboardData.getData("text");
+                                if (!GEO_SEPARATORS.test(pasted)) return;
+                                e.preventDefault();
+                                addGeographies(pasted);
                             }}
                             autoComplete="off"
                         />
