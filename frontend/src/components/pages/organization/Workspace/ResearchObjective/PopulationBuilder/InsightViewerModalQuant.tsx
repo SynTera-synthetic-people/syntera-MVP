@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { TbLoader, TbAlertCircle } from 'react-icons/tb';
+import { TbLoader, TbAlertCircle, TbMaximize, TbMinimize } from 'react-icons/tb';
 import SpIcon from '../../../../../SPIcon';
 import { downloadQuantDecisionIntelligence } from '../../../../../../services/quantitativeServices';
 import './InsightViewModalQuant.css';
@@ -72,6 +72,9 @@ const InsightViewerModalQuant: React.FC<InsightViewerModalProps> = ({
 }) => {
   const meta = VIEWER_META[cardId];
 
+  // ── Maximize state ────────────────────────────────────────────────────────
+  const [isMaximized, setIsMaximized] = useState(false);
+
   // ── Inline PDF preview state (Decision Intelligence only — Behaviour
   //    Archaeology is disabled in this flow and Raw Data Shell is structured
   //    JSON data, not a PDF) ────────────────────────────────────────────────
@@ -139,7 +142,7 @@ const InsightViewerModalQuant: React.FC<InsightViewerModalProps> = ({
       onClick={onClose}
     >
       <motion.div
-        className="qivm-panel"
+        className={`qivm-panel ${isMaximized ? 'qivm-panel--maximized' : ''}`}
         initial={{ opacity: 0, scale: 0.97, y: 24 }}
         animate={{ opacity: 1, scale: 1,    y: 0  }}
         exit={{   opacity: 0, scale: 0.97,  y: 24 }}
@@ -154,6 +157,16 @@ const InsightViewerModalQuant: React.FC<InsightViewerModalProps> = ({
             <p className="qivm-header__subtitle">{meta.subtitle}</p>
           </div>
           <div className="qivm-header__actions">
+            {/* Maximize / Restore */}
+            <button
+              className="qivm-icon-btn qivm-icon-btn--circle"
+              onClick={() => setIsMaximized((prev) => !prev)}
+              title={isMaximized ? 'Restore' : 'Maximize'}
+              aria-label={isMaximized ? 'Restore' : 'Maximize'}
+            >
+              {isMaximized ? <TbMinimize size={20} /> : <TbMaximize size={20} />}
+            </button>
+
             <button
               className="qivm-icon-btn qivm-icon-btn--ghost"
               onClick={onClose}

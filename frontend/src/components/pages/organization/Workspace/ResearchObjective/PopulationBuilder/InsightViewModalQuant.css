@@ -31,6 +31,19 @@
   flex-direction: column;
   overflow: hidden;
   position: relative;
+  transition: max-width 0.25s ease, width 0.25s ease, height 0.25s ease;
+}
+
+/* Maximized — fills the viewport with a small gutter */
+.qivm-panel--maximized {
+  position: fixed;
+  top: 24px;
+  left: 24px;
+  right: 24px;
+  bottom: 24px;
+  width: auto;
+  height: auto;
+  max-width: none;
 }
 
 /* ── Header ──────────────────────────────────────────────────────────────── */

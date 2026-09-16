@@ -16,7 +16,6 @@ interface SurveyInMotionProps {
   questionnairesLoading: boolean;
   onSurveyComplete: () => void | Promise<void>;
   onEditConfiguration: () => void;
-  onModified: () => void;
   workspaceId: string;
   explorationId: string;
   // Backend milestones — drive step transitions instead of a hardcoded timer

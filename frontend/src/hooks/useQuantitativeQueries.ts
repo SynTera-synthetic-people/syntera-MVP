@@ -101,6 +101,46 @@ export const surveySimulationBySourceQueryKey = (
   ];
 
 /**
+ * Flag this exploration's questionnaire as edited since its last survey run.
+ *
+ * A survey run is idempotent per population simulation — the backend keeps a
+ * unique index on surveysimulation.simulation_source_id, so POST
+ * /questionnaire/simulate returns the stored run instead of re-simulating. The
+ * only way to get fresh responses for edited questions is force_rerun=true,
+ * which PopulationBuilder and SurveyResults both read from this key.
+ *
+ * Every questionnaire mutation sets it; clearQuestionnaireModified() drops it
+ * once the forced run has been dispatched.
+ */
+export const markQuestionnaireModified = (explorationId?: string) => {
+  if (!explorationId) return;
+  try {
+    sessionStorage.setItem(`forceRerun_${explorationId}`, 'true');
+  } catch {
+    // sessionStorage throws in private-mode/embedded contexts. Losing the flag
+    // only costs the user a manual re-run, so never fail the mutation over it.
+  }
+};
+
+/**
+ * Clear the flag as soon as a forced run has been accepted by the backend.
+ *
+ * It must be cleared at dispatch, not on completion: POST /questionnaire/simulate
+ * returns {should_poll: true} with no id for a fresh run, and callers re-poll by
+ * re-issuing that POST. If the flag survived the dispatch, every poll would come
+ * back forced and kick off another full simulation. force_rerun replaces the row
+ * in place, so once dispatched the ordinary idempotent poll returns the new run.
+ */
+export const clearQuestionnaireModified = (explorationId?: string) => {
+  if (!explorationId) return;
+  try {
+    sessionStorage.removeItem(`forceRerun_${explorationId}`);
+  } catch {
+    // Same tolerance as the setter.
+  }
+};
+
+/**
  * Fetch all questionnaire sections for an exploration without needing a simulation_id.
  * Used by the Questionnaire Design step (Step 1 of Quant) to load LLM-generated questions.
  */
@@ -329,6 +369,7 @@ export const useEnsureSurveySimulation = () => {
           simulationId,
           forceRerun,
         });
+        if (forceRerun) clearQuestionnaireModified(explorationId);
         queryClient.setQueryData(queryKey, created);
         return created;
       })().finally(() => {
@@ -436,6 +477,7 @@ export const useUploadQuestionnaire = () => {
       }),
 
     onSuccess: (_data, variables) => {
+      markQuestionnaireModified(variables.explorationId);
       queryClient.invalidateQueries({
         queryKey: questionnaireQueryKey(
           variables.workspaceId,
@@ -467,6 +509,7 @@ export const useCreateQuestionnaireSection = (
       }),
 
     onSuccess: () => {
+      markQuestionnaireModified(explorationId);
       queryClient.invalidateQueries({
         queryKey: questionnaireQueryKey(
           workspaceId,
@@ -501,6 +544,7 @@ export const useUpdateQuestionnaireSection = (
       }),
 
     onSuccess: () => {
+      markQuestionnaireModified(explorationId);
       queryClient.invalidateQueries({
         queryKey: questionnaireQueryKey(
           workspaceId,
@@ -533,6 +577,7 @@ export const useDeleteQuestionnaireSection = (
       }),
 
     onSuccess: () => {
+      markQuestionnaireModified(explorationId);
       queryClient.invalidateQueries({
         queryKey: questionnaireQueryKey(
           workspaceId,
@@ -573,6 +618,7 @@ export const useCreateQuestionnaireQuestion = (
       }),
 
     onSuccess: () => {
+      markQuestionnaireModified(explorationId);
       queryClient.invalidateQueries({
         queryKey: questionnaireQueryKey(
           workspaceId,
@@ -613,6 +659,7 @@ export const useUpdateQuestionnaireQuestion = (
       }),
 
     onSuccess: () => {
+      markQuestionnaireModified(explorationId);
       queryClient.invalidateQueries({
         queryKey: questionnaireQueryKey(
           workspaceId,
@@ -645,6 +692,7 @@ export const useDeleteQuestionnaireQuestion = (
       }),
 
     onSuccess: () => {
+      markQuestionnaireModified(explorationId);
       queryClient.invalidateQueries({
         queryKey: questionnaireQueryKey(
           workspaceId,

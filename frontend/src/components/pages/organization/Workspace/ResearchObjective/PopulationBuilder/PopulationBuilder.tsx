@@ -30,6 +30,21 @@ interface SampleSizes {
   [personaId: string]: number;
 }
 
+/**
+ * The questionnaire is edited on the Step-1 route, not here, so "has it changed
+ * since the last survey run?" cannot live in this component's state. The flag is
+ * written by markQuestionnaireModified() in useQuantitativeQueries and read here
+ * and in SurveyResults.
+ */
+const hasPendingQuestionnaireEdit = (explorationId?: string) => {
+  if (!explorationId) return false;
+  try {
+    return sessionStorage.getItem(`forceRerun_${explorationId}`) === 'true';
+  } catch {
+    return false;
+  }
+};
+
 const PopulationBuilder: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -51,7 +66,6 @@ const PopulationBuilder: React.FC = () => {
   const [questionnaireData, setQuestionnaireData] = useState<any[]>([]);
   const [simulationId, setSimulationId] = useState<string | null>(null);
   const [surveySimulationId, setSurveySimulationId] = useState<string>('');
-  const [questionnaireModified, setQuestionnaireModified] = useState(false);
   const { trigger } = useOmniWorkflow();
   const queryClient = useQueryClient();
   const restoredFromServerRef = useRef(false);
@@ -406,24 +420,27 @@ const PopulationBuilder: React.FC = () => {
   }, [selectedPersonas, simulationResult]);
 
   const ensureSurveyRun = useCallback(async () => {
+    const shouldForceRerun = hasPendingQuestionnaireEdit(explorationId);
+
     console.log('[PB] ensureSurveyRun called', {
       surveySimulationId,
       simulationResultId: simulationResult?.id,
       workspaceId,
       explorationId,
       hasExistingPromise: !!surveyEnsurePromiseRef.current,
+      shouldForceRerun,
     });
-    if (surveySimulationId) return surveySimulationId;
-    if (surveyEnsurePromiseRef.current) return surveyEnsurePromiseRef.current;
+    // An edited questionnaire has to reach the simulator even when a finished
+    // run is already held here, otherwise the cached id short-circuits the
+    // re-run and the survey keeps answering the old questions.
+    if (surveySimulationId && !shouldForceRerun) return surveySimulationId;
+    if (surveyEnsurePromiseRef.current && !shouldForceRerun) return surveyEnsurePromiseRef.current;
     if (!workspaceId || !explorationId || !simulationResult?.id) {
       console.error('[PB] ensureSurveyRun: missing context', { workspaceId, explorationId, simulationResultId: simulationResult?.id });
       throw new Error('Missing survey simulation context.');
     }
 
     const personaIds = getPersonaIdsForSurvey();
-    const shouldForceRerun =
-      questionnaireModified ||
-      sessionStorage.getItem(`forceRerun_${explorationId}`) === 'true';
 
     console.log('[PB] ensureSurveyRun: firing mutateAsync', {
       personaIds,
@@ -448,7 +465,6 @@ const PopulationBuilder: React.FC = () => {
       localStorage.setItem(`quant_sub3_${explorationId}`, '1');
       sessionStorage.removeItem(`activeSurveySim_${explorationId}`);
       sessionStorage.removeItem(`forceRerun_${explorationId}`);
-      setQuestionnaireModified(false);
       return nextSurveySimulationId;
     }).catch((err: any) => {
       console.error('[PB] ensureSurveyRun: CAUGHT ERROR', {
@@ -469,7 +485,6 @@ const PopulationBuilder: React.FC = () => {
     explorationId,
     simulationResult,
     getPersonaIdsForSurvey,
-    questionnaireModified,
     ensureSurveySimulationMutation,
   ]);
 
@@ -555,9 +570,13 @@ const PopulationBuilder: React.FC = () => {
     };
 
     navigate(`/main/organization/workspace/research-objectives/${workspaceId}/${objectiveId}/survey-results`, {
-      state: { surveyConfig, fromPopulationBuilder: true, forceRerun: questionnaireModified, viewOnly: isViewOnly },
+      state: {
+        surveyConfig,
+        fromPopulationBuilder: true,
+        forceRerun: hasPendingQuestionnaireEdit(explorationId),
+        viewOnly: isViewOnly,
+      },
     });
-    setQuestionnaireModified(false);
   };
 
   if (personasLoading) return <LoadingSpinner />;
@@ -589,12 +608,6 @@ const PopulationBuilder: React.FC = () => {
             questionnairesLoading={questionnairesLoading}
             onSurveyComplete={handleSurveyComplete}
             onEditConfiguration={handleEditConfiguration}
-            onModified={() => {
-              setQuestionnaireModified(true);
-              setSurveySimulationId('');
-              surveyEnsurePromiseRef.current = null;
-              sessionStorage.setItem(`forceRerun_${explorationId}`, 'true');
-            }}
             workspaceId={workspaceId ?? ''}
             explorationId={explorationId ?? ''}
             questionnaireReady={hasQuestionnaireQuestions}
