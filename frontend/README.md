@@ -1,78 +1,37 @@
-# Synthetic People Platform - Frontend
+# Synthetic People — Frontend
 
-Synthetic People is a cutting-edge platform designed for advanced market research and persona-driven AI interactions. It allows users to create research objectives, build detailed synthetic personas, and conduct automated depth interviews and surveys to gather deep insights.
+React 19 + Vite single-page app for the Synthetic People platform.
 
-## Key Features
+**Setup, environment variables and deployment are documented in the
+[root README](../README.md).**
 
-- **Organization & Workspace Management**: Organize your research projects into hierarchical structures.
-- **Research Objective Wizard**: A structured flow to define and refine research goals.
-- **Persona Builder**: Create highly specific synthetic personas with detailed attributes.
-- **Exploration & Persona Preview**: Visualize and manage synthetic participants.
-- **Depth Interviews**: Conduct automated, AI-driven chat-based interviews with synthetic personas.
-- **Population Builder**: Define and generate large-scale synthetic populations for quantitative research.
-- **Questionnaire & Survey Results**: Design surveys and analyze results generated from synthetic populations.
-- **Traceability**: Track the origin and logic behind synthetic responses for audit and verification.
-- **Admin Dashboard**: Comprehensive user and organization management for administrators.
-- **Theme Support**: Integrated dark and light mode for a premium user experience.
-
-## Tech Stack
-
-- **Framework**: [React 19](https://react.dev/) with [Vite](https://vitejs.dev/)
-- **State Management**: [Redux Toolkit](https://redux-toolkit.js.org/) & [Redux Saga](https://redux-saga.js.org/)
-- **Data Fetching**: [Tanstack Query (React Query) v5](https://tanstack.com/query/latest)
-- **Styling**: [Tailwind CSS v3/v4](https://tailwindcss.com/) & [PostCSS](https://postcss.org/)
-- **Animations**: [Framer Motion](https://www.framer.com/motion/)
-- **Icons**: [React Icons](https://react-icons.github.io/react-icons/)
-- **Charts**: [Recharts](https://recharts.org/)
-- **Forms**: [React Hook Form](https://react-hook-form.com/)
-- **Routing**: [React Router v7](https://reactrouter.com/)
-
-## Getting Started
-
-### Prerequisites
-
-- [Node.js](https://nodejs.org/) (Latest LTS recommended)
-- [npm](https://www.npmjs.com/) or [pnpm](https://pnpm.io/)
-
-### Installation
-
-1. Clone the repository:
-   ```bash
-   git clone <repository-url>
-   cd synthetic_people_frontend
-   ```
-
-2. Install dependencies:
-   ```bash
-   npm install
-   # or
-   pnpm install
-   npm install html2canvas jszip
-   npm install jspdf
-   ```
-
-3. Set up environment variables:
-   - Create a `.env` file in the root directory.
-   - Refer to `.env.example` for required variables.
-
-### Running Locally
+## Quick reference
 
 ```bash
-npm run dev
+npm install
+cp example.env .env.local      # use .env.local, not .env
+npm run dev                    # http://localhost:5173
 ```
-The application will be available at `http://localhost:5173`.
 
-## Project Structure
+| Script | Purpose |
+|---|---|
+| `npm run dev` | Dev server with hot reload |
+| `npm run build` | Production build to `dist/` |
+| `npm run preview` | Serve the production build |
+| `npm run lint` | ESLint |
+| `npm run test:questionnaire` | Questionnaire codec tests |
 
-- `src/components`: UI components organized by feature (pages, organization, admin, etc.).
-- `src/redux`: Redux slices and store configuration.
-- `src/services`: API service layers and configuration.
-- `src/hooks`: Custom React hooks for shared logic.
-- `src/context`: React Context providers (e.g., ThemeProvider).
-- `src/utils`: Helper functions and configuration (e.g., Axios).
-- `src/routes`: Route definitions and protection logic.
+`frontend/.env` is committed and baked into the Docker image, so keep it
+pointing at the deployed API. Local overrides go in `.env.local`, which is
+gitignored.
 
-## Scripts
+## Source layout
 
-- `npm run dev`: Starts the development server.
-- `npm run build`: Builds the application for production.
+| Path | Contents |
+|---|---|
+| `src/components/pages/` | Screens, grouped by feature |
+| `src/hooks/` | TanStack Query hooks |
+| `src/services/` | API clients |
+| `src/redux/` | Store, slices and sagas |
+| `src/routes/` | Route definitions and guards |
+| `src/config/apiConfig.js` | Reads the `VITE_*` variables |
