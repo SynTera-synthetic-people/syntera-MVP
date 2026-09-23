@@ -13,6 +13,7 @@ import json
 import logging
 import pickle
 import re
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,12 @@ import pandas as pd
 
 from app.utils.anthropic_client import get_anthropic_client
 from app.services.country_names import is_country, iso_country_name, normalize_place
+from app.services.place_gazetteer import (
+    country_city_pool,
+    place_country_candidates,
+    resolve_place,
+    resolve_place_country,
+)
 from app.services.llm_usage_tracker import (
     UsageCollector,
     extract_usage_anthropic_message,
@@ -343,12 +350,19 @@ def _city_tier(city: str) -> str:
     return "Tier 1" if city.lower() in TIER1_CITIES else "Tier 2/3"
 
 
-# Ordered per-country metro pools — both the fallback pool used to fill out
-# persona geography when the RO doesn't name enough cities on its own, AND
-# (via _CITY_LOOKUP below) the set of cities recognized as explicit,
-# assignable persona locations when the RO names them by name. Order =
+# Curated per-country metro pools — the fallback pool used to fill out persona
+# geography when the RO doesn't name enough cities on its own, and (via
+# _CITY_LOOKUP below) the first place a named city is looked up. Order =
 # major-hub-first (see _is_major_hub), so keep each country's biggest/most
 # obvious cities first and secondary markets after.
+#
+# This table is NOT the set of cities the pipeline can recognize, and adding a
+# country to it is not how new countries get supported — place_gazetteer
+# already knows every city on earth over 15,000 people and every first-level
+# region, and _city_pool_for()/_classify_geography_entry() fall through to it.
+# What belongs here is a market this product has deliberately tuned (India's
+# pool drives _INDIA_DEMOGRAPHIC_GUIDANCE and the Tier 1/2 split), not a
+# country that merely came up once.
 COUNTRY_CITY_POOLS: dict[str, list[str]] = {
     "India": [
         "Mumbai", "Bangalore", "Delhi", "Pune", "Hyderabad", "Chennai", "Kolkata", "Ahmedabad", "Surat",
@@ -456,6 +470,95 @@ def _country_pool_key(country: str) -> str:
     return COUNTRY_ALIASES.get(_normalize_text(country), country)
 
 
+def _country_identity(label: str) -> str:
+    """One key per country however it was spelled, so "USA", "United States"
+    and "United States of America" are one country and not three. ISO folds
+    the formal spellings together and the short labels fold in the informal
+    ones ISO does not carry ("Britain" -> "UK"), so either map alone splits."""
+    return _normalize_text(_country_pool_key(iso_country_name(label) or label))
+
+
+# A place named in prose, with nothing corroborating it, is only believed when
+# it is too big to be anything else. Free text is full of capitalised words
+# that happen to be small towns — "Young" is 15k in Uruguay, "Male" is 133k in
+# the Maldives, "Best" is in the Netherlands — and a research objective about
+# "young professionals" must not come back as Uruguay. A million is far above
+# every such collision and far below the cities researchers actually name.
+PROSE_CITY_MIN_POPULATION = 1_000_000
+
+# Two places agreeing on a country vouch for each other, but only if each is
+# somewhere a market would actually be described in terms of. English prose is
+# full of small British towns — "Reading habits ... a good Deal" is Reading
+# (318k) and Deal (31k), both genuinely in the UK — and without a floor they
+# corroborate each other into a country nobody mentioned. Real secondary
+# markets sit above this line (Kisumu 398k, Gdańsk 487k, Denpasar 670k) and
+# the accidental ones sit below it.
+PROSE_CORROBORATION_MIN_POPULATION = 250_000
+
+_WORD_RE = re.compile(r"[^\W\d_][\w'’]*", re.UNICODE)
+
+
+def _capitalised_phrases(text: str, max_words: int = 4) -> list[tuple[int, int, str]]:
+    """(start, end, phrase) for every run of consecutive capitalised words and
+    every shorter phrase inside it, longest first.
+
+    Capitalisation is the only thing separating a place from an ordinary word
+    in prose ("Nice" from "nice"), and runs are needed because plenty of
+    places are several words long ("Ho Chi Minh City", "United Arab
+    Emirates"). Sentence-initial capitals slip through this net by design —
+    the population rule above is what catches those.
+
+    Longest first, with spans, so a caller can take "Ho Chi Minh City" and
+    then ignore the "Ho Chi Minh" sitting inside it rather than reading one
+    place as two.
+    """
+    words = [(m.start(), m.end(), m.group()) for m in _WORD_RE.finditer(text)]
+    phrases: list[tuple[int, int, str]] = []
+    run: list[tuple[int, int, str]] = []
+
+    def flush() -> None:
+        for size in range(min(max_words, len(run)), 0, -1):
+            for start in range(len(run) - size + 1):
+                window = run[start:start + size]
+                phrases.append(
+                    (window[0][0], window[-1][1], " ".join(word for _, _, word in window))
+                )
+
+    for start, end, word in words:
+        if word[:1].isupper():
+            run.append((start, end, word))
+        else:
+            flush()
+            run = []
+    flush()
+    return phrases
+
+
+def _city_pool_for(country: str) -> list[str]:
+    """The cities personas may be spread across for a country that named none
+    of its own.
+
+    The curated pool wins wherever there is one: those are ordered and tuned
+    (major-hub-first, see _is_major_hub) and carry the markets this product
+    was built around. Everywhere else falls back to the gazetteer's largest
+    cities for that country, which is the difference between an Indonesia
+    selection producing personas in Jakarta and Surabaya and it producing
+    personas with no city at all.
+
+    The curated lookup is retried against the country's ISO canonical name so
+    a spelling the short-label map does not carry ("United States of America")
+    still lands on the curated pool rather than skipping past it — the
+    gazetteer's idea of the USA's biggest cities includes New York's boroughs,
+    which are not somewhere a persona is said to live.
+    """
+    for label in (country, iso_country_name(country)):
+        if label:
+            curated = COUNTRY_CITY_POOLS.get(_country_pool_key(label))
+            if curated:
+                return curated
+    return country_city_pool(country)
+
+
 def _classify_geography_entry(entry: str) -> tuple[str, str, str | None]:
     """Classify ONE discrete geography selection — a single picker tag such as
     "Indonesia", "Sacramento", "California", or "Greater Jakarta / Jabodetabek".
@@ -465,16 +568,22 @@ def _classify_geography_entry(entry: str) -> tuple[str, str, str | None]:
       kind == "country"  — label is the country as it should be displayed and
                            country_hint repeats it.
       kind == "location" — label is the city/state/region, and country_hint is
-                           the country it is known to belong to, or None when
-                           this process has never heard of it.
+                           the country it belongs to, or None when no country
+                           can be established without guessing — either the
+                           name is unknown, or several countries share it and
+                           none of them dominates ("Valencia").
 
     Every non-blank entry is classified: an unrecognised place is still a place
     the user asked for, so it comes back as a location rather than being
-    dropped. Recognition runs most-specific-first — known city, then known
-    state/region, then country — so an entry that already resolved before
-    resolves to exactly the same thing now (notably "Georgia" and "Victoria",
-    which stay the US and Australian states this module has always read them
-    as, rather than becoming the countries ISO also lists under those names).
+    dropped. Recognition runs most-specific-first — curated city, then curated
+    state/region, then country, then the open-world gazetteer — so an entry
+    that already resolved before resolves to exactly the same thing now
+    (notably "Georgia" and "Victoria", which stay the US and Australian states
+    this module has always read them as, rather than becoming the countries
+    ISO also lists under those names). The curated tables are consulted ahead
+    of the gazetteer precisely so those long-standing readings, and the tuned
+    pools behind them, keep winning; the gazetteer's job is the other 238
+    countries nobody wrote a table for.
 
     A country keeps the user's own wording whenever that wording is itself a
     real country name, so "United States" stays "United States" rather than
@@ -495,7 +604,14 @@ def _classify_geography_entry(entry: str) -> tuple[str, str, str | None]:
     if normalized in COUNTRY_ALIASES:
         canonical = COUNTRY_ALIASES[normalized]
         return "country", canonical, canonical
-    return "location", entry, None
+    # Everything above is a curated table; this is the world. A city or region
+    # the tables never listed still belongs to a country, and reading it from
+    # the gazetteer is what stops "Jakarta" being unplaceable while "Mumbai"
+    # resolves. Runs last so it can only ever add a country to an entry that
+    # had none — no selection that resolved before resolves differently now.
+    # Returns None for a name several countries share unless one dominates,
+    # so an ambiguous pick asks the user instead of guessing at their market.
+    return "location", entry, resolve_place_country(entry)
 
 
 def _resolve_explicit_geography(entries: list) -> tuple[list[str], dict[str, list[str]]]:
@@ -545,20 +661,33 @@ def _resolve_explicit_geography(entries: list) -> tuple[list[str], dict[str, lis
         pending.clear()
         return display
 
-    current_country: str | None = None
+    current_country: str | None = None   # set by an explicitly named country
+    last_country: str | None = None      # last country established, however
     for raw in entries or []:
         entry = str(raw or "").strip()
         if not entry:
             continue
         kind, label, country_hint = _classify_geography_entry(entry)
         if kind == "country":
-            current_country = register_country(label)
+            current_country = last_country = register_country(label)
             continue
-        owner = current_country or (register_country(country_hint) if country_hint else None)
+        # A location the gazetteer cannot place on its own still belongs to
+        # the market the rest of the selection describes, so it falls back to
+        # the country already established — "Madrid, Valencia" is Spain twice,
+        # not Spain and a dropped tag. Only an explicitly named country
+        # (current_country) outranks an entry's own hint; a country inferred
+        # from an earlier location does not, or "Mumbai, Berlin" would put
+        # Berlin in India.
+        owner = (
+            current_country
+            or (register_country(country_hint) if country_hint else None)
+            or last_country
+        )
         if owner is None:
             if label not in pending:
                 pending.append(label)
             continue
+        last_country = owner
         if label not in locations[owner]:
             locations[owner].append(label)
 
@@ -627,11 +756,21 @@ def _extract_geography_meta(validated_ro: dict) -> dict:
             return result
         # The user named places but nothing in the selection identifies a
         # country, so there is no honest way to place these personas. Say so
-        # instead of quietly generating somewhere else.
+        # instead of quietly generating somewhere else. Where the reason is
+        # that a name is shared by several countries, name them: the user is
+        # the only one who knows which Valencia they meant, and asking is the
+        # whole point of refusing to guess.
+        ambiguities: list[str] = []
+        for entry in explicit_geography:
+            candidates = place_country_candidates(entry)[:3]
+            if len(candidates) > 1:
+                options = f"{', '.join(candidates[:-1])} or {candidates[-1]}"
+                ambiguities.append(f"{entry} could be in {options}")
         raise GeographyResolutionError(
             "Could not determine a country from the selected geography: "
             f"{', '.join(explicit_geography)}. "
-            "Add the country these locations belong to and try again."
+            + (f"{'; '.join(ambiguities)}. " if ambiguities else "")
+            + "Add the country these locations belong to and try again."
         )
 
     # ---- Priority 2: free-text parsing of the RO's geography description ----
@@ -669,6 +808,62 @@ def _extract_geography_meta(validated_ro: dict) -> dict:
             city_hits.append((m.start(), display_city, country))
             if not any(c == country for _, c in hits):
                 hits.append((m.start(), country))
+
+    # ---- Open-world pass over the same text ----------------------------------
+    # Everything above recognises only the curated tables, so an RO whose text
+    # says "Indonesia" resolved to India — the default — exactly as an unknown
+    # country did. This pass reads the rest of the world out of the same text,
+    # and runs second so anything the curated tables already claimed keeps the
+    # reading (and the label) it has always had.
+    #
+    # Prose is not a picker, so a name is only believed when it cannot be an
+    # ordinary word: countries have to appear capitalised, and a city has to
+    # either be corroborated (by a country named in the text, or by another
+    # city agreeing with it) or be big enough to be unmistakable on its own.
+    claimed_by_curated = set(COUNTRY_ALIASES) | set(_REGION_TO_COUNTRY_HINTS) | set(_CITY_LOOKUP)
+    known_identities = {_country_identity(country) for _, country in hits}
+    city_candidates: list[tuple[int, str, str, int]] = []   # position, name, country, weight
+    # Spans already read as a place. Phrases arrive longest first, so claiming
+    # one stops the shorter names inside it being read as places of their own.
+    consumed: list[tuple[int, int]] = []
+
+    for start, end, phrase in _capitalised_phrases(geography_text):
+        if any(start < taken_end and end > taken_start for taken_start, taken_end in consumed):
+            continue
+        if _normalize_text(phrase) in claimed_by_curated:
+            consumed.append((start, end))   # the curated pass above owns this one
+            continue
+        if is_country(phrase):
+            consumed.append((start, end))
+            identity = _country_identity(phrase)
+            if identity not in known_identities:
+                known_identities.add(identity)
+                hits.append((start, iso_country_name(phrase) or phrase))
+            continue
+        placed = resolve_place(phrase)
+        if placed:
+            consumed.append((start, end))
+            country, weight = placed
+            city_candidates.append((start, phrase, country, weight))
+
+    corroborating = Counter(
+        country
+        for _, _, country, weight in city_candidates
+        if weight >= PROSE_CORROBORATION_MIN_POPULATION
+    )
+    for position, name, country, weight in city_candidates:
+        believable = (
+            _country_identity(country) in known_identities   # the text named this country
+            or weight >= PROSE_CITY_MIN_POPULATION           # too big to be a stray word
+            or corroborating[country] > 1                    # other places agree with it
+        )
+        if not believable:
+            continue
+        identity = _country_identity(country)
+        if identity not in known_identities:
+            known_identities.add(identity)
+            hits.append((position, country))
+        city_hits.append((position, name, country))
 
     seen_countries: set[str] = set()
     countries: list[str] = []
@@ -768,7 +963,7 @@ def _assign_cities_to_personas(
         else:
             candidates: list[str] = []
             seen_candidates: set[str] = set()
-            for city in COUNTRY_CITY_POOLS.get(_country_pool_key(country), []):
+            for city in _city_pool_for(country):
                 if city.lower() not in seen_candidates:
                     candidates.append(city)
                     seen_candidates.add(city.lower())
@@ -818,7 +1013,7 @@ _INDIA_DEMOGRAPHIC_GUIDANCE = """- Mumbai (Tier 1, premium markets): typical Pro
 
 
 def _is_major_hub(city: str, country: str) -> bool:
-    pool = COUNTRY_CITY_POOLS.get(_country_pool_key(country), [])
+    pool = _city_pool_for(country)
     if not pool:
         return True
     return city in pool[: max(1, len(pool) // 2)]

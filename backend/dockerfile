@@ -30,6 +30,12 @@ RUN test -f /app/alembic.ini \
     && test -d /app/alembic/versions \
     && alembic --version
 
+# Geography resolution reads these at runtime, and a missing one degrades into
+# "could not determine a country" on every persona generation rather than an
+# obvious failure. Same reasoning as above: fail the build, not the deploy.
+RUN test -f /app/app/data/iso3166_countries.json \
+    && test -f /app/app/data/geonames_places.json
+
 EXPOSE 8000
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
