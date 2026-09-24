@@ -56,28 +56,21 @@ router = APIRouter(
     tags=["reports"],
 )
 
-QUAL_TRANSCRIPTS_CACHE_KEY = "TRANSCRIPTS_QA_DOCX_V6"
-QUAL_TRANSCRIPTS_LEGACY_CACHE_KEYS = ("TRANSCRIPTS", "QUAL_VERBATIM_V1")
-QUAL_TRANSCRIPTS_PDF_CACHE_KEY = "TRANSCRIPTS_PDF_V1"
-QUAL_DI_CACHE_KEY = "DECISION_INTELLIGENCE_V8"
-QUAL_DI_LEGACY_CACHE_KEYS = ("QUAL_DECISION_INTELLIGENCE_V1",)
-QUAL_BA_CACHE_KEY = "BEHAVIORAL_ARCHAEOLOGY_V8"
-QUAL_BA_LEGACY_CACHE_KEYS = (
-    "QUAL_BEHAVIOUR_ARCHAEOLOGY_V1",
-    "QUAL_BEHAVIORAL_ARCHAEOLOGY_V1",
-    "IN_DEPTH_ALL_INTERVIEWS_BA_V1",
-)
-QUAL_ALL_CACHE_KEY = "ALL_COMBINED_V4"
-# Bump whenever either CSV's layout changes: the cache stores the whole ZIP
-# (base64 in report_cache.content_md), so a stale entry keeps being served
-# indefinitely no matter what the code does.
-#   V3: survey_results.csv gained one column per grid/scale item (Q<n>_01, …).
-#   V4: questionnaire_overview.csv gained the Sub-Question column and analyses
-#       each grid/scale item separately. V3 entries written between the two
-#       changes hold a new survey_results.csv beside an old overview.
-QUANT_TRANSCRIPTS_CACHE_KEY = "TRANSCRIPTS_V4"
-QUANT_DI_CACHE_KEY = "DECISION_INTELLIGENCE_V2"
-QUANT_BA_CACHE_KEY = "BEHAVIORAL_ARCHAEOLOGY_V2"
+# Cache keys live with the cache itself (report_orchestrator), so a reader that
+# is not this router — the Decision Room, for one — resolves a report to the
+# same rows this router writes. Re-exported under the original names so the
+# rest of this module is unchanged; add new versions there, not here.
+QUAL_TRANSCRIPTS_CACHE_KEY = cache.QUAL_TRANSCRIPTS_CACHE_KEY
+QUAL_TRANSCRIPTS_LEGACY_CACHE_KEYS = cache.QUAL_TRANSCRIPTS_LEGACY_CACHE_KEYS
+QUAL_TRANSCRIPTS_PDF_CACHE_KEY = cache.QUAL_TRANSCRIPTS_PDF_CACHE_KEY
+QUAL_DI_CACHE_KEY = cache.QUAL_DI_CACHE_KEY
+QUAL_DI_LEGACY_CACHE_KEYS = cache.QUAL_DI_LEGACY_CACHE_KEYS
+QUAL_BA_CACHE_KEY = cache.QUAL_BA_CACHE_KEY
+QUAL_BA_LEGACY_CACHE_KEYS = cache.QUAL_BA_LEGACY_CACHE_KEYS
+QUAL_ALL_CACHE_KEY = cache.QUAL_ALL_CACHE_KEY
+QUANT_TRANSCRIPTS_CACHE_KEY = cache.QUANT_TRANSCRIPTS_CACHE_KEY
+QUANT_DI_CACHE_KEY = cache.QUANT_DI_CACHE_KEY
+QUANT_BA_CACHE_KEY = cache.QUANT_BA_CACHE_KEY
 QUAL_PREPARE_CONFIG = {
     "decision-intelligence": {
         "cache_key": QUAL_DI_CACHE_KEY,
@@ -280,22 +273,8 @@ def _qual_pdf_filename(report_slug: str, exploration_id: str) -> str:
     return f"{report_slug}_{exploration_id}.pdf"
 
 
-def _legacy_markdown(content_md: Optional[str]) -> Optional[str]:
-    if not content_md:
-        return None
-    try:
-        parsed = json.loads(content_md)
-    except (TypeError, ValueError):
-        return content_md.strip() or None
-
-    if isinstance(parsed, str):
-        return parsed.strip() or None
-    if isinstance(parsed, dict):
-        for key in ("markdown", "content", "report", "text"):
-            value = parsed.get(key)
-            if isinstance(value, str) and value.strip():
-                return value.strip()
-    return None
+# Moved beside the cache it reads from, so non-router readers can use it too.
+_legacy_markdown = cache.extract_report_text
 
 
 async def _ensure_legacy_qual_pdf_cached(

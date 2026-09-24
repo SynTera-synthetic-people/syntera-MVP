@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import async_engine
 from app.models.decision_room import DecisionRoomMessage, DecisionRoomSession
-from app.services.decision_room_context import assemble_context
+from app.services.decision_room_context import assemble_context, context_is_complete
 from app.services.decision_room_prompt import DECISION_ROOM_SYSTEM_PROMPT
 from app.utils.anthropic_client import get_async_anthropic_client
 from app.utils.id_generator import generate_id
@@ -78,16 +78,14 @@ def _extract_evidence(text: str) -> List[Dict[str, Any]]:
 def _build_messages_for_claude(
     history: List[Dict[str, Any]],
     user_text: str,
-    context_rendered: str,
 ) -> List[Dict[str, Any]]:
     """Build the messages list for the Anthropic API call.
 
     history must be a list of plain dicts with keys: role, content, sequence_num.
-    First user turn injects the full research context so Claude has it from the start.
+    Carries the conversation only — the research context travels in the system
+    blocks (see _build_system_blocks) so that it is present on every turn.
     """
     messages: List[Dict[str, Any]] = []
-
-    user_turns = [m for m in history if m["role"] == "user"]
 
     ordered = sorted(history, key=lambda m: m["sequence_num"])
     for msg in ordered:
@@ -99,19 +97,79 @@ def _build_messages_for_claude(
     if len(messages) > MAX_HISTORY_TURNS * 2:
         messages = messages[-(MAX_HISTORY_TURNS * 2):]
 
-    is_first_turn = len(user_turns) == 0
-    if is_first_turn and context_rendered:
-        content = (
-            f"[RESEARCH CONTEXT — READ AND USE AS YOUR EVIDENCE BASE]\n\n"
-            f"{context_rendered}\n\n"
-            f"[END OF RESEARCH CONTEXT]\n\n"
-            f"{user_text}"
-        )
-    else:
-        content = user_text
-
-    messages.append({"role": "user", "content": content})
+    messages.append({"role": "user", "content": user_text})
     return messages
+
+
+def _build_system_blocks(context_rendered: str) -> Any:
+    """The system payload: the analyst's instructions, then its evidence.
+
+    The research context lives here rather than inside the first user message,
+    because the Anthropic API is stateless and only what is sent on a request
+    is available to it. Injected into one turn it survived exactly that turn:
+    the stored message holds the user's own words, so by the second question
+    the analyst had no objective, no personas and no findings, and answered
+    from whatever the transcript still implied.
+
+    The context block is marked cacheable, so resending it every turn is
+    charged at the cache-read rate instead of in full. Below Anthropic's
+    minimum cacheable size the marker is simply ignored.
+    """
+    if not context_rendered:
+        return DECISION_ROOM_SYSTEM_PROMPT
+    return [
+        {"type": "text", "text": DECISION_ROOM_SYSTEM_PROMPT},
+        {
+            "type": "text",
+            "text": (
+                "[RESEARCH CONTEXT — READ AND USE AS YOUR EVIDENCE BASE]\n\n"
+                f"{context_rendered}\n\n"
+                "[END OF RESEARCH CONTEXT]"
+            ),
+            "cache_control": {"type": "ephemeral"},
+        },
+    ]
+
+
+async def _ensure_context(session: DecisionRoomSession, db: AsyncSession) -> str:
+    """The session's research context, rebuilt first if the stored one is thin.
+
+    A session freezes its context at creation, which is the intended
+    behaviour: a Decision Room is a conversation about the research as it
+    stood. What is not intended is freezing a snapshot that never had the
+    evidence in it — a room opened while its reports were still generating, or
+    any room created while the lookups here were broken. Those are repaired on
+    use, so the session recovers instead of staying empty forever.
+    """
+    if context_is_complete(session.context_metadata):
+        return session.context_rendered or ""
+
+    try:
+        ctx = await assemble_context(
+            session.exploration_id, session.workspace_id, session.flow
+        )
+    except Exception as exc:
+        logger.warning(
+            "decision_room: context refresh failed | session=%s exploration=%s error=%s",
+            session.id, session.exploration_id, exc,
+        )
+        return session.context_rendered or ""
+
+    rendered = ctx["rendered"]
+    if len(rendered) <= len(session.context_rendered or ""):
+        # Nothing new to be had yet; keep what is already stored.
+        return session.context_rendered or ""
+
+    # Set on the session itself rather than issuing a separate UPDATE: the same
+    # transaction goes on to flush this row for the token totals, and one write
+    # path means the in-memory object and the row cannot disagree.
+    session.context_rendered = rendered
+    session.context_metadata = ctx["metadata"]
+    logger.info(
+        "decision_room: context repaired | session=%s exploration=%s chars=%d",
+        session.id, session.exploration_id, len(rendered),
+    )
+    return rendered
 
 
 # ── Session management ────────────────────────────────────────────────────────
@@ -344,7 +402,8 @@ async def send_message(
         await db.flush()
 
         # Build Claude payload
-        messages = _build_messages_for_claude(history_rows, user_text, session.context_rendered)
+        context_rendered = await _ensure_context(session, db)
+        messages = _build_messages_for_claude(history_rows, user_text)
 
         client = get_async_anthropic_client()
         started = time.monotonic()
@@ -352,7 +411,7 @@ async def send_message(
         response = await client.messages.create(
             model=DECISION_ROOM_MODEL,
             max_tokens=MAX_TOKENS,
-            system=DECISION_ROOM_SYSTEM_PROMPT,
+            system=_build_system_blocks(context_rendered),
             messages=messages,
         )
 
@@ -450,7 +509,7 @@ async def _stream_generator(
     workspace_id: str,
     user_id: str,
 ) -> AsyncGenerator[str, None]:
-    messages = _build_messages_for_claude(history, user_text, context_rendered)
+    messages = _build_messages_for_claude(history, user_text)
     client = get_async_anthropic_client()
     started = time.monotonic()
     full_text = ""
@@ -459,7 +518,7 @@ async def _stream_generator(
         async with client.messages.stream(
             model=DECISION_ROOM_MODEL,
             max_tokens=MAX_TOKENS,
-            system=DECISION_ROOM_SYSTEM_PROMPT,
+            system=_build_system_blocks(context_rendered),
             messages=messages,
         ) as stream:
             async for delta in stream.text_stream:
@@ -569,7 +628,7 @@ async def stream_message(
             return None
 
         # Cache primitive values NOW — after commit the ORM object is expired/detached
-        _context_rendered = session.context_rendered or ""
+        _context_rendered = await _ensure_context(session, db)
         _context_metadata = session.context_metadata or {}
         _session_title = session.title
         _exploration_id = session.exploration_id
