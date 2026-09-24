@@ -607,6 +607,29 @@ async def get_survey_simulation_by_id(simulation_id: str):
         return res.scalars().first()
 
 
+async def get_latest_survey_simulation_for_exploration(
+    exploration_id: str,
+    workspace_id: Optional[str] = None,
+):
+    """The most recent survey run for an exploration, or None if it has none.
+
+    A last resort for readers that have no simulation of their own to work
+    from. Anything acting on a report should prefer the simulation that report
+    was built from (report_orchestrator.latest_simulation_id_with_report),
+    because an exploration can hold several runs and the newest one is not
+    necessarily the one the user has been shown.
+    """
+    async with AsyncSession(async_engine) as session:
+        stmt = select(SurveySimulation).where(
+            SurveySimulation.exploration_id == exploration_id
+        )
+        if workspace_id:
+            stmt = stmt.where(SurveySimulation.workspace_id == workspace_id)
+        stmt = stmt.order_by(SurveySimulation.created_at.desc()).limit(1)
+        res = await session.execute(stmt)
+        return res.scalars().first()
+
+
 async def get_survey_simulation_by_source_id(simulation_source_id: str):
     """Return the most recent SurveySimulation for a given population simulation_source_id."""
     async with AsyncSession(async_engine) as session:
