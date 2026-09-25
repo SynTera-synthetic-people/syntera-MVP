@@ -45,6 +45,15 @@ router = APIRouter(
 )
 
 
+# A dataset whose rows are not on this replica and cannot be rebuilt. Said
+# plainly because only the user can act on it — every retry hits the same wall,
+# and the generic "failed to compute" gave them nothing to go on.
+DATASET_FILE_GONE = (
+    "This dataset's file is no longer available on the server. "
+    "Re-import the survey results, or upload the file again, to continue."
+)
+
+
 async def _require_workspace_member(workspace_id: str, current_user: User) -> None:
     members = await ws_service.list_workspace_members(workspace_id)
     if not any(m.get("user_id") == current_user.id for m in members):
@@ -150,6 +159,26 @@ async def import_dataset_from_survey_simulation(
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except dp_service.DatasetFileUnavailable:
+        logger.warning(
+            "Data Playground dataset file unavailable | dataset_id=%s", dataset_id
+        )
+        raise HTTPException(status_code=422, detail=DATASET_FILE_GONE)
+    except dp_service.DatasetFileUnavailable:
+        logger.warning(
+            "Data Playground dataset file unavailable | dataset_id=%s", dataset_id
+        )
+        raise HTTPException(status_code=422, detail=DATASET_FILE_GONE)
+    except dp_service.DatasetFileUnavailable:
+        logger.warning(
+            "Data Playground dataset file unavailable | dataset_id=%s", dataset_id
+        )
+        raise HTTPException(status_code=422, detail=DATASET_FILE_GONE)
+    except dp_service.DatasetFileUnavailable:
+        logger.warning(
+            "Data Playground dataset file unavailable | dataset_id=%s", dataset_id
+        )
+        raise HTTPException(status_code=422, detail=DATASET_FILE_GONE)
     except Exception:
         logger.exception(
             "Data Playground survey-results import failed | exploration_id=%s | simulation_id=%s",
@@ -226,6 +255,11 @@ async def get_dataset_rows(
 
     try:
         result = await dp_service.get_dataset_rows(db, dataset, mode, page, page_size)
+    except dp_service.DatasetFileUnavailable:
+        logger.warning(
+            "Data Playground dataset file unavailable | dataset_id=%s", dataset_id
+        )
+        raise HTTPException(status_code=422, detail=DATASET_FILE_GONE)
     except Exception:
         logger.exception("Data Playground rows fetch failed | dataset_id=%s", dataset_id)
         raise HTTPException(status_code=422, detail="Failed to fetch rows")

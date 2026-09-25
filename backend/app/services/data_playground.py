@@ -6,7 +6,7 @@ Upload pipeline (V1):
      stable value codes, and persists dp_dataset + dp_variable rows.
 
 The stored file is the row-level source of truth. Analyses must obtain rows
-exclusively through dataframe_for_dataset() — it re-reads the file with the
+exclusively through load_dataframe() — it re-reads the file with the
 exact sheet/header resolved at ingest (persisted in dataset.meta), behind a
 small LRU cache. Keeping this single access point means a later switch to
 row storage in Postgres (sync_survey.response-style) only touches this module.
@@ -26,7 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.data_playground import DataPlaygroundDataset, DataPlaygroundVariable
-from app.utils.file_utils import dataset_file_path, save_dataset_bytes
+from app.utils.file_utils import dataset_file_path, save_dataset_bytes, write_dataset_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -341,6 +341,74 @@ async def ingest_dataset_from_survey_results(
     if existing:
         return existing, await list_variables(db, dataset_id=existing.id)
 
+    df, question_titles, survey_simulation_id = await _survey_results_dataframe(
+        simulation_id=simulation_id,
+        workspace_id=workspace_id,
+        exploration_id=exploration_id,
+    )
+
+    stored_filename, _size = await save_dataset_bytes(df.to_csv(index=False).encode("utf-8"), ".csv")
+
+    try:
+        variable_specs = discover_variables(df)
+        for spec in variable_specs:
+            title = question_titles.get(spec["variable_name"])
+            if title:
+                spec["display_name"] = title
+
+        dataset = DataPlaygroundDataset(
+            workspace_id=workspace_id,
+            exploration_id=exploration_id,
+            name=f"Survey Results — {survey_simulation_id}",
+            original_filename="survey_results.csv",
+            stored_filename=stored_filename,
+            file_type="csv",
+            row_count=len(df),
+            column_count=len(df.columns),
+            status="ready",
+            meta={
+                "source": "survey_results",
+                "simulation_id": survey_simulation_id,
+                "sheet_name": None,
+                "header_row": 0,
+            },
+            created_by=user_id,
+        )
+        variables = [
+            DataPlaygroundVariable(dataset_id=dataset.id, **spec)
+            for spec in variable_specs
+        ]
+
+        db.add(dataset)
+        db.add_all(variables)
+        await db.commit()
+        await db.refresh(dataset)
+    except Exception:
+        dataset_file_path(stored_filename).unlink(missing_ok=True)
+        raise
+
+    logger.info(
+        "Data Playground dataset imported from survey results | dataset_id=%s | simulation_id=%s | rows=%d | cols=%d",
+        dataset.id, survey_simulation_id, dataset.row_count, dataset.column_count,
+    )
+    return dataset, variables
+
+
+async def _survey_results_dataframe(
+    *,
+    simulation_id: str,
+    workspace_id: str,
+    exploration_id: str,
+) -> tuple[pd.DataFrame, dict[str, str]]:
+    """The respondent-level frame a survey-results dataset is made of, plus
+    each column's full question text.
+
+    Split out from the import above so the file can be rebuilt later from the
+    same simulation without a second copy of this pipeline — see
+    ensure_dataset_file(). build_survey_results_csv_bytes is seeded with the
+    simulation id, and every step after it is deterministic, so a rebuild
+    reproduces the original file rather than a new sample of it.
+    """
     from app.services.persona import get_persona
     from app.services.survey_simulation import (
         get_survey_simulation_by_id,
@@ -436,46 +504,9 @@ async def ingest_dataset_from_survey_results(
     # routine fate of every free-text question.
     df = df.dropna(axis=1, how="all")
 
-    stored_filename, _size = await save_dataset_bytes(df.to_csv(index=False).encode("utf-8"), ".csv")
-
-    try:
-        variable_specs = discover_variables(df)
-        for spec in variable_specs:
-            title = question_titles.get(spec["variable_name"])
-            if title:
-                spec["display_name"] = title
-
-        dataset = DataPlaygroundDataset(
-            workspace_id=workspace_id,
-            exploration_id=exploration_id,
-            name=f"Survey Results — {sim.id}",
-            original_filename="survey_results.csv",
-            stored_filename=stored_filename,
-            file_type="csv",
-            row_count=len(df),
-            column_count=len(df.columns),
-            status="ready",
-            meta={"source": "survey_results", "simulation_id": sim.id, "sheet_name": None, "header_row": 0},
-            created_by=user_id,
-        )
-        variables = [
-            DataPlaygroundVariable(dataset_id=dataset.id, **spec)
-            for spec in variable_specs
-        ]
-
-        db.add(dataset)
-        db.add_all(variables)
-        await db.commit()
-        await db.refresh(dataset)
-    except Exception:
-        dataset_file_path(stored_filename).unlink(missing_ok=True)
-        raise
-
-    logger.info(
-        "Data Playground dataset imported from survey results | dataset_id=%s | simulation_id=%s | rows=%d | cols=%d",
-        dataset.id, sim.id, dataset.row_count, dataset.column_count,
-    )
-    return dataset, variables
+    # sim.id, not the argument: callers may pass the population simulation id,
+    # and everything downstream is keyed on the survey run this resolved to.
+    return df, question_titles, sim.id
 
 
 # ── Queries ──────────────────────────────────────────────────────────────────
@@ -532,6 +563,9 @@ def dataframe_for_dataset(dataset: DataPlaygroundDataset) -> pd.DataFrame:
 
     Re-reads the stored file with the exact sheet/header resolved at ingest.
     Returns a copy so callers can never mutate the cached frame.
+
+    Raises FileNotFoundError when this process has no copy of the file; use
+    load_dataframe() instead, which rebuilds what can be rebuilt first.
     """
     meta = dataset.meta or {}
     df = _cached_dataframe(
@@ -541,6 +575,72 @@ def dataframe_for_dataset(dataset: DataPlaygroundDataset) -> pd.DataFrame:
         meta.get("header_row"),
     )
     return df.copy()
+
+
+class DatasetFileUnavailable(FileNotFoundError):
+    """The dataset's rows are not on this server and cannot be rebuilt.
+
+    Distinct from a generic failure because only the user can resolve it, by
+    uploading the file again — nothing the server retries will bring it back.
+    """
+
+
+async def ensure_dataset_file(dataset: DataPlaygroundDataset) -> None:
+    """Put the dataset's file on this process's disk if it is not already.
+
+    Files are written to a pod-local directory (uploads/data_playground)
+    while the API runs several replicas behind a load balancer with no shared
+    volume. The pod that ingests a dataset is therefore usually not the pod
+    that later answers an analysis request, and the second pod finds nothing:
+    the dp_dataset and dp_variable rows are in Postgres and resolve fine — so
+    the variables panel fills in normally — while the rows the analysis needs
+    are on a disk it cannot see.
+
+    A survey-results dataset carries its provenance in meta, and the
+    simulation it was built from lives in Postgres where every pod can read
+    it, so the file is rebuilt from source. build_survey_results_csv_bytes is
+    seeded with the simulation id and the rest of the pipeline is
+    deterministic, so the rebuild reproduces the original file — cached
+    analyses in dp_analysis stay consistent with it.
+
+    An uploaded file has no source to rebuild from. That raises
+    DatasetFileUnavailable, which the router turns into an explicit message
+    rather than a generic failure, and it is the case that needs shared
+    storage to fix properly.
+    """
+    path = dataset_file_path(dataset.stored_filename)
+    if path.exists():
+        return
+
+    meta = dataset.meta or {}
+    simulation_id = meta.get("simulation_id")
+    if meta.get("source") != "survey_results" or not simulation_id:
+        raise DatasetFileUnavailable(
+            f"Dataset file missing on disk and not rebuildable: {dataset.stored_filename}"
+        )
+
+    logger.warning(
+        "Data Playground dataset file absent on this replica, rebuilding from "
+        "simulation | dataset_id=%s | simulation_id=%s | stored_filename=%s",
+        dataset.id, simulation_id, dataset.stored_filename,
+    )
+    df, _titles, _resolved = await _survey_results_dataframe(
+        simulation_id=simulation_id,
+        workspace_id=dataset.workspace_id,
+        exploration_id=dataset.exploration_id,
+    )
+    # No cache to invalidate: the read that failed raised, and lru_cache does
+    # not memoise exceptions, so nothing was stored under this filename.
+    await write_dataset_bytes(df.to_csv(index=False).encode("utf-8"), dataset.stored_filename)
+    logger.info(
+        "Data Playground dataset file rebuilt | dataset_id=%s | rows=%d", dataset.id, len(df)
+    )
+
+
+async def load_dataframe(dataset: DataPlaygroundDataset) -> pd.DataFrame:
+    """Rows for an analysis, rebuilding the file first if this replica lacks it."""
+    await ensure_dataset_file(dataset)
+    return dataframe_for_dataset(dataset)
 
 
 def touch_dataset(dataset: DataPlaygroundDataset) -> None:
@@ -573,7 +673,7 @@ async def get_dataset_rows(
         raise ValueError(f"mode must be one of {sorted(_ROW_MODES)}")
 
     variables = await list_variables(db, dataset_id=dataset.id)
-    df = dataframe_for_dataset(dataset)
+    df = await load_dataframe(dataset)
     total_rows = len(df)
 
     id_variable = next((v for v in variables if v.data_type == "identifier"), None)
