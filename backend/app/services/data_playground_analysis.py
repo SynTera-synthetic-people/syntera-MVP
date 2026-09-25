@@ -4,7 +4,7 @@ insights land in later phases).
 Every analysis is cached in dp_analysis, keyed by (dataset_id, analysis_type,
 parameters) — an identical re-run is served from Postgres instead of
 re-reading the file and recomputing. Row access always goes through
-data_playground.dataframe_for_dataset(), the single source-of-truth reader.
+data_playground.load_dataframe(), the single source-of-truth reader.
 """
 
 import logging
@@ -18,8 +18,8 @@ from app.models.data_playground import DataPlaygroundAnalysis, DataPlaygroundDat
 from app.services.data_playground import (
     _cell,
     _sort_labels,
-    dataframe_for_dataset,
     list_variables,
+    load_dataframe,
 )
 
 logger = logging.getLogger(__name__)
@@ -154,7 +154,7 @@ async def compute_frequency(
     if cached is not None:
         return cached
 
-    df = dataframe_for_dataset(dataset)
+    df = await load_dataframe(dataset)
     total_rows = len(df)
     results = [
         _frequency_for_variable(df, total_rows, known_by_name[name])
@@ -256,7 +256,7 @@ async def compute_crosstab(
     if cached is not None:
         return cached
 
-    df = dataframe_for_dataset(dataset)
+    df = await load_dataframe(dataset)
     total_rows = len(df)
 
     # V1 simplification: only the first banner variable defines columns —
@@ -391,7 +391,7 @@ async def compute_chart(
     if breakdown_variable:
         shaped = await _chart_with_breakdown(db, dataset, variables[0], breakdown_variable, user_id)
     else:
-        shaped = _chart_overlay(dataframe_for_dataset(dataset), known_by_name, variables)
+        shaped = _chart_overlay(await load_dataframe(dataset), known_by_name, variables)
 
     payload = {"chart_type": chart_type, **shaped}
     await _save_analysis(
@@ -425,7 +425,7 @@ async def compute_insights(
 
     variables = await list_variables(db, dataset_id=dataset.id)
     total_rows = dataset.row_count
-    df = dataframe_for_dataset(dataset) if variables else None
+    df = await load_dataframe(dataset) if variables else None
 
     missing_candidates: list[tuple[float, str]] = []
     single_category: list[str] = []

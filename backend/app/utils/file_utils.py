@@ -137,9 +137,18 @@ async def save_dataset_bytes(content: bytes, ext: str) -> Tuple[str, int]:
     extension allow-list / upload-file plumbing since the caller controls
     the format. Returns (stored_name, size)."""
     stored_name = f"{uuid4().hex}{ext}"
+    return stored_name, await write_dataset_bytes(content, stored_name)
+
+
+async def write_dataset_bytes(content: bytes, stored_name: str) -> int:
+    """Writes dataset bytes under a name the caller already holds.
+
+    Used to restore a dataset whose row is in Postgres but whose file is not
+    on this replica's disk; keeping the existing stored_name means the
+    dp_dataset row does not have to be rewritten. Returns the size written."""
     dest = DATASET_UPLOAD_DIR / stored_name
 
     async with aiofiles.open(dest, "wb") as f:
         await f.write(content)
 
-    return stored_name, len(content)
+    return len(content)
