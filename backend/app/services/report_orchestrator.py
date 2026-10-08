@@ -1,6 +1,12 @@
+import base64
+import csv
+import io
 import json
+import logging
 import uuid
+import zipfile
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 from sqlalchemy import and_, or_, select, update
@@ -9,7 +15,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import async_engine
 from app.models.report_cache import ReportCache
 
+logger = logging.getLogger(__name__)
+
 CACHE_TTL_HOURS = None
+
+# The envelope a packed file (PDF/DOCX/ZIP) is stored under in content_md. Kept
+# in step with routers/reports.py._pack_cached_file, which writes it.
+FILE_CACHE_KIND = "report_file_b64_v1"
 
 
 # ── Report identity: public CTA name vs storage cache key ─────────────────────
@@ -87,11 +99,143 @@ def extract_report_text(content_md: Optional[str]) -> Optional[str]:
     if isinstance(parsed, str):
         return parsed.strip() or None
     if isinstance(parsed, dict):
+        if parsed.get("kind") == FILE_CACHE_KIND:
+            return None
         for key in ("markdown", "content", "report", "text"):
             value = parsed.get(key)
             if isinstance(value, str) and value.strip():
                 return value.strip()
     return None
+
+
+def _unpack_cached_file(content_md: Optional[str]) -> Optional[dict]:
+    """The bytes behind a packed-file row, or None if it is not one.
+
+    Quant DI/BA and the quant transcripts ZIP are stored this way — a base64
+    payload in content_md — so this is the only door to their text.
+    """
+    if not content_md:
+        return None
+    try:
+        payload = json.loads(content_md)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(payload, dict) or payload.get("kind") != FILE_CACHE_KIND:
+        return None
+    encoded = payload.get("content_b64")
+    if not isinstance(encoded, str) or not encoded:
+        return None
+    try:
+        content = base64.b64decode(encoded.encode("ascii"), validate=True)
+    except Exception:
+        return None
+    return {
+        "content": content,
+        "media_type": payload.get("media_type") or "application/octet-stream",
+        "filename": payload.get("filename") or "report",
+    }
+
+
+def _decode_text_bytes(content: bytes) -> str:
+    for encoding in ("utf-8-sig", "utf-8", "cp1252"):
+        try:
+            return content.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return content.decode("utf-8", errors="ignore")
+
+
+def _extract_pdf_bytes(content: bytes) -> str:
+    try:
+        from PyPDF2 import PdfReader
+    except Exception:
+        return ""
+    try:
+        reader = PdfReader(io.BytesIO(content))
+        return "\n\n".join(page.extract_text() or "" for page in reader.pages).strip()
+    except Exception:
+        return ""
+
+
+def _extract_csv_bytes(content: bytes, max_rows: int = 400) -> str:
+    text = _decode_text_bytes(content)
+    rows = []
+    for idx, row in enumerate(csv.reader(io.StringIO(text))):
+        if idx >= max_rows:
+            rows.append("[...truncated rows...]")
+            break
+        rows.append(", ".join(str(cell) for cell in row))
+    return "\n".join(rows).strip()
+
+
+def _extract_excel_bytes(content: bytes, max_rows: int = 120) -> str:
+    try:
+        import pandas as pd
+
+        sheets = pd.read_excel(io.BytesIO(content), sheet_name=None)
+    except Exception:
+        return ""
+    parts = []
+    for name, df in sheets.items():
+        parts.append(f"Sheet: {name}\n{df.head(max_rows).to_string(index=False)}")
+    return "\n\n".join(parts).strip()
+
+
+def _extract_zip_bytes(content: bytes) -> str:
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(content))
+    except Exception:
+        return ""
+    parts = []
+    for name in archive.namelist():
+        suffix = Path(name).suffix.lower()
+        if suffix not in {".csv", ".txt", ".xlsx", ".xls"}:
+            continue
+        try:
+            file_bytes = archive.read(name)
+        except Exception:
+            continue
+        if suffix == ".csv":
+            extracted = _extract_csv_bytes(file_bytes)
+        elif suffix in {".xlsx", ".xls"}:
+            extracted = _extract_excel_bytes(file_bytes)
+        else:
+            extracted = _decode_text_bytes(file_bytes)
+        if extracted:
+            parts.append(f"[FILE: {name}]\n{extracted}")
+    return "\n\n".join(parts).strip()
+
+
+def extract_report_file_text(content_md: Optional[str]) -> Optional[str]:
+    """Readable text from a packed-file report row (PDF/ZIP/XLSX/CSV), or None.
+
+    extract_report_text() handles markdown and JSON-text rows and deliberately
+    returns None for a packed file so base64 never reaches a reader. This is the
+    companion for the cases where the text lives *inside* that file — the quant
+    Decision Intelligence PDF and the quant transcripts ZIP — pulling the actual
+    words out instead of giving up on them.
+    """
+    unpacked = _unpack_cached_file(content_md)
+    if not unpacked:
+        return None
+    content = unpacked["content"]
+    filename = unpacked.get("filename") or ""
+    media = (unpacked.get("media_type") or "").lower()
+    suffix = Path(filename).suffix.lower()
+
+    if suffix == ".pdf" or "pdf" in media:
+        extracted = _extract_pdf_bytes(content)
+    elif suffix == ".zip" or "zip" in media:
+        extracted = _extract_zip_bytes(content)
+    elif suffix in {".xlsx", ".xls"} or "spreadsheet" in media or "excel" in media:
+        extracted = _extract_excel_bytes(content)
+    elif suffix == ".csv" or "csv" in media:
+        extracted = _extract_csv_bytes(content)
+    elif suffix == ".txt" or "text/" in media:
+        extracted = _decode_text_bytes(content).strip()
+    else:
+        extracted = ""
+    return extracted or None
 
 
 def _cache_key_filter(
@@ -163,9 +307,21 @@ async def get_report_text(
     rather than returned as unreadable bytes — an older row that still has the
     markdown is more use to a reader than a new row that does not.
     """
+    rows: list[tuple[str, Optional[str]]] = []
     for cache_key in cache_keys_for(report_type, public_cta):
         cached = await get_cached_report(exploration_id, cache_key, simulation_id)
-        text = extract_report_text(getattr(cached, "content_md", None)) if cached else None
+        content_md = getattr(cached, "content_md", None) if cached else None
+        text = extract_report_text(content_md)
+        if text:
+            return text, cache_key
+        rows.append((cache_key, content_md))
+
+    # No markdown/JSON-text copy under any key. The quant DI/BA reports and the
+    # quant transcripts ZIP are stored only as packed files, so pull the text
+    # out of them — current format first — rather than briefing the analyst with
+    # nothing. A readable markdown row above always wins over this fallback.
+    for cache_key, content_md in rows:
+        text = extract_report_file_text(content_md)
         if text:
             return text, cache_key
     return None
