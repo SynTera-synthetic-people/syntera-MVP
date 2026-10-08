@@ -181,12 +181,13 @@ async def _load_reports(
                 renders markdown and then keeps only the PDF, so no BA text is
                 persisted by any path. The interviews it analyses are in this
                 context in full, so the evidence behind it is still present.
-      quant     NOT readable. Both are stored as PDFs only. The quantitative
-                source of truth is SurveySimulation.results (see
-                generate_md_report), which _load_survey_results supplies.
+      quant     Readable. Both are stored as packed PDFs; report_orchestrator
+                .get_report_text extracts the PDF text, so the DI findings the
+                user has actually been shown (named insights, recommendations)
+                reach the analyst alongside SurveySimulation.results.
 
-    A CTA that exists only as a packed file is reported as unavailable rather
-    than passed through as base64.
+    A packed file's text is extracted by the orchestrator; only a file with no
+    extractable text at all is reported as unavailable.
     """
     sections: List[str] = []
     loaded: List[str] = []
@@ -371,6 +372,46 @@ async def _load_survey_results(
     return f"[RESEARCH_CONTEXT — SURVEY RESULTS]\n{text}"
 
 
+async def _load_quant_output(
+    metadata: Dict[str, Any],
+    exploration_id: str,
+    simulation_id: Optional[str],
+) -> Optional[str]:
+    """The Quantitative Research output file — the survey_results /
+    questionnaire CSVs the user downloads as the Quant output Excel.
+
+    Stored as a packed ZIP under the public CTA CSV_DATA;
+    report_orchestrator.get_report_text unpacks it into the per-question tables,
+    so the analyst can cite the actual distributions behind a DI finding rather
+    than only the raw simulation JSON.
+    """
+    try:
+        found = await report_cache.get_report_text(
+            exploration_id, "quant", "CSV_DATA", simulation_id
+        )
+    except Exception as exc:
+        logger.warning(
+            "decision_room context: quant output failed | exploration=%s simulation=%s error=%s",
+            exploration_id, simulation_id, exc,
+        )
+        metadata["sources"]["quant_output"] = {"included": False, "error": str(exc)}
+        return None
+
+    if not found:
+        metadata["sources"]["quant_output"] = {"included": False}
+        return None
+
+    text, cache_key = found
+    content = text[:MAX_SURVEY_CHARS]
+    metadata["sources"]["quant_output"] = {
+        "included": True,
+        "cache_key": cache_key,
+        "chars": len(content),
+        "truncated": len(text) > MAX_SURVEY_CHARS,
+    }
+    return f"[RESEARCH_CONTEXT — QUANT OUTPUT]\n{content}"
+
+
 # ── Assembly ──────────────────────────────────────────────────────────────────
 
 async def assemble_context(
@@ -411,7 +452,15 @@ async def assemble_context(
     sections.extend(report_sections)
 
     evidence_source: Optional[str] = None
+    quant_output_loaded = False
     if report_type == "quant":
+        quant_output_section = await _load_quant_output(
+            metadata, exploration_id, simulation_id
+        )
+        if quant_output_section:
+            sections.append(quant_output_section)
+            quant_output_loaded = True
+
         survey_section = await _load_survey_results(
             metadata, exploration_id, workspace_id, simulation_id
         )
@@ -436,8 +485,12 @@ async def assemble_context(
         f"- Research objective: {'present' if ro_description else 'NOT AVAILABLE'}",
         f"- Personas: {personas_loaded if personas_loaded else 'NONE AVAILABLE'}",
         f"- Reports: {', '.join(reports_loaded) if reports_loaded else 'NONE AVAILABLE'}",
-        f"- Supporting evidence: {evidence_source or 'NONE AVAILABLE'}",
     ]
+    if report_type == "quant":
+        inventory.append(
+            f"- Quant output (Excel/CSV): {'present' if quant_output_loaded else 'NONE AVAILABLE'}"
+        )
+    inventory.append(f"- Supporting evidence: {evidence_source or 'NONE AVAILABLE'}")
     sections.insert(0, "[CONTEXT_INVENTORY]\n" + "\n".join(inventory))
 
     rendered = "\n\n".join(s.strip() for s in sections if s.strip())
@@ -480,12 +533,21 @@ def context_is_complete(metadata: Optional[Dict[str, Any]]) -> bool:
     the lookups below were broken — holds a snapshot with nothing in it but the
     objective, and reusing that forever is how a Decision Room ends up
     answering from the research question alone.
+
+    For a quant room the survey results alone do not count as complete: the
+    Decision Intelligence report and the Excel output are the research outputs
+    the room exists to reason from, and a snapshot taken while those were
+    unreadable has the survey JSON but not the findings. Treating it as
+    incomplete lets _ensure_context repair it on use, so a room created during
+    that window picks up the findings instead of denying them forever.
     """
     sources = (metadata or {}).get("sources") or {}
     if not sources:
         return False
     if not (sources.get("personas") or {}).get("included"):
         return False
-    return bool(
-        (metadata or {}).get("reports_loaded") or (metadata or {}).get("evidence_source")
-    )
+    reports_loaded = (metadata or {}).get("reports_loaded")
+    if (metadata or {}).get("flow") == "quant":
+        quant_output = (sources.get("quant_output") or {}).get("included")
+        return bool(reports_loaded or quant_output)
+    return bool(reports_loaded or (metadata or {}).get("evidence_source"))
